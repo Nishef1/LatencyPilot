@@ -380,5 +380,5 @@ public static class DeviceInventoryReader
         InvalidDataException or
         IOException or
         UnauthorizedAccessException or
-        System.Security.SecurityException;
+        global::System.Security.SecurityException;
 }
