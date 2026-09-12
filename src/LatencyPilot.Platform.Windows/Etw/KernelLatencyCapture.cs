@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using LatencyPilot.Core.Observation;
 using Microsoft.Diagnostics.Tracing.Parsers;
 using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
@@ -8,6 +9,8 @@ namespace LatencyPilot.Platform.Windows.Etw;
 
 public static class KernelLatencyCapture
 {
+    private const int UnknownEventsLost = -1;
+
     public static KernelLatencyCaptureResult Capture(
         KernelLatencyCaptureOptions options,
         CancellationToken cancellationToken = default)
@@ -24,6 +27,8 @@ public static class KernelLatencyCapture
         var invalidEventCount = 0;
         var eventLimitReached = false;
         var eventLimitStopRequested = 0;
+        var sessionStopRequested = 0;
+        var eventsLost = UnknownEventsLost;
 
         using var session = new TraceEventSession(sessionName)
         {
@@ -32,9 +37,27 @@ public static class KernelLatencyCapture
 
         void StopSession()
         {
+            if (Interlocked.Exchange(ref sessionStopRequested, 1) != 0)
+            {
+                return;
+            }
+
             // Kernel DCStop rundown is emitted as part of session stop. Stopping the
             // session, rather than only stopping the consumer, lets already-loaded
             // image mappings reach the parser before Process() returns.
+            try
+            {
+                // TraceEventSession.EventsLost queries the live ETW session. Once Stop
+                // removes the session, Windows may reject that query with a WMI
+                // instance-name error, so snapshot it first.
+                eventsLost = session.EventsLost;
+            }
+            catch (COMException)
+            {
+                // Preserve the observation, but keep the loss count explicitly unknown
+                // so the UI cannot present an unverified zero as a clean capture.
+                eventsLost = UnknownEventsLost;
+            }
             session.Stop(noThrow: true);
         }
 
@@ -94,6 +117,16 @@ public static class KernelLatencyCapture
             }
         }
 
+        var keywords =
+            KernelTraceEventParser.Keywords.DeferedProcedureCalls |
+            KernelTraceEventParser.Keywords.Interrupt |
+            KernelTraceEventParser.Keywords.ImageLoad;
+
+        // TraceEvent 3.2.6 starts the real-time session when Source is first accessed.
+        // Enable the special kernel provider before touching Source so the provider is
+        // configured on the session before it becomes active.
+        session.EnableKernelProvider(keywords);
+
         session.Source.Kernel.PerfInfoDPC += data =>
             Append(
                 KernelLatencyEventKind.Dpc,
@@ -117,13 +150,6 @@ public static class KernelLatencyCapture
         session.Source.Kernel.ImageLoad += imageTracker.ObserveLoad;
         session.Source.Kernel.ImageUnload += imageTracker.ObserveUnload;
         session.Source.Kernel.ImageDCStop += imageTracker.ObserveRundownStop;
-
-        var keywords =
-            KernelTraceEventParser.Keywords.DeferedProcedureCalls |
-            KernelTraceEventParser.Keywords.Interrupt |
-            KernelTraceEventParser.Keywords.ImageLoad;
-
-        session.EnableKernelProvider(keywords);
 
         using var cancellationRegistration = cancellationToken.Register(stopSession);
         using var timeoutTimer = new Timer(
@@ -151,7 +177,7 @@ public static class KernelLatencyCapture
             options.Duration,
             stopwatch.Elapsed,
             attributedEvents,
-            session.EventsLost,
+            eventsLost,
             invalidEventCount,
             imageTracker.InvalidEventCount,
             eventLimitReached);

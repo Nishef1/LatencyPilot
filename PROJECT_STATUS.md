@@ -180,8 +180,8 @@ Implemented:
 
 Still required:
 
-- [ ] per-processor concentration view/ranking;
-- [ ] full top DPC/ISR module/driver contributor view rather than only the compact top-module summary;
+- [x] per-processor concentration view/ranking;
+- [x] bounded top DPC/ISR module contributor view rather than only the compact top-module summary;
 - [ ] inspectable raw/auditable aggregates beyond the compact summary;
 - [ ] repeated-baseline/noise/drift UX;
 - [ ] baseline quality verdict/reason;
@@ -236,6 +236,13 @@ Physical work in order:
 9. verify zero-mutation behavior: interrupt affinity/MSI/CPU Sets/power/network/device policy remain untouched;
 10. record machine/Windows/CPU/device/driver context with all validation evidence;
 11. validate representative topology, allocated resource and stored interrupt-configuration evidence from Phase 2.1.
+
+Local Windows 11 validation completed on 2026-09-12 against the installed self-contained
+Service and non-elevated Debug App: Service → ETW → IPC produced three clean five-second
+observations, including one after an intentional Service stop/start recovery. The UI showed
+processor concentration, bounded module contributors and 100% resolved attribution on this
+host. This is useful host evidence, but does not close Stage B: trusted external-observer
+comparison, explicit zero-mutation evidence and broader physical validation remain required.
 
 **Stage B closes only when:** a physical Windows 11 x64 machine produces usable read-only observations, attribution is plausible against trusted external evidence, inventory/resource evidence is coherent, and cleanup/privilege/zero-mutation boundaries hold under failure paths.
 

@@ -188,14 +188,17 @@ public sealed partial class MainWindow : Window
                 $"p99 {FormatLargestP99(processor)}"))
             .ToArray();
 
-        var cleanCapture = capture.EventsLost == 0 &&
+        var etwLossCountKnown = capture.EventsLost >= 0;
+        var cleanCapture = etwLossCountKnown &&
             capture.InvalidEventCount == 0 &&
             capture.InvalidImageEventCount == 0 &&
             !capture.EventLimitReached;
 
         KernelCaptureStatusText.Text = cleanCapture
             ? $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected."
-            : $"Observation completed with quality warnings: lost={capture.EventsLost}, invalidLatency={capture.InvalidEventCount}, invalidImages={capture.InvalidImageEventCount}, limitReached={capture.EventLimitReached}.";
+            : !etwLossCountKnown
+                ? $"Observation completed with quality warning: ETW loss count unavailable, invalidLatency={capture.InvalidEventCount}, invalidImages={capture.InvalidImageEventCount}, limitReached={capture.EventLimitReached}."
+                : $"Observation completed with quality warnings: lost={capture.EventsLost}, invalidLatency={capture.InvalidEventCount}, invalidImages={capture.InvalidImageEventCount}, limitReached={capture.EventLimitReached}.";
 
         ObservationQualityText.Text = cleanCapture
             ? "Capture integrity looks clean. This is still a single observation, not a validated baseline."

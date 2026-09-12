@@ -153,8 +153,8 @@ Native routine addresses must remain unresolved unless authoritative kernel imag
 - [x] DPC/ISR counts and p99/p99.9 summary;
 - [x] ETW loss/invalid/event-limit status;
 - [x] short capture is labeled observation rather than trustworthy baseline;
-- [ ] per-CPU latency/interrupt concentration view;
-- [ ] top DPC/ISR contributors after module attribution exists;
+- [x] per-CPU latency/interrupt concentration view;
+- [x] bounded top DPC/ISR contributors after module attribution exists;
 - [ ] raw/auditable metric inspection;
 - [ ] baseline quality verdict/reason;
 - [ ] clearly label configuration vs assigned resource vs runtime evidence.

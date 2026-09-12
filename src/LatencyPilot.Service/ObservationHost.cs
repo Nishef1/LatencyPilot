@@ -7,12 +7,24 @@ using LatencyPilot.Core.Observation;
 using LatencyPilot.Platform.Windows.Etw;
 using LatencyPilot.Protocol;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace LatencyPilot.Service;
 
 internal sealed class ObservationHost : BackgroundService
 {
     private static readonly TimeSpan PipeIoTimeout = TimeSpan.FromSeconds(3);
+    private static readonly Action<ILogger, Exception?> KernelLatencyCaptureFailed =
+        LoggerMessage.Define(
+            LogLevel.Error,
+            new EventId(1001, nameof(KernelLatencyCaptureFailed)),
+            "Kernel latency capture failed unexpectedly.");
+    private readonly ILogger<ObservationHost> logger;
+
+    public ObservationHost(ILogger<ObservationHost> logger)
+    {
+        this.logger = logger;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -81,7 +93,7 @@ internal sealed class ObservationHost : BackgroundService
             PipeAccessRights.FullControl,
             AccessControlType.Allow));
 
-    private static async Task HandleClientAsync(
+    private async Task HandleClientAsync(
         NamedPipeServerStream server,
         CancellationToken stoppingToken)
     {
@@ -120,7 +132,7 @@ internal sealed class ObservationHost : BackgroundService
         }
     }
 
-    private static ObservationResponse HandleRequest(
+    private ObservationResponse HandleRequest(
         ObservationRequest request,
         CancellationToken stoppingToken)
     {
@@ -159,7 +171,7 @@ internal sealed class ObservationHost : BackgroundService
         };
     }
 
-    private static ObservationResponse CaptureKernelLatency(
+    private ObservationResponse CaptureKernelLatency(
         ObservationRequest request,
         CancellationToken stoppingToken)
     {
@@ -196,6 +208,13 @@ internal sealed class ObservationHost : BackgroundService
         }
         catch (InvalidOperationException)
         {
+            return CaptureUnavailable(request.RequestId);
+        }
+        catch (Exception exception)
+        {
+            // A failed capture is an unavailable observation, not a reason to stop the
+            // long-lived service host and strand subsequent status/recovery requests.
+            KernelLatencyCaptureFailed(logger, exception);
             return CaptureUnavailable(request.RequestId);
         }
     }
