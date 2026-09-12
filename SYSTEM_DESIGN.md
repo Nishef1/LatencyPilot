@@ -1,7 +1,7 @@
 # LatencyPilot System Design
 
 Status: **Authoritative architecture baseline**  
-Last updated: 2026-09-12
+Last updated: 2026-09-13
 
 `ROADMAP.md` defines the final product and phase exit gates. `PROJECT_STATUS.md` records what is actually complete and the current execution ladder. ADRs record accepted architecture changes.
 
@@ -60,7 +60,8 @@ Unless an ADR explicitly changes it:
 - CPU Sets / processor-topology APIs;
 - Raw Input for host-side input-report timing;
 - SQLite for durable experiment/recovery state;
-- MSTest + Microsoft.Testing.Platform for the small critical suite.
+- MSTest + Microsoft.Testing.Platform for the small critical suite;
+- `Microsoft.Extensions.Logging` plus bounded local Serilog file sinks for operational diagnostics.
 
 Native C++ is not a baseline dependency. A native component requires profiling evidence and an ADR.
 
@@ -135,10 +136,12 @@ Benchmarking         → Core
 Protocol             → Core
 Platform.Windows     → Core
 Persistence          → Core
-Service              → Core + Protocol + Platform.Windows + Persistence
+Service              → Core + Benchmarking + Protocol + Platform.Windows + Persistence
 App                  → Core + Protocol + Platform.Windows
 CriticalTests        → only projects needed by the current critical scenarios
 ```
+
+The Service depends on `Benchmarking` only for shared deterministic evidence/statistics semantics such as the canonical percentile estimator. It must not duplicate a second statistical interpretation locally.
 
 No cyclic references. No speculative abstraction projects.
 
@@ -156,6 +159,8 @@ runtime target=win-x64
 
 The artifact publishes App and Service separately under one Windows x64 artifact. The app is unpackaged. MSIX/package identity is not introduced without a separate need/decision. `PublishSingleFile` is not enabled by default because it adds extraction and publish constraints without current value.
 
+Installer deployments place App and Service under the protected Program Files tree. Portable distributions may place the normal-user App in a user-controlled extraction directory, but an elevated `Install-Service.ps1` copies the privileged Service payload to `%ProgramFiles%\LatencyPilot\Service` before LocalSystem registration. A LocalSystem service must not execute from an ordinary user-writable portable extraction path.
+
 The UI should use WinUI controls and Windows 11 interaction/accessibility conventions, but should not add a second UI toolkit or speculative MVVM/DI/navigation framework.
 
 ## 8. Observation semantics
@@ -170,7 +175,7 @@ Examples:
 
 A configuration hint must not be named or displayed as proof of active interrupt delivery.
 
-Partial device metadata is representable. A device without a readable hardware key is not equivalent to “no interrupt configuration”; preserve availability/error provenance instead of failing the entire inventory or silently inventing null semantics.
+Partial device metadata is representable. A device without a readable hardware key is not equivalent to “no interrupt configuration”; preserve availability/error provenance instead of failing the entire inventory or silently inventing null semantics. Optional property/resource failures should degrade that device to partial evidence where safe; only an actual inventory-enumeration failure should normally abort the whole snapshot.
 
 A single short ETW capture is an **observation**, not a trustworthy baseline. Baseline terminology requires repeated windows plus quality/noise/drift handling.
 
@@ -192,6 +197,14 @@ When persistent mutation/recovery arrives, extend states to distinguish snapshot
 ## 10. Measurement contract
 
 Current comparison semantics include finite samples, deterministic percentile calculation, minimum sample policy, minimum relative change/noise threshold, metric direction, guardrails and explicit `Inconclusive` behavior.
+
+The canonical percentile estimator is owned by `LatencyPilot.Benchmarking.Statistics.Percentiles`. For sorted samples it uses linear interpolation at zero-based position:
+
+```text
+position = (sampleCount - 1) * percentile
+```
+
+between the surrounding samples. Service observation summaries and benchmark comparisons must use this same estimator; introducing a second nearest-rank or layer-specific percentile implementation is prohibited unless the methodology is intentionally versioned and documented.
 
 Phase 2 observation currently supports DPC/ISR count and duration distributions including p50/p95/p99/p99.9/max. Repeated baseline windows, empirical noise floor, drift detection and quality verdicts are still separate required work.
 
@@ -225,11 +238,14 @@ Phase 2 IPC is local, typed, versioned and observation-only. The current surface
 - no arbitrary shell/process execution;
 - no arbitrary registry path/value;
 - bounded request/response frames;
+- JSON framing rejects unknown members rather than silently accepting a wider contract;
 - bounded client/server I/O deadlines;
-- remote/network access denied by the pipe security boundary;
+- an active capture is cancelled when its client disconnects or violates the one-request connection contract;
+- remote/network identities are denied by the pipe security boundary;
+- Phase 2 pipe access is limited to interactive local identities plus the required Windows service identities rather than all authenticated users;
 - protocol/version mismatch fails closed.
 
-Phase 3 mutation must extend this contract with mutation-specific authorization rather than weakening the Phase 2 observation surface.
+The current Phase 2 pipe ACL is **not** mutation authorization. Phase 3 mutation must extend this contract with narrower mutation-specific authorization/allowlisting rather than reusing or weakening the observation surface.
 
 ## 13. Mutation interface contract
 
@@ -263,11 +279,24 @@ Before the first real mutation ships:
 
 No coverage-percentage target. No test-per-file policy. Permanent tests protect only high-blast-radius correctness/safety contracts. Temporary implementation/debug tests may be created and removed before finalization.
 
-If a later risk is more important, replace/merge a lower-value test. More than 10 permanent tests requires explicit owner approval plus ADR justification that remaining at 10 is more harmful.
+Prefer a small portfolio of:
+
+- deterministic domain/statistics contract tests;
+- protocol framing and privilege-surface safety contracts;
+- one or a few Windows integration invariants that exercise real read-only APIs;
+- data/scenario matrices consolidated inside a durable high-value test rather than one permanent test per branch.
+
+If a later parser/recovery/mutation risk is more important, replace/merge a lower-value test. More than 10 permanent tests requires explicit owner approval plus ADR justification that remaining at 10 is more harmful.
 
 Hardware validation and release checklists are separate and do not count toward the cap.
 
-## 16. Release and CI contract
+## 16. Diagnostics contract
+
+Operational logging is local, structured and bounded. App and Service write separate compact-JSON rolling files and correlate request/capture activity through the protocol `RequestId`. Logging is asynchronous so file I/O does not run in the ETW callback path.
+
+Do not emit one log event per raw DPC/ISR event, dump arbitrary registry/environment state, or treat operational logs as benchmark persistence. Logging failure must not prevent App/Service startup. See `docs/DIAGNOSTICS.md` for paths, retention, event IDs and privacy rules.
+
+## 17. Release and CI contract
 
 Main CI:
 
@@ -276,24 +305,30 @@ restore
 → Release build
 → permanent critical tests
 → self-contained win-x64 App publish
+→ WinUI resource + GUI smoke validation
 → self-contained win-x64 Service publish
-→ combined artifact upload
+→ setup + portable distribution validation
+→ artifact upload when appropriate
 ```
+
+The same publish/package validation runs for pull requests; only distribution upload/release publication may be skipped. This prevents packaging/service regressions from first appearing after merge.
 
 Warnings are errors. Fix root causes instead of broad suppression.
 
 CI proves build/package and selected invariants only; it does not prove hardware latency improvement or close physical-hardware validation items.
 
-## 17. Hardware-validation contract
+Release replacement is staged: build/test/package first, then replace a stale prerelease/tag only after new artifacts exist. Release runs are not cancelled mid-publication by a newer run.
+
+## 18. Hardware-validation contract
 
 Optimization claims and hardware-dependent observation gates require physical Windows 11 evidence with enough system/app/hardware context to interpret the result. GitHub-hosted Windows Server runners can validate API/build behavior but cannot close hardware-dependent performance claims.
 
-## 18. Mandatory step-back review
+## 19. Mandatory step-back review
 
 Before closing a subsection, re-review assumptions, API semantics, naming/evidence claims, partial-error behavior, resource lifetime, privilege impact, YAGNI, scaling behavior, test-cap compliance, documentation drift and current owner constraints. Fix contradictions before calling work complete.
 
 Every closed stage must also leave an explicit next-stage sequence in `PROJECT_STATUS.md`; a completion report without next steps is incomplete.
 
-## 19. Architecture change rule
+## 20. Architecture change rule
 
 A new ADR is required for changes to language/runtime/UI framework, privilege model, IPC authority, persistence/recovery semantics, benchmark verdict semantics, native-code introduction, permanent-test cap, packaging identity/model, or supported OS/architecture commitment.
