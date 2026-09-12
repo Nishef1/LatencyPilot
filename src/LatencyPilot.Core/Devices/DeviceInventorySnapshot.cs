@@ -12,6 +12,7 @@ public enum InterruptConfigurationReadStatus
 {
     Available,
     HardwareKeyUnavailable,
+    ReadFailed,
 }
 
 public sealed record InterruptConfigurationSnapshot(
@@ -51,6 +52,15 @@ public sealed record InterruptConfigurationSnapshot(
             null,
             null,
             null);
+
+    public static InterruptConfigurationSnapshot ReadFailed(uint? nativeErrorCode = null) =>
+        new(
+            InterruptConfigurationReadStatus.ReadFailed,
+            nativeErrorCode,
+            null,
+            null,
+            null,
+            null);
 }
 
 public enum InterruptResourceReadStatus
@@ -58,6 +68,7 @@ public enum InterruptResourceReadStatus
     Available,
     NoAllocatedConfiguration,
     ApiUnavailable,
+    ReadFailed,
 }
 
 public sealed record AllocatedInterruptResourceSnapshot(
@@ -81,6 +92,9 @@ public sealed record InterruptResourceSnapshot(
 
     public static InterruptResourceSnapshot ApiUnavailable(uint nativeStatusCode) =>
         new(InterruptResourceReadStatus.ApiUnavailable, nativeStatusCode, []);
+
+    public static InterruptResourceSnapshot ReadFailed(uint? nativeStatusCode = null) =>
+        new(InterruptResourceReadStatus.ReadFailed, nativeStatusCode, []);
 }
 
 public sealed record PnPDeviceSnapshot(
