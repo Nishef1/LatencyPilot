@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-12
+- **Last reviewed:** 2026-09-13
 - **Amends:** ADR 0001 service timing; mutation remains deferred to Phase 3
 
 ## Context
@@ -44,13 +45,23 @@ That would persistently broaden the user's ability to control ETW sessions syste
 - Windows Service hosting uses the supported .NET hosting integration.
 - IPC remains local and command-specific; no generic shell/registry/process primitive is permitted.
 - Phase 2 protocol commands are observation-only and explicitly allowlisted.
-- ETW sessions must use collision-resistant LatencyPilot-owned names and must be stopped/cleaned on cancellation, client disconnect, service stop or capture failure.
-- A stale LatencyPilot session must be detected and handled explicitly rather than silently attaching to an unrelated session.
-- Raw kernel addresses are diagnostic evidence; module attribution must be derived from authoritative image/module mapping rather than guessed names.
+- request/response frames are bounded and unknown JSON members fail closed;
+- the Named Pipe denies network identities and grants the Phase 2 observation surface only to interactive local identities plus the required Windows service identities, rather than all authenticated users;
+- the Phase 2 pipe ACL is **not** sufficient authorization for future mutation; Phase 3 must add mutation-specific authorization/allowlisting;
+- a client disconnect, unexpected extra client data, operation deadline, service stop or capture failure must cancel/stop the active observation rather than leave a detached privileged ETW capture running;
+- ETW sessions must use collision-resistant LatencyPilot-owned names and must be stopped/cleaned on cancellation, client disconnect, service stop or capture failure;
+- a stale LatencyPilot session must be detected and handled explicitly rather than silently attaching to an unrelated session;
+- raw kernel addresses are diagnostic evidence; module attribution must be derived from authoritative image/module mapping rather than guessed names;
+- App/Service operational diagnostics are structured and bounded; raw per-event ETW logging is prohibited in the capture hot path;
+- a LocalSystem service binary must execute from a protected machine-wide location. Portable registration copies the Service payload to `%ProgramFiles%\LatencyPilot\Service` before registration instead of executing SYSTEM code from a normal user-writable extraction directory.
 
 ## Testing impact
 
-This architecture change does not increase the repository's permanent-test cap. The existing suite remains at 9 permanent tests. The final tenth slot is reserved for a future high-blast-radius service/protocol/recovery invariant if it proves necessary. Implementation-specific service/ETW probes may be temporary and removed after validation.
+This architecture change does not increase the repository's permanent-test cap.
+
+The critical suite was consolidated on 2026-09-13 so high-blast-radius behavior is covered with fewer, broader contract tests rather than one test method per historical branch. The suite currently uses seven permanent test methods, including protocol framing fail-closed behavior and an explicit observation-only command-surface bound. The remaining capacity is not “reserved” for a specific feature; later parser/recovery/mutation risks may replace or merge lower-value tests while the repository remains at or below 10.
+
+Implementation-specific Service/ETW probes may be temporary and removed after validation. Physical Windows ETW validation remains separate from the permanent automated-test count.
 
 ## Consequences
 
@@ -59,11 +70,14 @@ This architecture change does not increase the repository's permanent-test cap. 
 - Keeps WinUI non-elevated.
 - Creates the privilege boundary before kernel ETW is implemented incorrectly in the UI process.
 - The service introduced for observation is reused for later mutation instead of creating duplicate privileged mechanisms.
+- Current observation IPC is narrower than a machine-wide authenticated-user surface and abandoned clients no longer intentionally own a full capture window.
+- Portable distribution no longer turns its extraction directory into the executable location for a LocalSystem binary.
 
 ### Costs
 
 - Service lifecycle/IPC work moves earlier in the roadmap.
 - Phase 2 packaging and clean-machine validation must account for the service executable even though mutation is disabled.
+- Portable kernel observation requires an elevated install/remove step for the protected Service copy.
 
 ## Phase boundary change
 
