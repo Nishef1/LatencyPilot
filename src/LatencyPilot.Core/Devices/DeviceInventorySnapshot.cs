@@ -8,7 +8,15 @@ public sealed record DriverMetadataSnapshot(
     public bool IsAvailable => Version is not null || Provider is not null || InfPath is not null;
 }
 
+public enum InterruptConfigurationReadStatus
+{
+    Available,
+    HardwareKeyUnavailable,
+}
+
 public sealed record InterruptConfigurationSnapshot(
+    InterruptConfigurationReadStatus ReadStatus,
+    uint? NativeErrorCode,
     uint? MsiSupported,
     uint? MessageNumberLimit,
     uint? DevicePolicy,
@@ -21,6 +29,28 @@ public sealed record InterruptConfigurationSnapshot(
         AssignmentSetOverrideMask is not null;
 
     public bool IsMsiConfiguredEnabled => MsiSupported == 1;
+
+    public static InterruptConfigurationSnapshot Available(
+        uint? msiSupported,
+        uint? messageNumberLimit,
+        uint? devicePolicy,
+        ulong? assignmentSetOverrideMask) =>
+        new(
+            InterruptConfigurationReadStatus.Available,
+            null,
+            msiSupported,
+            messageNumberLimit,
+            devicePolicy,
+            assignmentSetOverrideMask);
+
+    public static InterruptConfigurationSnapshot HardwareKeyUnavailable(uint nativeErrorCode) =>
+        new(
+            InterruptConfigurationReadStatus.HardwareKeyUnavailable,
+            nativeErrorCode,
+            null,
+            null,
+            null,
+            null);
 }
 
 public sealed record PnPDeviceSnapshot(
@@ -41,5 +71,6 @@ public sealed record DeviceInventorySnapshot(
 
     public int DevicesWithDriverMetadataCount => Devices.Count(static device => device.Driver.IsAvailable);
 
-    public int DevicesWithInterruptConfigurationCount => Devices.Count(static device => device.InterruptConfiguration.HasAnyConfiguration);
+    public int DevicesWithReadableInterruptConfigurationCount => Devices.Count(
+        static device => device.InterruptConfiguration.ReadStatus == InterruptConfigurationReadStatus.Available);
 }

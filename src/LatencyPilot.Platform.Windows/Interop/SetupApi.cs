@@ -75,9 +75,10 @@ internal static partial class SetupApi
         return new SafeDeviceInfoSetHandle(rawHandle);
     }
 
-    internal static RegistryKey OpenDeviceHardwareRegistryKey(
+    internal static RegistryKey? TryOpenDeviceHardwareRegistryKey(
         SafeDeviceInfoSetHandle deviceInfoSet,
-        ref SpDevInfoData deviceInfoData)
+        ref SpDevInfoData deviceInfoData,
+        out uint nativeErrorCode)
     {
         var rawHandle = SetupDiOpenDevRegKey(
             deviceInfoSet,
@@ -89,9 +90,11 @@ internal static partial class SetupApi
 
         if (rawHandle == InvalidHandleValue)
         {
-            throw new Win32Exception(Marshal.GetLastPInvokeError(), "Unable to open the device hardware registry key for read-only access.");
+            nativeErrorCode = unchecked((uint)Marshal.GetLastPInvokeError());
+            return null;
         }
 
+        nativeErrorCode = 0;
         var safeHandle = new SafeRegistryHandle(rawHandle, ownsHandle: true);
         try
         {

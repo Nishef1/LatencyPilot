@@ -65,21 +65,29 @@ public static class DeviceInventoryReader
         SafeDeviceInfoSetHandle deviceInfoSet,
         ref SpDevInfoData deviceInfo)
     {
-        using var hardwareKey = SetupApi.OpenDeviceHardwareRegistryKey(deviceInfoSet, ref deviceInfo);
-        using var interruptManagement = hardwareKey.OpenSubKey(InterruptManagementKey, writable: false);
-        if (interruptManagement is null)
+        var hardwareKey = SetupApi.TryOpenDeviceHardwareRegistryKey(deviceInfoSet, ref deviceInfo, out var nativeErrorCode);
+        if (hardwareKey is null)
         {
-            return new InterruptConfigurationSnapshot(null, null, null, null);
+            return InterruptConfigurationSnapshot.HardwareKeyUnavailable(nativeErrorCode);
         }
 
-        using var msi = interruptManagement.OpenSubKey(MsiPropertiesKey, writable: false);
-        using var affinity = interruptManagement.OpenSubKey(AffinityPolicyKey, writable: false);
+        using (hardwareKey)
+        using (var interruptManagement = hardwareKey.OpenSubKey(InterruptManagementKey, writable: false))
+        {
+            if (interruptManagement is null)
+            {
+                return InterruptConfigurationSnapshot.Available(null, null, null, null);
+            }
 
-        return new InterruptConfigurationSnapshot(
-            ReadDword(msi, "MSISupported"),
-            ReadDword(msi, "MessageNumberLimit"),
-            ReadDword(affinity, "DevicePolicy"),
-            ReadAffinityMask(affinity, "AssignmentSetOverride"));
+            using var msi = interruptManagement.OpenSubKey(MsiPropertiesKey, writable: false);
+            using var affinity = interruptManagement.OpenSubKey(AffinityPolicyKey, writable: false);
+
+            return InterruptConfigurationSnapshot.Available(
+                ReadDword(msi, "MSISupported"),
+                ReadDword(msi, "MessageNumberLimit"),
+                ReadDword(affinity, "DevicePolicy"),
+                ReadAffinityMask(affinity, "AssignmentSetOverride"));
+        }
     }
 
     private static uint? ReadDword(RegistryKey? key, string valueName)
