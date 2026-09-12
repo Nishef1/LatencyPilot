@@ -3,11 +3,33 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Application.Resources>
-        <SolidColorBrush x:Key="CanvasBrush" Color="#F6F7F9" />
-        <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="TextBrush" Color="#16181D" />
-        <SolidColorBrush x:Key="MutedTextBrush" Color="#666B75" />
-        <SolidColorBrush x:Key="BorderBrush" Color="#E2E5EA" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#176B87" />
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="CanvasBrush" Color="#F5F7FA" />
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFFFF" />
+                    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FFF0F3F7" />
+                    <SolidColorBrush x:Key="TextBrush" Color="#FF171A21" />
+                    <SolidColorBrush x:Key="MutedTextBrush" Color="#FF667080" />
+                    <SolidColorBrush x:Key="BorderBrush" Color="#FFDDE2E9" />
+                    <SolidColorBrush x:Key="AccentBrush" Color="#FF176B87" />
+                    <SolidColorBrush x:Key="SuccessBrush" Color="#FF137A5B" />
+                    <SolidColorBrush x:Key="WarningBrush" Color="#FF996515" />
+                    <SolidColorBrush x:Key="DangerBrush" Color="#FFB42318" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="CanvasBrush" Color="#FF0E1116" />
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="#FF151920" />
+                    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FF1B2028" />
+                    <SolidColorBrush x:Key="TextBrush" Color="#FFF2F4F7" />
+                    <SolidColorBrush x:Key="MutedTextBrush" Color="#FFAAB2BF" />
+                    <SolidColorBrush x:Key="BorderBrush" Color="#FF2B333E" />
+                    <SolidColorBrush x:Key="AccentBrush" Color="#FF4EA3C5" />
+                    <SolidColorBrush x:Key="SuccessBrush" Color="#FF44C79A" />
+                    <SolidColorBrush x:Key="WarningBrush" Color="#FFE5B567" />
+                    <SolidColorBrush x:Key="DangerBrush" Color="#FFF97066" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>
