@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LatencyPilot.Core/LatencyPilot.Core.csproj" />
+    <Project Path="src/LatencyPilot.Benchmarking/LatencyPilot.Benchmarking.csproj" />
+    <Project Path="src/LatencyPilot.Protocol/LatencyPilot.Protocol.csproj" />
+    <Project Path="src/LatencyPilot.Platform.Windows/LatencyPilot.Platform.Windows.csproj" />
+    <Project Path="src/LatencyPilot.Persistence/LatencyPilot.Persistence.csproj" />
+    <Project Path="src/LatencyPilot.Service/LatencyPilot.Service.csproj" />
+    <Project Path="src/LatencyPilot.App/LatencyPilot.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj" />
+  </Folder>
+</Solution>
