@@ -3,8 +3,34 @@ name: CI
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'eng/**'
+      - 'installer/**'
+      - 'scripts/**'
+      - 'LatencyPilot.slnx'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'NuGet.Config'
+      - '.editorconfig'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'eng/**'
+      - 'installer/**'
+      - 'scripts/**'
+      - 'LatencyPilot.slnx'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'NuGet.Config'
+      - '.editorconfig'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 permissions:
@@ -14,8 +40,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  NUGET_XMLDOC_MODE: skip
+
 jobs:
-  build-test-package:
+  validate-package:
     runs-on: windows-latest
     timeout-minutes: 25
 
@@ -28,6 +59,14 @@ jobs:
         with:
           dotnet-version: 10.0.401
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'global.json', 'NuGet.Config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
       - name: Restore
         run: dotnet restore LatencyPilot.slnx
 
@@ -38,28 +77,53 @@ jobs:
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release --no-build
 
       - name: Publish Windows x64 app payload
-        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/payload/App -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
+        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore --output artifacts/payload/App -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
 
       - name: UI window smoke check
         shell: pwsh
         run: |
+          $startupLog = Join-Path $env:LOCALAPPDATA 'LatencyPilot\startup-error.log'
+          Remove-Item -LiteralPath $startupLog -Force -ErrorAction SilentlyContinue
+
           $app = (Resolve-Path 'artifacts/payload/App/LatencyPilot.exe').Path
           $process = Start-Process -FilePath $app -WorkingDirectory (Split-Path $app -Parent) -PassThru
-          $windowFound = $false
+          $mainWindowFound = $false
           try {
             for ($attempt = 0; $attempt -lt 30; $attempt++) {
               Start-Sleep -Milliseconds 500
               $process.Refresh()
-              if ($process.HasExited) {
-                throw "LatencyPilot exited before showing a window. Exit code: $($process.ExitCode)."
+
+              if (Test-Path -LiteralPath $startupLog) {
+                $details = Get-Content -LiteralPath $startupLog -Raw -ErrorAction SilentlyContinue
+                throw "LatencyPilot reported a startup failure.`n$details"
               }
-              if ($process.MainWindowHandle -ne 0) {
-                $windowFound = $true
+
+              if ($process.HasExited) {
+                throw "LatencyPilot exited before showing its main window. Exit code: $($process.ExitCode)."
+              }
+
+              if ($process.MainWindowHandle -ne 0 -and $process.MainWindowTitle -eq 'LatencyPilot') {
+                $mainWindowFound = $true
                 break
               }
             }
-            if (-not $windowFound) {
-              throw 'LatencyPilot stayed alive but did not expose a top-level window within 15 seconds.'
+
+            if (-not $mainWindowFound) {
+              $process.Refresh()
+              throw "LatencyPilot did not expose the expected main window within 15 seconds. Observed title: '$($process.MainWindowTitle)'."
+            }
+
+            Start-Sleep -Seconds 3
+            $process.Refresh()
+            if ($process.HasExited) {
+              throw "LatencyPilot exited shortly after opening its main window. Exit code: $($process.ExitCode)."
+            }
+            if ($process.MainWindowTitle -ne 'LatencyPilot') {
+              throw "LatencyPilot main window was replaced by an unexpected window: '$($process.MainWindowTitle)'."
+            }
+            if (Test-Path -LiteralPath $startupLog) {
+              $details = Get-Content -LiteralPath $startupLog -Raw -ErrorAction SilentlyContinue
+              throw "LatencyPilot wrote a startup failure after opening.`n$details"
             }
           }
           finally {
@@ -69,9 +133,11 @@ jobs:
           }
 
       - name: Publish Windows x64 service payload
-        run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/payload/Service -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
+        if: github.event_name != 'pull_request'
+        run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore --output artifacts/payload/Service -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
 
       - name: Prepare shared payload
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $version = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
@@ -92,6 +158,7 @@ jobs:
           ) | Set-Content -LiteralPath artifacts/payload/BUILD_INFO.txt
 
       - name: Build setup EXE
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $version = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
@@ -115,6 +182,7 @@ jobs:
           "- SHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Build portable ZIP
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $version = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
@@ -135,6 +203,7 @@ jobs:
           "- SHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload Windows distributions
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: LatencyPilot-win-x64-distributions
