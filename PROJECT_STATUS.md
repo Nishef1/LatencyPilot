@@ -1,173 +1,121 @@
 # LatencyPilot Project Status
 
-This file is the live execution ledger for `ROADMAP.md`. It is intentionally explicit so work is not declared complete from memory or chat context.
+This file is the live execution ledger for `ROADMAP.md`. Work is not complete from memory or chat context; evidence is recorded here.
 
 Last updated: 2026-09-12
 
 ## Overall
 
-- Product completion: **Phases 0–1 closed; Phase 2 not started**
-- Current release target: **next milestone is Phase 2 read-only observation engine**
+- Product completion: **Phases 0–1 closed; Phase 2 in progress**
+- Current release target: **Phase 2 read-only observation engine**
 - Current mutation capability: **None by design**
-- Supported OS target: **Windows 11 x64**
-- Latest Phase 1 evidence run: **GitHub Actions `34704448960`**
-- Evidence commit: **`d44ec29a0b87df0a818a19c1d576230f07b80b0d`**
+- Supported target: **Windows 11 x64**
+- Current desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
+- Permanent automated tests: **9 / hard maximum 10**
+- Latest green CI after UI migration: **run `34708293765`**, commit `99ac3f6e82a6567b1ed188d5d7280980b9d5dc0f`
 
 ## Phase 0 — CLOSED
 
-Evidence on `main`:
-
-- `README.md`
-- `LICENSE`
-- `CLA.md`
-- `CONTRIBUTING.md`
-- `SECURITY.md`
-- `AGENTS.md`
-- `SYSTEM_DESIGN.md`
-- `docs/BENCHMARK_METHODOLOGY.md`
-- `.github/CODEOWNERS`
-- `.github/pull_request_template.md`
-- `.github/ISSUE_TEMPLATE/*`
-- `ROADMAP.md`
-- `PROJECT_STATUS.md`
-
-No Phase 0 blockers remain.
+Governance, licensing, contribution policy, security policy, architecture, benchmark methodology, roadmap/status tracking and GitHub templates are present on `main`.
 
 ## Phase 1 — CLOSED
 
-### 1.1 Toolchain and repository
+Phase 1 established the buildable solution, domain/comparison foundation, non-mutating app vertical slice and focused critical suite.
 
-- [x] .NET 10 SDK pinned at `10.0.401`
-- [x] `.slnx` solution present
-- [x] shared build settings present
-- [x] all seven architecture projects present
-- [x] one focused critical test project present
-- [x] Windows Release CI green
-- [x] self-contained WPF `win-x64` artifact produced by CI
+Historical note: Phase 1 originally closed with WPF. ADR 0002 later superseded the UI choice with WinUI 3. The historical WPF evidence remains valid as Phase 1 evidence and is not rewritten.
 
-Evidence: workflow run `34704448960` completed successfully on `main`.
+## Architecture change — WinUI 3 migration — COMPLETE
 
-### 1.2 Domain foundation
+Decision: `docs/adr/0002-winui3.md`.
 
-- [x] experiment lifecycle states
-- [x] legal transition guard
-- [x] metric direction contract
-- [x] measurement-series finite-value validation
-- [x] explicit comparison verdict model
+Implemented:
 
-Implemented under `LatencyPilot.Core`.
+- `LatencyPilot.App` migrated from WPF to WinUI 3;
+- Windows App SDK pinned to Stable `2.4.0`;
+- unpackaged deployment via `WindowsPackageType=None`;
+- Windows App SDK self-contained deployment enabled;
+- app pinned to `win-x64` because self-contained Windows App SDK requires a concrete supported architecture;
+- normal-user/non-elevated architecture unchanged;
+- no MVVM framework, DI container, second UI toolkit or MSIX identity added.
 
-### 1.3 Comparison foundation
+Evidence: GitHub Actions run `34708293765` passed Release build, all 9 permanent tests, self-contained `win-x64` publish and artifact upload.
 
-- [x] deterministic percentile implementation
-- [x] configurable minimum sample count
-- [x] configurable minimum relative-change/noise threshold
-- [x] target improvement/regression classification
-- [x] guardrail regression → `Tradeoff`
-- [x] insufficient data → `Inconclusive`
+Failure encountered and resolved: initial WinUI migration run `34708180338` failed because a self-contained Windows App SDK build was still architecture-agnostic. Root cause was fixed by setting `RuntimeIdentifier=win-x64`; no warning/error suppression was used.
 
-Implemented under `LatencyPilot.Benchmarking`.
-
-Important scope note: this is the Phase 1 comparison foundation only. Empirical baseline noise-floor estimation, drift detection, repeated A/B runs and richer uncertainty belong to Phase 2+ and are not falsely marked complete here.
-
-### 1.4 Read-only vertical slice
-
-- [x] WPF application project builds successfully
-- [x] normal non-elevated desktop application contract
-- [x] real OS architecture displayed
-- [x] real process architecture displayed
-- [x] real logical CPU count displayed
-- [x] explicit observation-only / tuning-unavailable state
-- [x] no fake optimization score or synthetic machine result
-
-### 1.5 Critical tests
-
-Active automated suite: **7 tests**. No coverage target and no per-file regression-test policy.
-
-- [x] invalid experiment transition
-- [x] insufficient samples
-- [x] no measurable difference
-- [x] clear improvement
-- [x] tradeoff from guardrail regression
-- [x] clear regression
-- [x] invalid/non-finite data
-
-All 7 passed in workflow run `34704448960`.
-
-### Phase 1 artifact evidence
-
-- Artifact: `LatencyPilot-win-x64`
-- GitHub artifact ID: `10300772684`
-- Size: `71,926,890` bytes (~68.6 MiB / 71.9 MB)
-- SHA-256: `688143e85f4feb6708ef1f991e3bf19129b4fb2e476a5f628023281861f6af50`
-- Produced from commit: `d44ec29a0b87df0a818a19c1d576230f07b80b0d`
-
-### Phase 1 failures encountered and resolved
-
-These are recorded so future work does not repeat them or confuse an earlier failed run with current status:
-
-1. Windows projects initially used an insufficient target-platform version while declaring Windows 11 support; fixed by targeting `net10.0-windows10.0.26100.0` with supported minimum `10.0.22000.0`.
-2. MSTest 4 removed the old `Assert.ThrowsException` API; critical tests use `Assert.ThrowsExactly`.
-3. .NET 10 requires native Microsoft.Testing.Platform opt-in for MTP `dotnet test`; `global.json` now explicitly selects `Microsoft.Testing.Platform`.
-4. analyzer `CA1822` caught a stateless instance method; the inventory reader was corrected instead of suppressing the warning.
-5. publish is allowed to restore/build its `win-x64` runtime-specific graph instead of relying on a non-RID `--no-build` output.
-
-No Phase 1 blockers remain.
-
-## Phase 2 — NOT STARTED
+## Phase 2 — IN PROGRESS
 
 Goal: trustworthy, strictly read-only Windows observation before any system mutation.
 
-### 2.1 Inventory — remaining
+### 2.1 Inventory — implemented/verified in CI
 
-- [ ] physical/logical CPU and SMT topology
-- [ ] PCI/PnP device inventory with stable identities
-- [ ] current interrupt policy and observable MSI/MSI-X state where supported
-- [ ] relevant driver/provider versions
+- [x] processor-group-aware package/core/logical processor topology implementation;
+- [x] stable present PnP device instance IDs through SetupAPI;
+- [x] driver provider/version/INF metadata through unified device properties;
+- [x] stored interrupt configuration read-only inspection (`MSISupported`, message limit, affinity policy/mask where present);
+- [x] interrupt-configuration availability provenance so an inaccessible hardware key is not silently treated as “no configuration”.
 
-### 2.2 ETW capture — remaining
+Evidence runs:
 
-- [ ] controlled ETW session lifecycle
-- [ ] DPC/ISR collection
-- [ ] per-CPU attribution
-- [ ] module/driver attribution
-- [ ] p50/p95/p99/p99.9/max distributions
-- [ ] cancellation and cleanup on failure
+- CPU topology: `34705285359`;
+- PnP inventory: `34705480141`;
+- driver metadata: `34705791564`;
+- interrupt configuration failure discovery: `34705881655`;
+- hardware-key partial-data fix: `34706052779`.
+
+### 2.1 Inventory — still required
+
+- [ ] physical Windows 11 validation of topology and representative GPU/xHCI/NIC inventory;
+- [ ] allocated IRQ/resource assignment from Configuration Manager;
+- [ ] distinguish line/message interrupt evidence where authoritative source data permits it.
+
+Important semantics: stored registry configuration is **not** active IRQ assignment and is **not** runtime DPC/ISR evidence.
+
+### 2.2 ETW — remaining
+
+- [ ] controlled ETW session lifecycle;
+- [ ] DPC/ISR capture;
+- [ ] per-CPU attribution;
+- [ ] module/driver attribution;
+- [ ] p50/p95/p99/p99.9/max distributions;
+- [ ] cancellation/cleanup on failure.
 
 ### 2.3 Baseline quality — remaining
 
-- [ ] repeated baseline windows
-- [ ] measured noise floor
-- [ ] drift detection
-- [ ] background/thermal-quality warnings where observable
-- [ ] invalid baseline blocks optimization
+- [ ] repeated baseline windows;
+- [ ] measured noise floor;
+- [ ] drift detection;
+- [ ] background/thermal quality warnings where observable;
+- [ ] invalid baseline blocks optimization.
 
 ### 2.4 UX — remaining
 
-- [ ] per-CPU latency/load view
-- [ ] top DPC/ISR contributors
-- [ ] raw metric inspection
-- [ ] baseline quality verdict with reason
+- [ ] per-CPU concentration view;
+- [ ] top DPC/ISR contributors;
+- [ ] raw metric inspection;
+- [ ] baseline quality verdict/reason;
+- [ ] evidence-level labels for configuration vs assigned resource vs runtime behavior.
 
-## Next action
+## Comparison-core correction discovered during step-back review
 
-Begin Phase 2 with the read-only observation vertical slice in this order:
+A prior comparator path returned `NoMeasurableDifference` before evaluating guardrails when the primary metric was inside its noise threshold. That could hide a collateral regression. It was corrected so a neutral primary plus materially regressed guardrail is `Regressed`.
 
-1. CPU topology + PnP/device inventory;
-2. controlled ETW DPC/ISR capture;
-3. normalized per-CPU/per-module evidence;
-4. baseline repetition/noise/drift logic;
-5. UI presentation of the real evidence.
+Evidence: commit `83aa8b18ee17e3c9476ed735741812fc0bedab82`, run `34705597798`.
 
-Do **not** add affinity/MSI mutation yet. Phase 3 owns the privileged mutation substrate and rollback journal.
+This justified one high-blast-radius permanent test; the suite now remains at 9/10.
 
-## Status update rule
+## Current next action
 
-When work changes this file:
+1. read allocated IRQ resources from Configuration Manager (`ALLOC_LOG_CONF`) while preserving partial/unavailable status;
+2. keep stored configuration, assigned resources and runtime behavior as separate models;
+3. then build controlled read-only ETW DPC/ISR capture;
+4. only after ETW attribution works, move to repeated baseline/noise/drift UX.
 
-1. mark only independently verifiable items complete;
-2. name failed or deferred items explicitly;
-3. never mark a whole phase closed while any required checkbox in `ROADMAP.md` remains open;
-4. hardware-dependent work is not complete based on a GitHub-hosted VM;
-5. a green build proves buildability, not latency improvement;
-6. keep the active automated test suite within the focused 5–10-test policy unless the owner explicitly approves expansion.
+No affinity/MSI mutation is allowed yet. Phase 3 owns privileged mutation, durable journal and rollback.
+
+## Hard test rule
+
+Permanent automated tests may not exceed **10**. Temporary implementation/debug tests may be created and removed. Exceeding 10 requires explicit owner approval plus an ADR explaining why staying within 10 creates greater risk.
+
+## Completion discipline
+
+Before closing a subsection, perform the mandatory step-back review from `AGENTS.md`: re-check API semantics, evidence naming, partial errors, resource lifetime, privilege boundaries, YAGNI, scaling behavior, test cap, docs drift and current owner constraints.
