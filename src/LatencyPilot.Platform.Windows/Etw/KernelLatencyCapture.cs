@@ -23,14 +23,12 @@ public static class KernelLatencyCapture
         var imageTracker = new KernelImageTracker();
         var invalidEventCount = 0;
         var eventLimitReached = false;
+        var eventLimitStopRequested = 0;
 
         using var session = new TraceEventSession(sessionName)
         {
             StopOnDispose = true,
         };
-
-        void StopProcessing() => session.Source.StopProcessing();
-        var stopProcessing = new Action(StopProcessing);
 
         void StopSession()
         {
@@ -41,6 +39,22 @@ public static class KernelLatencyCapture
         }
 
         var stopSession = new Action(StopSession);
+
+        void RequestEventLimitStop()
+        {
+            eventLimitReached = true;
+            if (Interlocked.Exchange(ref eventLimitStopRequested, 1) != 0)
+            {
+                return;
+            }
+
+            // TraceEventSession.Stop is documented as safe while Process() runs on
+            // another thread. Queue the stop so the parser thread can keep consuming
+            // the final kernel rundown instead of terminating the consumer early.
+            ThreadPool.QueueUserWorkItem(
+                static state => ((Action)state!).Invoke(),
+                stopSession);
+        }
 
         void Append(
             KernelLatencyEventKind kind,
@@ -61,8 +75,7 @@ public static class KernelLatencyCapture
 
             if (events.Count >= options.MaximumEvents)
             {
-                eventLimitReached = true;
-                stopProcessing();
+                RequestEventLimitStop();
                 return;
             }
 
@@ -74,6 +87,11 @@ public static class KernelLatencyCapture
                 routineAddress,
                 interruptVector,
                 messageNumber));
+
+            if (events.Count >= options.MaximumEvents)
+            {
+                RequestEventLimitStop();
+            }
         }
 
         session.Source.Kernel.PerfInfoDPC += data =>
