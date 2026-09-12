@@ -52,11 +52,11 @@ Name: "{autoprograms}\LatencyPilot"; Filename: "{app}\App\LatencyPilot.exe"; Wor
 Name: "{autodesktop}\LatencyPilot"; Filename: "{app}\App\LatencyPilot.exe"; WorkingDir: "{app}\App"; Tasks: desktopicon
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File \"{app}\Install-Service.ps1\""; StatusMsg: "Installing the read-only observation service..."; Flags: runhidden waituntilterminated
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Install-Service.ps1"""; StatusMsg: "Installing the read-only observation service..."; Flags: runhidden waituntilterminated
 Filename: "{app}\App\LatencyPilot.exe"; Description: "Launch LatencyPilot"; WorkingDir: "{app}\App"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File \"{app}\Uninstall-Service.ps1\""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveObservationService"
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Uninstall-Service.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveObservationService"
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;
