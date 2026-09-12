@@ -11,6 +11,7 @@ on:
       - 'scripts/**'
       - 'LatencyPilot.slnx'
       - 'Directory.Build.props'
+      - 'Directory.Build.targets'
       - 'Directory.Packages.props'
       - 'global.json'
       - 'NuGet.Config'
@@ -26,6 +27,7 @@ on:
       - 'scripts/**'
       - 'LatencyPilot.slnx'
       - 'Directory.Build.props'
+      - 'Directory.Build.targets'
       - 'Directory.Packages.props'
       - 'global.json'
       - 'NuGet.Config'
@@ -78,6 +80,19 @@ jobs:
 
       - name: Publish Windows x64 app payload
         run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore --output artifacts/payload/App -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
+
+      - name: Verify WinUI publish resources
+        shell: pwsh
+        run: |
+          $pri = 'artifacts/payload/App/LatencyPilot.pri'
+          if (-not (Test-Path -LiteralPath $pri)) {
+            throw 'LatencyPilot.pri is missing from the unpackaged WinUI publish output.'
+          }
+          $size = (Get-Item -LiteralPath $pri).Length
+          if ($size -le 0) {
+            throw 'LatencyPilot.pri is empty.'
+          }
+          "LatencyPilot.pri present: $size bytes" >> $env:GITHUB_STEP_SUMMARY
 
       - name: UI window smoke check
         shell: pwsh
