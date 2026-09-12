@@ -4,6 +4,11 @@
     <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.2.6" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="../LatencyPilot.Core/LatencyPilot.Core.csproj" />
   </ItemGroup>

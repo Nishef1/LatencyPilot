@@ -1,0 +1,114 @@
+using System.Diagnostics;
+using LatencyPilot.Core.Observation;
+using Microsoft.Diagnostics.Tracing.Parsers;
+using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
+using Microsoft.Diagnostics.Tracing.Session;
+
+namespace LatencyPilot.Platform.Windows.Etw;
+
+public static class KernelLatencyCapture
+{
+    public static KernelLatencyCaptureResult Capture(
+        KernelLatencyCaptureOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var sessionName = $"LatencyPilot-Kernel-{Environment.ProcessId}-{Guid.NewGuid():N}";
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        var stopwatch = Stopwatch.StartNew();
+        var events = new List<KernelLatencyEvent>(Math.Min(options.MaximumEvents, 32_768));
+        var invalidEventCount = 0;
+        var eventLimitReached = false;
+
+        using var session = new TraceEventSession(sessionName)
+        {
+            StopOnDispose = true,
+        };
+
+        void StopProcessing() => session.Source.StopProcessing();
+
+        void Append(
+            KernelLatencyEventKind kind,
+            int processorNumber,
+            double timeStampRelativeMilliseconds,
+            double elapsedMilliseconds,
+            ulong routineAddress,
+            int? interruptVector,
+            int? messageNumber)
+        {
+            var durationMicroseconds = elapsedMilliseconds * 1_000d;
+            if (!double.IsFinite(durationMicroseconds) || durationMicroseconds < 0 ||
+                !double.IsFinite(timeStampRelativeMilliseconds) || timeStampRelativeMilliseconds < 0)
+            {
+                invalidEventCount++;
+                return;
+            }
+
+            if (events.Count >= options.MaximumEvents)
+            {
+                eventLimitReached = true;
+                StopProcessing();
+                return;
+            }
+
+            events.Add(new KernelLatencyEvent(
+                kind,
+                processorNumber,
+                timeStampRelativeMilliseconds,
+                durationMicroseconds,
+                routineAddress,
+                interruptVector,
+                messageNumber));
+        }
+
+        session.Source.Kernel.PerfInfoDPC += data =>
+            Append(
+                KernelLatencyEventKind.Dpc,
+                data.ProcessorNumber,
+                data.TimeStampRelativeMSec,
+                data.ElapsedTimeMSec,
+                data.Routine,
+                null,
+                null);
+
+        session.Source.Kernel.PerfInfoISR += data =>
+            Append(
+                KernelLatencyEventKind.Isr,
+                data.ProcessorNumber,
+                data.TimeStampRelativeMSec,
+                data.ElapsedTimeMSec,
+                data.Routine,
+                data.Vector,
+                data.Message);
+
+        var keywords =
+            KernelTraceEventParser.Keywords.DeferedProcedureCalls |
+            KernelTraceEventParser.Keywords.Interrupt;
+
+        session.EnableKernelProvider(keywords);
+
+        using var cancellationRegistration = cancellationToken.Register(StopProcessing);
+        using var timeoutTimer = new Timer(
+            static state => ((Action)state!).Invoke(),
+            StopProcessing,
+            options.Duration,
+            Timeout.InfiniteTimeSpan);
+
+        session.Source.Process();
+        stopwatch.Stop();
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return new KernelLatencyCaptureResult(
+            startedAtUtc,
+            options.Duration,
+            stopwatch.Elapsed,
+            events.ToArray(),
+            session.EventsLost,
+            invalidEventCount,
+            eventLimitReached);
+    }
+}
