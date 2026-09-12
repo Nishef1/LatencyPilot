@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Serilog;
 
 namespace LatencyPilot.App;
 
@@ -8,6 +9,8 @@ internal static partial class StartupFailureReporter
 
     public static void Report(string message, Exception exception)
     {
+        Log.Fatal(exception, "{StartupFailureMessage}", message);
+
         var details = $"{message}{Environment.NewLine}{Environment.NewLine}{exception}";
 
         try
