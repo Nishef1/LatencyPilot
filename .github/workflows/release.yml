@@ -83,10 +83,10 @@ jobs:
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release --no-build
 
       - name: Publish Windows x64 app payload
-        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/payload/App -p:DebugType=None -p:DebugSymbols=false -p:SatelliteResourceLanguages=en-US -p:PublishReadyToRun=false
+        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained false --output artifacts/payload/App -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
 
       - name: Publish Windows x64 service payload
-        run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/payload/Service -p:DebugType=None -p:DebugSymbols=false -p:SatelliteResourceLanguages=en-US -p:PublishReadyToRun=false
+        run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained false --output artifacts/payload/Service -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
 
       - name: Prepare installer payload
         shell: pwsh
@@ -104,6 +104,7 @@ jobs:
             "workflow=${{ github.workflow }}"
             "workflow_run=${{ github.run_id }}"
             "ref=${{ github.ref }}"
+            "deployment=framework-dependent-online-installer"
           ) | Set-Content -LiteralPath artifacts/payload/BUILD_INFO.txt
 
       - name: Build setup EXE
@@ -124,10 +125,11 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $setup).Hash.ToLowerInvariant()
           Set-Content -LiteralPath "$setup.sha256" -Value "$hash  $(Split-Path $setup -Leaf)" -NoNewline
           $sizeMiB = [Math]::Round((Get-Item -LiteralPath $setup).Length / 1MB, 2)
-          "### Release installer" >> $env:GITHUB_STEP_SUMMARY
+          "### Release online installer" >> $env:GITHUB_STEP_SUMMARY
           "- Version: $version" >> $env:GITHUB_STEP_SUMMARY
           "- Size: $sizeMiB MiB" >> $env:GITHUB_STEP_SUMMARY
           "- SHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
+          "- Shared prerequisites: .NET 10 Runtime + Windows App Runtime 2.4 x64" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload release build artifact
         uses: actions/upload-artifact@v4
