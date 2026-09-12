@@ -1,15 +1,8 @@
-<Window x:Class="LatencyPilot.App.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="LatencyPilot"
-        Width="980"
-        Height="740"
-        MinWidth="820"
-        MinHeight="620"
-        Background="{StaticResource CanvasBrush}"
-        FontFamily="Segoe UI"
-        Foreground="{StaticResource TextBrush}">
-    <Grid Margin="32">
+<Window
+    x:Class="LatencyPilot.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="{StaticResource CanvasBrush}" Padding="32">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="20" />
@@ -19,7 +12,7 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0">
-            <TextBlock Text="LatencyPilot" FontSize="30" FontWeight="SemiBold" />
+            <TextBlock Text="LatencyPilot" FontSize="30" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
             <TextBlock Margin="0,6,0,0"
                        Foreground="{StaticResource MutedTextBrush}"
                        FontSize="14"
@@ -40,7 +33,7 @@
                 </Grid.ColumnDefinitions>
                 <Border Width="10" Height="10" CornerRadius="5" Background="{StaticResource AccentBrush}" VerticalAlignment="Top" Margin="0,5,0,0" />
                 <StackPanel Grid.Column="2">
-                    <TextBlock Text="Phase 2 — read-only observation" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Phase 2 — read-only observation" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource TextBrush}" />
                     <TextBlock Margin="0,5,0,0"
                                Foreground="{StaticResource MutedTextBrush}"
                                TextWrapping="Wrap"
@@ -64,37 +57,37 @@
                     BorderThickness="1">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <TextBlock Text="System inventory" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="System inventory" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
                         <TextBlock Margin="0,18,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Operating system" />
-                        <TextBlock x:Name="OperatingSystemText" TextWrapping="Wrap" />
+                        <TextBlock x:Name="OperatingSystemText" TextWrapping="Wrap" Foreground="{StaticResource TextBrush}" />
                         <TextBlock Margin="0,14,0,4" Foreground="{StaticResource MutedTextBrush}" Text="OS / process architecture" />
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock x:Name="OsArchitectureText" />
+                            <TextBlock x:Name="OsArchitectureText" Foreground="{StaticResource TextBrush}" />
                             <TextBlock Text=" / " Foreground="{StaticResource MutedTextBrush}" />
-                            <TextBlock x:Name="ProcessArchitectureText" />
+                            <TextBlock x:Name="ProcessArchitectureText" Foreground="{StaticResource TextBrush}" />
                         </StackPanel>
                         <TextBlock Margin="0,14,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Processors available to this process" />
-                        <TextBlock x:Name="ProcessAvailableProcessorCountText" />
+                        <TextBlock x:Name="ProcessAvailableProcessorCountText" Foreground="{StaticResource TextBrush}" />
                         <TextBlock Margin="0,14,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Hardware logical processors" />
-                        <TextBlock x:Name="HardwareLogicalProcessorCountText" />
+                        <TextBlock x:Name="HardwareLogicalProcessorCountText" Foreground="{StaticResource TextBrush}" />
                         <TextBlock Margin="0,14,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Physical cores / SMT cores" />
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock x:Name="PhysicalCoreCountText" />
+                            <TextBlock x:Name="PhysicalCoreCountText" Foreground="{StaticResource TextBrush}" />
                             <TextBlock Text=" / " Foreground="{StaticResource MutedTextBrush}" />
-                            <TextBlock x:Name="SmtCoreCountText" />
+                            <TextBlock x:Name="SmtCoreCountText" Foreground="{StaticResource TextBrush}" />
                         </StackPanel>
                         <TextBlock Margin="0,14,0,4" Foreground="{StaticResource MutedTextBrush}" Text="CPU packages / processor groups" />
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock x:Name="PackageCountText" />
+                            <TextBlock x:Name="PackageCountText" Foreground="{StaticResource TextBrush}" />
                             <TextBlock Text=" / " Foreground="{StaticResource MutedTextBrush}" />
-                            <TextBlock x:Name="ProcessorGroupCountText" />
+                            <TextBlock x:Name="ProcessorGroupCountText" Foreground="{StaticResource TextBrush}" />
                         </StackPanel>
                         <TextBlock x:Name="TopologyStatusText"
                                    Margin="0,10,0,0"
                                    Foreground="{StaticResource MutedTextBrush}"
                                    TextWrapping="Wrap" />
                         <TextBlock Margin="0,18,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Present Plug and Play devices" />
-                        <TextBlock x:Name="PresentDeviceCountText" />
+                        <TextBlock x:Name="PresentDeviceCountText" Foreground="{StaticResource TextBrush}" />
                         <TextBlock x:Name="DeviceInventoryStatusText"
                                    Margin="0,10,0,0"
                                    Foreground="{StaticResource MutedTextBrush}"
@@ -110,14 +103,14 @@
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1">
                 <StackPanel>
-                    <TextBlock Text="Observation roadmap" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Margin="0,18,0,0" Text="Interrupt and driver metadata" FontWeight="SemiBold" />
-                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="Read current interrupt policy, MSI/MSI-X observability and driver/provider versions without mutation." />
-                    <TextBlock Margin="0,18,0,0" Text="Read-only ETW baseline" FontWeight="SemiBold" />
+                    <TextBlock Text="Observation roadmap" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                    <TextBlock Margin="0,18,0,0" Text="Interrupt and driver metadata" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="Read configuration hints and driver/provider metadata without claiming they prove active interrupt delivery." />
+                    <TextBlock Margin="0,18,0,0" Text="Read-only ETW baseline" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
                     <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="DPC/ISR capture, per-CPU distribution and driver attribution." />
-                    <TextBlock Margin="0,18,0,0" Text="Baseline quality" FontWeight="SemiBold" />
+                    <TextBlock Margin="0,18,0,0" Text="Baseline quality" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
                     <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="Repeated windows, noise-floor estimation and drift detection before any optimization is unlocked." />
-                    <TextBlock Margin="0,18,0,0" Text="Mutation boundary remains closed" FontWeight="SemiBold" />
+                    <TextBlock Margin="0,18,0,0" Text="Mutation boundary remains closed" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
                     <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="No affinity/MSI changes until the journal, privileged service, verify and rollback path exists." />
                 </StackPanel>
             </Border>

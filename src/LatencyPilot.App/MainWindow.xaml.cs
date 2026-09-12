@@ -1,20 +1,22 @@
-using System.Windows;
+using System.Globalization;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
+using Microsoft.UI.Xaml;
 
 namespace LatencyPilot.App;
 
-public partial class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     public MainWindow()
     {
         InitializeComponent();
+        Title = "LatencyPilot";
 
         var system = SystemInventoryReader.Capture();
         OperatingSystemText.Text = system.OperatingSystem;
         OsArchitectureText.Text = system.OsArchitecture;
         ProcessArchitectureText.Text = system.ProcessArchitecture;
-        ProcessAvailableProcessorCountText.Text = system.ProcessAvailableProcessorCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        ProcessAvailableProcessorCountText.Text = system.ProcessAvailableProcessorCount.ToString(CultureInfo.InvariantCulture);
 
         CaptureProcessorTopology();
         CaptureDeviceInventory();
@@ -25,11 +27,11 @@ public partial class MainWindow : Window
         try
         {
             var topology = ProcessorTopologyReader.Capture();
-            HardwareLogicalProcessorCountText.Text = topology.LogicalProcessorCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            PhysicalCoreCountText.Text = topology.PhysicalCoreCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            PackageCountText.Text = topology.Packages.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            ProcessorGroupCountText.Text = topology.ProcessorGroupCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            SmtCoreCountText.Text = topology.SmtCoreCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            HardwareLogicalProcessorCountText.Text = topology.LogicalProcessorCount.ToString(CultureInfo.InvariantCulture);
+            PhysicalCoreCountText.Text = topology.PhysicalCoreCount.ToString(CultureInfo.InvariantCulture);
+            PackageCountText.Text = topology.Packages.Count.ToString(CultureInfo.InvariantCulture);
+            ProcessorGroupCountText.Text = topology.ProcessorGroupCount.ToString(CultureInfo.InvariantCulture);
+            SmtCoreCountText.Text = topology.SmtCoreCount.ToString(CultureInfo.InvariantCulture);
             TopologyStatusText.Text = "Captured from GetLogicalProcessorInformationEx. No system settings were changed.";
         }
         catch (Exception exception)
@@ -48,7 +50,7 @@ public partial class MainWindow : Window
         try
         {
             var inventory = DeviceInventoryReader.CapturePresentDevices();
-            PresentDeviceCountText.Text = inventory.PresentDeviceCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            PresentDeviceCountText.Text = inventory.PresentDeviceCount.ToString(CultureInfo.InvariantCulture);
             DeviceInventoryStatusText.Text = "Present devices captured through SetupAPI using stable device instance IDs.";
         }
         catch (Exception exception)
