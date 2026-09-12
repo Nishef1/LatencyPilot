@@ -67,8 +67,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Restore
-        run: dotnet restore LatencyPilot.slnx
+      - name: Restore win-x64 graph
+        run: dotnet restore LatencyPilot.slnx --runtime win-x64
 
       - name: Build Release
         run: dotnet build LatencyPilot.slnx --configuration Release --no-restore
