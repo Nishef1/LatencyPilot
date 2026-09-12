@@ -6,11 +6,13 @@ using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
 using Microsoft.UI.Xaml;
+using Serilog;
 
 namespace LatencyPilot.App;
 
 public sealed partial class MainWindow : Window
 {
+    private static readonly Serilog.ILogger Logger = Log.ForContext<MainWindow>();
     private bool _observationServiceReady;
     private bool _initialLoadStarted;
 
@@ -54,6 +56,10 @@ public sealed partial class MainWindow : Window
             var status = await ObservationServiceClient.GetStatusAsync();
             if (!status.PrivilegedObservationHostImplemented || status.MutationAvailable)
             {
+                Logger.Warning(
+                    "Observation service contract mismatch. HostImplemented={HostImplemented}, MutationAvailable={MutationAvailable}.",
+                    status.PrivilegedObservationHostImplemented,
+                    status.MutationAvailable);
                 _observationServiceReady = false;
                 ServiceStatusBadgeText.Text = "Contract mismatch";
                 ServiceStatusText.Text = "Service contract mismatch. Read-only kernel capture is disabled.";
@@ -65,21 +71,30 @@ public sealed partial class MainWindow : Window
             ServiceStatusBadgeText.Text = "Service connected";
             ServiceStatusText.Text = "Connected to the privileged read-only observation service. Mutation remains disabled.";
         }
-        catch (TimeoutException)
+        catch (TimeoutException exception)
         {
+            Logger.Warning(exception, "Observation service status request timed out.");
             SetServiceUnavailable("Observation service is not running or did not respond in time.");
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            Logger.Warning(exception, "Observation service status connection failed.");
             SetServiceUnavailable("Observation service connection failed.");
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException exception)
         {
+            Logger.Error(exception, "Observation service returned an invalid status response.");
             SetServiceUnavailable("Observation service returned an invalid protocol response.");
         }
         catch (InvalidOperationException exception)
         {
+            Logger.Warning(exception, "Observation service rejected the status request.");
             SetServiceUnavailable(exception.Message);
+        }
+        catch (Exception exception)
+        {
+            Logger.Error(exception, "Unexpected failure while refreshing observation service status.");
+            SetServiceUnavailable("Unexpected service error. See the diagnostics log for details.");
         }
         finally
         {
@@ -111,27 +126,37 @@ public sealed partial class MainWindow : Window
 
             RenderCapture(capture);
         }
-        catch (TimeoutException)
+        catch (TimeoutException exception)
         {
+            Logger.Warning(exception, "Kernel observation timed out.");
             ClearCaptureMetrics();
             SetServiceUnavailable("Observation service is not running or did not respond in time.");
             KernelCaptureStatusText.Text = "Kernel observation did not start or exceeded its deadline.";
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            Logger.Warning(exception, "Kernel observation pipe connection failed.");
             ClearCaptureMetrics();
             SetServiceUnavailable("Observation service connection failed.");
             KernelCaptureStatusText.Text = "Kernel observation did not complete.";
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException exception)
         {
+            Logger.Error(exception, "Kernel observation returned an invalid protocol response.");
             ClearCaptureMetrics();
             KernelCaptureStatusText.Text = "Observation service returned an invalid protocol response.";
         }
         catch (InvalidOperationException exception)
         {
+            Logger.Warning(exception, "Kernel observation request was rejected.");
             ClearCaptureMetrics();
             KernelCaptureStatusText.Text = exception.Message;
+        }
+        catch (Exception exception)
+        {
+            Logger.Error(exception, "Unexpected kernel observation failure.");
+            ClearCaptureMetrics();
+            KernelCaptureStatusText.Text = "Unexpected observation error. See the diagnostics log for details.";
         }
         finally
         {
@@ -272,11 +297,12 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            Logger.Error(exception, "System inventory capture failed.");
             OperatingSystemText.Text = "Unavailable";
             OsArchitectureText.Text = "—";
             ProcessArchitectureText.Text = "—";
             ProcessAvailableProcessorCountText.Text = "—";
-            TopologyStatusText.Text = $"System inventory failed: {exception.Message}";
+            TopologyStatusText.Text = "System inventory failed. See the diagnostics log for details.";
         }
     }
 
@@ -294,12 +320,13 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            Logger.Error(exception, "Processor topology capture failed.");
             HardwareLogicalProcessorCountText.Text = "Unavailable";
             PhysicalCoreCountText.Text = "Unavailable";
             PackageCountText.Text = "Unavailable";
             ProcessorGroupCountText.Text = "Unavailable";
             SmtCoreCountText.Text = "Unavailable";
-            TopologyStatusText.Text = $"Topology capture failed: {exception.Message}";
+            TopologyStatusText.Text = "Topology capture failed. See the diagnostics log for details.";
         }
     }
 
@@ -313,8 +340,9 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            Logger.Error(exception, "Device inventory capture failed.");
             PresentDeviceCountText.Text = "Unavailable";
-            DeviceInventoryStatusText.Text = $"Device inventory failed: {exception.Message}";
+            DeviceInventoryStatusText.Text = "Device inventory failed. See the diagnostics log for details.";
         }
     }
 }
