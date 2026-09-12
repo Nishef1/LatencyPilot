@@ -18,7 +18,6 @@ internal sealed class KernelImageTracker
         }
 
         _images.Add(new ImageLifetime(
-            image.ProcessId,
             image.BaseAddress,
             image.EndAddressExclusive,
             image.Path,
@@ -38,7 +37,6 @@ internal sealed class KernelImageTracker
         {
             var candidate = _images[index];
             if (candidate.UnloadedAtRelativeMilliseconds is null &&
-                candidate.ProcessId == image.ProcessId &&
                 candidate.BaseAddress == image.BaseAddress &&
                 string.Equals(candidate.Path, image.Path, StringComparison.OrdinalIgnoreCase))
             {
@@ -49,7 +47,6 @@ internal sealed class KernelImageTracker
 
         // An unload without a matching runtime load means the image predates this observation.
         _images.Add(new ImageLifetime(
-            image.ProcessId,
             image.BaseAddress,
             image.EndAddressExclusive,
             image.Path,
@@ -57,7 +54,7 @@ internal sealed class KernelImageTracker
             data.TimeStampRelativeMSec));
     }
 
-    public void ObserveRundownEnd(ImageLoadTraceData data)
+    public void ObserveRundownStop(ImageLoadTraceData data)
     {
         if (!TryReadImage(data, out var image))
         {
@@ -66,10 +63,9 @@ internal sealed class KernelImageTracker
         }
 
         // Runtime ImageLoad already gives the stronger start time. Avoid duplicating it when
-        // the same still-loaded image appears in the kernel DCEnd rundown at session stop.
+        // the same still-loaded image appears in the kernel DCStop rundown at session stop.
         if (_images.Any(candidate =>
                 candidate.UnloadedAtRelativeMilliseconds is null &&
-                candidate.ProcessId == image.ProcessId &&
                 candidate.BaseAddress == image.BaseAddress &&
                 string.Equals(candidate.Path, image.Path, StringComparison.OrdinalIgnoreCase)))
         {
@@ -77,7 +73,6 @@ internal sealed class KernelImageTracker
         }
 
         _images.Add(new ImageLifetime(
-            image.ProcessId,
             image.BaseAddress,
             image.EndAddressExclusive,
             image.Path,
@@ -129,24 +124,10 @@ internal sealed class KernelImageTracker
     private static bool TryReadImage(ImageLoadTraceData data, out ImageDescriptor image)
     {
         var baseAddress = (ulong)data.ImageBase;
-        if (baseAddress == 0)
-        {
-            baseAddress = (ulong)data.BaseAddress;
-        }
-
-        var size = (ulong)data.ImageSize;
-        if (size == 0 && data.ModuleSize > 0)
-        {
-            size = (ulong)data.ModuleSize;
-        }
-
+        var size = data.ImageSize;
         var path = data.FileName;
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            path = data.ImageFileName;
-        }
 
-        if (baseAddress == 0 || size == 0 || string.IsNullOrWhiteSpace(path))
+        if (baseAddress == 0 || size <= 0 || string.IsNullOrWhiteSpace(path))
         {
             image = default;
             return false;
@@ -155,7 +136,7 @@ internal sealed class KernelImageTracker
         ulong endAddressExclusive;
         try
         {
-            endAddressExclusive = checked(baseAddress + size);
+            endAddressExclusive = checked(baseAddress + (ulong)size);
         }
         catch (OverflowException)
         {
@@ -164,7 +145,6 @@ internal sealed class KernelImageTracker
         }
 
         image = new ImageDescriptor(
-            data.ProcessId,
             baseAddress,
             endAddressExclusive,
             path.Trim());
@@ -175,21 +155,17 @@ internal sealed class KernelImageTracker
         double.IsFinite(value) && value >= 0;
 
     private readonly record struct ImageDescriptor(
-        int ProcessId,
         ulong BaseAddress,
         ulong EndAddressExclusive,
         string Path);
 
     private sealed class ImageLifetime(
-        int processId,
         ulong baseAddress,
         ulong endAddressExclusive,
         string path,
         double loadedAtRelativeMilliseconds,
         double? unloadedAtRelativeMilliseconds)
     {
-        public int ProcessId { get; } = processId;
-
         public ulong BaseAddress { get; } = baseAddress;
 
         public ulong EndAddressExclusive { get; } = endAddressExclusive;

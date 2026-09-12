@@ -34,7 +34,7 @@ public static class KernelLatencyCapture
 
         void StopSession()
         {
-            // Kernel DCEnd rundown is emitted as part of session stop. Stopping the
+            // Kernel DCStop rundown is emitted as part of session stop. Stopping the
             // session, rather than only stopping the consumer, lets already-loaded
             // image mappings reach the parser before Process() returns.
             session.Stop(noThrow: true);
@@ -98,7 +98,7 @@ public static class KernelLatencyCapture
 
         session.Source.Kernel.ImageLoad += imageTracker.ObserveLoad;
         session.Source.Kernel.ImageUnload += imageTracker.ObserveUnload;
-        session.Source.Kernel.ImageDCEnd += imageTracker.ObserveRundownEnd;
+        session.Source.Kernel.ImageDCStop += imageTracker.ObserveRundownStop;
 
         var keywords =
             KernelTraceEventParser.Keywords.DeferedProcedureCalls |
