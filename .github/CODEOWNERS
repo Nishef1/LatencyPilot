@@ -1,0 +1,12 @@
+# LatencyPilot ownership
+* @Nishef1
+
+# Safety-critical architecture and benchmark contracts
+/LICENSE @Nishef1
+/CLA.md @Nishef1
+/AGENTS.md @Nishef1
+/SYSTEM_DESIGN.md @Nishef1
+/docs/BENCHMARK_METHODOLOGY.md @Nishef1
+/src/LatencyPilot.Service/ @Nishef1
+/src/LatencyPilot.Platform.Windows/ @Nishef1
+/src/LatencyPilot.Benchmarking/ @Nishef1
