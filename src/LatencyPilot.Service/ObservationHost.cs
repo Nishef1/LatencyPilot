@@ -201,11 +201,8 @@ internal sealed class ObservationHost : BackgroundService
 
         try
         {
-            var bytesRead = await server.ReadAsync(probe, cancellationToken).ConfigureAwait(false);
-            if (bytesRead == 0 || bytesRead > 0)
-            {
-                operationCancellation.Cancel();
-            }
+            _ = await server.ReadAsync(probe, cancellationToken).ConfigureAwait(false);
+            operationCancellation.Cancel();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
