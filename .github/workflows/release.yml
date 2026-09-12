@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - RELEASE_VERSION
+      - RELEASE_REVISION
     tags:
       - 'v*.*.*'
   workflow_dispatch:
@@ -85,6 +86,34 @@ jobs:
       - name: Publish Windows x64 app payload
         run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/payload/App -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
 
+      - name: UI window smoke check
+        shell: pwsh
+        run: |
+          $app = (Resolve-Path 'artifacts/payload/App/LatencyPilot.exe').Path
+          $process = Start-Process -FilePath $app -WorkingDirectory (Split-Path $app -Parent) -PassThru
+          $windowFound = $false
+          try {
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              $process.Refresh()
+              if ($process.HasExited) {
+                throw "LatencyPilot exited before showing a window. Exit code: $($process.ExitCode)."
+              }
+              if ($process.MainWindowHandle -ne 0) {
+                $windowFound = $true
+                break
+              }
+            }
+            if (-not $windowFound) {
+              throw 'LatencyPilot stayed alive but did not expose a top-level window within 15 seconds.'
+            }
+          }
+          finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+
       - name: Publish Windows x64 service payload
         run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/payload/Service -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
 
@@ -138,7 +167,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path artifacts/portable | Out-Null
           $portableDir = "artifacts/portable/LatencyPilot-$version-win-x64-portable"
           New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-          Copy-Item -Path artifacts/payload/* -Destination $portableDir -Recurse -Force
+          Copy-Item -Path artifacts/payload/App/* -Destination $portableDir -Recurse -Force
+          Copy-Item -Path artifacts/payload/Service -Destination "$portableDir/Service" -Recurse -Force
+          Get-ChildItem -LiteralPath artifacts/payload -File | Copy-Item -Destination $portableDir -Force
           $portable = "$portableDir.zip"
           Compress-Archive -Path $portableDir -DestinationPath $portable -CompressionLevel Optimal -Force
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $portable).Hash.ToLowerInvariant()
@@ -161,7 +192,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Create GitHub prerelease
+      - name: Create or refresh GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
@@ -174,11 +205,20 @@ jobs:
           $portableChecksum = "$portable.sha256"
 
           if ('${{ github.ref_type }}' -ne 'tag') {
-            git tag $tag $env:GITHUB_SHA
-            if ($LASTEXITCODE -ne 0) { throw "Failed to create release tag $tag." }
-            git push origin $tag
+            git tag -f $tag $env:GITHUB_SHA
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create/update release tag $tag." }
+            git push --force origin "refs/tags/$tag"
             if ($LASTEXITCODE -ne 0) { throw "Failed to push release tag $tag." }
           }
 
-          gh release create $tag $setup $setupChecksum $portable $portableChecksum --title "LatencyPilot $version" --prerelease --generate-notes --verify-tag
-          if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub prerelease $tag." }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $setup $setupChecksum $portable $portableChecksum --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Failed to refresh GitHub prerelease assets for $tag." }
+            gh release edit $tag --title "LatencyPilot $version" --prerelease
+            if ($LASTEXITCODE -ne 0) { throw "Failed to refresh GitHub prerelease metadata for $tag." }
+          }
+          else {
+            gh release create $tag $setup $setupChecksum $portable $portableChecksum --title "LatencyPilot $version" --prerelease --generate-notes --verify-tag
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub prerelease $tag." }
+          }
