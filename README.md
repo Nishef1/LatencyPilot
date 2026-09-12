@@ -2,18 +2,18 @@
 
 **Evidence-driven latency optimization for Windows 11.**
 
-LatencyPilot is a Windows 11 performance-analysis and tuning tool built around a simple rule:
+LatencyPilot is a Windows 11 performance-analysis and tuning tool built around one rule:
 
 > **Measure → Experiment → Verify → Compare → Keep or Revert**
 
-It is not a registry-tweak pack, debloater, or "one-click FPS booster." LatencyPilot is intended to measure the effect of low-level changes on the actual machine, quantify improvements and regressions, and preserve enough state to safely revert each experiment.
+It is not a registry-tweak pack, debloater, or one-click FPS booster. The product is intended to measure the effect of low-level changes on the actual machine, expose improvements and regressions, and preserve enough state to safely revert each supported experiment.
 
 > [!IMPORTANT]
-> LatencyPilot is in **pre-alpha**. There is no stable release yet. Do not treat repository code, screenshots, plans, or benchmark methodology as a production-ready optimization recommendation.
+> LatencyPilot is in **pre-alpha**. Current Phase 1 builds are observation-only foundations. They do not apply interrupt-affinity, MSI, registry, power, network, or other tuning changes.
 
 ## Why LatencyPilot
 
-Windows exposes powerful mechanisms for interrupt affinity, MSI/MSI-X, CPU topology, ETW tracing, USB, networking, and scheduling, but tuning them manually is difficult and hardware-specific. A change that helps one machine can be neutral or harmful on another.
+Windows exposes powerful mechanisms for interrupt affinity, MSI/MSI-X, CPU topology, ETW tracing, USB, networking, and scheduling, but manual tuning is difficult and hardware-specific. A change that helps one machine can be neutral or harmful on another.
 
 LatencyPilot is designed to answer questions such as:
 
@@ -24,152 +24,149 @@ LatencyPilot is designed to answer questions such as:
 - Is an apparent improvement larger than the machine's normal measurement noise?
 - Can every applied change be verified and reverted safely?
 
-## Core principles
+## Product contract
 
-1. **No tweak without evidence.** A change is not recommended because it is popular on forums or appears in a tweak pack.
-2. **One variable at a time.** Experiments must isolate a change before combination testing is considered.
-3. **Tail latency matters.** p95, p99, p99.9, max, variability, and sample counts matter more than averages alone.
-4. **Measure collateral effects.** A GPU improvement is not automatically a system improvement if input, network, audio, stability, or power behavior regresses.
-5. **Know the noise floor.** Baseline-to-baseline variance must be measured before interpreting small deltas.
-6. **Rollback first.** Snapshot, validation, verification, crash recovery, and revert are part of the feature—not cleanup work.
+1. **No tweak without evidence.** Popular forum advice is not evidence.
+2. **One variable at a time.** Combination testing comes only after isolated effects are understood.
+3. **Tail latency matters.** p95/p99/p99.9/max and variability matter more than averages alone.
+4. **Measure collateral effects.** A target-subsystem win may still be a system-wide trade-off.
+5. **Know the noise floor.** Small deltas inside baseline variability are not improvements.
+6. **Rollback first.** Snapshot, journaling, verification, recovery, and revert are part of the feature.
 7. **No universal magic settings.** Hardware topology, drivers, firmware, workloads, and Windows builds differ.
-8. **Raw results remain visible.** A single score must never hide the underlying measurements or trade-offs.
+8. **Raw evidence stays visible.** A composite score must never hide the underlying measurements.
 
-## Planned V0.1 scope
+## Roadmap and current status
 
-The first usable milestone is deliberately narrow:
+[`ROADMAP.md`](ROADMAP.md) is the authoritative definition of what **100% / 1.0** means and what must be complete before each phase can close.
+
+[`PROJECT_STATUS.md`](PROJECT_STATUS.md) is the live execution ledger. A phase is not complete because code merely exists; build-dependent items require CI evidence and hardware-dependent items require physical-machine evidence.
+
+Current state:
+
+- Phase 0 — governance/architecture: **closed**
+- Phase 1 — buildable foundation + trustworthy comparison core: **in progress**
+- System mutation capability: **none by design**
+
+The major path to 1.0 is:
 
 ```text
-System inventory
-    ↓
-CPU topology
-    ↓
-Device / interrupt inventory
-    ↓
-ETW baseline capture
-    ↓
-DPC / ISR analysis
-    ↓
-GPU interrupt-affinity candidates
-    ↓
-One-at-a-time experiments
-    ↓
-Repeated measurements
-    ↓
-Statistical comparison
-    ↓
-KEEP / REVERT / INCONCLUSIVE
-    ↓
-History + full rollback
+Foundation / comparison core
+        ↓
+Read-only ETW baseline + attribution
+        ↓
+Safe mutation platform + GPU affinity
+        ↓
+USB/xHCI + input analysis
+        ↓
+NIC/RSS optimization
+        ↓
+Cross-subsystem bounded Auto mode
+        ↓
+Production hardening / 1.0
 ```
-
-USB/xHCI, NIC/RSS, audio, storage, and additional tuning domains are planned only after this path is reliable end-to-end.
 
 ## Benchmark philosophy
 
-Every experiment should retain both the target metrics and system-wide guardrails. Depending on the subsystem, a report may include:
+Every real experiment must retain both target metrics and system-wide guardrails. Depending on the subsystem, evidence may include:
 
-- DPC/ISR duration distributions and per-CPU load
-- driver/module attribution
-- p50 / p90 / p95 / p99 / p99.9 / max
-- sample count, dispersion, and outliers
-- baseline noise floor
-- bootstrap confidence intervals
-- CPU-core imbalance
-- frame-time and PresentMon metrics
-- Raw Input report interval/jitter
-- USB ETW events
-- NDIS/RSS/network guardrails
-- audio/stability guardrails where measurable
+- DPC/ISR duration distributions and per-CPU load;
+- driver/module attribution;
+- p50 / p95 / p99 / p99.9 / max;
+- sample count and dispersion;
+- baseline noise/drift;
+- frame-time and PresentMon metrics;
+- Raw Input report interval/jitter;
+- USB ETW or NDIS/RSS data;
+- audio/stability guardrails where measurable.
 
-Results are expected to distinguish **confirmed improvement**, **confirmed regression**, **trade-off**, **no measurable difference**, and **inconclusive** rather than forcing every run into a single score.
+Results distinguish **Improved**, **Regressed**, **Tradeoff**, **NoMeasurableDifference**, and **Inconclusive** rather than forcing every run into a single score.
 
-See [`docs/BENCHMARK_METHODOLOGY.md`](docs/BENCHMARK_METHODOLOGY.md) for the benchmark contract.
+See [`docs/BENCHMARK_METHODOLOGY.md`](docs/BENCHMARK_METHODOLOGY.md).
 
 ## Architecture
 
-Planned stack:
+Frozen baseline:
 
 - **Language:** C# 14
 - **Runtime:** .NET 10 LTS
 - **Desktop UI:** WPF
-- **Privileged operations:** Windows Service
-- **IPC:** Named Pipes with explicit command contracts
+- **Privileged operations:** narrowly scoped Windows Service when mutation begins
+- **IPC:** versioned Named Pipes
 - **Tracing:** ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`
-- **Graphics telemetry:** PresentMon integration
-- **Windows integration:** SetupAPI, Configuration Manager, CPU Sets, Raw Input, registry/device policy APIs
-- **Persistence:** SQLite
+- **Graphics telemetry:** PresentMon where applicable
+- **Windows integration:** SetupAPI, Configuration Manager, CPU Sets, Raw Input, documented device-policy APIs
+- **Persistence:** SQLite when durable experiment state is introduced
 - **Tests:** MSTest + Microsoft.Testing.Platform
 - **Release target:** Windows 11 x64, self-contained
 
-The desktop application must not run permanently elevated. Privileged mutations belong in a narrowly scoped service with explicit validation, authorization, journaling, and recovery boundaries.
+The desktop application remains non-elevated during normal operation. Privileged mutations must cross a narrow service boundary with explicit validation, journaling, verification and recovery.
 
-See [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN.md) for the authoritative architecture and [`AGENTS.md`](AGENTS.md) for implementation rules that apply to both humans and coding agents.
-
-## Safety model
-
-A tunable feature is incomplete until it supports the full lifecycle:
-
-```text
-Detect applicability
-    ↓
-Snapshot original state
-    ↓
-Validate candidate
-    ↓
-Apply
-    ↓
-Verify actual applied state
-    ↓
-Benchmark
-    ↓
-Keep or revert
-```
-
-If LatencyPilot, its service, the benchmark workload, or Windows terminates unexpectedly, the next startup must identify incomplete experiments and recover deterministically.
-
-Low-level Windows tuning can cause instability, degraded performance, networking problems, device failures, or boot/recovery issues. LatencyPilot will therefore prefer documented Windows mechanisms and conservative defaults over undocumented tweak folklore.
+See [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN.md) and [`AGENTS.md`](AGENTS.md).
 
 ## Repository layout
 
-The planned repository structure is documented in [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN.md). Major boundaries are expected to include:
-
 ```text
 src/
-  LatencyPilot.Core
-  LatencyPilot.Benchmarking
-  LatencyPilot.Protocol
-  LatencyPilot.Platform.Windows
-  LatencyPilot.Persistence
-  LatencyPilot.Service
-  LatencyPilot.App
+  LatencyPilot.Core/
+  LatencyPilot.Benchmarking/
+  LatencyPilot.Protocol/
+  LatencyPilot.Platform.Windows/
+  LatencyPilot.Persistence/
+  LatencyPilot.Service/
+  LatencyPilot.App/
 
 tests/
-  unit, integration, fixture/golden, Windows, UI, and hardware test projects
+  LatencyPilot.CriticalTests/
 
-perf/
-  microbenchmarks
+docs/
+  benchmark and architecture decisions
 
-test-assets/
-  deterministic ETW / PresentMon / topology fixtures
+.github/
+  CI and contribution templates
 ```
+
+The automated test suite is intentionally small: normally **5–10 high-value critical tests total**. The project does not pursue coverage percentages or a regression test for every implementation detail. Hardware validation is separate from automated CI tests.
 
 ## Building
 
-The project is designed so contributors do not need to rely on a maintainer's local toolchain. CI will restore a pinned .NET 10 SDK and build/test on GitHub-hosted Windows runners.
+The SDK is pinned in `global.json`. Contributors may build locally with that .NET 10 SDK, but local .NET installation is not required just to consume CI artifacts.
 
-Local development will eventually use the SDK pinned in `global.json`. Release artifacts will be self-contained so end users do not need to install the .NET runtime separately.
+GitHub Actions builds on Windows, runs the focused critical suite, and publishes a self-contained Windows x64 artifact.
+
+Typical local commands, if the SDK is installed:
+
+```powershell
+dotnet restore LatencyPilot.slnx
+dotnet build LatencyPilot.slnx -c Release
+dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj -c Release
+dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj -c Release -r win-x64 --self-contained true
+```
+
+## Safety model
+
+A system-changing feature is incomplete until it supports:
+
+```text
+Detect applicability
+→ Snapshot original state
+→ Validate candidate
+→ Journal pending experiment
+→ Apply
+→ Verify actual state
+→ Benchmark
+→ Classify
+→ Keep or Revert
+→ Verify final state
+→ Close journal
+```
+
+If LatencyPilot, its service, a workload, or Windows terminates unexpectedly, recovery must not silently assume success.
 
 ## Contributing
 
-Issues and upstream contributions are welcome under the rules in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Issues and upstream contributions are welcome under [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CLA.md`](CLA.md).
 
-Important points:
-
-- Open an issue for bugs, benchmark anomalies, unsafe behavior, or proposed tuning domains.
-- Changes must preserve the measurement-first and rollback-first architecture.
-- Every new mutation requires applicability checks, snapshot/apply/verify/revert behavior, benchmark coverage, and failure-path tests.
-- By submitting a contribution, you agree to the contribution terms in [`CLA.md`](CLA.md).
+Changes must preserve the measurement-first and rollback-first architecture. New tests are expected only for high-blast-radius safety/correctness behavior under the focused-test policy in `AGENTS.md`.
 
 ## License
 
@@ -177,13 +174,13 @@ Important points:
 
 The source is provided for personal, non-commercial use and for contributing improvements back to this repository. Commercial use, redistribution, mirrors, standalone derivative distributions, sublicensing, or selling the software or substantial portions of it are not permitted without separate written permission.
 
-Because this repository is public on GitHub, GitHub's Terms of Service may allow platform-level viewing and forking within GitHub. Such platform rights do **not** grant a broader right to commercially use, redistribute, publish mirrors, or independently distribute modified versions of LatencyPilot.
+Because this repository is public on GitHub, GitHub's Terms of Service may allow platform-level viewing and forking within GitHub. Those platform rights do not grant broader commercial-use or redistribution rights.
 
 See [`LICENSE`](LICENSE) for the complete terms.
 
 ## Security
 
-Please do not publicly disclose vulnerabilities that could enable privilege escalation, unsafe device-policy mutation, arbitrary service commands, or recovery bypass. Follow [`SECURITY.md`](SECURITY.md).
+Do not publicly disclose vulnerabilities that could enable privilege escalation, unsafe device-policy mutation, arbitrary service commands, or recovery bypass. Follow [`SECURITY.md`](SECURITY.md).
 
 ---
 
