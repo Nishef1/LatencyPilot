@@ -49,9 +49,18 @@ jobs:
           $version = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
           Copy-Item scripts/Install-Service.ps1 artifacts/LatencyPilot-win-x64/Install-Service.ps1
           Copy-Item scripts/Uninstall-Service.ps1 artifacts/LatencyPilot-win-x64/Uninstall-Service.ps1
+          Copy-Item docs/PHYSICAL_VALIDATION.md artifacts/LatencyPilot-win-x64/PHYSICAL_VALIDATION.md
           Copy-Item README.md artifacts/LatencyPilot-win-x64/README.md
           Copy-Item LICENSE artifacts/LatencyPilot-win-x64/LICENSE
           Set-Content -LiteralPath artifacts/LatencyPilot-win-x64/VERSION.txt -Value $version -NoNewline
+
+          @(
+            "version=$version"
+            "commit=$env:GITHUB_SHA"
+            "workflow=${{ github.workflow }}"
+            "workflow_run=${{ github.run_id }}"
+            "ref=${{ github.ref }}"
+          ) | Set-Content -LiteralPath artifacts/LatencyPilot-win-x64/BUILD_INFO.txt
 
       - name: Upload Windows x64 artifact
         uses: actions/upload-artifact@v4

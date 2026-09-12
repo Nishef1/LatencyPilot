@@ -2,6 +2,9 @@ name: Release
 
 on:
   push:
+    branches: [main]
+    paths:
+      - RELEASE_VERSION
     tags:
       - 'v*.*.*'
   workflow_dispatch:
@@ -13,6 +16,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -40,12 +47,18 @@ jobs:
             }
             $version = '${{ inputs.version }}'
           }
-          else {
+          elseif ('${{ github.ref_type }}' -eq 'tag') {
             $tag = '${{ github.ref_name }}'
             if ($tag -notmatch '^v([0-9]+)\.([0-9]+)\.([0-9]+)$') {
               throw 'Release tag must use vMAJOR.MINOR.PATCH, for example v0.0.0.'
             }
             $version = $tag.Substring(1)
+          }
+          else {
+            if ('${{ github.ref }}' -ne 'refs/heads/main') {
+              throw 'Release requests are accepted only from main.'
+            }
+            $version = (Get-Content -LiteralPath RELEASE_VERSION -Raw).Trim()
           }
 
           if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
@@ -81,9 +94,18 @@ jobs:
           $version = '${{ steps.version.outputs.version }}'
           Copy-Item scripts/Install-Service.ps1 artifacts/release/Install-Service.ps1
           Copy-Item scripts/Uninstall-Service.ps1 artifacts/release/Uninstall-Service.ps1
+          Copy-Item docs/PHYSICAL_VALIDATION.md artifacts/release/PHYSICAL_VALIDATION.md
           Copy-Item README.md artifacts/release/README.md
           Copy-Item LICENSE artifacts/release/LICENSE
           Set-Content -LiteralPath artifacts/release/VERSION.txt -Value $version -NoNewline
+
+          @(
+            "version=$version"
+            "commit=$env:GITHUB_SHA"
+            "workflow=${{ github.workflow }}"
+            "workflow_run=${{ github.run_id }}"
+            "ref=${{ github.ref }}"
+          ) | Set-Content -LiteralPath artifacts/release/BUILD_INFO.txt
 
           $archive = "artifacts/LatencyPilot-$version-win-x64.zip"
           Compress-Archive -Path artifacts/release/* -DestinationPath $archive -CompressionLevel Optimal
@@ -111,9 +133,19 @@ jobs:
           $archive = "artifacts/LatencyPilot-$version-win-x64.zip"
           $checksum = "$archive.sha256"
 
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+          if ('${{ github.ref_type }}' -ne 'tag') {
             git tag $tag $env:GITHUB_SHA
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to create release tag $tag."
+            }
+
             git push origin $tag
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to push release tag $tag."
+            }
           }
 
           gh release create $tag $archive $checksum --title "LatencyPilot $version" --prerelease --generate-notes --verify-tag
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create GitHub prerelease $tag."
+          }

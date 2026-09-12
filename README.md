@@ -9,7 +9,7 @@ LatencyPilot is a Windows 11 performance-analysis and tuning tool built around o
 It is not a registry-tweak pack, debloater, or one-click FPS booster. The product is intended to measure the effect of low-level changes on the actual machine, expose improvements and regressions, and preserve enough state to safely revert each supported experiment.
 
 > [!IMPORTANT]
-> LatencyPilot is in **pre-alpha**. Phase 2 is currently building the trustworthy read-only observation engine. System mutation remains disabled by design.
+> LatencyPilot is in **pre-alpha**. Current product version: **0.0.0**. Phase 2 is building the trustworthy read-only observation engine. System mutation remains disabled by design.
 
 ## Why LatencyPilot
 
@@ -35,17 +35,42 @@ Windows exposes powerful interrupt, CPU-topology, ETW, USB, networking and sched
 
 ## Current state
 
+- Version — **0.0.0 pre-alpha**
 - Phase 0 — governance/architecture: **closed**
 - Phase 1 — buildable foundation + comparison core: **closed**
 - Phase 2 — read-only observation engine: **in progress**
+- Stage A — authoritative DPC/ISR module attribution: **closed in CI**
+- Stage B — physical Windows 11 validation: **current**
 - System mutation capability: **none by design**
 - Permanent tests: **9 / hard maximum 10**
 
-Phase 2 currently contains CPU topology, PnP stable identities, driver metadata, stored interrupt configuration, allocated IRQ/resource inspection, a privileged read-only Windows Service, typed local Named Pipe IPC, and DPC/ISR ETW observation with per-processor aggregation plus p50/p95/p99/p99.9/max summaries.
+Phase 2 currently contains CPU topology, PnP stable identities, driver metadata, stored interrupt configuration, allocated IRQ/resource inspection, a privileged read-only Windows Service, typed local Named Pipe IPC, DPC/ISR ETW observation with per-processor aggregation, p50/p95/p99/p99.9/max summaries, and authoritative routine-address attribution against kernel image ranges. Already-loaded images are recovered through kernel image rundown at session stop. Ambiguous or missing mappings remain explicitly unresolved instead of being guessed.
 
-The major Phase 2 work still open is authoritative DPC/ISR module attribution, physical Windows 11 validation, repeated baseline/noise/drift quality analysis, and the final evidence UX. A short single capture is intentionally called an **observation**, not a trustworthy baseline.
+The major Phase 2 work still open is physical Windows 11 validation, repeated baseline/noise/drift quality analysis, and the final evidence UX. A short single capture is intentionally called an **observation**, not a trustworthy baseline.
 
-See [`ROADMAP.md`](ROADMAP.md) for the 100% definition and phase transitions, and [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the detailed current execution ladder.
+See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the live execution ladder, and [`docs/PHYSICAL_VALIDATION.md`](docs/PHYSICAL_VALIDATION.md) for Stage B.
+
+## Pre-alpha releases
+
+Release versions use exactly three numeric components: `MAJOR.MINOR.PATCH`. `Directory.Build.props` is the product-version source of truth and `RELEASE_VERSION` is the explicit release request. A release is rejected if those values disagree.
+
+The Windows x64 prerelease bundle contains:
+
+```text
+App/
+Service/
+Install-Service.ps1
+Uninstall-Service.ps1
+PHYSICAL_VALIDATION.md
+VERSION.txt
+BUILD_INFO.txt
+README.md
+LICENSE
+```
+
+`BUILD_INFO.txt` identifies the exact source commit and workflow run. Published release ZIPs also include a SHA-256 checksum file.
+
+The App runs as a normal user. Only service installation/removal requires elevation. The extracted release directory must remain in place while the service is installed.
 
 ## Architecture
 
@@ -56,7 +81,7 @@ Current baseline:
 - **Desktop UI:** WinUI 3
 - **Windows UI/runtime:** Windows App SDK 2.4 Stable
 - **Distribution:** unpackaged, self-contained Windows 11 x64
-- **Privileged boundary:** narrow Windows Service already used for Phase 2 read-only kernel ETW observation; Phase 3 later extends it for validated/recoverable mutation
+- **Privileged boundary:** narrow Windows Service used for Phase 2 read-only kernel ETW observation; Phase 3 later extends it only after recovery/journaling safety exists
 - **IPC:** typed/versioned local Named Pipes
 - **Tracing:** ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`
 - **Graphics telemetry:** PresentMon where applicable
@@ -80,7 +105,7 @@ stored interrupt configuration
 
 For example, a registry `MSISupported` value is not presented as proof that MSI/MSI-X is actively delivering interrupts at runtime. Naming and UI claims must match what the underlying Windows source actually proves.
 
-Likewise, a raw DPC/ISR routine address is not presented as a driver name unless authoritative kernel image mapping resolves it. Already-loaded native modules require the appropriate image rundown/CAPTURE_STATE evidence rather than future ImageLoad events alone.
+Likewise, a raw DPC/ISR routine address is not presented as a driver name unless authoritative kernel image mapping resolves it. The current observation engine tracks image load/unload lifetime, consumes stop-time image rundown for modules that predate the capture, rejects invalid ranges, and leaves overlapping/missing mappings unresolved.
 
 ## Benchmark philosophy
 
@@ -115,6 +140,7 @@ tests/
 
 docs/
   BENCHMARK_METHODOLOGY.md
+  PHYSICAL_VALIDATION.md
   adr/
 ```
 

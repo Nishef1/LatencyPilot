@@ -7,14 +7,17 @@ Last updated: 2026-09-12
 ## Overall
 
 - Product completion: **Phases 0–1 closed; Phase 2 in progress**
-- Current release target: **Phase 2 read-only observation engine**
+- Current product version: **0.0.0 pre-alpha**
+- Current execution stage: **Stage B — physical Windows 11 observation validation**
+- Current release target: **v0.0.0 GitHub prerelease for physical validation**
 - Current mutation capability: **None by design**
 - Supported target: **Windows 11 x64**
 - Current desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
 - Privileged boundary: **Windows Service exists for read-only kernel observation; mutation commands do not exist**
 - Permanent automated tests: **9 / hard maximum 10**
-- Latest green CI: **run `34710672075`**, commit `afa9951946bd576c4f2f149cf9f76b40be8cc0dc`
-- Latest green CI result: Release build + 9/9 permanent tests + App publish + Service publish + combined artifact upload all succeeded.
+- Latest Stage A green CI: **run `34713147459`**, commit `c58cd5fa9c15debb4541a7e49d550a950a14dc2d`
+- Latest Stage A artifact: **`LatencyPilot-win-x64`**, artifact `10304225886`, SHA-256 `52cf154a29e4f524f29d402d33f723cb3dbd9b17299c34edb774226f58016dd3`
+- Latest Stage A CI result: **Release build 0 warnings / 0 errors + 9/9 permanent tests + App publish + Service publish + physical-validation artifact upload all succeeded.**
 
 ## Phase 0 — CLOSED
 
@@ -50,7 +53,7 @@ Implemented:
 
 - Windows Service hosts privileged kernel observation while WinUI remains non-elevated;
 - local Named Pipe transport;
-- versioned typed protocol;
+- versioned typed protocol; attribution expansion moved the observation contract to protocol v2;
 - allowlisted Phase 2 commands only: service status and kernel-latency observation;
 - generic command-name/shell/registry/process primitives do not exist;
 - service mutation capability remains `false`;
@@ -62,7 +65,8 @@ Evidence:
 - service/IPC foundation: run `34709891520`;
 - UI → Service → ETW vertical slice: run `34710054683`;
 - bounded client/server IPC deadlines: run `34710502158`;
-- observation naming + p99.9 UI: run `34710672075`.
+- observation naming + p99.9 UI: run `34710672075`;
+- authoritative module-attribution Stage A closure: run `34713147459`.
 
 ## Phase 2 — IN PROGRESS
 
@@ -105,17 +109,21 @@ Implemented and CI-verified:
 - [x] event-loss / invalid-event / event-limit provenance;
 - [x] cancellation, timeout and cleanup paths;
 - [x] privileged Service execution with non-elevated WinUI client;
-- [x] bounded typed IPC response rather than transferring the raw event set to the UI.
+- [x] bounded typed IPC response rather than transferring the raw event set to the UI;
+- [x] native module/driver attribution for DPC/ISR routine addresses using authoritative image ranges;
+- [x] stop-time kernel image rundown for modules already loaded before the observation;
+- [x] image lifetime handling for load/unload and address-range reuse;
+- [x] ambiguous, invalid or missing image mappings remain unresolved rather than guessed;
+- [x] bounded module contributor and unresolved-routine aggregates through Protocol/Service;
+- [x] event-limit path stops the ETW session on a separate thread so final rundown is not discarded by early consumer termination.
 
 Still required before 2.2 can close:
 
-- [ ] authoritative native module/driver attribution for DPC/ISR routine addresses;
-- [ ] kernel image mapping that includes modules already loaded before the observation begins, using kernel image events plus the appropriate rundown/CAPTURE_STATE path;
-- [ ] preserve unresolved routine addresses as unknown instead of guessing driver names;
 - [ ] physical Windows 11 validation of Service → ETW → IPC capture and cleanup;
+- [ ] physical validation of module attribution against a trusted external observer where practical;
 - [ ] physical validation of per-processor attribution, including explicit multi-processor-group evidence if hardware is available.
 
-Context7/PerfView documentation re-check on 2026-09-12 confirmed that native code address resolution requires kernel ImageLoad evidence and past-state/CAPTURE_STATE when the image predates the trace. Therefore module attribution intentionally remains open until that mapping is authoritative.
+Context7 re-check on 2026-09-12 confirmed the general diagnostic-session requirement to stop a trace cleanly so end-of-session rundown/metadata can be delivered. The exact pinned `Microsoft.Diagnostics.Tracing.TraceEvent` 3.2.6 source was then used for ETW-specific API names and semantics. `TraceEventSession.Stop()` documents that it may be called from one thread while `Process()` runs on another, which is the basis for the event-limit stop path.
 
 ### 2.3 Baseline quality — NOT STARTED
 
@@ -139,62 +147,73 @@ Implemented:
 
 - [x] WinUI service-health status;
 - [x] explicit read-only safety boundary;
+- [x] product version display;
 - [x] five-second kernel **observation** action through the Service;
 - [x] DPC/ISR event counts;
 - [x] p99 and p99.9 display;
 - [x] ETW loss/invalid/limit-reached status;
 - [x] count of processors observed;
+- [x] resolved/unresolved module-attribution coverage;
+- [x] compact top resolved module summary;
 - [x] no single capture is mislabeled as a trustworthy baseline.
 
 Still required:
 
 - [ ] per-processor concentration view/ranking;
-- [ ] top DPC/ISR module/driver contributors after authoritative attribution exists;
+- [ ] full top DPC/ISR module/driver contributor view rather than only the compact top-module summary;
 - [ ] inspectable raw/auditable aggregates beyond the compact summary;
 - [ ] repeated-baseline/noise/drift UX;
 - [ ] baseline quality verdict/reason;
 - [ ] clear evidence-level labels for stored configuration vs assigned resource vs runtime behavior.
 
-## Current execution ladder
+## Stage A — authoritative module/driver attribution — CLOSED
 
-The following sequence is authoritative unless a new finding forces a step-back change.
+Completed:
 
-### Stage A — authoritative module/driver attribution — CURRENT
+1. kernel image mapping is captured alongside DPC/ISR observations;
+2. stop-time `ImageDCStop` rundown supplies already-loaded image mappings;
+3. ranges use image base + validated positive image size with overflow rejection;
+4. routine addresses resolve only inside active image ranges at the event timestamp;
+5. overlapping active ranges with conflicting identities resolve to unknown;
+6. unloads close image lifetimes and conservative handling prevents guessed identity after uncertain unload evidence;
+7. protocol v2 returns bounded module contributors and bounded unresolved routine contributors;
+8. UI exposes attribution coverage and the top resolved module without pretending unresolved data is resolved;
+9. event-limit, timeout and cancellation all stop the ETW session rather than relying on consumer termination for cleanup/rundown;
+10. Release CI is green with the permanent suite still at 9/10.
+
+Evidence:
+
+- attribution implementation commit `6d63e1b2c12eaa0081d8babd846f8ca2cc7776b8`;
+- TraceEvent 3.2.6 compatibility correction commit `4e83ab9d0c460828dce4cead22aa47858b9708b9`;
+- UI analyzer correction commit `839c5db6fd7dfc0385926e553b00a9985a5f4932`;
+- event-limit rundown correction commit `c58cd5fa9c15debb4541a7e49d550a950a14dc2d`;
+- final Stage A CI run `34713147459` succeeded with 9/9 tests and complete Windows x64 packaging.
+
+Step-back result: **closed in CI, not physically validated.** The physical-validation requirement intentionally moves to Stage B rather than being mislabeled as Stage A evidence.
+
+## Stage B — physical Windows 11 observation validation — CURRENT
+
+Runbook: `docs/PHYSICAL_VALIDATION.md`.
 
 Work in order:
 
-1. capture kernel image mapping needed for native routine-address attribution;
-2. include already-loaded kernel images via supported rundown/CAPTURE_STATE behavior rather than relying only on future ImageLoad events;
-3. model image ranges with base address, size and authoritative module/file identity;
-4. resolve each DPC/ISR routine address only when it falls inside an authoritative image range;
-5. preserve unresolved addresses as unknown/raw hexadecimal evidence;
-6. aggregate DPC/ISR counts and duration distributions by resolved module;
-7. expose only the bounded aggregate through Protocol/Service;
-8. perform step-back review for image unload/range reuse, lost image events, overflow, session ordering and cleanup;
-9. run Release CI without adding a permanent test unless a genuinely high-blast-radius invariant justifies replacing/using the final 10th slot.
+1. publish/download the `v0.0.0` Windows x64 prerelease and verify its SHA-256 checksum;
+2. confirm `VERSION.txt` and `BUILD_INFO.txt` identify the exact release and commit;
+3. install the read-only observation Service from the extracted bundle;
+4. launch the WinUI App as a normal non-elevated user and verify Service connectivity;
+5. capture representative idle and controlled-load observations;
+6. verify DPC/ISR events, processor distribution and module attribution are plausible and internally consistent;
+7. compare representative driver/module findings against PerfView or LatencyMon where practical;
+8. force client disconnect/service shutdown/recovery and verify ETW/session cleanup;
+9. verify zero-mutation behavior: interrupt affinity/MSI/CPU Sets/power/network/device policy remain untouched;
+10. record machine/Windows/CPU/device/driver context with all validation evidence;
+11. validate representative topology, allocated resource and stored interrupt-configuration evidence from Phase 2.1.
 
-**Stage A closes only when:** module attribution exists on `main`, CI is green, unresolved addresses remain explicitly unresolved, and no guessed driver attribution exists.
+**Stage B closes only when:** a physical Windows 11 x64 machine produces usable read-only observations, attribution is plausible against trusted external evidence, inventory/resource evidence is coherent, and cleanup/privilege/zero-mutation boundaries hold under failure paths.
 
-**Immediately after Stage A:** Stage B physical Windows 11 observation validation.
+**Immediately after Stage B:** Stage C repeated baseline and quality engine.
 
-### Stage B — physical Windows 11 observation validation
-
-Work in order:
-
-1. install/run the published App + Service artifact on a physical Windows 11 x64 machine;
-2. verify Service startup and non-elevated App connection;
-3. capture representative idle and controlled-load observations;
-4. verify DPC/ISR events, processor distribution and module attribution are plausible and internally consistent;
-5. verify zero-change behavior: registry/MSI/affinity/power/network configuration remains untouched;
-6. force cancellation/client disconnect/service shutdown and verify ETW/session cleanup;
-7. compare representative driver/module findings against a trusted external observation such as LatencyMon/PerfView where practical;
-8. record machine/Windows/CPU/device/driver context with the validation evidence.
-
-**Stage B closes only when:** the real machine produces usable read-only observations and cleanup/privilege boundaries hold under failure paths.
-
-**Immediately after Stage B:** finish remaining Phase 2.1 physical inventory/resource validation, then Stage C baseline quality.
-
-### Stage C — repeated baseline and quality engine
+## Stage C — repeated baseline and quality engine
 
 Work in order:
 
@@ -211,12 +230,12 @@ Work in order:
 
 **Immediately after Stage C:** Stage D Phase 2 UX completion.
 
-### Stage D — Phase 2 evidence UX completion
+## Stage D — Phase 2 evidence UX completion
 
 Work in order:
 
 1. per-processor concentration/ranking view;
-2. top DPC/ISR module contributors;
+2. full top DPC/ISR module contributor view;
 3. raw/auditable aggregate inspection;
 4. evidence-level labels for configuration, allocated resources and runtime ETW;
 5. baseline quality verdict/reasons and invalid-state presentation;
@@ -226,7 +245,7 @@ Work in order:
 
 **Immediately after Stage D:** Phase 2 closure review, then Phase 3.
 
-### Stage E — Phase 3 safety substrate, before the first mutation
+## Stage E — Phase 3 safety substrate, before the first mutation
 
 The Service and typed Named Pipe already exist; Phase 3 does **not** recreate them.
 
@@ -241,7 +260,17 @@ Next work will be:
 
 No mutation work is allowed to jump ahead of Stage C/D or the Phase 3 safety substrate.
 
-## Comparison-core correction discovered during step-back review
+## Release discipline
+
+- product versions are exactly `MAJOR.MINOR.PATCH`;
+- current source version is `0.0.0` in `Directory.Build.props`;
+- `RELEASE_VERSION` is an explicit release request and must equal the source version;
+- release workflow reruns restore/build/9-test gate and publishes both App and Service;
+- every release bundle contains `VERSION.txt`, `BUILD_INFO.txt` and the Stage B validation runbook;
+- every GitHub release ZIP has a SHA-256 checksum companion;
+- `0.0.x` releases remain GitHub prereleases until later exit gates justify stable semantics.
+
+## Comparison-core correction discovered during earlier step-back review
 
 A prior comparator path returned `NoMeasurableDifference` before evaluating guardrails when the primary metric was inside its noise threshold. That could hide a collateral regression. It was corrected so a neutral primary plus materially regressed guardrail is `Regressed`.
 
