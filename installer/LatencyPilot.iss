@@ -44,6 +44,7 @@ Source: "..\artifacts\payload\Install-Service.ps1"; DestDir: "{app}"; Flags: ign
 Source: "..\artifacts\payload\Uninstall-Service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\artifacts\payload\PHYSICAL_VALIDATION.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\artifacts\payload\PORTABLE.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\payload\DIAGNOSTICS.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\artifacts\payload\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\artifacts\payload\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\artifacts\payload\VERSION.txt"; DestDir: "{app}"; Flags: ignoreversion
