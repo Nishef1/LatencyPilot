@@ -53,6 +53,36 @@ public sealed record InterruptConfigurationSnapshot(
             null);
 }
 
+public enum InterruptResourceReadStatus
+{
+    Available,
+    NoAllocatedConfiguration,
+    ApiUnavailable,
+}
+
+public sealed record AllocatedInterruptResourceSnapshot(
+    uint Irq,
+    ushort ProcessorGroup,
+    ulong AffinityMask,
+    ushort RawFlags);
+
+public sealed record InterruptResourceSnapshot(
+    InterruptResourceReadStatus ReadStatus,
+    uint? NativeStatusCode,
+    IReadOnlyList<AllocatedInterruptResourceSnapshot> Resources)
+{
+    public bool HasAssignedInterrupts => Resources.Count > 0;
+
+    public static InterruptResourceSnapshot Available(IReadOnlyList<AllocatedInterruptResourceSnapshot> resources) =>
+        new(InterruptResourceReadStatus.Available, null, resources);
+
+    public static InterruptResourceSnapshot NoAllocatedConfiguration(uint nativeStatusCode) =>
+        new(InterruptResourceReadStatus.NoAllocatedConfiguration, nativeStatusCode, []);
+
+    public static InterruptResourceSnapshot ApiUnavailable(uint nativeStatusCode) =>
+        new(InterruptResourceReadStatus.ApiUnavailable, nativeStatusCode, []);
+}
+
 public sealed record PnPDeviceSnapshot(
     string InstanceId,
     Guid ClassGuid,
@@ -61,7 +91,8 @@ public sealed record PnPDeviceSnapshot(
     string? EnumeratorName,
     string? ServiceName,
     DriverMetadataSnapshot Driver,
-    InterruptConfigurationSnapshot InterruptConfiguration);
+    InterruptConfigurationSnapshot InterruptConfiguration,
+    InterruptResourceSnapshot InterruptResources);
 
 public sealed record DeviceInventorySnapshot(
     IReadOnlyList<PnPDeviceSnapshot> Devices,
@@ -73,4 +104,7 @@ public sealed record DeviceInventorySnapshot(
 
     public int DevicesWithReadableInterruptConfigurationCount => Devices.Count(
         static device => device.InterruptConfiguration.ReadStatus == InterruptConfigurationReadStatus.Available);
+
+    public int DevicesWithAssignedInterruptsCount => Devices.Count(
+        static device => device.InterruptResources.HasAssignedInterrupts);
 }

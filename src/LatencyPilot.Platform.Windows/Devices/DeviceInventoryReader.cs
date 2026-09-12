@@ -54,7 +54,8 @@ public static class DeviceInventoryReader
                     ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverVersion),
                     ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverProvider),
                     ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverInfPath)),
-                ReadInterruptConfiguration(deviceInfoSet, ref deviceInfo)));
+                ReadInterruptConfiguration(deviceInfoSet, ref deviceInfo),
+                InterruptResourceReader.Capture(deviceInfo.DevInst)));
         }
 
         devices.Sort(static (left, right) => StringComparer.OrdinalIgnoreCase.Compare(left.InstanceId, right.InstanceId));
