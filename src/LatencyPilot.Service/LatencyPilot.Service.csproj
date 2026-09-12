@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../LatencyPilot.Core/LatencyPilot.Core.csproj" />
+    <ProjectReference Include="../LatencyPilot.Protocol/LatencyPilot.Protocol.csproj" />
+    <ProjectReference Include="../LatencyPilot.Platform.Windows/LatencyPilot.Platform.Windows.csproj" />
+    <ProjectReference Include="../LatencyPilot.Persistence/LatencyPilot.Persistence.csproj" />
+  </ItemGroup>
+</Project>
