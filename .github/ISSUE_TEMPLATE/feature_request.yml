@@ -1,0 +1,79 @@
+name: Feature request
+description: Propose a measurement, optimizer, platform integration, benchmark, or product improvement
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        LatencyPilot is measurement-first. Proposals for new tweaks should explain how the effect would be measured and reverted, not only what registry/device setting would change.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What user/system problem is currently not handled well?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed capability
+      description: Describe the capability at a product/engineering level.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Area
+      options:
+        - Analysis / diagnostics
+        - DPC / ISR
+        - GPU / graphics
+        - USB / input
+        - Network / RSS
+        - Audio
+        - CPU / topology
+        - Storage
+        - Benchmarking / statistics
+        - Rollback / recovery
+        - UI / UX
+        - Build / CI / packaging
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Authoritative references / evidence
+      description: Link Microsoft/vendor documentation or technical evidence if the proposal depends on Windows internals or a tuning mechanism.
+
+  - type: textarea
+    id: measurement
+    attributes:
+      label: How should LatencyPilot measure whether this helps?
+      description: Identify target metrics, workload, repetitions, noise handling, and meaningful guardrails if known.
+
+  - type: textarea
+    id: mutation
+    attributes:
+      label: State change and rollback
+      description: If this changes Windows/device state, explain what changes, how the original state is captured, and how it can be verified/reverted.
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / trade-offs
+      description: What could regress, become unstable, require reboot, or vary by hardware/driver?
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: This is not just a generic tweak-pack request without a measurement plan.
+          required: true
+        - label: I understand a proposal may remain observational/experimental until it has benchmark and rollback coverage.
+          required: true
