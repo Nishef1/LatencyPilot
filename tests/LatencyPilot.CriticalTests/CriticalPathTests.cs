@@ -2,6 +2,7 @@ using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Core.Experiments;
 using LatencyPilot.Core.Metrics;
 using LatencyPilot.Core.Results;
+using LatencyPilot.Platform.Windows.System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -84,6 +85,21 @@ public sealed class CriticalPathTests
     {
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
             new MetricSeries("DPC p99", MetricDirection.LowerIsBetter, [100, double.NaN]));
+    }
+
+    [TestMethod]
+    public void WindowsProcessorTopologyCaptureIsInternallyConsistent()
+    {
+        var topology = ProcessorTopologyReader.Capture();
+        var logicalProcessors = topology.Cores
+            .SelectMany(static core => core.LogicalProcessors)
+            .Distinct()
+            .ToArray();
+
+        Assert.IsTrue(topology.PhysicalCoreCount > 0);
+        Assert.IsTrue(topology.Packages.Count > 0);
+        Assert.AreEqual(logicalProcessors.Length, topology.LogicalProcessorCount);
+        Assert.IsTrue(topology.ProcessorGroupCount > 0);
     }
 
     private static MetricSeries Series(string name, double value, int count = 20) =>

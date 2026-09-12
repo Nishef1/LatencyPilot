@@ -9,10 +9,30 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        var snapshot = SystemInventoryReader.Capture();
-        OperatingSystemText.Text = snapshot.OperatingSystem;
-        OsArchitectureText.Text = snapshot.OsArchitecture;
-        ProcessArchitectureText.Text = snapshot.ProcessArchitecture;
-        LogicalProcessorCountText.Text = snapshot.LogicalProcessorCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var system = SystemInventoryReader.Capture();
+        OperatingSystemText.Text = system.OperatingSystem;
+        OsArchitectureText.Text = system.OsArchitecture;
+        ProcessArchitectureText.Text = system.ProcessArchitecture;
+        ProcessAvailableProcessorCountText.Text = system.ProcessAvailableProcessorCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        try
+        {
+            var topology = ProcessorTopologyReader.Capture();
+            HardwareLogicalProcessorCountText.Text = topology.LogicalProcessorCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            PhysicalCoreCountText.Text = topology.PhysicalCoreCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            PackageCountText.Text = topology.Packages.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            ProcessorGroupCountText.Text = topology.ProcessorGroupCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            SmtCoreCountText.Text = topology.SmtCoreCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            TopologyStatusText.Text = "Captured from GetLogicalProcessorInformationEx. No system settings were changed.";
+        }
+        catch (Exception exception)
+        {
+            HardwareLogicalProcessorCountText.Text = "Unavailable";
+            PhysicalCoreCountText.Text = "Unavailable";
+            PackageCountText.Text = "Unavailable";
+            ProcessorGroupCountText.Text = "Unavailable";
+            SmtCoreCountText.Text = "Unavailable";
+            TopologyStatusText.Text = $"Topology capture failed: {exception.Message}";
+        }
     }
 }

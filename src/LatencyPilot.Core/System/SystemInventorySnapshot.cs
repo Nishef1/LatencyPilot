@@ -4,5 +4,5 @@ public sealed record SystemInventorySnapshot(
     string OperatingSystem,
     string OsArchitecture,
     string ProcessArchitecture,
-    int LogicalProcessorCount,
+    int ProcessAvailableProcessorCount,
     DateTimeOffset CapturedAtUtc);
