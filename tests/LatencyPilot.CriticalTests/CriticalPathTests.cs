@@ -18,7 +18,7 @@ public sealed class CriticalPathTests
     [TestMethod]
     public void IllegalExperimentTransitionIsRejected()
     {
-        Assert.ThrowsException<InvalidOperationException>(() =>
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
             ExperimentStateMachine.EnsureTransition(ExperimentState.Planned, ExperimentState.Kept));
     }
 
@@ -82,7 +82,7 @@ public sealed class CriticalPathTests
     [TestMethod]
     public void NonFiniteMeasurementIsRejected()
     {
-        Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
             new MetricSeries("DPC p99", MetricDirection.LowerIsBetter, [100, double.NaN]));
     }
 
