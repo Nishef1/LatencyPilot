@@ -2,11 +2,13 @@ namespace LatencyPilot.Protocol;
 
 public static class ObservationProtocol
 {
-    public const string PipeName = "LatencyPilot.Observation.v1";
+    public const string PipeName = "LatencyPilot.Observation.v2";
     public const int MaximumRequestBytes = 64 * 1024;
     public const int MaximumResponseBytes = 1024 * 1024;
     public const int MaximumCaptureDurationMilliseconds = 30_000;
     public const int MaximumCaptureEvents = 500_000;
+    public const int MaximumModuleContributors = 256;
+    public const int MaximumUnresolvedRoutineContributors = 64;
 }
 
 public enum ObservationCommand
@@ -58,10 +60,17 @@ public sealed record KernelLatencyCaptureResponse(
     double ActualDurationMilliseconds,
     int EventsLost,
     int InvalidEventCount,
+    int InvalidImageEventCount,
     bool EventLimitReached,
+    int ResolvedModuleEventCount,
+    int UnresolvedModuleEventCount,
+    bool ModuleContributorListTruncated,
+    bool UnresolvedRoutineListTruncated,
     LatencyDistribution Dpc,
     LatencyDistribution Isr,
-    IReadOnlyList<ProcessorLatencyDistribution> Processors);
+    IReadOnlyList<ProcessorLatencyDistribution> Processors,
+    IReadOnlyList<ModuleLatencyDistribution> Modules,
+    IReadOnlyList<UnresolvedRoutineLatencyDistribution> UnresolvedRoutines);
 
 public sealed record LatencyDistribution(
     int Count,
@@ -73,5 +82,18 @@ public sealed record LatencyDistribution(
 
 public sealed record ProcessorLatencyDistribution(
     int ProcessorNumber,
+    LatencyDistribution Dpc,
+    LatencyDistribution Isr);
+
+public sealed record ModuleLatencyDistribution(
+    string ModuleName,
+    string ImagePath,
+    double TotalDurationMicroseconds,
+    LatencyDistribution Dpc,
+    LatencyDistribution Isr);
+
+public sealed record UnresolvedRoutineLatencyDistribution(
+    ulong RoutineAddress,
+    double TotalDurationMicroseconds,
     LatencyDistribution Dpc,
     LatencyDistribution Isr);

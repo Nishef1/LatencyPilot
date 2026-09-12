@@ -12,7 +12,14 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0">
-            <TextBlock Text="LatencyPilot" FontSize="30" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="LatencyPilot" FontSize="30" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                <TextBlock x:Name="VersionText"
+                           Margin="10,10,0,0"
+                           FontSize="12"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           Text="v0.0.0" />
+            </StackPanel>
             <TextBlock Margin="0,6,0,0"
                        Foreground="{StaticResource MutedTextBrush}"
                        FontSize="14"
@@ -156,6 +163,12 @@
 
                         <TextBlock Margin="0,18,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Processors observed" />
                         <TextBlock x:Name="ObservedProcessorCountText" Foreground="{StaticResource TextBrush}" Text="—" />
+
+                        <TextBlock Margin="0,18,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Module attribution coverage" />
+                        <TextBlock x:Name="ModuleAttributionCoverageText" Foreground="{StaticResource TextBrush}" Text="—" TextWrapping="Wrap" />
+
+                        <TextBlock Margin="0,14,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Top resolved module" />
+                        <TextBlock x:Name="TopModuleText" Foreground="{StaticResource TextBrush}" Text="—" TextWrapping="Wrap" />
 
                         <TextBlock Margin="0,22,0,0" Text="Safety boundary" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
                         <TextBlock Margin="0,5,0,0"

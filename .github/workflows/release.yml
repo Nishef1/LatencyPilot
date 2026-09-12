@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       version:
@@ -35,18 +35,21 @@ jobs:
         shell: pwsh
         run: |
           if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            if ('${{ github.ref }}' -ne 'refs/heads/main') {
+              throw 'Manual releases must be dispatched from main.'
+            }
             $version = '${{ inputs.version }}'
           }
           else {
             $tag = '${{ github.ref_name }}'
             if ($tag -notmatch '^v([0-9]+)\.([0-9]+)\.([0-9]+)$') {
-              throw "Release tag must use vMAJOR.MINOR.PATCH, for example v0.0.0."
+              throw 'Release tag must use vMAJOR.MINOR.PATCH, for example v0.0.0.'
             }
             $version = $tag.Substring(1)
           }
 
           if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
-            throw "Version must be exactly three numeric components: MAJOR.MINOR.PATCH."
+            throw 'Version must be exactly three numeric components: MAJOR.MINOR.PATCH.'
           }
 
           $projectVersion = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()

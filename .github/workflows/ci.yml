@@ -43,6 +43,16 @@ jobs:
       - name: Publish Windows x64 service
         run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/LatencyPilot-win-x64/Service
 
+      - name: Assemble physical-validation bundle
+        shell: pwsh
+        run: |
+          $version = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
+          Copy-Item scripts/Install-Service.ps1 artifacts/LatencyPilot-win-x64/Install-Service.ps1
+          Copy-Item scripts/Uninstall-Service.ps1 artifacts/LatencyPilot-win-x64/Uninstall-Service.ps1
+          Copy-Item README.md artifacts/LatencyPilot-win-x64/README.md
+          Copy-Item LICENSE artifacts/LatencyPilot-win-x64/LICENSE
+          Set-Content -LiteralPath artifacts/LatencyPilot-win-x64/VERSION.txt -Value $version -NoNewline
+
       - name: Upload Windows x64 artifact
         uses: actions/upload-artifact@v4
         with:

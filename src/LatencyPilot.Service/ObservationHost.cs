@@ -222,16 +222,78 @@ internal sealed class ObservationHost : BackgroundService
                     .Select(static item => item.DurationMicroseconds))))
             .ToArray();
 
+        var allModules = result.Events
+            .Where(static item => item.ModulePath is not null)
+            .GroupBy(static item => item.ModulePath!, StringComparer.OrdinalIgnoreCase)
+            .Select(static group => CreateModuleDistribution(group.Key, group))
+            .OrderByDescending(static item => item.TotalDurationMicroseconds)
+            .ThenBy(static item => item.ModuleName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var allUnresolvedRoutines = result.Events
+            .Where(static item => item.ModulePath is null)
+            .GroupBy(static item => item.RoutineAddress)
+            .Select(static group => CreateUnresolvedRoutineDistribution(group.Key, group))
+            .OrderByDescending(static item => item.TotalDurationMicroseconds)
+            .ThenBy(static item => item.RoutineAddress)
+            .ToArray();
+
         return new KernelLatencyCaptureResponse(
             result.StartedAtUtc,
             checked((int)result.RequestedDuration.TotalMilliseconds),
             result.ActualDuration.TotalMilliseconds,
             result.EventsLost,
             result.InvalidEventCount,
+            result.InvalidImageEventCount,
             result.EventLimitReached,
+            result.ResolvedModuleEventCount,
+            result.UnresolvedModuleEventCount,
+            allModules.Length > ObservationProtocol.MaximumModuleContributors,
+            allUnresolvedRoutines.Length > ObservationProtocol.MaximumUnresolvedRoutineContributors,
             dpc,
             isr,
-            processors);
+            processors,
+            allModules.Take(ObservationProtocol.MaximumModuleContributors).ToArray(),
+            allUnresolvedRoutines.Take(ObservationProtocol.MaximumUnresolvedRoutineContributors).ToArray());
+    }
+
+    private static ModuleLatencyDistribution CreateModuleDistribution(
+        string path,
+        IEnumerable<KernelLatencyEvent> events)
+    {
+        var materialized = events.ToArray();
+        var moduleName = Path.GetFileName(path);
+        if (string.IsNullOrWhiteSpace(moduleName))
+        {
+            moduleName = path;
+        }
+
+        return new ModuleLatencyDistribution(
+            moduleName,
+            path,
+            materialized.Sum(static item => item.DurationMicroseconds),
+            CreateDistribution(materialized
+                .Where(static item => item.Kind == KernelLatencyEventKind.Dpc)
+                .Select(static item => item.DurationMicroseconds)),
+            CreateDistribution(materialized
+                .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
+                .Select(static item => item.DurationMicroseconds)));
+    }
+
+    private static UnresolvedRoutineLatencyDistribution CreateUnresolvedRoutineDistribution(
+        ulong routineAddress,
+        IEnumerable<KernelLatencyEvent> events)
+    {
+        var materialized = events.ToArray();
+        return new UnresolvedRoutineLatencyDistribution(
+            routineAddress,
+            materialized.Sum(static item => item.DurationMicroseconds),
+            CreateDistribution(materialized
+                .Where(static item => item.Kind == KernelLatencyEventKind.Dpc)
+                .Select(static item => item.DurationMicroseconds)),
+            CreateDistribution(materialized
+                .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
+                .Select(static item => item.DurationMicroseconds)));
     }
 
     private static LatencyDistribution CreateDistribution(IEnumerable<double> durations)

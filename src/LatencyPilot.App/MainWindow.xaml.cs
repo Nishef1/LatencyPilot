@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using LatencyPilot.App.Services;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
@@ -14,6 +15,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = "LatencyPilot";
+        VersionText.Text = $"v{GetProductVersion()}";
 
         var system = SystemInventoryReader.Capture();
         OperatingSystemText.Text = system.OperatingSystem;
@@ -95,11 +97,31 @@ public sealed partial class MainWindow : Window
             IsrP999Text.Text = FormatMicroseconds(capture.Isr.P999Microseconds);
             ObservedProcessorCountText.Text = capture.Processors.Count.ToString(CultureInfo.InvariantCulture);
 
+            var totalAttributedEvents = capture.ResolvedModuleEventCount + capture.UnresolvedModuleEventCount;
+            var resolvedPercent = totalAttributedEvents == 0
+                ? 0d
+                : capture.ResolvedModuleEventCount * 100d / totalAttributedEvents;
+            var truncationSuffix = capture.ModuleContributorListTruncated || capture.UnresolvedRoutineListTruncated
+                ? " Contributor lists are truncated to protocol bounds."
+                : string.Empty;
+
+            ModuleAttributionCoverageText.Text = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{capture.ResolvedModuleEventCount:N0} resolved / {capture.UnresolvedModuleEventCount:N0} unresolved ({resolvedPercent:F1}% resolved).{truncationSuffix}");
+
+            var topModule = capture.Modules.FirstOrDefault();
+            TopModuleText.Text = topModule is null
+                ? "No routine address was resolved to an authoritative image range."
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{topModule.ModuleName} — {topModule.TotalDurationMicroseconds:F1} µs total");
+
             KernelCaptureStatusText.Text = capture.EventsLost == 0 &&
                 capture.InvalidEventCount == 0 &&
+                capture.InvalidImageEventCount == 0 &&
                 !capture.EventLimitReached
                 ? $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected."
-                : $"Observation incomplete: lost={capture.EventsLost}, invalid={capture.InvalidEventCount}, limitReached={capture.EventLimitReached}.";
+                : $"Observation incomplete: lost={capture.EventsLost}, invalidLatency={capture.InvalidEventCount}, invalidImages={capture.InvalidImageEventCount}, limitReached={capture.EventLimitReached}.";
         }
         catch (TimeoutException)
         {
@@ -145,7 +167,14 @@ public sealed partial class MainWindow : Window
         IsrP99Text.Text = "—";
         IsrP999Text.Text = "—";
         ObservedProcessorCountText.Text = "—";
+        ModuleAttributionCoverageText.Text = "—";
+        TopModuleText.Text = "—";
     }
+
+    private static string GetProductVersion() =>
+        typeof(MainWindow).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion ?? "0.0.0";
 
     private static string FormatMicroseconds(double? value) =>
         value is null

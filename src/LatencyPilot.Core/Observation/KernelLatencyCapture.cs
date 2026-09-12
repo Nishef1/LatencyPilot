@@ -13,7 +13,8 @@ public sealed record KernelLatencyEvent(
     double DurationMicroseconds,
     ulong RoutineAddress,
     int? InterruptVector,
-    int? MessageNumber);
+    int? MessageNumber,
+    string? ModulePath = null);
 
 public sealed record KernelLatencyCaptureResult(
     DateTimeOffset StartedAtUtc,
@@ -22,13 +23,22 @@ public sealed record KernelLatencyCaptureResult(
     IReadOnlyList<KernelLatencyEvent> Events,
     int EventsLost,
     int InvalidEventCount,
+    int InvalidImageEventCount,
     bool EventLimitReached)
 {
-    public bool IsValid => EventsLost == 0 && InvalidEventCount == 0 && !EventLimitReached;
+    public bool IsValid =>
+        EventsLost == 0 &&
+        InvalidEventCount == 0 &&
+        InvalidImageEventCount == 0 &&
+        !EventLimitReached;
 
     public int DpcCount => Events.Count(static item => item.Kind == KernelLatencyEventKind.Dpc);
 
     public int IsrCount => Events.Count(static item => item.Kind == KernelLatencyEventKind.Isr);
+
+    public int ResolvedModuleEventCount => Events.Count(static item => item.ModulePath is not null);
+
+    public int UnresolvedModuleEventCount => Events.Count - ResolvedModuleEventCount;
 }
 
 public sealed record KernelLatencyCaptureOptions(TimeSpan Duration, int MaximumEvents = 500_000)
