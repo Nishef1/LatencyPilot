@@ -6,7 +6,6 @@ on:
     paths:
       - RELEASE_VERSION
       - RELEASE_REVISION
-      - '.github/workflows/release.yml'
   workflow_dispatch:
     inputs:
       version:
@@ -33,17 +32,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: 10.0.401
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'global.json', 'NuGet.Config') }}
@@ -233,7 +232,7 @@ jobs:
           "- SHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload release build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: LatencyPilot-${{ steps.version.outputs.version }}-win-x64-distributions
           path: |
