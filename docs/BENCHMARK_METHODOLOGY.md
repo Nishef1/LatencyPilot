@@ -1,6 +1,7 @@
 # Benchmark Methodology
 
-Status: **V0.1 benchmark contract**
+Status: **V0.2 benchmark contract**  
+Last updated: 2026-09-13
 
 LatencyPilot exists to distinguish measurable improvement from placebo, noise, drift, or a trade-off hidden by a single headline number.
 
@@ -123,7 +124,7 @@ Measurements that help explain the run but do not directly determine success.
 
 Every optimization domain must document its metric set before automatic recommendations are enabled.
 
-## 7. Distribution reporting
+## 7. Distribution reporting and percentile definition
 
 Do not rely on averages alone.
 
@@ -147,6 +148,21 @@ Percentiles must satisfy ordering invariants such as:
 p50 <= p90 <= p95 <= p99 <= p99.9 <= max
 ```
 
+LatencyPilot currently uses one canonical deterministic estimator, implemented by `LatencyPilot.Benchmarking.Statistics.Percentiles`.
+
+For an ascending sorted sample vector of length `n` and percentile fraction `p` in `[0, 1]`:
+
+```text
+position = (n - 1) * p
+lower = floor(position)
+upper = ceil(position)
+value = samples[lower] + (samples[upper] - samples[lower]) * (position - lower)
+```
+
+When `lower == upper`, that sample is returned directly. This is the **linear-n-minus-one-v1** interpretation for current results. Service observation summaries and benchmark comparisons must call this same implementation rather than defining local nearest-rank variants.
+
+If this estimator changes later, the method/version must change with it so historical results remain interpretable.
+
 ## 8. Sample adequacy
 
 Do not calculate or emphasize extreme percentiles from obviously inadequate sample counts.
@@ -154,6 +170,8 @@ Do not calculate or emphasize extreme percentiles from obviously inadequate samp
 The benchmark implementation must define minimum sample rules for each metric family.
 
 If evidence is insufficient, return `Inconclusive` instead of extrapolating confidence.
+
+A percentile can be mathematically calculated from a small sample while still being statistically inadequate for an authoritative decision. Calculation availability and evidence adequacy are separate concepts.
 
 ## 9. Statistical comparison
 
@@ -163,7 +181,7 @@ Where appropriate, LatencyPilot may use bootstrap/resampling confidence interval
 
 A confidence interval that crosses a no-effect boundary should not be labeled a confirmed improvement merely because the point estimate is favorable.
 
-The exact statistical method must be versioned/documented so historical results remain interpretable.
+The exact statistical method must be versioned/documented so historical results remain interpretable. A new layer must not silently introduce a different percentile/noise interpretation for the same named metric.
 
 ## 10. Drift detection
 
@@ -179,7 +197,7 @@ Potential drift indicators include:
 - power-state change;
 - unexpected process or benchmark termination.
 
-Drift should produce `InvalidExperiment` or `Inconclusive` when attribution is no longer trustworthy.
+Until a separate persisted invalid-experiment state is intentionally introduced, a run that cannot support attribution because of drift or failed validity checks produces an `Inconclusive` verdict with explicit validity reasons. Do not invent a sixth verdict in one layer only.
 
 ## 11. DPC/ISR analysis
 
@@ -251,31 +269,29 @@ Possible metrics include:
 
 ## 15. Verdict model
 
-Authoritative result classes:
+The authoritative `ExperimentVerdict` values are exactly:
 
-### ConfirmedImprovement
+### `Improved`
 
-The target metric(s) improve beyond the measured noise/uncertainty, no material guardrail regression invalidates the benefit, and the experiment is valid.
+The target metric(s) improve beyond the configured/measured practical-noise boundary, no material guardrail regression invalidates the benefit, and the experiment is valid enough to classify.
 
-### ConfirmedRegression
+### `Regressed`
 
-The candidate measurably worsens the target or causes a clearly unacceptable guardrail regression.
+The candidate measurably worsens the target, or a target that is otherwise neutral is accompanied by a material guardrail regression.
 
-### TradeOff
+### `Tradeoff`
 
 At least one meaningful target improves while another important target/guardrail measurably worsens.
 
-### NoMeasurableDifference
+### `NoMeasurableDifference`
 
-The observed delta is small enough to be indistinguishable from measured normal variation or otherwise fails the practical-effect threshold.
+The observed delta is small enough to be indistinguishable from the configured/measured normal variation or otherwise fails the practical-effect threshold.
 
-### Inconclusive
+### `Inconclusive`
 
-Evidence is insufficient or uncertainty remains too high to classify the candidate reliably.
+Evidence is insufficient, invalid, drifted, unverified, or uncertainty remains too high to classify the candidate reliably.
 
-### InvalidExperiment
-
-The benchmark cannot support attribution due to drift, failed verification, workload failure, state mismatch, insufficient integrity, or another validity failure.
+Validity reasons such as failed apply verification, workload mismatch, drift or capture-integrity failure are recorded separately from the five-value verdict. Changing the verdict set requires an intentional domain/schema decision, not documentation-only terminology.
 
 ## 16. Practical significance
 
@@ -331,11 +347,13 @@ Each authoritative benchmark run should retain enough information to audit the v
 
 Historical results should not silently change meaning when analysis algorithms evolve. Store algorithm/schema versions.
 
-## 20. Synthetic statistical tests
+## 20. Synthetic statistical scenarios under the permanent-test cap
 
-The Benchmarking test suite must include generated datasets for:
+The repository intentionally caps permanent automated tests at 10. The benchmark suite therefore does **not** create one permanent test method for every dataset shape.
 
-- identical A/B distributions;
+High-value statistical scenarios should be consolidated into data/scenario matrices inside durable contract tests where that remains readable. Relevant scenarios over the lifetime of the project include:
+
+- identical or near-identical A/B distributions;
 - known positive shift;
 - known negative shift;
 - heavy-tailed distributions;
@@ -345,27 +363,29 @@ The Benchmarking test suite must include generated datasets for:
 - baseline drift;
 - primary improvement plus guardrail regression.
 
-Expected verdicts must be asserted.
+Not all of these must occupy independent permanent slots at the same time. When Stage C introduces a more important noise/drift invariant, merge or retire a lower-value scenario/test rather than violating the cap. Temporary investigative tests may be used during implementation and deleted before finalization.
 
-## 21. Golden telemetry tests
+## 21. Golden telemetry fixtures
 
-For small approved trace fixtures:
+A small approved trace fixture can be valuable when parser/attribution semantics become a sufficiently high-blast-radius risk:
 
 ```text
 fixture input
 → parser
 → normalized events
 → aggregation
-→ expected JSON/result
+→ expected result
 ```
 
-Parser updates must not silently change expected metrics. Any intended semantic change requires fixture expectation review and documentation.
+A golden fixture is not automatically an additional permanent test. Under the 10-test rule it must either share an existing durable contract or replace a lower-value permanent test. Parser updates must not silently change an approved fixture expectation; an intended semantic change requires explicit expectation review and methodology documentation.
+
+Physical ETW/hardware validation remains separate from synthetic golden data.
 
 ## 22. Benchmark performance vs benchmark correctness
 
-LatencyPilot's own parser/statistics performance should be measured in `perf/`, but CI timing on hosted VMs is not a substitute for real hardware experiments.
+LatencyPilot's own parser/statistics performance should be measured in `perf/` only when profiling shows a meaningful need. Do not create a speculative performance-test subsystem merely because one may be useful later.
 
-Correctness tests may gate pull requests. Small hosted-runner performance deltas should generally be tracked rather than treated as authoritative hardware regressions.
+CI timing on hosted VMs is not a substitute for real hardware experiments. Correctness tests may gate pull requests; small hosted-runner performance deltas should generally be tracked rather than treated as authoritative hardware regressions.
 
 ## 23. User-facing presentation
 
