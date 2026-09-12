@@ -9,7 +9,7 @@ LatencyPilot is a Windows 11 performance-analysis and tuning tool built around o
 It is not a registry-tweak pack, debloater, or one-click FPS booster. The product is intended to measure the effect of low-level changes on the actual machine, expose improvements and regressions, and preserve enough state to safely revert each supported experiment.
 
 > [!IMPORTANT]
-> LatencyPilot is in **pre-alpha**. Current product version: **0.0.0**. Phase 2 is building the trustworthy read-only observation engine. System mutation remains disabled by design.
+> LatencyPilot is in **pre-alpha**. Current product version: **0.0.1**. Phase 2 is building the trustworthy read-only observation engine. System mutation remains disabled by design.
 
 ## Why LatencyPilot
 
@@ -35,7 +35,7 @@ Windows exposes powerful interrupt, CPU-topology, ETW, USB, networking and sched
 
 ## Current state
 
-- Version — **0.0.0 pre-alpha**
+- Version — **0.0.1 pre-alpha**
 - Phase 0 — governance/architecture: **closed**
 - Phase 1 — buildable foundation + comparison core: **closed**
 - Phase 2 — read-only observation engine: **in progress**
@@ -46,7 +46,7 @@ Windows exposes powerful interrupt, CPU-topology, ETW, USB, networking and sched
 
 Phase 2 currently contains CPU topology, PnP stable identities, driver metadata, stored interrupt configuration, allocated IRQ/resource inspection, a privileged read-only Windows Service, typed local Named Pipe IPC, DPC/ISR ETW observation with per-processor aggregation, p50/p95/p99/p99.9/max summaries, and authoritative routine-address attribution against kernel image ranges. Already-loaded images are recovered through kernel image rundown at session stop. Ambiguous or missing mappings remain explicitly unresolved instead of being guessed.
 
-The major Phase 2 work still open is physical Windows 11 validation, repeated baseline/noise/drift quality analysis, and the final evidence UX. A short single capture is intentionally called an **observation**, not a trustworthy baseline.
+The Phase 2 desktop now exposes service health, the read-only safety boundary, system topology/inventory, DPC/ISR tail metrics, module-attribution coverage, top contributors and CPU concentration. Repeated baseline/noise/drift analysis is still intentionally deferred to Stage C. A short single capture is called an **observation**, not a trustworthy baseline.
 
 See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the live execution ladder, and [`docs/PHYSICAL_VALIDATION.md`](docs/PHYSICAL_VALIDATION.md) for Stage B.
 
@@ -54,23 +54,14 @@ See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PR
 
 Release versions use exactly three numeric components: `MAJOR.MINOR.PATCH`. `Directory.Build.props` is the product-version source of truth and `RELEASE_VERSION` is the explicit release request. A release is rejected if those values disagree.
 
-The Windows x64 prerelease bundle contains:
+Version 0.0.1 produces two Windows 11 x64 distributions from the same self-contained payload:
 
-```text
-App/
-Service/
-Install-Service.ps1
-Uninstall-Service.ps1
-PHYSICAL_VALIDATION.md
-VERSION.txt
-BUILD_INFO.txt
-README.md
-LICENSE
-```
+- `LatencyPilot-0.0.1-win-x64-setup.exe` — recommended installation path. Installs the app and the read-only observation service, and manages service removal during uninstall.
+- `LatencyPilot-0.0.1-win-x64-portable.zip` — extractable portable bundle containing the app, service, runtime dependencies, service scripts, validation guide and build metadata.
 
-`BUILD_INFO.txt` identifies the exact source commit and workflow run. Published release ZIPs also include a SHA-256 checksum file.
+Both distributions are fully self-contained and do not require a separate .NET or Windows App Runtime download. Each release asset has a SHA-256 checksum companion.
 
-The App runs as a normal user. Only service installation/removal requires elevation. The extracted release directory must remain in place while the service is installed.
+The App runs as a normal, non-elevated user. Kernel ETW observation remains behind the privileged Windows Service. In the portable bundle, register the included service from the extracted directory to use privileged observation features, and unregister it before moving or deleting that directory. See [`docs/PORTABLE.md`](docs/PORTABLE.md).
 
 ## Architecture
 
@@ -80,7 +71,7 @@ Current baseline:
 - **Runtime:** .NET 10 LTS
 - **Desktop UI:** WinUI 3
 - **Windows UI/runtime:** Windows App SDK 2.4 Stable
-- **Distribution:** unpackaged, self-contained Windows 11 x64
+- **Distribution:** unpackaged, self-contained Windows 11 x64; installer EXE plus portable ZIP
 - **Privileged boundary:** narrow Windows Service used for Phase 2 read-only kernel ETW observation; Phase 3 later extends it only after recovery/journaling safety exists
 - **IPC:** typed/versioned local Named Pipes
 - **Tracing:** ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`
@@ -141,6 +132,7 @@ tests/
 docs/
   BENCHMARK_METHODOLOGY.md
   PHYSICAL_VALIDATION.md
+  PORTABLE.md
   adr/
 ```
 
@@ -152,7 +144,7 @@ Hardware validation is separate from CI and does not count toward the permanent-
 
 ## Building
 
-The .NET SDK is pinned in `global.json`. GitHub Actions restores the toolchain, builds Release, runs the permanent critical suite, publishes self-contained Windows x64 App and Service outputs, and uploads them together as the Windows artifact.
+The .NET SDK is pinned in `global.json`. GitHub Actions restores the toolchain, builds Release, runs the permanent critical suite, publishes self-contained Windows x64 App and Service outputs, and builds both the offline setup EXE and portable ZIP from the same payload.
 
 Typical local commands, if the SDK is installed:
 
