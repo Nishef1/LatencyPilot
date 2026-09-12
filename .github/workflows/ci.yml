@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build-test-package:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -37,35 +37,59 @@ jobs:
       - name: Critical tests
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release --no-build
 
-      - name: Publish Windows x64 app
-        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/LatencyPilot-win-x64/App
+      - name: Publish Windows x64 app payload
+        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/payload/App -p:DebugType=None -p:DebugSymbols=false -p:SatelliteResourceLanguages=en-US -p:PublishReadyToRun=false
 
-      - name: Publish Windows x64 service
-        run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/LatencyPilot-win-x64/Service
+      - name: Publish Windows x64 service payload
+        run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/payload/Service -p:DebugType=None -p:DebugSymbols=false -p:SatelliteResourceLanguages=en-US -p:PublishReadyToRun=false
 
-      - name: Assemble physical-validation bundle
+      - name: Prepare installer payload
         shell: pwsh
         run: |
           $version = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
-          Copy-Item scripts/Install-Service.ps1 artifacts/LatencyPilot-win-x64/Install-Service.ps1
-          Copy-Item scripts/Uninstall-Service.ps1 artifacts/LatencyPilot-win-x64/Uninstall-Service.ps1
-          Copy-Item docs/PHYSICAL_VALIDATION.md artifacts/LatencyPilot-win-x64/PHYSICAL_VALIDATION.md
-          Copy-Item README.md artifacts/LatencyPilot-win-x64/README.md
-          Copy-Item LICENSE artifacts/LatencyPilot-win-x64/LICENSE
-          Set-Content -LiteralPath artifacts/LatencyPilot-win-x64/VERSION.txt -Value $version -NoNewline
-
+          Copy-Item scripts/Install-Service.ps1 artifacts/payload/Install-Service.ps1
+          Copy-Item scripts/Uninstall-Service.ps1 artifacts/payload/Uninstall-Service.ps1
+          Copy-Item docs/PHYSICAL_VALIDATION.md artifacts/payload/PHYSICAL_VALIDATION.md
+          Copy-Item README.md artifacts/payload/README.md
+          Copy-Item LICENSE artifacts/payload/LICENSE
+          Set-Content -LiteralPath artifacts/payload/VERSION.txt -Value $version -NoNewline
           @(
             "version=$version"
             "commit=$env:GITHUB_SHA"
             "workflow=${{ github.workflow }}"
             "workflow_run=${{ github.run_id }}"
             "ref=${{ github.ref }}"
-          ) | Set-Content -LiteralPath artifacts/LatencyPilot-win-x64/BUILD_INFO.txt
+          ) | Set-Content -LiteralPath artifacts/payload/BUILD_INFO.txt
 
-      - name: Upload Windows x64 artifact
+      - name: Build setup EXE
+        shell: pwsh
+        run: |
+          $version = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
+          $env:LATENCYPILOT_VERSION = $version
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+            if ($null -eq $command) { throw 'Inno Setup compiler was not found on the runner.' }
+            $iscc = $command.Source
+          }
+          & $iscc installer/LatencyPilot.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
+
+          $setup = "artifacts/installer/LatencyPilot-$version-win-x64-setup.exe"
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $setup).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$setup.sha256" -Value "$hash  $(Split-Path $setup -Leaf)" -NoNewline
+          $sizeMiB = [Math]::Round((Get-Item -LiteralPath $setup).Length / 1MB, 2)
+          "### Installer" >> $env:GITHUB_STEP_SUMMARY
+          "- Version: $version" >> $env:GITHUB_STEP_SUMMARY
+          "- Size: $sizeMiB MiB" >> $env:GITHUB_STEP_SUMMARY
+          "- SHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload setup executable
         uses: actions/upload-artifact@v4
         with:
-          name: LatencyPilot-win-x64
-          path: artifacts/LatencyPilot-win-x64/
+          name: LatencyPilot-setup-win-x64
+          path: |
+            artifacts/installer/LatencyPilot-*-win-x64-setup.exe
+            artifacts/installer/LatencyPilot-*-win-x64-setup.exe.sha256
           if-no-files-found: error
           retention-days: 7
