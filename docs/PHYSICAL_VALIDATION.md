@@ -5,16 +5,18 @@ This runbook is for **Stage B** validation of the read-only `0.0.x` LatencyPilot
 ## Preconditions
 
 - physical Windows 11 x64 machine;
-- `LatencyPilot-<version>-win-x64-setup.exe` downloaded from the matching GitHub prerelease;
-- installer SHA-256 verified against the published `.sha256` companion;
-- App must run as a normal user after setup; elevation is used only by setup/uninstall for the Windows Service.
+- `LatencyPilot-<version>-win-x64-setup.exe` downloaded from the matching GitHub prerelease, or the matching portable ZIP when validating that distribution;
+- SHA-256 verified against the published `.sha256` companion;
+- App must run as a normal user after setup; elevation is used only by setup/service install/uninstall;
+- `docs/DIAGNOSTICS.md` available for log correlation if a failure occurs.
 
 Record before starting:
 
 ```text
 LatencyPilot version:
-Installer SHA-256:
-Commit (from installed BUILD_INFO.txt):
+Distribution (setup/portable):
+Distribution SHA-256:
+Commit (from BUILD_INFO.txt):
 Windows edition/build:
 CPU:
 Motherboard/firmware:
@@ -27,23 +29,42 @@ Other monitoring/overlay tools running:
 
 ## 1. Install LatencyPilot
 
+### Setup EXE
+
 Run the setup EXE normally and accept the UAC prompt. Setup installs the application under Program Files, installs/starts the `LatencyPilot.Observation` service, and creates a Start menu shortcut.
 
-After setup, verify from an elevated PowerShell:
+### Portable ZIP
+
+Extract the archive, launch the desktop App normally, then run the following only when privileged kernel observation is required:
+
+```powershell
+.\Install-Service.ps1
+```
+
+The portable installer must copy the Service payload to the protected location below before registering LocalSystem execution:
+
+```text
+%ProgramFiles%\LatencyPilot\Service\LatencyPilot.Service.exe
+```
+
+The Windows Service must not point at the ordinary extracted portable folder.
+
+After either installation path, verify from an elevated PowerShell:
 
 ```powershell
 Get-Service LatencyPilot.Observation
+sc.exe qc LatencyPilot.Observation
 ```
 
-Expected state: `Running`.
+Expected state: `Running`. The configured binary path must resolve to the protected Program Files Service path.
 
-The installed directory contains `VERSION.txt`, `BUILD_INFO.txt`, and this validation runbook so every physical result can be tied to an exact release and commit.
+The distribution contains `VERSION.txt`, `BUILD_INFO.txt`, the validation runbook and diagnostics guide so every physical result can be tied to an exact release and commit.
 
 ## 2. Start the App without elevation
 
-Launch **LatencyPilot** from the Start menu. The desktop App must run non-elevated and show that the privileged observation service is connected while mutation remains disabled.
+Launch **LatencyPilot** as a normal user. The desktop App must show that the privileged observation service is connected while mutation remains disabled.
 
-Record any service-contract, Named Pipe, timeout or protocol error exactly as shown.
+If the UI reports a failure, record the visible message and preserve the relevant App/Service structured log entries. Use protocol `RequestId` to correlate the two sides when available; do not attach unrelated sensitive system information.
 
 ## 3. Idle observation
 
@@ -95,49 +116,74 @@ If LatencyPilot resolves a routine address to a module that does not contain tha
 
 Exercise at least these cases one at a time:
 
-1. close the App around an observation;
-2. stop the service during or immediately after an observation;
-3. start the service again and reconnect the normal-user App;
-4. perform another observation after recovery.
+1. close the App during an active observation;
+2. reconnect/relaunch and verify a new status request is accepted promptly;
+3. stop the Service during or immediately after an observation;
+4. start the Service again and reconnect the normal-user App;
+5. perform another observation after recovery;
+6. where practical, send/trigger a malformed or incompatible local protocol request in a controlled developer environment and verify the Service rejects it without terminating.
 
-After each case verify there is no lingering `LatencyPilot-Kernel-*` ETW session and that a subsequent observation can start normally.
+After each case verify there is no lingering `LatencyPilot-Kernel-*` ETW session and that a subsequent observation can start normally. The App/Service logs should show bounded cancellation/rejection evidence rather than an orphaned capture continuing for the full requested window.
 
 If cleanup cannot be proven, Stage B remains open.
 
-## 7. Zero-mutation boundary
+## 7. Inventory partial-evidence behavior
+
+Inspect representative GPU, NIC and xHCI/USB entries. A device with an unavailable optional property or unreadable interrupt/resource metadata must not cause the entire present-device inventory to disappear.
+
+Record where evidence is partial and distinguish:
+
+```text
+stored interrupt configuration
+allocated IRQ/resource assignment
+runtime DPC/ISR behavior
+```
+
+A read failure is not equivalent to “no configuration”.
+
+## 8. Zero-mutation boundary
 
 Stage B is read-only. During these observations LatencyPilot must not alter interrupt affinity, MSI settings, CPU Sets, power settings, network configuration, device policy, timer settings or unrelated services.
 
-The only expected persistent system changes are the LatencyPilot application files, shortcuts/uninstall entry, and the `LatencyPilot.Observation` Windows Service created by setup.
+The only expected persistent machine changes from setup/service installation are LatencyPilot application/service files, shortcuts/uninstall metadata and the `LatencyPilot.Observation` Windows Service. Structured diagnostic logs under the documented local App/Service log directories are also expected runtime artifacts.
 
 Any unrelated persistent configuration change is a release blocker.
 
-## 8. Uninstall
+## 9. Uninstall / portable service removal
 
-Use **Settings → Apps → Installed apps → LatencyPilot → Uninstall** (or the Start menu uninstall entry if exposed by Windows). Setup removal must stop/delete `LatencyPilot.Observation` before removing application files.
+For setup installation, use **Settings → Apps → Installed apps → LatencyPilot → Uninstall**. Setup removal must stop/delete `LatencyPilot.Observation` before removing application files.
+
+For portable validation, run from the extracted bundle:
+
+```powershell
+.\Uninstall-Service.ps1
+```
 
 Verify afterward:
 
 ```powershell
 Get-Service LatencyPilot.Observation -ErrorAction SilentlyContinue
+Test-Path "$env:ProgramFiles\LatencyPilot\Service"
 ```
 
-Expected result: no service is returned.
+Expected result: no service is returned and the protected Service payload directory is absent.
 
 ## Stage B evidence record
 
 A Stage B result is acceptable only when the validation record includes:
 
 - release version;
-- setup SHA-256;
-- installed `BUILD_INFO.txt` commit SHA;
+- distribution type and SHA-256;
+- `BUILD_INFO.txt` commit SHA;
 - physical-machine context;
 - idle observation;
 - controlled-load observation;
 - attribution plausibility comparison;
-- cleanup/failure-path result;
+- cleanup/disconnect/failure-path result;
+- representative partial-inventory evidence;
+- protected Service-path verification;
 - zero-mutation result;
-- uninstall result;
+- uninstall/removal result;
 - any unresolved blockers.
 
 Do not close Stage B from VM/CI evidence alone.
