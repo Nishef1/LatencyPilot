@@ -9,7 +9,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        var snapshot = new SystemInventoryReader().Capture();
+        var snapshot = SystemInventoryReader.Capture();
         OperatingSystemText.Text = snapshot.OperatingSystem;
         OsArchitectureText.Text = snapshot.OsArchitecture;
         ProcessArchitectureText.Text = snapshot.ProcessArchitecture;
