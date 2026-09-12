@@ -99,8 +99,8 @@ jobs:
             }
           }
 
-          $localTag = (git tag --list $tag).Trim()
-          if ($localTag) {
+          $localTags = @(git tag --list $tag)
+          if ($localTags.Count -gt 0) {
             git tag -d $tag | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Failed to delete local tag $tag." }
           }
