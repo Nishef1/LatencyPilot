@@ -1,24 +1,23 @@
 # LatencyPilot System Design
 
-Status: **Authoritative baseline for V0.1**
-
+Status: **Authoritative architecture baseline**  
 Last updated: 2026-09-12
+
+`ROADMAP.md` defines the final product and phase exit gates. `PROJECT_STATUS.md` records what is actually complete. This document defines how the system is structured so those goals can be implemented safely.
 
 ## 1. Purpose
 
-LatencyPilot is a Windows 11 latency experimentation platform that measures system behavior, applies narrowly scoped tuning candidates, verifies the resulting state, benchmarks target and collateral effects, and lets the user keep or revert the change.
+LatencyPilot is a Windows 11 latency experimentation platform. It observes the machine, isolates a narrowly scoped candidate change, verifies what actually changed, compares target and collateral effects, and lets the user keep or revert the experiment.
 
-It is intentionally not designed as a bulk tweak pack. Its central product claim is not that a specific setting is universally faster; it is that LatencyPilot can help determine whether a setting measurably improves a particular system and workload.
+It is not a generic optimizer or tweak pack. The central claim is not that a setting is universally faster; it is that LatencyPilot can determine whether a supported setting measurably helps a particular system and workload without hiding trade-offs.
 
-## 2. Product contract
-
-Every supported optimization follows:
+The product loop is:
 
 ```text
 Measure → Experiment → Verify → Compare → Keep or Revert
 ```
 
-Every system mutation follows:
+For a system-changing feature the safety loop is:
 
 ```text
 Detect applicability
@@ -34,208 +33,215 @@ Detect applicability
 → Close journal
 ```
 
-A feature that cannot satisfy this lifecycle must not be promoted as a supported automatic optimization.
+A mutation that cannot satisfy that lifecycle is not eligible for automatic optimization.
 
-## 3. Target platform
+## 2. Target platform
 
-V0.1 target:
+Initial supported target:
 
-- Windows 11
-- x64
-- self-contained .NET release
-- interactive desktop user
-- local machine only
+- Windows 11;
+- x64;
+- interactive desktop user;
+- local machine only;
+- self-contained .NET release.
 
-ARM64 is not a V0.1 release target. The architecture should avoid unnecessary x64 assumptions outside the platform layer, but no ARM64 compatibility claim is made until all required dependencies and hardware tests support it.
+The Windows target framework is allowed to compile against a newer Windows SDK while `SupportedOSPlatformVersion` remains Windows 11 21H2 (`10.0.22000.0`) unless a later API requirement is intentionally introduced.
 
-## 4. Technology baseline
+ARM64 is not a 1.0 commitment until every required dependency and hardware-validation path is demonstrated.
 
-- C# 14
-- .NET 10 LTS
-- WPF
-- Windows Service
-- Named Pipes
-- Microsoft.Diagnostics.Tracing.TraceEvent
-- PresentMon integration where applicable
-- SetupAPI / Configuration Manager
-- CPU Sets / processor topology APIs
-- Raw Input
-- SQLite
-- MSTest + Microsoft.Testing.Platform
+## 3. Frozen technology baseline
 
-Native C++ is not part of the baseline. A small native component may be introduced only if profiling demonstrates a real limitation that cannot be solved acceptably in managed code, and the change is documented in an ADR.
+Unless an ADR explicitly changes it:
 
-## 5. High-level architecture
+- C# 14;
+- .NET 10 LTS;
+- WPF;
+- Windows Service for privileged operations once mutations are implemented;
+- versioned Named Pipes for local IPC;
+- ETW / `Microsoft.Diagnostics.Tracing.TraceEvent` for kernel/subsystem observation;
+- PresentMon where graphics/frame telemetry is required;
+- SetupAPI + Configuration Manager for PnP/device discovery;
+- CPU Sets / processor-topology APIs;
+- Raw Input for host-side input-report timing;
+- SQLite for durable experiment/recovery state when persistence is introduced;
+- MSTest + Microsoft.Testing.Platform for the small critical automated suite.
+
+Native C++ is not a baseline dependency. A native component requires profiling evidence and an ADR showing why managed code is insufficient.
+
+## 4. High-level architecture
 
 ```text
-┌──────────────────────────────────────────────┐
-│ LatencyPilot.App                             │
-│ WPF / non-elevated                          │
-│                                              │
-│ Dashboard                                    │
-│ Baseline / experiment workflow               │
-│ Results / trade-offs                         │
-│ History / recovery                           │
-└───────────────────┬──────────────────────────┘
-                    │
-                    │ Versioned Named-Pipe IPC
+┌────────────────────────────────────────────┐
+│ LatencyPilot.App                           │
+│ WPF / normal user / non-elevated          │
+│                                            │
+│ inventory + baseline UX                    │
+│ experiment setup                           │
+│ evidence / trade-offs                      │
+│ keep / revert / recovery UX                │
+└───────────────────┬────────────────────────┘
+                    │ versioned Named Pipe
                     ▼
-┌──────────────────────────────────────────────┐
-│ LatencyPilot.Service                         │
-│ Windows Service / privileged boundary        │
-│                                              │
-│ command authorization + validation           │
-│ mutation orchestration                       │
-│ journaling / recovery coordination           │
-└───────────────┬──────────────────────────────┘
+┌────────────────────────────────────────────┐
+│ LatencyPilot.Service                       │
+│ privileged boundary                        │
+│                                            │
+│ authorization + validation                 │
+│ mutation orchestration                     │
+│ journal/recovery coordination              │
+└───────────────┬────────────────────────────┘
                 │
-       ┌────────┴─────────────────────────┐
-       ▼                                  ▼
-┌───────────────────────────┐   ┌───────────────────────────┐
-│ Platform.Windows          │   │ Persistence               │
-│                           │   │                           │
-│ ETW                       │   │ SQLite                    │
-│ SetupAPI / CM             │   │ experiment journal        │
-│ MSI / affinity            │   │ snapshots                 │
-│ CPU topology              │   │ benchmark history         │
-│ Raw Input                 │   │ recovery records          │
-│ PresentMon adapter        │   │ schema migrations         │
-│ network / USB adapters    │   │                           │
-└─────────────┬─────────────┘   └───────────────────────────┘
-              │
-              ▼
-┌───────────────────────────┐
-│ Windows 11 / hardware     │
-└───────────────────────────┘
+       ┌────────┴───────────────────┐
+       ▼                            ▼
+┌─────────────────────────┐  ┌─────────────────────────┐
+│ Platform.Windows        │  │ Persistence             │
+│                         │  │                         │
+│ ETW                     │  │ SQLite                  │
+│ SetupAPI / CM           │  │ snapshots               │
+│ MSI / affinity          │  │ experiment journal      │
+│ CPU topology            │  │ benchmark history       │
+│ Raw Input / USB         │  │ recovery records        │
+│ PresentMon              │  │ migrations              │
+│ RSS/network             │  │                         │
+└────────────┬────────────┘  └─────────────────────────┘
+             │
+             ▼
+       Windows 11 / hardware
 
-Shared domain layers:
+Pure/shared domain layers:
 
 Core ← Benchmarking
 Core ← Protocol
 ```
 
-## 6. Project boundaries
+Phase 1 intentionally keeps `ServiceBoundary.MutationAvailable = false`; no system mutation is allowed before the safety substrate in Phase 3 exists.
 
-### LatencyPilot.Core
+## 5. Project responsibilities
 
-Owns stable domain concepts:
+### `LatencyPilot.Core`
 
-- device identity abstractions;
-- CPU/topology domain models;
-- experiment identity and lifecycle states;
-- metric descriptors;
-- result/verdict models;
-- safety/recovery domain invariants.
+Owns stable domain concepts and invariants:
 
-It must remain free of WPF, SQLite, ETW implementation details, registry paths, P/Invoke, and Windows Service hosting.
+- experiment states and legal transitions;
+- metric definitions and direction;
+- validated measurement-series contracts;
+- verdict/result types;
+- stable system/device domain models;
+- recovery/safety invariants as they are introduced.
 
-### LatencyPilot.Benchmarking
+It must not depend on WPF, ETW implementation details, registry paths, SQLite, P/Invoke, Windows Service hosting or machine-specific state.
 
-Owns measurement analysis:
+### `LatencyPilot.Benchmarking`
 
-- baselines;
-- candidate comparisons;
-- percentile calculations;
-- robust dispersion metrics;
-- noise-floor estimation;
-- bootstrap/resampling logic;
-- confidence/uncertainty;
-- drift detection;
-- target vs guardrail classification;
-- verdict calculation;
-- workload-specific weighting where explicitly required.
+Owns evidence interpretation:
 
-It should be deterministic enough to test with synthetic and fixture data independently of physical hardware.
+- percentile/distribution calculations;
+- before/after comparison;
+- minimum-sample policy;
+- noise-floor/drift logic as it is introduced;
+- target versus guardrail handling;
+- explicit verdict classification;
+- later confidence/resampling logic when justified by actual benchmark design.
 
-### LatencyPilot.Protocol
+This layer must remain deterministic enough to exercise without physical hardware.
 
-Owns local IPC contracts:
+### `LatencyPilot.Protocol`
 
-- command envelopes;
-- event envelopes;
-- DTOs;
-- error codes;
-- protocol versioning;
-- compatibility policy.
+Owns versioned local IPC contracts:
 
-The protocol must not expose arbitrary registry, shell, file, or process execution capabilities.
+- protocol version;
+- command/event envelopes;
+- DTOs and structured error contracts as required.
 
-### LatencyPilot.Platform.Windows
+It must never expose arbitrary shell, registry, file or process execution.
 
-Owns Windows-specific mechanisms:
+### `LatencyPilot.Platform.Windows`
 
-- ETW session control and parsing;
-- DPC/ISR event interpretation;
-- device enumeration;
-- SetupAPI and Configuration Manager interop;
-- PCI/device topology;
+Owns all raw Windows mechanisms:
+
+- OS/CPU/device inventory;
+- ETW session control/parsing;
+- DPC/ISR interpretation;
+- SetupAPI / Configuration Manager;
+- PCI and device topology;
 - interrupt-affinity policy;
 - MSI/MSI-X inspection/mutation where supported;
-- CPU topology and CPU Sets;
-- Raw Input capture;
-- USB/xHCI tracing;
-- networking/RSS integration;
-- power/configuration adapters;
-- PresentMon process/session adapter;
-- Windows reboot/restart requirements;
-- low-level registry/device-policy access.
+- CPU topology / CPU Sets;
+- Raw Input;
+- USB/xHCI telemetry;
+- NDIS/RSS/network integration;
+- PresentMon adapters;
+- narrow registry/device-policy implementation details.
 
-All raw Windows interop belongs here.
+Raw P/Invoke and registry paths must not leak out of this project.
 
-### LatencyPilot.Persistence
+### `LatencyPilot.Persistence`
 
-Owns persistence:
+Owns durable local state once persistence is introduced:
 
-- SQLite database;
-- migrations;
-- snapshots;
-- experiment journal;
-- benchmark records;
+- SQLite and migrations;
+- experiment snapshots;
+- pending/closed journal records;
+- benchmark history;
 - recovery state;
-- diagnostic references.
+- diagnostic metadata.
 
-Rollback state is safety-critical and must be committed before the corresponding mutation is attempted.
+Original state required for rollback must be durable before a mutation is attempted.
 
-### LatencyPilot.Service
+### `LatencyPilot.Service`
 
-Owns privileged execution:
+Owns privileged execution once Phase 3 begins:
 
-- service host;
+- Windows Service host;
 - local IPC listener;
-- client identity/authorization checks;
-- command validation;
+- client authorization;
+- server-side validation;
 - mutation orchestration;
 - recovery execution;
-- service-side logging.
+- service-side diagnostics.
 
-The service does not become a generic privileged automation host.
+The service is not a generic privileged scripting host.
 
-### LatencyPilot.App
+### `LatencyPilot.App`
 
-Owns desktop UX:
+Owns the non-elevated WPF experience:
 
-- navigation;
+- system/baseline views;
 - experiment setup;
-- baseline workflow;
-- recommendation and trade-off views;
-- raw metric inspection;
-- keep/revert confirmation;
-- recovery UX;
-- settings that do not violate privilege boundaries.
+- raw evidence and trade-offs;
+- Keep/Revert decisions;
+- recovery/history UX;
+- non-privileged preferences.
 
-It remains non-elevated during normal operation.
+The app must never directly mutate privileged Windows state.
 
-## 7. Repository layout
+## 6. Dependency direction
+
+Keep dependencies narrow:
+
+```text
+Core                 ← no project dependency
+Benchmarking         → Core
+Protocol             → Core
+Platform.Windows     → Core
+Persistence          → Core
+Service              → Core + Protocol + Platform.Windows + Persistence
+App                  → Core + Platform.Windows now
+App (future mutate)  → Protocol client; never raw privileged mutation
+CriticalTests        → only projects required by current critical scenarios
+```
+
+Avoid cyclic references and speculative abstraction projects.
+
+## 7. Repository structure
 
 ```text
 LatencyPilot/
-│
 ├── LatencyPilot.slnx
 ├── global.json
 ├── Directory.Build.props
-├── Directory.Packages.props
-├── NuGet.Config
 ├── .editorconfig
+├── .gitignore
 ├── README.md
 ├── LICENSE
 ├── CLA.md
@@ -243,6 +249,8 @@ LatencyPilot/
 ├── SECURITY.md
 ├── AGENTS.md
 ├── SYSTEM_DESIGN.md
+├── ROADMAP.md
+├── PROJECT_STATUS.md
 │
 ├── src/
 │   ├── LatencyPilot.Core/
@@ -254,46 +262,11 @@ LatencyPilot/
 │   └── LatencyPilot.App/
 │
 ├── tests/
-│   ├── LatencyPilot.Core.Tests/
-│   ├── LatencyPilot.Benchmarking.Tests/
-│   ├── LatencyPilot.Protocol.Tests/
-│   ├── LatencyPilot.Platform.Windows.Tests/
-│   ├── LatencyPilot.Persistence.Tests/
-│   ├── LatencyPilot.Service.IntegrationTests/
-│   ├── LatencyPilot.Windows.IntegrationTests/
-│   ├── LatencyPilot.App.Tests/
-│   └── LatencyPilot.HardwareTests/
-│
-├── test-assets/
-│   ├── etw/
-│   ├── presentmon/
-│   ├── raw-input/
-│   ├── cpu-topology/
-│   ├── devices/
-│   ├── statistics/
-│   ├── expected/
-│   └── manifest.json
-│
-├── perf/
-│   └── LatencyPilot.Microbenchmarks/
-│
-├── tools/
-│   ├── TraceInspector/
-│   ├── FixtureBuilder/
-│   └── DiagnosticBundle/
+│   └── LatencyPilot.CriticalTests/
 │
 ├── docs/
-│   ├── adr/
-│   ├── architecture/
-│   ├── benchmarks/
-│   ├── safety/
-│   └── releases/
-│
-├── eng/
-│   ├── build.ps1
-│   ├── test.ps1
-│   ├── package.ps1
-│   └── validate.ps1
+│   ├── BENCHMARK_METHODOLOGY.md
+│   └── adr/
 │
 └── .github/
     ├── workflows/
@@ -302,60 +275,74 @@ LatencyPilot/
     └── CODEOWNERS
 ```
 
-Empty directories do not need placeholder files until implementation reaches them.
+Do not create empty folder trees or one test project per production project merely to mirror architecture. Add a directory/tool only when the implementation needs it.
 
-## 8. Experiment state machine
+## 8. Experiment lifecycle
 
-The authoritative experiment lifecycle should be explicit rather than inferred from nullable fields.
-
-Recommended states:
+The experiment state machine is explicit. Phase 1 begins with a deliberately small set:
 
 ```text
-Created
-BaselinePending
-BaselineRunning
-BaselineCompleted
-CandidatePrepared
-SnapshotPersisted
-ApplyPending
-AppliedUnverified
-AppliedVerified
-BenchmarkRunning
-BenchmarkCompleted
-VerdictReady
-Kept
-RevertPending
-Reverted
-RecoveryRequired
-Aborted
-Invalid
+Planned
+→ MeasuringBaseline
+→ CandidateApplied
+→ MeasuringCandidate
+→ AwaitingDecision
+→ Kept | Reverted
 ```
 
-State transitions must be validated.
+Failure/termination may lead to `Aborted` where no unresolved mutation exists.
 
-A process crash must not silently transform an `AppliedUnverified` experiment into success.
+When persistent mutation/recovery arrives in Phase 3, extend the model with whatever intermediate states are necessary to distinguish at least:
 
-## 9. Snapshot model
+- snapshot durably persisted;
+- apply pending;
+- applied but unverified;
+- applied and verified;
+- benchmark running/completed;
+- revert pending;
+- recovery required.
 
-A snapshot must contain enough information to restore the specific setting being changed without exporting or overwriting unrelated machine state.
+Never infer those conditions from nullable fields or silently convert an interrupted applied state into success.
 
-Each snapshot should include:
+## 9. Measurement and comparison contract
 
-- experiment ID;
-- mutation kind;
-- stable target identity;
-- original value/state;
-- target metadata required for verification;
-- capture timestamp;
-- Windows/build/application version where relevant;
-- hash/version information needed to detect stale state;
-- schema version.
+Phase 1 comparison provides the minimum trustworthy semantics:
 
-Avoid giant registry exports or opaque binary dumps when a minimal, typed snapshot is possible.
+- validated finite samples;
+- deterministic percentile calculation;
+- configurable minimum sample count;
+- configurable minimum relative change/noise threshold;
+- explicit lower-is-better / higher-is-better direction;
+- primary improvement/regression classification;
+- guardrail regression converting a local win into `Tradeoff`;
+- `Inconclusive` when evidence is structurally insufficient.
 
-## 10. Mutation model
+Later phases add empirically measured baseline noise, drift detection, repetitions and uncertainty without changing the rule that raw evidence remains visible.
 
-Each mutation implementation should expose conceptually separate operations:
+A composite score may summarize but may never become the sole authoritative result.
+
+## 10. ETW architecture
+
+Phase 2 introduces read-only ETW. Separate responsibilities conceptually:
+
+```text
+Session control
+→ provider/kernel configuration
+→ capture
+→ event decoding
+→ normalized observations
+→ attribution
+→ distributions
+→ benchmark evidence
+```
+
+DPC/ISR analysis must preserve enough provenance to identify at least CPU and module/driver where the provider data allows it. Unknown provider/event versions must not be silently reinterpreted as known semantics.
+
+GitHub-hosted VM traces are useful for correctness only; they are not hardware-performance evidence.
+
+## 11. Mutation interface contract
+
+Each supported mutation mechanism should conceptually expose narrow operations such as:
 
 ```text
 IsApplicable(target)
@@ -367,477 +354,103 @@ Verify(expected, actual)
 Revert(snapshot)
 ```
 
-The mutation implementation must not decide whether the benchmark result is better. That belongs to the experiment/benchmark layer.
+The platform mutation adapter must not decide whether benchmark evidence is better; comparison belongs to the benchmark/experiment layer.
 
-## 11. IPC design
+No IPC command may accept an arbitrary registry path, PowerShell command or process command line for privileged execution.
 
-Named Pipes are the baseline local transport.
+## 12. Persistence and recovery
 
-Requirements:
+Before the first real mutation ships:
 
-- local-machine only;
-- explicit protocol version;
-- bounded message sizes;
-- typed command allow-list;
-- request IDs;
-- cancellation where safe;
-- structured error codes;
-- no arbitrary command execution;
-- no arbitrary registry paths from the UI;
-- service re-validates all input even if the UI already validated it;
-- logs never expose secrets or unnecessary identifiers.
+1. original state must be written durably before apply;
+2. journal state must identify an incomplete experiment after app/service/Windows interruption;
+3. recovery must re-read actual machine state before deciding what to do;
+4. external state changes must not be overwritten blindly;
+5. final Keep/Revert state must be verified before the journal closes.
 
-Example conceptual commands:
+If safety cannot be established, surface `RecoveryRequired`/unknown state rather than pretending rollback succeeded.
 
-```text
-GetServiceCapabilities
-GetPendingRecovery
-CaptureSystemInventory
-StartTraceSession
-StopTraceSession
-PrepareExperiment
-ApplyCandidate
-VerifyCandidate
-RevertExperiment
-FinalizeExperiment
-```
+## 13. UI design contract
 
-Avoid commands such as:
+The UI should answer, in order:
 
-```text
-RunPowerShell(string)
-SetRegistry(path, name, value)
-Execute(string)
-```
+1. what was measured;
+2. whether the measurement was valid/stable;
+3. what exact candidate is proposed/applied;
+4. what changed in target metrics;
+5. what changed in guardrails;
+6. why the verdict was assigned;
+7. what state will be kept or restored.
 
-## 12. ETW architecture
+Do not display synthetic/demo measurements as if they came from the user's machine. During Phase 1 the application explicitly says tuning is unavailable.
 
-ETW is the primary low-level observation mechanism for DPC/ISR and supported subsystem traces.
+The normal desktop UI remains non-elevated.
 
-The design should separate:
+## 14. Focused test strategy
 
-```text
-Session control
-    ↓
-Raw event ingestion
-    ↓
-Provider/version-specific decoding
-    ↓
-Normalized event model
-    ↓
-Aggregation/distribution analysis
-    ↓
-Experiment metrics
-```
+Automated tests are a **small critical-path safety net**, not an attempt to prove the whole application through test volume.
 
-Provider-version differences must not leak into benchmark logic.
+Default policy:
 
-Golden ETW fixtures should validate normalized output for known traces.
+- normally 5–10 active automated tests total;
+- one `LatencyPilot.CriticalTests` project;
+- no coverage-percentage target;
+- no tests for getters, labels, trivial mappings, framework behavior or every fixed bug;
+- favor high-blast-radius bad paths and scenario behavior;
+- when a later phase introduces a more important risk, replace/merge lower-value tests instead of growing indefinitely;
+- more than 10 active automated tests requires explicit owner approval or an ADR.
 
-## 13. DPC/ISR metrics
+Physical hardware validation and release checklists are mandatory where relevant but are not counted as automated tests.
 
-Where data permits, preserve:
+Phase 1's critical scenarios are:
 
-- CPU/logical processor;
-- module/driver;
-- function where resolvable;
-- DPC vs ISR;
-- start/end or duration;
-- interrupt vector where available;
-- message index/MSI information where available;
-- event count;
-- total duration;
-- distribution/tail statistics.
+- illegal experiment transition;
+- insufficient samples;
+- change inside noise threshold;
+- clear primary improvement;
+- target improvement plus guardrail regression;
+- clear primary regression;
+- non-finite measurement input.
 
-Useful aggregations include:
+CI success proves build/package and these selected invariants only. It never proves a latency improvement on real hardware.
+
+## 15. Release and CI contract
+
+The repository pins .NET SDK in `global.json` and explicitly selects Microsoft.Testing.Platform for .NET 10 test execution.
+
+Main CI must:
 
 ```text
-By CPU
-By module
-By module + CPU
-By DPC/ISR type
-By time window
+restore
+→ Release build
+→ critical tests
+→ self-contained win-x64 publish
+→ artifact upload
 ```
 
-CPU0 concentration is an observation, not automatically a defect.
+Warnings are treated as errors. Do not globally suppress analyzers to make CI green; fix or narrowly justify the cause.
 
-## 14. CPU topology
+The eventual 1.0 release adds installer/service lifecycle, signing/provenance, upgrade/uninstall recovery and clean-machine/reboot validation as defined in `ROADMAP.md`.
 
-Do not treat logical processor IDs as independent physical cores.
+## 16. Hardware-validation contract
 
-Model at least:
+A claim such as “GPU affinity X improved latency” requires physical hardware evidence. GitHub runners cannot close hardware-dependent roadmap items.
 
-- logical processor;
-- physical core;
-- SMT sibling relationship;
-- processor group if relevant;
-- CPU Set identity;
-- NUMA node where relevant;
-- efficiency class on hybrid CPUs where available.
+Real optimization validation must capture enough context to reproduce/interpret the result, including relevant Windows/app version, hardware identity at a non-sensitive level, candidate state and before/after measurement evidence.
 
-Candidate generation must use topology rather than iterating arbitrary CPU numbers blindly.
+Do not claim physical click-to-photon latency from Raw Input alone; software-only input timing is host-side evidence.
 
-## 15. Benchmark design
+## 17. Architecture change rule
 
-The benchmark engine should model an experiment as:
+If a change alters any of these, add/update an ADR before treating it as established:
 
-```text
-Environment snapshot
-+ workload definition
-+ baseline runs
-+ one candidate mutation
-+ candidate runs
-+ guardrail measurements
-+ validity checks
-+ statistical comparison
-+ verdict
-```
-
-The first objective is attribution, not maximum search breadth.
-
-### Baseline
-
-Measure baseline-to-baseline variation before interpreting small improvements.
-
-### Repetition
-
-Prefer repeated sequences such as:
-
-```text
-A1 → B1 → B2 → A2
-```
-
-when the mutation is safely switchable, or equivalent multi-boot designs when a reboot is required.
-
-### Drift
-
-Detect and flag substantial baseline drift caused by thermal state, background activity, workload mismatch, or other uncontrolled changes.
-
-### Tail behavior
-
-Do not rely on average alone. Depending on metric, retain p50/p90/p95/p99/p99.9/max and robust dispersion.
-
-### Verdicts
-
-Recommended result classes:
-
-```text
-ConfirmedImprovement
-ConfirmedRegression
-TradeOff
-NoMeasurableDifference
-Inconclusive
-InvalidExperiment
-```
-
-A result may be a trade-off even when the primary metric improves.
-
-## 16. Workload profiles
-
-Profiles change priorities, not raw measurements.
-
-Examples planned for later:
-
-- General responsiveness
-- Competitive gaming
-- Audio/DAW
-- Streaming/content creation
-- Low-latency networking
-
-A profile may weight target/guardrail importance, but the UI must still expose the underlying vector of results.
-
-## 17. GPU-affinity V0.1 domain
-
-V0.1 should prove the full experiment lifecycle using GPU interrupt-affinity candidates.
-
-The implementation must:
-
-1. identify the display/GPU device robustly;
-2. inspect current interrupt/MSI policy;
-3. capture original policy;
-4. generate topology-aware candidate CPU sets;
-5. apply one candidate at a time;
-6. verify actual policy;
-7. capture ETW metrics;
-8. integrate PresentMon when a repeatable graphics workload is available;
-9. measure guardrails;
-10. compare repeated runs;
-11. keep/revert explicitly;
-12. recover after interruption.
-
-The tool must not claim that a specific core is universally optimal.
-
-## 18. USB design direction
-
-USB optimization is not part of V0.1 automatic tuning, but the architecture should support later correlation:
-
-```text
-HID device
-→ USB port/hub
-→ xHCI controller
-→ interrupt/DPC behavior
-→ CPU
-```
-
-Raw Input can measure report-interval behavior; it does not by itself measure true physical click-to-photon latency.
-
-## 19. Network design direction
-
-NIC tuning must consider both interrupt affinity and RSS behavior.
-
-Future network experiments may require:
-
-- NDIS DPC metrics;
-- RSS processor distribution;
-- queue configuration;
-- local controlled RTT/jitter tests;
-- throughput guardrails;
-- loss/retransmission indicators.
-
-Internet RTT is supplemental evidence, not a clean primary benchmark because route/ISP conditions are uncontrolled.
-
-## 20. Persistence model
-
-SQLite is the baseline local store.
-
-Logical entities should include:
-
-```text
-SystemSnapshot
-DeviceSnapshot
-Experiment
-MutationSnapshot
-BenchmarkRun
-MetricSeries / MetricSummary
-ExperimentVerdict
-RecoveryRecord
-ApplicationVersion
-```
-
-Exact schema is intentionally deferred until implementation, but these concepts should remain separable.
-
-## 21. Recovery model
-
-On service/application startup:
-
-```text
-Load open journal records
-→ determine last durable state
-→ read actual machine state
-→ compare with expected/original state
-→ choose safe recovery action
-→ require user intervention if state is ambiguous
-```
-
-Do not mark experiments complete solely because the service restarted successfully.
-
-## 22. UI information architecture
-
-Initial surfaces:
-
-### Overview
-
-- system readiness;
-- unresolved recovery state;
-- current latency summary;
-- major DPC/ISR contributors;
-- last experiment outcome.
-
-### Analyze
-
-- trace capture;
-- per-CPU DPC/ISR distribution;
-- top drivers/modules;
-- timeline and tail metrics;
-- device/topology correlation where known.
-
-### Experiments
-
-- candidate selection;
-- benchmark plan;
-- active run progress;
-- before/after comparison;
-- guardrail trade-offs;
-- keep/revert decision.
-
-### History
-
-- immutable experiment record;
-- exact change;
-- benchmark validity;
-- raw/aggregate results;
-- final state;
-- recovery events.
-
-### Diagnostics
-
-- application/service logs;
-- capability detection;
-- sanitized diagnostic bundle creation.
-
-## 23. Diagnostic bundles
-
-Bundles should be local-only by default and user-reviewable before sharing.
-
-Potential contents:
-
-```text
-manifest.json
-system-summary.json
-cpu-topology.json
-devices.json
-interrupt-policy.json
-experiments.json
-application.log
-service.log
-optional trace references / explicitly included ETL
-```
-
-Do not include secrets, browser data, user files, credentials, or unnecessary hardware serial numbers.
-
-## 24. Testing architecture
-
-Test categories:
-
-### Unit
-
-Core, statistics, state machines, candidate generation, protocol validation.
-
-### Property/statistical
-
-Synthetic distributions, percentile ordering, bootstrap behavior, noise-floor boundaries, drift, heavy tails, insufficient samples.
-
-### Golden fixtures
-
-ETW/PresentMon/topology parser outputs for deterministic captured assets.
-
-### Persistence/recovery
-
-Schema migration, journal durability, crash points, partial mutation states, recovery decisions.
-
-### Windows integration
-
-Read-only or safely isolated Windows API tests on GitHub-hosted Windows runners when supported.
-
-### Hardware
-
-Physical machine validation for interrupt affinity, xHCI, NIC/RSS, GPU, timing, and claims impossible to validate in a VM.
-
-Hosted CI must never be treated as evidence of physical latency improvement.
-
-## 25. CI gates
-
-Pull-request CI should eventually enforce:
-
-```text
-restore --locked-mode
-format verification
-Release build
-warnings as errors
-unit/statistical tests
-fixture tests
-architecture tests
-coverage thresholds
-license/dependency checks
-security analysis
-```
-
-Nightly jobs may add:
-
-```text
-full fixture corpus
-fuzz/parser robustness
-mutation/recovery stress tests
-microbenchmarks
-dependency audit
-```
-
-Release jobs must build from a clean tag/commit and publish hashes for artifacts.
-
-## 26. Architecture tests
-
-Add automated dependency tests once projects exist.
-
-Examples:
-
-- Core must not reference WPF/WindowsBase/SQLite/TraceEvent.
-- App must not reference raw registry/SetupAPI mutation implementations.
-- Protocol must not reference Service or App.
-- Benchmarking must not depend on WPF.
-- privileged mutation implementations must live in Platform.Windows/Service boundaries.
-
-## 27. Security model
-
-Primary threats include:
-
-- misuse of privileged service commands;
-- arbitrary registry/process execution;
-- malicious/untrusted IPC clients;
-- stale target identity causing mutation of the wrong device;
-- tampered snapshot/recovery state;
-- path/DLL hijacking;
-- unsafe diagnostic bundle contents;
-- unsigned/untrusted update mechanisms if added later.
-
-Security-sensitive architecture changes require explicit review.
-
-## 28. Update model
-
-No self-update mechanism is part of V0.1.
-
-When releases begin, prefer verifiable GitHub Release artifacts with hashes. Do not add an updater that executes downloaded binaries without an explicit signing/verifiability design.
-
-## 29. Configuration policy
-
-Avoid hidden magic defaults.
-
-Each automatic recommendation should be explainable in terms of:
-
-- applicability;
-- measured baseline;
-- candidate tested;
-- measured delta;
-- uncertainty;
-- guardrails;
-- final verdict.
-
-## 30. V0.1 definition of done
-
-V0.1 is complete only when the following path works end-to-end on supported Windows 11 x64 hardware:
-
-```text
-Inventory
-→ topology
-→ ETW baseline
-→ DPC/ISR analysis
-→ GPU interrupt-affinity candidate
-→ snapshot
-→ apply
-→ verify
-→ benchmark
-→ statistical comparison
-→ keep/revert
-→ history
-→ interrupted-run recovery
-```
-
-The release must not depend on undocumented manual recovery steps for normal supported operations.
-
-## 31. Architecture change process
-
-Changes to any of the following require an ADR in `docs/adr/`:
-
-- core language/runtime;
-- UI framework;
-- privileged-process model;
-- IPC transport or trust model;
-- persistence engine;
+- language/runtime/UI framework;
+- privilege model;
+- IPC transport or authority;
+- persistence engine/recovery semantics;
 - benchmark verdict semantics;
-- introduction of native code;
-- updater/distribution trust model;
-- support for a new architecture such as ARM64;
-- changes that weaken snapshot/revert guarantees.
+- native-code introduction;
+- test-policy cap;
+- supported OS/architecture commitment.
 
-## 32. Non-negotiable principle
-
-If LatencyPilot cannot explain what changed, measure what happened, detect important collateral regressions, and restore the prior state, it must not automatically apply that optimization.
+Do not silently redefine “done.” Phase completion is governed by `ROADMAP.md` and evidenced in `PROJECT_STATUS.md`.
