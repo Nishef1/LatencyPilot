@@ -1,4 +1,5 @@
 using System.Globalization;
+using LatencyPilot.App.Services;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
 using Microsoft.UI.Xaml;
@@ -7,6 +8,8 @@ namespace LatencyPilot.App;
 
 public sealed partial class MainWindow : Window
 {
+    private bool _observationServiceReady;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -21,6 +24,129 @@ public sealed partial class MainWindow : Window
         CaptureProcessorTopology();
         CaptureDeviceInventory();
     }
+
+    private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
+    {
+        await RefreshObservationServiceStatusAsync();
+    }
+
+    private async Task RefreshObservationServiceStatusAsync()
+    {
+        CaptureBaselineButton.IsEnabled = false;
+        ServiceStatusText.Text = "Checking service…";
+
+        try
+        {
+            var status = await ObservationServiceClient.GetStatusAsync();
+            if (!status.PrivilegedObservationHostImplemented || status.MutationAvailable)
+            {
+                _observationServiceReady = false;
+                ServiceStatusText.Text = "Service contract mismatch. Read-only kernel capture is disabled.";
+                return;
+            }
+
+            _observationServiceReady = true;
+            CaptureBaselineButton.IsEnabled = true;
+            ServiceStatusText.Text = "Connected. Privileged observation is available; mutation remains disabled.";
+        }
+        catch (TimeoutException)
+        {
+            SetServiceUnavailable("Observation service is not running or did not respond in time.");
+        }
+        catch (IOException)
+        {
+            SetServiceUnavailable("Observation service connection failed.");
+        }
+        catch (InvalidDataException)
+        {
+            SetServiceUnavailable("Observation service returned an invalid protocol response.");
+        }
+        catch (InvalidOperationException exception)
+        {
+            SetServiceUnavailable(exception.Message);
+        }
+    }
+
+    private async void CaptureBaselineButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_observationServiceReady)
+        {
+            await RefreshObservationServiceStatusAsync();
+            if (!_observationServiceReady)
+            {
+                return;
+            }
+        }
+
+        CaptureBaselineButton.IsEnabled = false;
+        KernelCaptureStatusText.Text = "Capturing DPC/ISR activity for 5 seconds…";
+
+        try
+        {
+            var capture = await ObservationServiceClient.CaptureKernelLatencyAsync(
+                TimeSpan.FromSeconds(5),
+                maximumEvents: 200_000);
+
+            DpcCountText.Text = capture.Dpc.Count.ToString("N0", CultureInfo.InvariantCulture);
+            IsrCountText.Text = capture.Isr.Count.ToString("N0", CultureInfo.InvariantCulture);
+            DpcP99Text.Text = FormatMicroseconds(capture.Dpc.P99Microseconds);
+            IsrP99Text.Text = FormatMicroseconds(capture.Isr.P99Microseconds);
+            ObservedProcessorCountText.Text = capture.Processors.Count.ToString(CultureInfo.InvariantCulture);
+
+            KernelCaptureStatusText.Text = capture.EventsLost == 0 &&
+                capture.InvalidEventCount == 0 &&
+                !capture.EventLimitReached
+                ? $"Capture complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected."
+                : $"Capture incomplete: lost={capture.EventsLost}, invalid={capture.InvalidEventCount}, limitReached={capture.EventLimitReached}.";
+        }
+        catch (TimeoutException)
+        {
+            ClearCaptureMetrics();
+            SetServiceUnavailable("Observation service is not running or did not respond in time.");
+            KernelCaptureStatusText.Text = "Kernel capture did not start.";
+        }
+        catch (IOException)
+        {
+            ClearCaptureMetrics();
+            SetServiceUnavailable("Observation service connection failed.");
+            KernelCaptureStatusText.Text = "Kernel capture did not complete.";
+        }
+        catch (InvalidDataException)
+        {
+            ClearCaptureMetrics();
+            KernelCaptureStatusText.Text = "Observation service returned an invalid protocol response.";
+        }
+        catch (InvalidOperationException exception)
+        {
+            ClearCaptureMetrics();
+            KernelCaptureStatusText.Text = exception.Message;
+        }
+        finally
+        {
+            CaptureBaselineButton.IsEnabled = _observationServiceReady;
+        }
+    }
+
+    private void SetServiceUnavailable(string message)
+    {
+        _observationServiceReady = false;
+        CaptureBaselineButton.IsEnabled = false;
+        ServiceStatusText.Text = message;
+    }
+
+    private void ClearCaptureMetrics()
+    {
+        DpcCountText.Text = "—";
+        IsrCountText.Text = "—";
+        DpcP99Text.Text = "—";
+        IsrP99Text.Text = "—";
+        ObservedProcessorCountText.Text = "—";
+    }
+
+    private static string FormatMicroseconds(double? value) =>
+        value is null
+            ? "—"
+            : value.Value.ToString("F1", CultureInfo.InvariantCulture) + " µs";
 
     private void CaptureProcessorTopology()
     {

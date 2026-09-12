@@ -2,7 +2,7 @@
     x:Class="LatencyPilot.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid Background="{StaticResource CanvasBrush}" Padding="32">
+    <Grid x:Name="RootGrid" Background="{StaticResource CanvasBrush}" Padding="32" Loaded="RootGrid_Loaded">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="20" />
@@ -37,7 +37,7 @@
                     <TextBlock Margin="0,5,0,0"
                                Foreground="{StaticResource MutedTextBrush}"
                                TextWrapping="Wrap"
-                               Text="Hardware inventory is read directly from Windows. Tuning remains unavailable: no registry, interrupt-affinity, MSI, power or network settings are changed." />
+                               Text="Hardware inventory stays in the desktop app. Privileged kernel observation is isolated in the Windows service. Tuning remains unavailable." />
                 </StackPanel>
             </Grid>
         </Border>
@@ -102,17 +102,60 @@
                     Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1">
-                <StackPanel>
-                    <TextBlock Text="Observation roadmap" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
-                    <TextBlock Margin="0,18,0,0" Text="Interrupt and driver metadata" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
-                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="Read configuration hints and driver/provider metadata without claiming they prove active interrupt delivery." />
-                    <TextBlock Margin="0,18,0,0" Text="Read-only ETW baseline" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
-                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="DPC/ISR capture, per-CPU distribution and driver attribution." />
-                    <TextBlock Margin="0,18,0,0" Text="Baseline quality" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
-                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="Repeated windows, noise-floor estimation and drift detection before any optimization is unlocked." />
-                    <TextBlock Margin="0,18,0,0" Text="Mutation boundary remains closed" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
-                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="No affinity/MSI changes until the journal, privileged service, verify and rollback path exists." />
-                </StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Kernel latency baseline" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                        <TextBlock Margin="0,6,0,0"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Text="DPC and ISR observation is requested through the local privileged service. No tuning command exists in this phase." />
+
+                        <TextBlock Margin="0,18,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Observation service" />
+                        <TextBlock x:Name="ServiceStatusText" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap" Text="Checking service…" />
+
+                        <Button x:Name="CaptureBaselineButton"
+                                Margin="0,18,0,0"
+                                HorizontalAlignment="Left"
+                                IsEnabled="False"
+                                Click="CaptureBaselineButton_Click"
+                                Content="Capture 5 s baseline" />
+
+                        <TextBlock x:Name="KernelCaptureStatusText"
+                                   Margin="0,10,0,0"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Text="No kernel capture has been run yet." />
+
+                        <Grid Margin="0,20,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Foreground="{StaticResource MutedTextBrush}" Text="DPC events" />
+                                <TextBlock x:Name="DpcCountText" Margin="0,4,0,0" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Text="—" />
+                                <TextBlock Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" Text="DPC p99" />
+                                <TextBlock x:Name="DpcP99Text" Margin="0,4,0,0" Foreground="{StaticResource TextBrush}" Text="—" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Foreground="{StaticResource MutedTextBrush}" Text="ISR events" />
+                                <TextBlock x:Name="IsrCountText" Margin="0,4,0,0" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Text="—" />
+                                <TextBlock Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" Text="ISR p99" />
+                                <TextBlock x:Name="IsrP99Text" Margin="0,4,0,0" Foreground="{StaticResource TextBrush}" Text="—" />
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Margin="0,18,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Processors observed" />
+                        <TextBlock x:Name="ObservedProcessorCountText" Foreground="{StaticResource TextBrush}" Text="—" />
+
+                        <TextBlock Margin="0,22,0,0" Text="Safety boundary" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                        <TextBlock Margin="0,5,0,0"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Text="The service exposes only typed read-only observation commands. Registry, MSI, affinity, power and network mutation remain unavailable." />
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
     </Grid>
