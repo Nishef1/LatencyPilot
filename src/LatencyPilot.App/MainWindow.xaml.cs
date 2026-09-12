@@ -224,10 +224,13 @@ public sealed partial class MainWindow : Window
         ObservationQualityText.Text = "Quality evidence will appear after capture.";
     }
 
-    private static string GetProductVersion() =>
-        typeof(MainWindow).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion ?? "0.0.0";
+    private static string GetProductVersion()
+    {
+        var assembly = typeof(MainWindow).Assembly;
+        return assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? assembly.GetName().Version?.ToString(3)
+            ?? "unknown";
+    }
 
     private static string FormatLargestP99(ProcessorLatencyDistribution processor)
     {
