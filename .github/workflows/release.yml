@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Three-part version, for example 0.0.0'
+        description: 'Three-part version, for example 0.0.1'
         required: true
         type: string
 
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -50,7 +50,7 @@ jobs:
           elseif ('${{ github.ref_type }}' -eq 'tag') {
             $tag = '${{ github.ref_name }}'
             if ($tag -notmatch '^v([0-9]+)\.([0-9]+)\.([0-9]+)$') {
-              throw 'Release tag must use vMAJOR.MINOR.PATCH, for example v0.0.0.'
+              throw 'Release tag must use vMAJOR.MINOR.PATCH, for example v0.0.1.'
             }
             $version = $tag.Substring(1)
           }
@@ -82,44 +82,60 @@ jobs:
       - name: Critical tests
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release --no-build
 
-      - name: Publish Windows x64 app
-        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/release/App
+      - name: Publish Windows x64 app payload
+        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/payload/App -p:DebugType=None -p:DebugSymbols=false -p:SatelliteResourceLanguages=en-US -p:PublishReadyToRun=false
 
-      - name: Publish Windows x64 service
-        run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/release/Service
+      - name: Publish Windows x64 service payload
+        run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/payload/Service -p:DebugType=None -p:DebugSymbols=false -p:SatelliteResourceLanguages=en-US -p:PublishReadyToRun=false
 
-      - name: Assemble release bundle
+      - name: Prepare installer payload
         shell: pwsh
         run: |
           $version = '${{ steps.version.outputs.version }}'
-          Copy-Item scripts/Install-Service.ps1 artifacts/release/Install-Service.ps1
-          Copy-Item scripts/Uninstall-Service.ps1 artifacts/release/Uninstall-Service.ps1
-          Copy-Item docs/PHYSICAL_VALIDATION.md artifacts/release/PHYSICAL_VALIDATION.md
-          Copy-Item README.md artifacts/release/README.md
-          Copy-Item LICENSE artifacts/release/LICENSE
-          Set-Content -LiteralPath artifacts/release/VERSION.txt -Value $version -NoNewline
-
+          Copy-Item scripts/Install-Service.ps1 artifacts/payload/Install-Service.ps1
+          Copy-Item scripts/Uninstall-Service.ps1 artifacts/payload/Uninstall-Service.ps1
+          Copy-Item docs/PHYSICAL_VALIDATION.md artifacts/payload/PHYSICAL_VALIDATION.md
+          Copy-Item README.md artifacts/payload/README.md
+          Copy-Item LICENSE artifacts/payload/LICENSE
+          Set-Content -LiteralPath artifacts/payload/VERSION.txt -Value $version -NoNewline
           @(
             "version=$version"
             "commit=$env:GITHUB_SHA"
             "workflow=${{ github.workflow }}"
             "workflow_run=${{ github.run_id }}"
             "ref=${{ github.ref }}"
-          ) | Set-Content -LiteralPath artifacts/release/BUILD_INFO.txt
+          ) | Set-Content -LiteralPath artifacts/payload/BUILD_INFO.txt
 
-          $archive = "artifacts/LatencyPilot-$version-win-x64.zip"
-          Compress-Archive -Path artifacts/release/* -DestinationPath $archive -CompressionLevel Optimal
+      - name: Build setup EXE
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $env:LATENCYPILOT_VERSION = $version
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+            if ($null -eq $command) { throw 'Inno Setup compiler was not found on the runner.' }
+            $iscc = $command.Source
+          }
+          & $iscc installer/LatencyPilot.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
 
-          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
-          Set-Content -LiteralPath "$archive.sha256" -Value "$hash  $(Split-Path $archive -Leaf)" -NoNewline
+          $setup = "artifacts/installer/LatencyPilot-$version-win-x64-setup.exe"
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $setup).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$setup.sha256" -Value "$hash  $(Split-Path $setup -Leaf)" -NoNewline
+          $sizeMiB = [Math]::Round((Get-Item -LiteralPath $setup).Length / 1MB, 2)
+          "### Release installer" >> $env:GITHUB_STEP_SUMMARY
+          "- Version: $version" >> $env:GITHUB_STEP_SUMMARY
+          "- Size: $sizeMiB MiB" >> $env:GITHUB_STEP_SUMMARY
+          "- SHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload release build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LatencyPilot-${{ steps.version.outputs.version }}-win-x64
+          name: LatencyPilot-${{ steps.version.outputs.version }}-setup-win-x64
           path: |
-            artifacts/LatencyPilot-${{ steps.version.outputs.version }}-win-x64.zip
-            artifacts/LatencyPilot-${{ steps.version.outputs.version }}-win-x64.zip.sha256
+            artifacts/installer/LatencyPilot-${{ steps.version.outputs.version }}-win-x64-setup.exe
+            artifacts/installer/LatencyPilot-${{ steps.version.outputs.version }}-win-x64-setup.exe.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -130,22 +146,15 @@ jobs:
         run: |
           $version = '${{ steps.version.outputs.version }}'
           $tag = '${{ steps.version.outputs.tag }}'
-          $archive = "artifacts/LatencyPilot-$version-win-x64.zip"
-          $checksum = "$archive.sha256"
+          $setup = "artifacts/installer/LatencyPilot-$version-win-x64-setup.exe"
+          $checksum = "$setup.sha256"
 
           if ('${{ github.ref_type }}' -ne 'tag') {
             git tag $tag $env:GITHUB_SHA
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to create release tag $tag."
-            }
-
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create release tag $tag." }
             git push origin $tag
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to push release tag $tag."
-            }
+            if ($LASTEXITCODE -ne 0) { throw "Failed to push release tag $tag." }
           }
 
-          gh release create $tag $archive $checksum --title "LatencyPilot $version" --prerelease --generate-notes --verify-tag
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to create GitHub prerelease $tag."
-          }
+          gh release create $tag $setup $checksum --title "LatencyPilot $version" --prerelease --generate-notes --verify-tag
+          if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub prerelease $tag." }
