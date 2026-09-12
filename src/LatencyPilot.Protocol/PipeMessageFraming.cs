@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace LatencyPilot.Protocol;
 
@@ -9,6 +10,7 @@ public static class PipeMessageFraming
     {
         PropertyNameCaseInsensitive = false,
         MaxDepth = 16,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
     public static async ValueTask WriteAsync<T>(
@@ -19,6 +21,7 @@ public static class PipeMessageFraming
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(message);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumPayloadBytes);
 
         var payload = JsonSerializer.SerializeToUtf8Bytes(message, SerializerOptions);
         if (payload.Length == 0 || payload.Length > maximumPayloadBytes)
@@ -40,6 +43,7 @@ public static class PipeMessageFraming
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumPayloadBytes);
 
         var header = new byte[sizeof(int)];
         await stream.ReadExactlyAsync(header, cancellationToken).ConfigureAwait(false);
