@@ -7,6 +7,7 @@
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <AssemblyName>LatencyPilot</AssemblyName>
     <RootNamespace>LatencyPilot.App</RootNamespace>
