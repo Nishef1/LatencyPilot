@@ -3,6 +3,7 @@ using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
+using LatencyPilot.Benchmarking.Statistics;
 using LatencyPilot.Core.Observation;
 using LatencyPilot.Platform.Windows.Etw;
 using LatencyPilot.Protocol;
@@ -14,11 +15,38 @@ namespace LatencyPilot.Service;
 internal sealed class ObservationHost : BackgroundService
 {
     private static readonly TimeSpan PipeIoTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan CaptureCompletionMargin = TimeSpan.FromSeconds(5);
+
     private static readonly Action<ILogger, Exception?> KernelLatencyCaptureFailed =
         LoggerMessage.Define(
             LogLevel.Error,
             new EventId(1001, nameof(KernelLatencyCaptureFailed)),
             "Kernel latency capture failed unexpectedly.");
+
+    private static readonly Action<ILogger, Guid, int, int, Exception?> KernelLatencyCaptureStarted =
+        LoggerMessage.Define<Guid, int, int>(
+            LogLevel.Information,
+            new EventId(1002, nameof(KernelLatencyCaptureStarted)),
+            "Kernel latency capture {RequestId} started for {DurationMilliseconds} ms with a {MaximumEvents} event limit.");
+
+    private static readonly Action<ILogger, Guid, double, int, int, Exception?> KernelLatencyCaptureCompleted =
+        LoggerMessage.Define<Guid, double, int, int>(
+            LogLevel.Information,
+            new EventId(1003, nameof(KernelLatencyCaptureCompleted)),
+            "Kernel latency capture {RequestId} completed in {ActualDurationMilliseconds} ms with {EventCount} events and {EventsLost} ETW events lost.");
+
+    private static readonly Action<ILogger, Guid, Exception?> ClientDisconnectedDuringOperation =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Warning,
+            new EventId(1004, nameof(ClientDisconnectedDuringOperation)),
+            "Observation client disconnected or violated framing while request {RequestId} was executing; the operation was cancelled.");
+
+    private static readonly Action<ILogger, string, Exception?> PipeRequestRejected =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(1005, nameof(PipeRequestRejected)),
+            "Observation pipe request was rejected before execution: {Reason}.");
+
     private readonly ILogger<ObservationHost> logger;
 
     public ObservationHost(ILogger<ObservationHost> logger)
@@ -41,21 +69,21 @@ internal sealed class ObservationHost : BackgroundService
             {
                 return;
             }
-            catch (EndOfStreamException)
+            catch (EndOfStreamException exception)
             {
-                // Client disconnected before completing a framed request.
+                PipeRequestRejected(logger, "client disconnected before completing a framed request", exception);
             }
-            catch (IOException)
+            catch (IOException exception)
             {
-                // Broken pipe or client disconnect. The next loop creates a clean server instance.
+                PipeRequestRejected(logger, "broken pipe or client disconnect", exception);
             }
-            catch (InvalidDataException)
+            catch (InvalidDataException exception)
             {
-                // Malformed or oversized protocol frame: fail closed by dropping the connection.
+                PipeRequestRejected(logger, "malformed or oversized protocol frame", exception);
             }
-            catch (JsonException)
+            catch (JsonException exception)
             {
-                // Malformed JSON: fail closed by dropping the connection.
+                PipeRequestRejected(logger, "malformed or incompatible JSON payload", exception);
             }
         }
     }
@@ -68,7 +96,7 @@ internal sealed class ObservationHost : BackgroundService
             PipeAccessRights.FullControl,
             AccessControlType.Deny));
         security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+            new SecurityIdentifier(WellKnownSidType.InteractiveSid, null),
             PipeAccessRights.ReadWrite,
             AccessControlType.Allow));
 
@@ -114,7 +142,39 @@ internal sealed class ObservationHost : BackgroundService
             }
         }
 
-        var response = HandleRequest(request, stoppingToken);
+        using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        operationCancellation.CancelAfter(
+            TimeSpan.FromMilliseconds(ObservationProtocol.MaximumCaptureDurationMilliseconds) + CaptureCompletionMargin);
+
+        using var disconnectMonitorCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        var disconnectMonitor = MonitorClientDisconnectAsync(
+            server,
+            operationCancellation,
+            disconnectMonitorCancellation.Token);
+
+        ObservationResponse response;
+        try
+        {
+            response = await Task.Run(
+                () => HandleRequest(request, operationCancellation.Token),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            disconnectMonitorCancellation.Cancel();
+            await AwaitDisconnectMonitorAsync(disconnectMonitor).ConfigureAwait(false);
+        }
+
+        if (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (operationCancellation.IsCancellationRequested || !server.IsConnected)
+        {
+            ClientDisconnectedDuringOperation(logger, request.RequestId, null);
+            return;
+        }
 
         using var responseDeadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         responseDeadline.CancelAfter(PipeIoTimeout);
@@ -129,6 +189,43 @@ internal sealed class ObservationHost : BackgroundService
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
             // Client stopped reading. Drop the connection and accept the next request.
+        }
+    }
+
+    private static async Task MonitorClientDisconnectAsync(
+        NamedPipeServerStream server,
+        CancellationTokenSource operationCancellation,
+        CancellationToken cancellationToken)
+    {
+        var probe = new byte[1];
+
+        try
+        {
+            var bytesRead = await server.ReadAsync(probe, cancellationToken).ConfigureAwait(false);
+            if (bytesRead == 0 || bytesRead > 0)
+            {
+                operationCancellation.Cancel();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The operation completed normally; stop the disconnect probe.
+        }
+        catch (IOException)
+        {
+            operationCancellation.Cancel();
+        }
+    }
+
+    private static async Task AwaitDisconnectMonitorAsync(Task monitor)
+    {
+        try
+        {
+            await monitor.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancellation is the normal way to stop the disconnect probe after a response is ready.
         }
     }
 
@@ -188,15 +285,34 @@ internal sealed class ObservationHost : BackgroundService
 
         try
         {
+            KernelLatencyCaptureStarted(
+                logger,
+                request.RequestId,
+                capture.DurationMilliseconds,
+                capture.MaximumEvents,
+                null);
+
             var result = KernelLatencyCapture.Capture(
                 new KernelLatencyCaptureOptions(
                     TimeSpan.FromMilliseconds(capture.DurationMilliseconds),
                     capture.MaximumEvents),
                 stoppingToken);
 
+            KernelLatencyCaptureCompleted(
+                logger,
+                request.RequestId,
+                result.ActualDuration.TotalMilliseconds,
+                result.Events.Count,
+                result.EventsLost,
+                null);
+
             return Ok(
                 request.RequestId,
                 kernelLatencyCapture: Summarize(result));
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return CaptureUnavailable(request.RequestId);
         }
         catch (UnauthorizedAccessException)
         {
@@ -325,24 +441,18 @@ internal sealed class ObservationHost : BackgroundService
 
         return new LatencyDistribution(
             sorted.Length,
-            Percentile(sorted, 0.50),
-            Percentile(sorted, 0.95),
-            Percentile(sorted, 0.99),
-            Percentile(sorted, 0.999),
+            Percentiles.CalculateSorted(sorted, 0.50),
+            Percentiles.CalculateSorted(sorted, 0.95),
+            Percentiles.CalculateSorted(sorted, 0.99),
+            Percentiles.CalculateSorted(sorted, 0.999),
             sorted[^1]);
-    }
-
-    private static double Percentile(double[] sorted, double percentile)
-    {
-        var index = (int)Math.Ceiling(percentile * sorted.Length) - 1;
-        return sorted[Math.Clamp(index, 0, sorted.Length - 1)];
     }
 
     private static ObservationResponse CaptureUnavailable(Guid requestId) =>
         Error(
             requestId,
             ObservationErrorCode.CaptureUnavailable,
-            "The privileged observation service could not start the kernel latency capture.");
+            "The privileged observation service could not start or complete the kernel latency capture.");
 
     private static ObservationResponse Ok(
         Guid requestId,
