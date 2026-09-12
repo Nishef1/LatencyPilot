@@ -61,9 +61,11 @@ if (fileLoggingStartupFailure is not null)
     var startupLogger = host.Services
         .GetRequiredService<ILoggerFactory>()
         .CreateLogger("LatencyPilot.Service.Startup");
-    startupLogger.LogWarning(
-        fileLoggingStartupFailure,
+    var logFileUnavailable = LoggerMessage.Define(
+        LogLevel.Warning,
+        new EventId(1000, "StructuredFileLoggingUnavailable"),
         "Structured file logging could not be initialized; default logging providers remain active.");
+    logFileUnavailable(startupLogger, fileLoggingStartupFailure);
 }
 
 await host.RunAsync();
