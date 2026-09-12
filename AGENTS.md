@@ -2,23 +2,30 @@
 
 This file is authoritative for coding agents and contributors working in this repository.
 
-LatencyPilot is a **measurement-first Windows 11 latency experimentation platform**, not a generic optimizer. The primary engineering objective is to make low-level tuning measurable, attributable, reversible, and safe enough to reason about.
+LatencyPilot is a **measurement-first Windows 11 latency experimentation platform**, not a generic optimizer. The engineering objective is to make low-level tuning measurable, attributable, reversible and safe enough to reason about.
 
-If an implementation conflicts with this file, `SYSTEM_DESIGN.md`, or the benchmark contract, stop and resolve the conflict before continuing.
+Before changing code, read:
+
+1. `ROADMAP.md` — authoritative final target and phase exit gates;
+2. `PROJECT_STATUS.md` — live completion ledger;
+3. `SYSTEM_DESIGN.md` — architecture and privilege boundaries;
+4. `docs/BENCHMARK_METHODOLOGY.md` — measurement contract.
+
+If implementation conflicts with these documents, resolve the conflict before continuing.
 
 ## 1. Mission
 
 LatencyPilot must help a user answer:
 
 - what is currently causing latency or interrupt concentration;
-- which change is being tested;
+- which exact change is being tested;
 - whether that change measurably improved the target subsystem;
 - whether another subsystem regressed;
-- how confident the result is;
+- how uncertain/noisy the result is;
 - whether the system should keep or revert the change;
-- how to restore the exact pre-experiment state.
+- how to restore the pre-experiment state.
 
-The core loop is:
+Core loop:
 
 ```text
 Measure → Experiment → Verify → Compare → Keep or Revert
@@ -29,39 +36,36 @@ Measure → Experiment → Verify → Compare → Keep or Revert
 Do not turn LatencyPilot into:
 
 - a registry tweak collection;
-- a debloater;
-- a generic cleanup utility;
+- a debloater or cleanup utility;
 - a service-disabling script;
-- an FPS booster that reports only a single score;
+- an FPS booster with one opaque score;
 - a timer/HPET folklore tool;
-- a tool that disables security features for performance by default;
-- a hardware overclocking/undervolting utility;
-- a benchmark that claims hardware-level input latency without appropriate hardware measurement.
+- a tool that disables Windows security features for performance by default;
+- an overclocking/undervolting tool;
+- a benchmark that claims physical click-to-photon latency without physical instrumentation.
 
-## 3. Frozen stack for V0.1
+## 3. Frozen V0.1 stack
 
 Unless an ADR explicitly changes it:
 
-- C# 14
-- .NET 10 LTS
-- WPF desktop application
-- Windows 11 x64
-- Windows Service for privileged operations
-- Named Pipes for local IPC
-- ETW / Microsoft.Diagnostics.Tracing.TraceEvent
-- PresentMon for graphics/frame telemetry where applicable
-- SetupAPI + Configuration Manager for device discovery
-- CPU Sets / processor topology APIs
-- Raw Input for input-report measurements
-- SQLite for persistent experiment state
-- MSTest + Microsoft.Testing.Platform
-- self-contained x64 release artifacts
+- C# 14;
+- .NET 10 LTS;
+- WPF desktop application;
+- Windows 11 x64;
+- Windows Service for privileged operations when mutation begins;
+- Named Pipes for local IPC;
+- ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`;
+- PresentMon where graphics telemetry is required;
+- SetupAPI + Configuration Manager for device discovery;
+- CPU Sets / processor topology APIs;
+- Raw Input for input-report measurements;
+- SQLite for durable experiment state;
+- MSTest + Microsoft.Testing.Platform;
+- self-contained x64 release artifacts.
 
-Do not introduce a second application framework, second persistence engine, alternate IPC stack, or native component without measured need and an ADR.
+Do not add a second UI framework, persistence engine, IPC stack or native component without measured need and an ADR.
 
-## 4. Dependency rules
-
-Intended projects:
+## 4. Project boundaries
 
 ```text
 LatencyPilot.Core
@@ -73,89 +77,40 @@ LatencyPilot.Service
 LatencyPilot.App
 ```
 
-Rules:
-
 ### Core
-
-`LatencyPilot.Core` contains domain types and invariants.
-
-It must not depend on:
-
-- WPF;
-- ETW implementations;
-- Registry APIs;
-- SetupAPI;
-- SQLite;
-- Windows Service infrastructure;
-- PresentMon;
-- machine-specific state.
+Domain types and invariants only. No WPF, ETW implementation, Registry, SQLite, P/Invoke or machine state.
 
 ### Benchmarking
-
-`LatencyPilot.Benchmarking` contains experiment design, distributions, percentiles, noise-floor analysis, confidence logic, verdicts, and workload-independent comparison logic.
-
-Keep it deterministic and testable without real hardware whenever possible.
+Percentiles, distributions, noise/drift analysis, comparisons, guardrails and verdicts. Keep deterministic and hardware-independent where possible.
 
 ### Protocol
-
-`LatencyPilot.Protocol` contains versioned IPC commands, events, DTOs, errors, and compatibility contracts.
-
-It must not contain privileged implementation logic.
+Versioned IPC commands/events/DTOs/errors only. Never privileged implementation logic.
 
 ### Platform.Windows
-
-`LatencyPilot.Platform.Windows` owns Windows-specific inspection and mutation mechanisms:
-
-- ETW sessions and parsers;
-- SetupAPI/Configuration Manager;
-- PCI/device topology;
-- MSI/MSI-X and interrupt policy access;
-- CPU topology and CPU Sets;
-- Raw Input;
-- USB/NDIS/platform telemetry;
-- registry/device-policy adapters;
-- PresentMon integration adapters.
-
-Do not leak raw P/Invoke or registry paths across the solution.
+All raw Windows mechanisms: ETW, SetupAPI/CM, PCI/device topology, interrupt policy, MSI/MSI-X, CPU topology, Raw Input, USB/NDIS telemetry, registry/device-policy adapters and PresentMon adapters.
 
 ### Persistence
-
-`LatencyPilot.Persistence` owns SQLite, migrations, snapshots, experiment journals, recovery records, and stored result schemas.
+SQLite, migrations, snapshots, experiment journal, recovery state and stored benchmark history.
 
 ### Service
-
-`LatencyPilot.Service` is the privileged boundary. It validates and executes narrow commands; it is not a second business-logic layer.
+The narrow privileged boundary. It validates and executes explicit supported operations; it must never become a generic automation host.
 
 ### App
+Non-elevated WPF UX. It must never directly mutate privileged Windows state.
 
-`LatencyPilot.App` is the non-elevated WPF client. It must never directly mutate privileged Windows state.
-
-## 5. Privilege rules
+## 5. Privilege and mutation rules
 
 The desktop application must not require permanent elevation.
 
-Privileged mutations must:
+Never expose through the privileged boundary:
 
-1. cross the versioned local IPC boundary;
-2. be explicitly enumerated commands, not arbitrary shell/registry execution;
-3. validate all identifiers and values in the service;
-4. verify the target still matches the snapshot before mutation where applicable;
-5. journal intent and original state before apply;
-6. independently verify the post-apply state;
-7. expose a deterministic revert path;
-8. fail closed if authorization, validation, or state verification fails.
+- arbitrary PowerShell;
+- arbitrary process/command execution;
+- arbitrary registry paths or values;
+- generic run-as-SYSTEM;
+- user-provided privileged plugins or DLL loading.
 
-Never add:
-
-- arbitrary PowerShell execution from the UI;
-- arbitrary command execution through the service;
-- arbitrary registry path/value mutation through IPC;
-- generic "run as SYSTEM" capabilities;
-- user-controlled DLL/plugin loading in the privileged service.
-
-## 6. Mutation contract
-
-Every system-changing feature must implement this lifecycle:
+Every system mutation must follow:
 
 ```text
 Detect applicability
@@ -165,300 +120,193 @@ Detect applicability
 → Apply
 → Verify actual state
 → Benchmark
-→ Classify result
+→ Classify
 → Keep or Revert
 → Verify final state
 → Close journal
 ```
 
-A mutation is not complete if any step is missing.
+If the current state cannot be proven, report it as unknown and enter recovery. Never manufacture success.
 
-### Required failure behavior
+## 6. Benchmark rules
 
-Tests must cover at least:
+Read `docs/BENCHMARK_METHODOLOGY.md` before changing measurement logic.
 
-- snapshot failure;
-- validation failure;
-- partial apply;
-- apply exception;
-- verification mismatch;
-- benchmark crash;
-- service restart;
-- app termination;
-- Windows reboot between apply and verdict;
-- revert failure;
-- state changed externally during an experiment.
+At minimum:
 
-If state cannot be safely inferred, report it as unknown and require recovery instead of pretending success.
-
-## 7. Benchmark rules
-
-Read `docs/BENCHMARK_METHODOLOGY.md` before changing benchmark logic.
-
-Minimum rules:
-
-- establish baseline variability/noise before interpreting small changes;
-- prefer repeated A/B-style measurements over one before/after run;
-- preserve raw samples or sufficient aggregate data for auditability;
-- report sample count;
-- report tail metrics appropriate to the subsystem;
-- never infer significance from percentage delta alone;
-- distinguish target metrics from guardrail metrics;
+- measure baseline variability before interpreting small deltas;
+- prefer repeatable A/B-style runs over a single before/after observation;
+- preserve raw samples or auditable aggregates;
+- report sample count and relevant tail metrics;
+- do not infer significance from percentage delta alone;
+- separate target metrics from guardrails;
 - treat baseline drift as a validity problem;
-- classify uncertainty explicitly;
-- do not let a composite score hide a regression.
+- represent uncertainty explicitly;
+- never let a composite score hide a regression.
 
-Supported verdict vocabulary should remain explicit, for example:
+Authoritative verdicts remain explicit, such as:
 
 ```text
-ConfirmedImprovement
-ConfirmedRegression
-TradeOff
+Improved
+Regressed
+Tradeoff
 NoMeasurableDifference
 Inconclusive
-InvalidExperiment
 ```
 
-Do not add a generic `Better = true` field as the authoritative result.
+Do not introduce an authoritative `Better = true` shortcut.
 
-## 8. Statistics
+## 7. Testing policy — focused, not exhaustive
 
-Latency distributions are commonly non-normal. Do not assume normality without evidence.
+LatencyPilot intentionally does **not** pursue high unit-test counts or coverage percentages.
 
-Where appropriate, use robust statistics and resampling methods such as bootstrap confidence intervals.
+The active automated critical suite should normally contain **5–10 high-value tests total**. Adding a test requires a credible high-blast-radius failure mode; do not write tests for getters, labels, trivial mappings, framework behavior or every historical bug.
 
-At minimum test invariants such as:
+Prefer one scenario test that crosses several important invariants over many microscopic regression tests.
 
-```text
-p50 <= p90 <= p95 <= p99 <= p99.9 <= max
-```
+The critical suite should collectively target roughly the failures most likely to make the application unsafe or fundamentally misleading, for example:
 
-and include synthetic datasets with:
+- illegal experiment-state transition;
+- bad/insufficient/non-finite measurement input;
+- false improvement inside the noise threshold;
+- clear improvement/regression misclassification;
+- target improvement masking a guardrail regression;
+- unsafe mutation/recovery failure once mutation exists;
+- protocol/persistence corruption once those paths become safety-critical.
 
-- identical distributions;
-- known improvement;
-- known regression;
-- heavy tails;
-- multimodal distributions;
-- sparse extreme outliers;
-- insufficient sample counts;
-- baseline drift.
+When a new phase introduces a more important risk, merge, replace or retire lower-value tests so the suite stays small. More than 10 active automated tests requires explicit repository-owner approval or an ADR explaining why the cap is no longer sufficient.
 
-## 9. ETW and telemetry
+Physical-hardware validation, exploratory benchmark runs and release checklists are not counted as automated tests.
 
-Prefer authoritative Windows providers and documented event semantics.
+CI green means the known critical paths build and pass; it is **not** proof of hardware latency improvement.
 
-Do not silently reinterpret missing or unknown fields.
-
-ETW parser changes require deterministic golden fixtures where feasible.
-
-A parser must not crash the application because of:
-
-- unknown provider versions;
-- missing optional fields;
-- unsupported event versions;
-- truncated fixture data;
-- unexpected but valid ordering.
-
-Preserve provenance: result records should identify the trace/source, capture interval, relevant provider/version information where available, and parser/application version.
-
-## 10. Hardware claims
+## 8. Hardware claims
 
 GitHub-hosted CI is not evidence that a hardware optimization improves real hardware.
 
-CI may validate:
+CI may prove buildability, deterministic comparison behavior, parser behavior using fixtures, protocol/persistence integrity and other machine-independent contracts.
 
-- parsers;
-- statistics;
-- state machines;
-- protocol contracts;
-- persistence;
-- synthetic/golden fixtures;
-- read-only Windows integration where supported.
+Claims about GPU affinity, USB/xHCI, NIC/RSS, interrupt placement or latency improvement require physical Windows 11 hardware evidence.
 
-Real claims about GPU affinity, USB/xHCI, NIC/RSS, device interrupt behavior, or physical-system latency require physical-hardware validation.
+Never fabricate physical results from VM data.
 
-Never fabricate or infer physical results from VM tests.
+## 9. Windows tuning policy
 
-## 11. Windows tuning policy
+Before implementing a tuning mechanism:
 
-Before implementing a new tuning mechanism:
+1. research Microsoft and authoritative vendor documentation;
+2. document the supported mechanism and assumptions;
+3. identify reboot requirements;
+4. define snapshot and rollback semantics;
+5. define primary and guardrail measurements;
+6. identify meaningful failure modes;
+7. add/update an ADR if architecture or policy changes.
 
-1. search Microsoft documentation and authoritative vendor documentation;
-2. document the supported mechanism;
-3. identify Windows-version and driver assumptions;
-4. identify whether a reboot is required;
-5. identify rollback semantics;
-6. identify primary and guardrail metrics;
-7. identify failure modes;
-8. add or update an ADR if architecture or policy changes.
+Undocumented tweaks are high risk and are not eligible for automatic application without explicit project-owner approval and unusually strong evidence.
 
-Treat undocumented tweaks as high risk. They are not eligible for automatic application without unusually strong evidence and explicit project approval.
+Do not automatically change unrelated HPET/platform-clock settings, dynamic tick, Defender/VBS/security features, unrelated services, undocumented scheduler values, mass network registry values or mass MMCSS settings.
 
-Do not add broad automatic changes to:
+## 10. ETW and telemetry
 
-- HPET/platform clock settings;
-- dynamic tick settings;
-- Defender/VBS/security features;
-- unrelated Windows services;
-- undocumented scheduler values;
-- mass network registry tweaks;
-- mass MMCSS changes;
-- power settings unrelated to the experiment.
+Prefer authoritative Windows providers and documented semantics.
 
-## 12. Testing requirements
+Do not silently reinterpret unknown/missing fields. Preserve source provenance where practical: capture interval, provider/driver identity, parser/application version and trace reference.
 
-Use MSTest + Microsoft.Testing.Platform unless an ADR changes the test stack.
+Parser robustness should be handled by design first. Add a fixture/test only when a malformed or versioned input represents a high-value failure scenario under the focused test policy.
 
-Tests must be:
-
-- deterministic where possible;
-- independent of execution order;
-- isolated from a developer's real registry/device state unless explicitly marked integration/hardware;
-- parallel-safe unless the test category requires serialization;
-- named for behavior, not implementation detail.
-
-Target coverage policy:
-
-| Project | Line | Branch |
-|---|---:|---:|
-| Core | 90% | 85% |
-| Benchmarking | 95% | 90% |
-| Protocol | 95% | 90% |
-| Persistence | 85% | 80% |
-| Platform.Windows | 75% | 65% |
-| Service | 80% | 75% |
-| App/ViewModels | 80% | 70% |
-
-Coverage is a guardrail, not a substitute for meaningful assertions.
-
-## 13. Golden fixtures
-
-Keep small deterministic fixtures in `test-assets/` when licensing and privacy permit.
-
-Each fixture should have:
-
-- a documented origin;
-- anonymization status;
-- expected parser output;
-- SHA-256 in the manifest;
-- no user credentials, machine secrets, personally identifying paths, or unnecessary identifiers.
-
-Large traces must not bloat normal Git history without explicit approval.
-
-## 14. Performance testing
-
-Correctness tests and microbenchmarks are separate.
-
-Use `perf/` for parser/statistics/serialization microbenchmarks.
-
-Do not fail a PR solely because a GitHub-hosted VM reports a small timing regression. Hosted runners are noisy and are not the project's hardware benchmark source of truth.
-
-## 15. Persistence and schema changes
+## 11. Persistence and recovery
 
 Experiment history and rollback state are safety-critical.
 
-Schema changes must:
+Before any mutation is implemented, persistence must guarantee that original state is durably recorded before apply. Schema changes must preserve active recovery records and be forward-auditable.
 
-- use migrations;
-- preserve rollback records;
-- be forward-auditable;
-- avoid destructive migrations without an explicit migration/recovery plan;
-- include migration tests from supported previous schemas.
+Do not rewrite historical benchmark results merely to match a newer interpretation; prefer versioned interpretation/migration metadata.
 
-Do not overwrite historical experiment results in place merely to match a newer interpretation. Prefer versioned interpretation or migration records.
+## 12. Logging and diagnostics
 
-## 16. Logging and diagnostics
+Logs should diagnose experiment state, IPC/privilege errors, apply/verify/revert mismatches, parser failures and unsupported hardware/provider behavior.
 
-Logs must be useful for diagnosing:
+Do not log secrets, tokens, arbitrary user files, full registry exports, unnecessary device serials or unrelated personally identifying information.
 
-- experiment state;
-- privilege/IPC errors;
-- apply/verify/revert mismatches;
-- parser failures;
-- unsupported hardware/provider behavior.
+Diagnostic bundles must remain local-first and reviewable before sharing.
 
-Do not log:
+## 13. UI rules
 
-- secrets;
-- authentication tokens;
-- arbitrary user files;
-- full registry exports;
-- unnecessary device serial numbers;
-- personally identifying data not needed for diagnosis.
+Show evidence, not marketing claims.
 
-Diagnostic bundles must be reviewable before sharing and should be local-only by default.
-
-## 17. UI rules
-
-The UI must show evidence rather than marketing claims.
-
-For each experiment, expose:
+For each real experiment eventually expose:
 
 - exact change;
-- original value/state;
-- candidate value/state;
+- original and candidate state;
 - whether apply was verified;
 - benchmark validity;
-- before/after distributions or key raw metrics;
-- delta;
-- uncertainty/confidence;
+- meaningful before/after metrics;
+- delta and uncertainty/noise context;
 - guardrail regressions;
-- keep/revert status;
-- recovery status.
+- keep/revert and recovery status.
 
-Avoid dark patterns that push the user toward keeping a change when the result is inconclusive or has a material trade-off.
+Do not push the user toward keeping an inconclusive or materially trade-off-heavy change.
 
-## 18. Source organization
+Do not show fake/synthetic values as real machine results.
 
-Prefer cohesive files and modules over extreme fragmentation. Split when a file contains multiple independent responsibilities or becomes difficult to reason about/test, not merely because it crosses an arbitrary line count.
+## 14. Source organization
 
-Do not create abstraction layers with no current consumer or testability/safety benefit.
+Prefer cohesive files/modules over extreme fragmentation. Split by responsibility, not arbitrary line count.
 
-Remove dead code instead of preserving speculative paths.
+Do not add abstractions with no current safety, clarity or testability benefit. Remove dead/speculative code rather than preserving it for possible future use.
 
-## 19. Change discipline
+## 15. Roadmap and completion discipline
 
-For each meaningful change:
+`ROADMAP.md` defines what 100% means and the exact exit gate for each phase. `PROJECT_STATUS.md` records what is actually complete.
 
-- understand existing architecture first;
-- update tests with implementation;
-- update docs/ADRs when contracts change;
+Rules:
+
+- never call a phase complete because code merely exists;
+- check a roadmap item only when its evidence exists on `main`;
+- build-dependent items require a successful CI run;
+- hardware-dependent items require physical-hardware evidence;
+- "implemented but unverified" remains incomplete;
+- when completing or discovering a blocker, update `PROJECT_STATUS.md` in the same work cycle;
+- if the scope changes, update the roadmap before silently redefining "done".
+
+Agents must use these files instead of relying on chat memory.
+
+## 16. Change discipline
+
+For every meaningful change:
+
+- understand the existing architecture first;
 - keep commits logically scoped;
 - avoid unrelated formatting churn;
-- never weaken a safety check merely to make a test pass;
-- never silence warnings broadly without root-cause analysis.
+- update documentation when contracts change;
+- add/modify tests only when justified by the focused critical-test policy;
+- never weaken safety logic merely to make CI pass;
+- inspect actual CI failures and fix root causes rather than disabling validation.
 
-If CI fails, inspect the actual failure and fix the cause. Do not disable tests, coverage, analyzers, or release validation as a shortcut.
+## 17. Licensing and contributions
 
-## 20. Licensing and contributions
+LatencyPilot is source-available and is not an OSI open-source project.
 
-LatencyPilot is source-available and is not an open-source project.
+Do not replace `LICENSE`, `CLA.md` or contribution terms unless explicitly instructed by the repository owner.
 
-Do not replace `LICENSE`, `CLA.md`, or contribution terms with an OSI license unless the repository owner explicitly instructs it.
+Third-party dependencies must have compatible licenses for the intended distribution model. Publicly visible source is not automatically reusable source; verify licensing before copying code.
 
-Third-party dependencies must have compatible licenses for the intended distribution model and must be documented when required.
+## 18. Definition of done for an optimizer
 
-Do not copy code from public repositories merely because it is visible. Confirm license compatibility first.
-
-## 21. Definition of done for a new optimizer
-
-A new optimization domain is not done until it has:
+A supported optimization domain is not done until it has:
 
 - authoritative applicability detection;
 - topology/device identification;
 - original-state capture;
 - validated candidate generation;
-- safe apply;
-- independent verification;
-- subsystem-specific benchmark;
-- system guardrails;
-- noise-floor handling;
-- repeated measurement strategy;
+- safe apply and independent verification;
+- subsystem-specific target measurement;
+- cross-subsystem guardrails;
+- noise/drift handling appropriate to the benchmark;
 - explicit verdict semantics;
 - revert and interrupted-run recovery;
-- unit/integration/golden tests as applicable;
+- the minimal critical test coverage justified by risk;
 - user-facing explanation of trade-offs;
-- documentation.
+- documentation and physical-hardware validation where required.
 
-If any of these are intentionally deferred, the feature must remain experimental and unavailable to automatic recommendation.
+If any of these are deferred, keep the feature experimental and unavailable to automatic recommendation.
