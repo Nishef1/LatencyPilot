@@ -1,0 +1,107 @@
+LatencyPilot Personal Use License 1.0
+
+Copyright © 2026 Nishef1. All rights reserved.
+
+This license is a custom source-available license. It is not an open-source license.
+
+1. Definitions
+
+"Software" means the LatencyPilot source code, binaries, documentation, benchmark assets, designs, and other materials made available from the official LatencyPilot repository, except for third-party components that are separately licensed.
+
+"Official Repository" means https://github.com/Nishef1/LatencyPilot and any repository explicitly designated by the copyright holder as its successor.
+
+"Personal Use" means use by a natural person solely for that person's own non-commercial purposes, on devices that person owns or is authorized to administer, and not on behalf of an employer, client, business, organization, government, school, laboratory, managed-service customer, or other third party.
+
+"Commercial Use" includes any use intended for or connected to commercial advantage, revenue, paid services, monetized products, internal business operations, consulting, benchmarking-as-a-service, support services, resale, bundling, licensing, sponsorship deliverables, or other for-profit activity.
+
+2. Personal-use permission
+
+Subject to these terms, the copyright holder grants you a limited, revocable, non-exclusive, non-transferable, non-sublicensable license to:
+
+(a) download and run unmodified official releases of the Software for Personal Use; and
+
+(b) inspect the publicly available source code for Personal Use, research, security review, learning, and evaluation.
+
+No other rights are granted except as expressly stated in this license or required by applicable law.
+
+3. Contributions to the Official Repository
+
+You may make local modifications solely as reasonably necessary to prepare a bug fix, test, documentation improvement, or other contribution intended for submission to the Official Repository.
+
+You may submit issues, discussions, patches, or pull requests to the Official Repository in accordance with CONTRIBUTING.md and CLA.md.
+
+If GitHub's platform requires a fork in order to prepare or submit a contribution, you may create and maintain such a fork only to the extent permitted by GitHub's Terms of Service and only for the purpose of contributing the proposed changes back to the Official Repository. This limited permission does not authorize a standalone distribution, mirror, competing project, independent release, or other use of that fork.
+
+4. Prohibited uses
+
+Except with prior written permission from the copyright holder, you may not:
+
+(a) use the Software for Commercial Use;
+
+(b) sell, rent, lease, sublicense, monetize, host as a paid service, bundle for sale, or otherwise commercially exploit the Software;
+
+(c) redistribute the Software, source code, binaries, substantial portions, or modified versions to third parties;
+
+(d) publish or maintain a mirror, independent fork, competing distribution, or derivative project based on the Software, except for the narrowly limited contribution workflow described in Section 3;
+
+(e) modify the Software for use as an independently maintained version or distribute modified builds outside the Official Repository;
+
+(f) remove or obscure copyright, license, authorship, safety, or attribution notices;
+
+(g) use the Software or its name in a way that suggests endorsement, sponsorship, certification, or affiliation by the copyright holder;
+
+(h) use LatencyPilot trademarks, logos, product identity, or confusingly similar branding without separate written permission.
+
+5. GitHub platform rights
+
+The Official Repository is currently public on GitHub. GitHub's Terms of Service grant GitHub users certain platform-level rights to view and reproduce public repository content through GitHub functionality, including forking within the Service.
+
+Nothing in this license attempts to revoke rights that the copyright holder has granted directly through mandatory GitHub platform terms while the repository is public. Those platform rights do not create any additional permission to commercially use, redistribute outside the permitted platform functionality, publish independent releases, maintain standalone derivative distributions, sublicense, or sell the Software.
+
+6. Contributions
+
+Contributions are accepted only under the terms described in CLA.md. Submission of a contribution does not grant the contributor any additional rights in LatencyPilot beyond those expressly provided by this license.
+
+Third-party contributions may remain subject to their contributors' rights and the contribution grant in CLA.md.
+
+7. Third-party software
+
+Third-party libraries, tools, data, trademarks, and other components are governed by their respective licenses and notices. This license applies only to material for which the LatencyPilot copyright holder has authority to grant these terms.
+
+8. No patent or trademark license
+
+No patent license is granted except to the extent strictly necessary to exercise the permissions expressly stated in this license. No trademark, trade name, logo, or branding rights are granted.
+
+9. Safety and assumption of risk
+
+LatencyPilot may inspect or alter low-level Windows configuration, device policy, interrupt affinity, networking configuration, power behavior, registry values, or other system settings. Such operations may cause degraded performance, instability, data loss, loss of connectivity, device malfunction, recovery requirements, or other harm.
+
+You are solely responsible for deciding whether to run the Software, reviewing proposed changes, maintaining backups and recovery options, and ensuring you are authorized to modify the device on which the Software is used.
+
+10. Disclaimer of warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, PERFORMANCE IMPROVEMENT, NON-INFRINGEMENT, SECURITY, OR SYSTEM COMPATIBILITY.
+
+NO BENCHMARK RESULT, RECOMMENDATION, SCORE, VERDICT, OR DOCUMENTATION IS A GUARANTEE THAT A CHANGE WILL IMPROVE YOUR SYSTEM OR BE SAFE FOR YOUR PARTICULAR HARDWARE, FIRMWARE, DRIVER, WINDOWS BUILD, OR WORKLOAD.
+
+11. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER AND CONTRIBUTORS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR OTHER DAMAGES ARISING FROM OR RELATING TO THE SOFTWARE, INCLUDING LOSS OF DATA, LOSS OF USE, LOSS OF CONNECTIVITY, HARDWARE OR SOFTWARE FAILURE, BUSINESS INTERRUPTION, OR LOST PROFITS, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+12. Termination
+
+Your rights under this license terminate automatically if you violate these terms. Upon termination, you must stop using the Software and delete copies in your possession or control, except copies that applicable law or GitHub platform functionality independently permits you to retain.
+
+The copyright holder may offer separate written licenses on different terms.
+
+13. No waiver
+
+Failure to enforce any provision of this license does not waive the right to enforce it later.
+
+14. Severability
+
+If any provision is held unenforceable, the remaining provisions remain in effect to the maximum extent permitted by law.
+
+15. Entire license
+
+This LICENSE file states the public license grant for LatencyPilot. CONTRIBUTING.md and CLA.md govern voluntary contributions to the Official Repository. A separately signed written agreement with the copyright holder may supersede these terms for the parties to that agreement.
