@@ -29,6 +29,7 @@ public static class KernelLatencyCapture
         };
 
         void StopProcessing() => session.Source.StopProcessing();
+        var stopProcessing = new Action(StopProcessing);
 
         void Append(
             KernelLatencyEventKind kind,
@@ -50,7 +51,7 @@ public static class KernelLatencyCapture
             if (events.Count >= options.MaximumEvents)
             {
                 eventLimitReached = true;
-                StopProcessing();
+                stopProcessing();
                 return;
             }
 
@@ -90,10 +91,10 @@ public static class KernelLatencyCapture
 
         session.EnableKernelProvider(keywords);
 
-        using var cancellationRegistration = cancellationToken.Register(StopProcessing);
+        using var cancellationRegistration = cancellationToken.Register(stopProcessing);
         using var timeoutTimer = new Timer(
             static state => ((Action)state!).Invoke(),
-            StopProcessing,
+            stopProcessing,
             options.Duration,
             Timeout.InfiniteTimeSpan);
 
