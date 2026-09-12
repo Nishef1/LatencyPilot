@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Reflection;
 using LatencyPilot.App.Services;
+using LatencyPilot.App.ViewModels;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
+using LatencyPilot.Protocol;
 using Microsoft.UI.Xaml;
 
 namespace LatencyPilot.App;
@@ -32,10 +34,17 @@ public sealed partial class MainWindow : Window
         await RefreshObservationServiceStatusAsync();
     }
 
+    private async void RefreshServiceButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshObservationServiceStatusAsync();
+    }
+
     private async Task RefreshObservationServiceStatusAsync()
     {
         CaptureObservationButton.IsEnabled = false;
-        ServiceStatusText.Text = "Checking service…";
+        RefreshServiceButton.IsEnabled = false;
+        ServiceStatusBadgeText.Text = "Checking service";
+        ServiceStatusText.Text = "Checking the local observation service…";
 
         try
         {
@@ -43,13 +52,15 @@ public sealed partial class MainWindow : Window
             if (!status.PrivilegedObservationHostImplemented || status.MutationAvailable)
             {
                 _observationServiceReady = false;
+                ServiceStatusBadgeText.Text = "Contract mismatch";
                 ServiceStatusText.Text = "Service contract mismatch. Read-only kernel capture is disabled.";
                 return;
             }
 
             _observationServiceReady = true;
             CaptureObservationButton.IsEnabled = true;
-            ServiceStatusText.Text = "Connected. Privileged observation is available; mutation remains disabled.";
+            ServiceStatusBadgeText.Text = "Service connected";
+            ServiceStatusText.Text = "Connected to the privileged read-only observation service. Mutation remains disabled.";
         }
         catch (TimeoutException)
         {
@@ -67,6 +78,10 @@ public sealed partial class MainWindow : Window
         {
             SetServiceUnavailable(exception.Message);
         }
+        finally
+        {
+            RefreshServiceButton.IsEnabled = true;
+        }
     }
 
     private async void CaptureObservationButton_Click(object sender, RoutedEventArgs e)
@@ -81,7 +96,9 @@ public sealed partial class MainWindow : Window
         }
 
         CaptureObservationButton.IsEnabled = false;
+        RefreshServiceButton.IsEnabled = false;
         KernelCaptureStatusText.Text = "Capturing DPC/ISR activity for 5 seconds…";
+        ObservationQualityText.Text = "Capture in progress. No interpretation is made until the observation completes.";
 
         try
         {
@@ -89,39 +106,7 @@ public sealed partial class MainWindow : Window
                 TimeSpan.FromSeconds(5),
                 maximumEvents: 200_000);
 
-            DpcCountText.Text = capture.Dpc.Count.ToString("N0", CultureInfo.InvariantCulture);
-            IsrCountText.Text = capture.Isr.Count.ToString("N0", CultureInfo.InvariantCulture);
-            DpcP99Text.Text = FormatMicroseconds(capture.Dpc.P99Microseconds);
-            DpcP999Text.Text = FormatMicroseconds(capture.Dpc.P999Microseconds);
-            IsrP99Text.Text = FormatMicroseconds(capture.Isr.P99Microseconds);
-            IsrP999Text.Text = FormatMicroseconds(capture.Isr.P999Microseconds);
-            ObservedProcessorCountText.Text = capture.Processors.Count.ToString(CultureInfo.InvariantCulture);
-
-            var totalAttributedEvents = capture.ResolvedModuleEventCount + capture.UnresolvedModuleEventCount;
-            var resolvedPercent = totalAttributedEvents == 0
-                ? 0d
-                : capture.ResolvedModuleEventCount * 100d / totalAttributedEvents;
-            var truncationSuffix = capture.ModuleContributorListTruncated || capture.UnresolvedRoutineListTruncated
-                ? " Contributor lists are truncated to protocol bounds."
-                : string.Empty;
-
-            ModuleAttributionCoverageText.Text = string.Create(
-                CultureInfo.InvariantCulture,
-                $"{capture.ResolvedModuleEventCount:N0} resolved / {capture.UnresolvedModuleEventCount:N0} unresolved ({resolvedPercent:F1}% resolved).{truncationSuffix}");
-
-            var topModule = capture.Modules.Count == 0 ? null : capture.Modules[0];
-            TopModuleText.Text = topModule is null
-                ? "No routine address was resolved to an authoritative image range."
-                : string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"{topModule.ModuleName} — {topModule.TotalDurationMicroseconds:F1} µs total");
-
-            KernelCaptureStatusText.Text = capture.EventsLost == 0 &&
-                capture.InvalidEventCount == 0 &&
-                capture.InvalidImageEventCount == 0 &&
-                !capture.EventLimitReached
-                ? $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected."
-                : $"Observation incomplete: lost={capture.EventsLost}, invalidLatency={capture.InvalidEventCount}, invalidImages={capture.InvalidImageEventCount}, limitReached={capture.EventLimitReached}.";
+            RenderCapture(capture);
         }
         catch (TimeoutException)
         {
@@ -148,13 +133,77 @@ public sealed partial class MainWindow : Window
         finally
         {
             CaptureObservationButton.IsEnabled = _observationServiceReady;
+            RefreshServiceButton.IsEnabled = true;
         }
+    }
+
+    private void RenderCapture(KernelLatencyCaptureResponse capture)
+    {
+        DpcCountText.Text = capture.Dpc.Count.ToString("N0", CultureInfo.InvariantCulture);
+        IsrCountText.Text = capture.Isr.Count.ToString("N0", CultureInfo.InvariantCulture);
+        DpcP99Text.Text = $"p99 {FormatMicroseconds(capture.Dpc.P99Microseconds)}";
+        DpcP999Text.Text = FormatMicroseconds(capture.Dpc.P999Microseconds);
+        IsrP99Text.Text = $"p99 {FormatMicroseconds(capture.Isr.P99Microseconds)}";
+        IsrP999Text.Text = FormatMicroseconds(capture.Isr.P999Microseconds);
+        ObservedProcessorCountText.Text = capture.Processors.Count.ToString(CultureInfo.InvariantCulture);
+
+        var totalAttributedEvents = capture.ResolvedModuleEventCount + capture.UnresolvedModuleEventCount;
+        var resolvedPercent = totalAttributedEvents == 0
+            ? 0d
+            : capture.ResolvedModuleEventCount * 100d / totalAttributedEvents;
+        ModuleCoverageBar.Value = Math.Clamp(resolvedPercent, 0d, 100d);
+
+        var truncationSuffix = capture.ModuleContributorListTruncated || capture.UnresolvedRoutineListTruncated
+            ? " Contributor lists reached protocol bounds."
+            : string.Empty;
+
+        ModuleAttributionCoverageText.Text = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{capture.ResolvedModuleEventCount:N0} resolved · {capture.UnresolvedModuleEventCount:N0} unresolved · {resolvedPercent:F1}% coverage.{truncationSuffix}");
+
+        TopModulesList.ItemsSource = capture.Modules
+            .Take(8)
+            .Select(module => new ModuleObservationRow(
+                module.ModuleName,
+                $"DPC {module.Dpc.Count:N0} · ISR {module.Isr.Count:N0}",
+                string.Create(CultureInfo.InvariantCulture, $"{module.TotalDurationMicroseconds:F1} µs")))
+            .ToArray();
+
+        var topModule = capture.Modules.Count == 0 ? null : capture.Modules[0];
+        TopModuleText.Text = topModule is null
+            ? "No routine address was resolved to an authoritative image range."
+            : $"Dominant resolved module: {topModule.ModuleName}";
+
+        TopProcessorsList.ItemsSource = capture.Processors
+            .OrderByDescending(processor => processor.Dpc.Count + processor.Isr.Count)
+            .Take(8)
+            .Select(processor => new ProcessorObservationRow(
+                $"CPU {processor.ProcessorNumber}",
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{processor.Dpc.Count + processor.Isr.Count:N0} events · DPC {processor.Dpc.Count:N0} / ISR {processor.Isr.Count:N0}"),
+                $"p99 {FormatLargestP99(processor)}"))
+            .ToArray();
+
+        var cleanCapture = capture.EventsLost == 0 &&
+            capture.InvalidEventCount == 0 &&
+            capture.InvalidImageEventCount == 0 &&
+            !capture.EventLimitReached;
+
+        KernelCaptureStatusText.Text = cleanCapture
+            ? $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected."
+            : $"Observation completed with quality warnings: lost={capture.EventsLost}, invalidLatency={capture.InvalidEventCount}, invalidImages={capture.InvalidImageEventCount}, limitReached={capture.EventLimitReached}.";
+
+        ObservationQualityText.Text = cleanCapture
+            ? "Capture integrity looks clean. This is still a single observation, not a validated baseline."
+            : "Treat this observation as incomplete evidence. Stage C will reject noisy or incomplete windows when building a baseline.";
     }
 
     private void SetServiceUnavailable(string message)
     {
         _observationServiceReady = false;
         CaptureObservationButton.IsEnabled = false;
+        ServiceStatusBadgeText.Text = "Service unavailable";
         ServiceStatusText.Text = message;
     }
 
@@ -168,13 +217,34 @@ public sealed partial class MainWindow : Window
         IsrP999Text.Text = "—";
         ObservedProcessorCountText.Text = "—";
         ModuleAttributionCoverageText.Text = "—";
-        TopModuleText.Text = "—";
+        ModuleCoverageBar.Value = 0;
+        TopModuleText.Text = "No observation yet.";
+        TopModulesList.ItemsSource = null;
+        TopProcessorsList.ItemsSource = null;
+        ObservationQualityText.Text = "Quality evidence will appear after capture.";
     }
 
     private static string GetProductVersion() =>
         typeof(MainWindow).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion ?? "0.0.0";
+
+    private static string FormatLargestP99(ProcessorLatencyDistribution processor)
+    {
+        var dpc = processor.Dpc.P99Microseconds;
+        var isr = processor.Isr.P99Microseconds;
+        if (dpc is null)
+        {
+            return FormatMicroseconds(isr);
+        }
+
+        if (isr is null)
+        {
+            return FormatMicroseconds(dpc);
+        }
+
+        return FormatMicroseconds(Math.Max(dpc.Value, isr.Value));
+    }
 
     private static string FormatMicroseconds(double? value) =>
         value is null
@@ -191,7 +261,7 @@ public sealed partial class MainWindow : Window
             PackageCountText.Text = topology.Packages.Count.ToString(CultureInfo.InvariantCulture);
             ProcessorGroupCountText.Text = topology.ProcessorGroupCount.ToString(CultureInfo.InvariantCulture);
             SmtCoreCountText.Text = topology.SmtCoreCount.ToString(CultureInfo.InvariantCulture);
-            TopologyStatusText.Text = "Captured from GetLogicalProcessorInformationEx. No system settings were changed.";
+            TopologyStatusText.Text = "CPU topology captured through GetLogicalProcessorInformationEx.";
         }
         catch (Exception exception)
         {
