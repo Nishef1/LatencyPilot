@@ -170,9 +170,10 @@ public sealed class CriticalPathTests
                 ObservationCommand.CaptureKernelLatency,
             },
             commands);
-        Assert.IsTrue(ObservationProtocol.MaximumCaptureDurationMilliseconds <= 30_000);
-        Assert.IsTrue(ObservationProtocol.MaximumCaptureEvents <= 500_000);
-        Assert.IsTrue(ObservationProtocol.MaximumRequestBytes < ObservationProtocol.MaximumResponseBytes);
+        Assert.AreEqual(30_000, ObservationProtocol.MaximumCaptureDurationMilliseconds);
+        Assert.AreEqual(500_000, ObservationProtocol.MaximumCaptureEvents);
+        Assert.AreEqual(64 * 1024, ObservationProtocol.MaximumRequestBytes);
+        Assert.AreEqual(1024 * 1024, ObservationProtocol.MaximumResponseBytes);
     }
 
     [TestMethod]
