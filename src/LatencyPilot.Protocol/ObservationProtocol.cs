@@ -68,6 +68,7 @@ public sealed record LatencyDistribution(
     double? P50Microseconds,
     double? P95Microseconds,
     double? P99Microseconds,
+    double? P999Microseconds,
     double? MaximumMicroseconds);
 
 public sealed record ProcessorLatencyDistribution(

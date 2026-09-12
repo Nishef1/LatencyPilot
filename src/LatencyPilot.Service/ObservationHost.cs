@@ -216,7 +216,7 @@ internal sealed class ObservationHost : BackgroundService
         var sorted = durations.Order().ToArray();
         if (sorted.Length == 0)
         {
-            return new LatencyDistribution(0, null, null, null, null);
+            return new LatencyDistribution(0, null, null, null, null, null);
         }
 
         return new LatencyDistribution(
@@ -224,6 +224,7 @@ internal sealed class ObservationHost : BackgroundService
             Percentile(sorted, 0.50),
             Percentile(sorted, 0.95),
             Percentile(sorted, 0.99),
+            Percentile(sorted, 0.999),
             sorted[^1]);
     }
 
