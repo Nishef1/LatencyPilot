@@ -148,11 +148,9 @@ jobs:
           }
 
       - name: Publish Windows x64 service payload
-        if: github.event_name != 'pull_request'
         run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore --output artifacts/payload/Service -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
 
       - name: Prepare shared payload
-        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $version = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
@@ -160,6 +158,7 @@ jobs:
           Copy-Item scripts/Uninstall-Service.ps1 artifacts/payload/Uninstall-Service.ps1
           Copy-Item docs/PHYSICAL_VALIDATION.md artifacts/payload/PHYSICAL_VALIDATION.md
           Copy-Item docs/PORTABLE.md artifacts/payload/PORTABLE.md
+          Copy-Item docs/DIAGNOSTICS.md artifacts/payload/DIAGNOSTICS.md
           Copy-Item README.md artifacts/payload/README.md
           Copy-Item LICENSE artifacts/payload/LICENSE
           Set-Content -LiteralPath artifacts/payload/VERSION.txt -Value $version -NoNewline
@@ -173,7 +172,6 @@ jobs:
           ) | Set-Content -LiteralPath artifacts/payload/BUILD_INFO.txt
 
       - name: Build setup EXE
-        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $version = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
@@ -197,7 +195,6 @@ jobs:
           "- SHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Build portable ZIP
-        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $version = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
