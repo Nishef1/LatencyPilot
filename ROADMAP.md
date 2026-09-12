@@ -56,47 +56,49 @@ Closed when a new contributor can determine what the product is, what it must ne
 **Goal:** establish a buildable Windows application and the smallest scientifically useful comparison engine before any real system mutation exists.
 
 ### 1.1 Toolchain and repository
-- [ ] pin .NET 10 SDK;
-- [ ] add solution and shared build settings;
-- [ ] add Core, Benchmarking, Protocol, Platform.Windows, Persistence, Service and App projects;
-- [ ] add one focused test project;
-- [ ] CI builds Release on Windows and runs the small critical test suite.
+- [x] pin .NET 10 SDK;
+- [x] add solution and shared build settings;
+- [x] add Core, Benchmarking, Protocol, Platform.Windows, Persistence, Service and App projects;
+- [x] add one focused test project;
+- [x] CI builds Release on Windows and runs the small critical test suite.
 
 ### 1.2 Domain foundation
-- [ ] define experiment lifecycle states and legal transitions;
-- [ ] define metric direction and sample-series contracts;
-- [ ] define explicit verdicts: Improved, Regressed, Tradeoff, NoMeasurableDifference, Inconclusive;
-- [ ] reject invalid/non-finite measurement input instead of silently normalizing it.
+- [x] define experiment lifecycle states and legal transitions;
+- [x] define metric direction and sample-series contracts;
+- [x] define explicit verdicts: Improved, Regressed, Tradeoff, NoMeasurableDifference, Inconclusive;
+- [x] reject invalid/non-finite measurement input instead of silently normalizing it.
 
 ### 1.3 Comparison foundation
-- [ ] percentile calculation is deterministic;
-- [ ] comparison uses a configurable minimum sample count;
-- [ ] changes inside configured noise threshold are not called improvements;
-- [ ] guardrail regression converts a target improvement into Tradeoff;
-- [ ] insufficient data returns Inconclusive.
+- [x] percentile calculation is deterministic;
+- [x] comparison uses a configurable minimum sample count;
+- [x] changes inside configured noise threshold are not called improvements;
+- [x] guardrail regression converts a target improvement into Tradeoff;
+- [x] insufficient data returns Inconclusive.
 
 ### 1.4 Read-only app vertical slice
-- [ ] WPF app launches without elevation;
-- [ ] app displays real OS/process architecture and logical processor count;
-- [ ] UI clearly states that mutation/auto-tune is not available yet;
-- [ ] no fake score or synthetic optimization result is shown as real data.
+- [x] WPF app is built as a normal non-elevated desktop application;
+- [x] app displays real OS/process architecture and logical processor count;
+- [x] UI clearly states that mutation/auto-tune is not available yet;
+- [x] no fake score or synthetic optimization result is shown as real data.
 
 ### 1.5 Critical tests only
 Maximum target for the entire Phase 1 suite: **8 tests**. Tests must cover behavior with high blast radius, not getters, UI labels or implementation details.
 
 Required scenarios:
-- [ ] invalid experiment transition is rejected;
-- [ ] insufficient samples return Inconclusive;
-- [ ] no measurable difference is not advertised as improvement;
-- [ ] clear primary improvement is detected;
-- [ ] primary improvement plus guardrail regression returns Tradeoff;
-- [ ] clear primary regression is detected;
-- [ ] invalid/non-finite measurement data is rejected.
+- [x] invalid experiment transition is rejected;
+- [x] insufficient samples return Inconclusive;
+- [x] no measurable difference is not advertised as improvement;
+- [x] clear primary improvement is detected;
+- [x] primary improvement plus guardrail regression returns Tradeoff;
+- [x] clear primary regression is detected;
+- [x] invalid/non-finite measurement data is rejected.
 
 ### Exit gate
 Phase 1 is closed only when GitHub Actions proves the complete solution builds in Release on Windows, all critical tests pass, and the produced WPF app artifact can be created. No device mutation is permitted in this phase.
 
-**State: IN PROGRESS**
+Evidence: GitHub Actions run `34704448960` on commit `d44ec29a0b87df0a818a19c1d576230f07b80b0d` completed successfully: Release build, 7/7 critical tests, self-contained `win-x64` publish and artifact upload all passed. Artifact `LatencyPilot-win-x64` was produced with SHA-256 `688143e85f4feb6708ef1f991e3bf19129b4fb2e476a5f628023281861f6af50`.
+
+**State: CLOSED**
 
 ---
 
