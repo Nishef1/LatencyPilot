@@ -12,17 +12,21 @@ if ($directory) {
 }
 
 $sizes = @(16, 24, 32, 48, 64, 128, 256)
-$images = New-Object System.Collections.Generic.List[byte[]]
+$images = [System.Collections.Generic.List[byte[]]]::new()
 
 foreach ($size in $sizes) {
-    $bitmap = New-Object System.Drawing.Bitmap($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $bitmap = [System.Drawing.Bitmap]::new(
+        $size,
+        $size,
+        [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     try {
         $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
         try {
             $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
             $graphics.Clear([System.Drawing.Color]::Transparent)
 
-            $background = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 20, 112, 140))
+            $background = [System.Drawing.SolidBrush]::new(
+                [System.Drawing.Color]::FromArgb(255, 20, 112, 140))
             try {
                 $inset = [Math]::Max(1.0, $size * 0.04)
                 $graphics.FillEllipse($background, $inset, $inset, $size - (2 * $inset), $size - (2 * $inset))
@@ -32,7 +36,7 @@ foreach ($size in $sizes) {
             }
 
             $penWidth = [Math]::Max(1.5, $size * 0.085)
-            $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, $penWidth)
+            $pen = [System.Drawing.Pen]::new([System.Drawing.Color]::White, $penWidth)
             try {
                 $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
                 $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
@@ -56,7 +60,7 @@ foreach ($size in $sizes) {
             $graphics.Dispose()
         }
 
-        $stream = New-Object System.IO.MemoryStream
+        $stream = [System.IO.MemoryStream]::new()
         try {
             $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
             $images.Add($stream.ToArray())
@@ -72,7 +76,7 @@ foreach ($size in $sizes) {
 
 $file = [System.IO.File]::Create($OutputPath)
 try {
-    $writer = New-Object System.IO.BinaryWriter($file)
+    $writer = [System.IO.BinaryWriter]::new($file)
     try {
         $writer.Write([uint16]0)
         $writer.Write([uint16]1)
