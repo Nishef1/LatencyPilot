@@ -53,10 +53,11 @@ Stable Service event IDs currently include:
 
 | Event ID | Meaning |
 | ---: | --- |
+| 1000 | structured Service file logging unavailable; default providers remain active |
 | 1001 | unexpected kernel-capture failure |
 | 1002 | kernel capture started |
 | 1003 | kernel capture completed |
-| 1004 | client disconnected or violated framing while an operation was active |
+| 1004 | active observation cancelled after client disconnect/protocol activity while the operation was running |
 | 1005 | framed pipe request rejected before execution |
 
 New event IDs should represent durable operational concepts rather than individual code branches.
