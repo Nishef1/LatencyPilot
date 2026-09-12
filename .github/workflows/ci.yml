@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.401
+
+      - name: Restore
+        run: dotnet restore LatencyPilot.slnx
+
+      - name: Build Release
+        run: dotnet build LatencyPilot.slnx --configuration Release --no-restore
+
+      - name: Critical tests
+        run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release --no-build
+
+      - name: Publish Windows x64 app
+        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --no-build --output artifacts/LatencyPilot-win-x64
+
+      - name: Upload Windows x64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LatencyPilot-win-x64
+          path: artifacts/LatencyPilot-win-x64/
+          if-no-files-found: error
+          retention-days: 7
