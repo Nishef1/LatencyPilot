@@ -146,7 +146,38 @@ Hardware validation is separate from CI and does not count toward the permanent-
 
 The .NET SDK is pinned in `global.json`. GitHub Actions restores the toolchain, builds Release, runs the permanent critical suite, publishes self-contained Windows x64 App and Service outputs, and builds both the offline setup EXE and portable ZIP from the same payload.
 
-Typical local commands, if the SDK is installed:
+### Fast local development
+
+Daily WinUI work should use **Debug**, not `publish` or the installer pipeline.
+
+Visual Studio is the recommended inner loop for UI work:
+
+1. Open `LatencyPilot.slnx` and make `LatencyPilot.App` the startup project.
+2. Select the `LatencyPilot.App (Hot Reload)` launch profile.
+3. Start with `F5` so the managed debugger is attached.
+4. Save supported XAML/C# edits to apply Hot Reload. The profile explicitly keeps native debugging disabled because mixed/native debugging interferes with managed WinUI Hot Reload.
+
+`HotReloadAutoRestart` is enabled for Debug builds. Unsupported edits can still require a process restart; the setting allows Visual Studio to restart automatically where the project/debugger combination supports quick restart.
+
+For a command-line loop, use the repository script:
+
+```powershell
+# First run restores only when project.assets.json is missing, then starts dotnet watch.
+.\dev.ps1
+
+# Run once without watch.
+.\dev.ps1 -Mode run
+
+# Incremental Debug build only.
+.\dev.ps1 -Mode build
+
+# Force a restore after dependency/project changes.
+.\dev.ps1 -ForceRestore
+```
+
+The script deliberately keeps the normal NuGet global package cache and uses `--no-restore` after a valid restore state exists, so normal edit/build iterations do not intentionally redownload the SDK/runtime/package graph. Visual Studio `F5` remains preferred for XAML Hot Reload; `dotnet watch` is mainly the CLI C# Hot Reload/restart path.
+
+Typical release-oriented local commands, if the SDK is installed:
 
 ```powershell
 dotnet restore LatencyPilot.slnx
