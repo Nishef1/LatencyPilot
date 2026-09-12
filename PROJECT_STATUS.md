@@ -7,17 +7,18 @@ Last updated: 2026-09-12
 ## Overall
 
 - Product completion: **Phases 0–1 closed; Phase 2 in progress**
-- Current product version: **0.0.0 pre-alpha**
+- Current product version: **0.0.1 pre-alpha**
 - Current execution stage: **Stage B — physical Windows 11 observation validation**
-- Current published release: **`v0.0.0` GitHub prerelease**, release `387676994`
+- Current published release: **`v0.0.1` GitHub prerelease**, release `387708633`
 - Current mutation capability: **None by design**
 - Supported target: **Windows 11 x64**
 - Current desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
 - Privileged boundary: **Windows Service exists for read-only kernel observation; mutation commands do not exist**
 - Permanent automated tests: **9 / hard maximum 10**
-- Latest green CI: **run `34713425020`**, commit `cde8a72243413945cabc55dd748a95462a6a774c`
-- Release workflow evidence: **run `34713425026` succeeded**, including version validation, Release build, 9/9 tests, App publish, Service publish, bundle/checksum creation and GitHub prerelease publication.
-- Published release ZIP: **`LatencyPilot-0.0.0-win-x64.zip`**, 149,358,785 bytes, GitHub SHA-256 `ef046b30caba6896c7e13b4c68dc069a38b8887159fa02ade3556db1a2ec42dd`.
+- Latest green CI: **run `34719399094`**, commit `14bb77a883ba6671dd479b88278f9a2c849465f7`
+- Release workflow evidence: **run `34719732367` succeeded**, including version validation, stale-tag preflight, restore, Release build, 9/9 tests, App publish, GUI smoke, Service publish, setup/portable creation, artifact upload and GitHub prerelease publication.
+- Published setup: **`LatencyPilot-0.0.1-win-x64-setup.exe`**, 97,848,937 bytes, GitHub SHA-256 `affd6b35c533bd321af26b03e1e8a9afbb6961dc6f5ffcf38c5309201237295d`.
+- Published portable bundle: **`LatencyPilot-0.0.1-win-x64-portable.zip`**, 149,896,015 bytes, GitHub SHA-256 `5ef3fcaf1a3b0f70b06ee7ae422f18f9c19272a6abb3382b124546313651eaaf`.
 
 ## Phase 0 — CLOSED
 
@@ -45,6 +46,24 @@ Implemented:
 - normal-user/non-elevated UI boundary preserved;
 - no MVVM framework, second UI toolkit or MSIX identity added.
 
+### Local WinUI development loop — COMPLETE
+
+Implemented:
+
+- Visual Studio launch profile `LatencyPilot.App (Hot Reload)` with `hotReloadEnabled: true`;
+- native debugging disabled for the Hot Reload profile so managed WinUI Hot Reload is not mixed with native debugging;
+- `HotReloadAutoRestart` enabled only for Debug builds;
+- root `dev.ps1` supports cached restore, incremental Debug build/run and `dotnet watch` without forcing restore on every edit cycle;
+- `GenerateLatencyPilotIcon` is incremental and no longer reruns when its source script/output are unchanged;
+- release/publish/install workflows remain separate from the daily Debug inner loop;
+- no permanent test was added; suite remains 9/10.
+
+Evidence:
+
+- implementation commit `14bb77a883ba6671dd479b88278f9a2c849465f7`;
+- CI run `34719399094` succeeded through Release build, 9/9 tests, WinUI publish-resource validation, GUI smoke, setup/portable packaging and artifact upload;
+- release workflow stale-tag null handling corrected in commit `7222add0675b773d9103ec77961179210c703bda` after failed release run `34719622420`; replacement release run `34719732367` succeeded end-to-end.
+
 ### Privileged observation service — IMPLEMENTED FOR PHASE 2
 
 Decision: `docs/adr/0003-privileged-observation-service.md`.
@@ -67,7 +86,8 @@ Evidence:
 - bounded client/server IPC deadlines: run `34710502158`;
 - observation naming + p99.9 UI: run `34710672075`;
 - authoritative module-attribution Stage A closure: run `34713147459`;
-- first packaged prerelease: release run `34713425026`, tag `v0.0.0`.
+- first packaged prerelease: release run `34713425026`, tag `v0.0.0`;
+- current Stage B prerelease: release run `34719732367`, tag `v0.0.1`.
 
 ## Phase 2 — IN PROGRESS
 
@@ -198,15 +218,16 @@ Runbook: `docs/PHYSICAL_VALIDATION.md`.
 
 Release prerequisite completed:
 
-- [x] `v0.0.0` prerelease published with Windows x64 ZIP + SHA-256 checksum;
-- [x] release workflow independently repeated version validation, build, 9/9 tests and App/Service publish;
-- [x] bundle contains `VERSION.txt`, `BUILD_INFO.txt` and the Stage B validation runbook.
+- [x] `v0.0.1` prerelease published with offline setup EXE, portable ZIP and SHA-256 companions;
+- [x] release workflow independently repeated version validation, restore, Release build, 9/9 tests, App publish, GUI smoke, Service publish and both distribution builds;
+- [x] portable bundle contains `VERSION.txt`, `BUILD_INFO.txt` and the Stage B validation runbook;
+- [x] post-`v0.0.0` WinUI publish-resource/GUI-smoke corrections are included in the Stage B release candidate.
 
 Physical work in order:
 
-1. download `v0.0.0` on the target Windows 11 x64 machine and verify its published SHA-256 checksum;
-2. confirm `VERSION.txt` and `BUILD_INFO.txt` identify the exact release and commit;
-3. install the read-only observation Service from the extracted bundle;
+1. download `v0.0.1` on the target Windows 11 x64 machine and verify the SHA-256 companion for the selected setup/portable asset;
+2. confirm `VERSION.txt` and `BUILD_INFO.txt` identify the exact release and commit when using the portable bundle;
+3. install the read-only observation Service through the setup, or register it from the extracted portable bundle;
 4. launch the WinUI App as a normal non-elevated user and verify Service connectivity;
 5. capture representative idle and controlled-load observations;
 6. verify DPC/ISR events, processor distribution and module attribution are plausible and internally consistent;
@@ -270,12 +291,13 @@ No mutation work is allowed to jump ahead of Stage C/D or the Phase 3 safety sub
 ## Release discipline
 
 - product versions are exactly `MAJOR.MINOR.PATCH`;
-- current source version is `0.0.0` in `Directory.Build.props`;
+- current source version is `0.0.1` in `Directory.Build.props`;
 - `RELEASE_VERSION` is an explicit release request and must equal the source version;
 - release workflow reruns restore/build/9-test gate and publishes both App and Service;
+- daily development uses Debug + Visual Studio Hot Reload or `dev.ps1`; publish/setup are release gates, not the normal edit loop;
 - every release bundle contains `VERSION.txt`, `BUILD_INFO.txt` and the Stage B validation runbook;
-- every GitHub release ZIP has a SHA-256 checksum companion;
-- `v0.0.0` is published as a prerelease for Stage B physical validation;
+- every published setup/portable asset has a SHA-256 checksum companion;
+- `v0.0.1` is the current prerelease for Stage B physical validation;
 - `0.0.x` releases remain GitHub prereleases until later exit gates justify stable semantics.
 
 ## Comparison-core correction discovered during earlier step-back review
