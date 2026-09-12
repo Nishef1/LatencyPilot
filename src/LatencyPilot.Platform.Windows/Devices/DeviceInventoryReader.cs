@@ -39,21 +39,27 @@ public static class DeviceInventoryReader
             }
 
             var instanceId = ReadInstanceId(deviceInfoSet, ref deviceInfo);
-            var displayName = ReadRegistryStringProperty(deviceInfoSet, ref deviceInfo, DeviceRegistryProperty.FriendlyName)
-                ?? ReadRegistryStringProperty(deviceInfoSet, ref deviceInfo, DeviceRegistryProperty.DeviceDescription)
+            var displayName = TryReadRegistryStringProperty(
+                    deviceInfoSet,
+                    ref deviceInfo,
+                    DeviceRegistryProperty.FriendlyName)
+                ?? TryReadRegistryStringProperty(
+                    deviceInfoSet,
+                    ref deviceInfo,
+                    DeviceRegistryProperty.DeviceDescription)
                 ?? instanceId;
 
             devices.Add(new PnPDeviceSnapshot(
                 instanceId,
                 deviceInfo.ClassGuid,
                 displayName,
-                ReadRegistryStringProperty(deviceInfoSet, ref deviceInfo, DeviceRegistryProperty.Manufacturer),
-                ReadRegistryStringProperty(deviceInfoSet, ref deviceInfo, DeviceRegistryProperty.EnumeratorName),
-                ReadRegistryStringProperty(deviceInfoSet, ref deviceInfo, DeviceRegistryProperty.Service),
+                TryReadRegistryStringProperty(deviceInfoSet, ref deviceInfo, DeviceRegistryProperty.Manufacturer),
+                TryReadRegistryStringProperty(deviceInfoSet, ref deviceInfo, DeviceRegistryProperty.EnumeratorName),
+                TryReadRegistryStringProperty(deviceInfoSet, ref deviceInfo, DeviceRegistryProperty.Service),
                 new DriverMetadataSnapshot(
-                    ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverVersion),
-                    ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverProvider),
-                    ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverInfPath)),
+                    TryReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverVersion),
+                    TryReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverProvider),
+                    TryReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverInfPath)),
                 ReadInterruptConfiguration(deviceInfoSet, ref deviceInfo),
                 InterruptResourceReader.Capture(deviceInfo.DevInst)));
         }
@@ -66,28 +72,35 @@ public static class DeviceInventoryReader
         SafeDeviceInfoSetHandle deviceInfoSet,
         ref SpDevInfoData deviceInfo)
     {
-        var hardwareKey = SetupApi.TryOpenDeviceHardwareRegistryKey(deviceInfoSet, ref deviceInfo, out var nativeErrorCode);
-        if (hardwareKey is null)
+        try
         {
-            return InterruptConfigurationSnapshot.HardwareKeyUnavailable(nativeErrorCode);
-        }
-
-        using (hardwareKey)
-        using (var interruptManagement = hardwareKey.OpenSubKey(InterruptManagementKey, writable: false))
-        {
-            if (interruptManagement is null)
+            var hardwareKey = SetupApi.TryOpenDeviceHardwareRegistryKey(deviceInfoSet, ref deviceInfo, out var nativeErrorCode);
+            if (hardwareKey is null)
             {
-                return InterruptConfigurationSnapshot.Available(null, null, null, null);
+                return InterruptConfigurationSnapshot.HardwareKeyUnavailable(nativeErrorCode);
             }
 
-            using var msi = interruptManagement.OpenSubKey(MsiPropertiesKey, writable: false);
-            using var affinity = interruptManagement.OpenSubKey(AffinityPolicyKey, writable: false);
+            using (hardwareKey)
+            using (var interruptManagement = hardwareKey.OpenSubKey(InterruptManagementKey, writable: false))
+            {
+                if (interruptManagement is null)
+                {
+                    return InterruptConfigurationSnapshot.Available(null, null, null, null);
+                }
 
-            return InterruptConfigurationSnapshot.Available(
-                ReadDword(msi, "MSISupported"),
-                ReadDword(msi, "MessageNumberLimit"),
-                ReadDword(affinity, "DevicePolicy"),
-                ReadAffinityMask(affinity, "AssignmentSetOverride"));
+                using var msi = interruptManagement.OpenSubKey(MsiPropertiesKey, writable: false);
+                using var affinity = interruptManagement.OpenSubKey(AffinityPolicyKey, writable: false);
+
+                return InterruptConfigurationSnapshot.Available(
+                    ReadDword(msi, "MSISupported"),
+                    ReadDword(msi, "MessageNumberLimit"),
+                    ReadDword(affinity, "DevicePolicy"),
+                    ReadAffinityMask(affinity, "AssignmentSetOverride"));
+            }
+        }
+        catch (Exception exception) when (IsRecoverableMetadataException(exception))
+        {
+            return InterruptConfigurationSnapshot.ReadFailed();
         }
     }
 
@@ -185,6 +198,21 @@ public static class DeviceInventoryReader
         }
     }
 
+    private static string? TryReadRegistryStringProperty(
+        SafeDeviceInfoSetHandle deviceInfoSet,
+        ref SpDevInfoData deviceInfo,
+        DeviceRegistryProperty property)
+    {
+        try
+        {
+            return ReadRegistryStringProperty(deviceInfoSet, ref deviceInfo, property);
+        }
+        catch (Exception exception) when (IsRecoverableMetadataException(exception))
+        {
+            return null;
+        }
+    }
+
     private static unsafe string? ReadRegistryStringProperty(
         SafeDeviceInfoSetHandle deviceInfoSet,
         ref SpDevInfoData deviceInfo,
@@ -249,6 +277,21 @@ public static class DeviceInventoryReader
 
                 throw new Win32Exception(error, $"Unable to read device property {property}.");
             }
+        }
+    }
+
+    private static string? TryReadUnifiedStringProperty(
+        SafeDeviceInfoSetHandle deviceInfoSet,
+        ref SpDevInfoData deviceInfo,
+        in DevicePropertyKey propertyKey)
+    {
+        try
+        {
+            return ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, propertyKey);
+        }
+        catch (Exception exception) when (IsRecoverableMetadataException(exception))
+        {
+            return null;
         }
     }
 
@@ -331,4 +374,11 @@ public static class DeviceInventoryReader
         var value = Encoding.Unicode.GetString(buffer, 0, checked((int)actualSize)).TrimEnd('\0');
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
+
+    private static bool IsRecoverableMetadataException(Exception exception) =>
+        exception is Win32Exception or
+        InvalidDataException or
+        IOException or
+        UnauthorizedAccessException or
+        System.Security.SecurityException;
 }
