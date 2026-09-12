@@ -1,4 +1,4 @@
-# AGENTS.md — LatencyPilot Engineering Contract
+# LatencyPilot Engineering Contract
 
 This file is authoritative for coding agents and contributors working in this repository.
 
@@ -7,7 +7,7 @@ LatencyPilot is a **measurement-first Windows 11 latency experimentation platfor
 Before changing code, read:
 
 1. `ROADMAP.md` — authoritative final target and phase exit gates;
-2. `PROJECT_STATUS.md` — live completion ledger;
+2. `PROJECT_STATUS.md` — live completion ledger and current execution ladder;
 3. `SYSTEM_DESIGN.md` — architecture and privilege boundaries;
 4. `docs/BENCHMARK_METHODOLOGY.md` — measurement contract;
 5. `docs/adr/*` — accepted architecture changes.
@@ -37,8 +37,8 @@ Unless an ADR explicitly changes it:
 - **WinUI 3** desktop application;
 - **Windows App SDK 2.4 Stable**;
 - unpackaged, self-contained Windows 11 x64 release;
-- Windows Service for privileged operations when mutation begins;
-- Named Pipes for local IPC;
+- Windows Service as the narrow privileged boundary for Phase 2 kernel observation and later Phase 3 mutation;
+- Named Pipes for local typed/versioned IPC;
 - ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`;
 - PresentMon where graphics telemetry is required;
 - SetupAPI + Configuration Manager for device discovery;
@@ -68,6 +68,8 @@ Raw P/Invoke, SetupAPI, ConfigMgr, registry paths and privileged implementation 
 ## 5. Privilege and mutation rules
 
 The desktop application must not require permanent elevation.
+
+Phase 2 service authority is read-only and limited to supported privileged observation. Mutation remains disabled until Phase 3 safety infrastructure exists.
 
 Never expose arbitrary PowerShell, arbitrary process execution, arbitrary registry paths/values, generic run-as-SYSTEM, or user-provided privileged DLL/plugin loading.
 
@@ -141,13 +143,17 @@ Undocumented tweaks are not eligible for automatic application without explicit 
 
 Prefer authoritative Windows providers and documented semantics. Do not silently reinterpret unknown/missing fields. Preserve source provenance where practical. Configuration hints such as registry MSI settings must not be presented as proof of active interrupt delivery; use the appropriate Windows resource/trace evidence for actual state.
 
+For native DPC/ISR routine attribution, an address is not a driver name. Module attribution requires authoritative kernel image mapping, including already-loaded images via the appropriate rundown/CAPTURE_STATE path. If mapping evidence is missing, preserve the raw address and report attribution as unknown.
+
 ## 11. Persistence and recovery
 
 Before any mutation is implemented, original state must be durably recorded before apply. Schema changes must preserve active recovery records. Do not rewrite historical benchmark results merely to match a newer interpretation; use versioned interpretation/migration metadata.
 
 ## 12. UI rules
 
-The WinUI 3 app remains non-elevated and must show evidence, not marketing claims. For real experiments expose exact change, original/candidate state, apply verification, benchmark validity, before/after metrics, noise/uncertainty, guardrail regressions, and keep/revert/recovery state. Never show synthetic values as machine measurements.
+The WinUI 3 app remains non-elevated and must show evidence, not marketing claims. A single short ETW capture is an **observation**, not a trustworthy baseline. The term baseline is reserved for repeated, quality-checked measurements with noise/drift handling.
+
+For real experiments expose exact change, original/candidate state, apply verification, benchmark validity, before/after metrics, noise/uncertainty, guardrail regressions, and keep/revert/recovery state. Never show synthetic values as machine measurements.
 
 ## 13. YAGNI and source organization
 
@@ -184,15 +190,31 @@ If the review finds a contradiction, fix the design first. Do not preserve an ea
 - update status when completing or discovering a blocker;
 - if scope changes, update the roadmap rather than silently redefining done.
 
-## 16. Change discipline
+## 16. Progress-report contract — mandatory
+
+After every meaningful implementation stage or closed subsection, the progress report must state all five items below explicitly:
+
+1. **Completed now** — exact code/capability completed in this stage, without inflating partial work into completion.
+2. **Evidence** — commit, CI run, hardware result, or other proof required by the relevant gate.
+3. **Still open in this stage/phase** — remaining blockers or unchecked requirements.
+4. **Next stage** — the immediately following stage, broken into concrete substeps in execution order.
+5. **After that** — the next one or two stages so the direction is visible and work does not become locally optimized or circular.
+
+A report that only says “done” or only lists completed work is incomplete.
+
+When a stage is not actually closable because CI, hardware validation, attribution, quality gates, or documentation are missing, say **implemented but not closed** and name the exact missing evidence.
+
+`PROJECT_STATUS.md` must maintain a current execution ladder with the same structure. When the next action changes, update that ladder in the same logical change or immediately afterward.
+
+## 17. Change discipline
 
 For every meaningful change: understand existing architecture first, keep commits logically scoped, avoid unrelated churn, update documentation when contracts change, add/modify permanent tests only under the hard-cap policy, never weaken safety logic to make CI pass, and inspect actual failures instead of disabling validation.
 
-## 17. Licensing
+## 18. Licensing
 
 LatencyPilot is source-available and is not an OSI open-source project. Do not replace `LICENSE`, `CLA.md` or contribution terms unless explicitly instructed by the repository owner. Verify third-party license compatibility before copying or adding dependencies.
 
-## 18. Definition of done for an optimizer
+## 19. Definition of done for an optimizer
 
 A supported optimization domain is not done until it has authoritative applicability detection, topology/device identification, original-state capture, validated candidates, safe apply and independent verification, subsystem-specific target measurement, cross-subsystem guardrails, appropriate noise/drift handling, explicit verdicts, revert/interrupted-run recovery, minimal justified permanent tests, user-facing trade-off explanation, documentation and physical-hardware validation where required.
 

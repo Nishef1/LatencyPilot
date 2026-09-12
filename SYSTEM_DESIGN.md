@@ -3,7 +3,7 @@
 Status: **Authoritative architecture baseline**  
 Last updated: 2026-09-12
 
-`ROADMAP.md` defines the final product and phase exit gates. `PROJECT_STATUS.md` records what is actually complete. ADRs record accepted architecture changes.
+`ROADMAP.md` defines the final product and phase exit gates. `PROJECT_STATUS.md` records what is actually complete and the current execution ladder. ADRs record accepted architecture changes.
 
 ## 1. Purpose
 
@@ -52,7 +52,7 @@ Unless an ADR explicitly changes it:
 - WinUI 3;
 - Windows App SDK 2.4 Stable;
 - unpackaged application with self-contained Windows App SDK runtime;
-- Windows Service for privileged operations once mutations exist;
+- Windows Service as the narrow privileged boundary for Phase 2 kernel observation and later Phase 3 mutation;
 - versioned Named Pipes for local IPC;
 - ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`;
 - PresentMon for graphics/frame telemetry where required;
@@ -70,16 +70,16 @@ Native C++ is not a baseline dependency. A native component requires profiling e
 ┌────────────────────────────────────────────┐
 │ LatencyPilot.App                           │
 │ WinUI 3 / normal user / non-elevated      │
-│ inventory + baseline UX                    │
-│ experiment evidence + Keep/Revert UX       │
+│ local read-only inventory + evidence UX    │
+│ baseline/experiment/decision UX            │
 └───────────────────┬────────────────────────┘
-                    │ versioned Named Pipe
+                    │ typed/versioned local Named Pipe
                     ▼
 ┌────────────────────────────────────────────┐
 │ LatencyPilot.Service                       │
 │ privileged boundary                        │
-│ authorization + validation                 │
-│ mutation + recovery orchestration          │
+│ Phase 2: read-only kernel observation      │
+│ Phase 3+: validated mutation + recovery    │
 └───────────────┬────────────────────────────┘
                 │
        ┌────────┴───────────────────┐
@@ -100,7 +100,7 @@ Core ← Benchmarking
 Core ← Protocol
 ```
 
-Mutation remains disabled until Phase 3 safety infrastructure exists.
+Mutation remains disabled until Phase 3 safety infrastructure exists. The Service already exists in Phase 2 because privileged kernel ETW observation must not force the WinUI process to run elevated.
 
 ## 5. Project responsibilities
 
@@ -111,7 +111,7 @@ Stable domain concepts and invariants only. No WinUI, ETW implementation details
 Percentiles, distributions, noise/drift analysis, comparisons, guardrails and verdicts. Keep deterministic and hardware-independent where possible.
 
 ### `LatencyPilot.Protocol`
-Versioned IPC commands/events/DTOs/errors only. Never generic privileged execution.
+Versioned IPC commands/events/DTOs/errors only. Never generic privileged execution. Phase 2 commands are observation-only and explicitly allowlisted.
 
 ### `LatencyPilot.Platform.Windows`
 All raw Windows mechanisms: inventory, ETW, DPC/ISR interpretation, SetupAPI/CM, PCI/device topology, interrupt configuration/assignment, CPU topology, Raw Input, USB/xHCI, NDIS/RSS, PresentMon and narrow registry/device-policy adapters.
@@ -122,10 +122,10 @@ Raw P/Invoke and registry paths do not leave this project.
 SQLite, migrations, snapshots, pending/closed journal records, benchmark history and recovery state.
 
 ### `LatencyPilot.Service`
-The narrow privileged execution boundary. It validates explicit supported operations and never becomes a generic scripting host.
+The narrow privileged execution boundary. During Phase 2 it hosts only privileged read-only observation. During Phase 3 it may gain mutation authority only after durable journaling, validation, authorization, verification and recovery exist. It never becomes a generic scripting host.
 
 ### `LatencyPilot.App`
-The non-elevated WinUI 3 experience. It presents inventory, evidence, trade-offs, decisions and recovery state. It must not directly perform privileged mutation.
+The non-elevated WinUI 3 experience. It presents inventory, evidence, trade-offs, decisions and recovery state. It may perform local non-privileged read-only inventory directly through `Platform.Windows`; privileged observation/mutation crosses `Protocol` to the Service.
 
 ## 6. Dependency direction
 
@@ -136,8 +136,7 @@ Protocol             → Core
 Platform.Windows     → Core
 Persistence          → Core
 Service              → Core + Protocol + Platform.Windows + Persistence
-App                  → Core + Platform.Windows while read-only
-App (future mutate)  → Protocol client; never raw privileged mutation
+App                  → Core + Protocol + Platform.Windows
 CriticalTests        → only projects needed by the current critical scenarios
 ```
 
@@ -145,7 +144,7 @@ No cyclic references. No speculative abstraction projects.
 
 ## 7. UI and deployment contract
 
-ADR 0002 supersedes the WPF portion of ADR 0001.
+ADR 0002 supersedes the WPF portion of ADR 0001. ADR 0003 moves the privileged Service boundary into Phase 2 for read-only kernel observation.
 
 `LatencyPilot.App` uses WinUI 3 and Windows App SDK 2.4 Stable. Current deployment is:
 
@@ -155,7 +154,7 @@ WindowsAppSDKSelfContained=true
 runtime target=win-x64
 ```
 
-The app is unpackaged. MSIX/package identity is not introduced without a separate need/decision. `PublishSingleFile` is not enabled by default because it adds extraction and publish constraints without current value.
+The artifact publishes App and Service separately under one Windows x64 artifact. The app is unpackaged. MSIX/package identity is not introduced without a separate need/decision. `PublishSingleFile` is not enabled by default because it adds extraction and publish constraints without current value.
 
 The UI should use WinUI controls and Windows 11 interaction/accessibility conventions, but should not add a second UI toolkit or speculative MVVM/DI/navigation framework.
 
@@ -172,6 +171,8 @@ Examples:
 A configuration hint must not be named or displayed as proof of active interrupt delivery.
 
 Partial device metadata is representable. A device without a readable hardware key is not equivalent to “no interrupt configuration”; preserve availability/error provenance instead of failing the entire inventory or silently inventing null semantics.
+
+A single short ETW capture is an **observation**, not a trustworthy baseline. Baseline terminology requires repeated windows plus quality/noise/drift handling.
 
 ## 9. Experiment lifecycle
 
@@ -192,26 +193,45 @@ When persistent mutation/recovery arrives, extend states to distinguish snapshot
 
 Current comparison semantics include finite samples, deterministic percentile calculation, minimum sample policy, minimum relative change/noise threshold, metric direction, guardrails and explicit `Inconclusive` behavior.
 
-Later phases add empirical noise floor, repeated baseline/candidate windows, drift detection and uncertainty without changing the rule that raw evidence remains inspectable.
+Phase 2 observation currently supports DPC/ISR count and duration distributions including p50/p95/p99/p99.9/max. Repeated baseline windows, empirical noise floor, drift detection and quality verdicts are still separate required work.
 
 A neutral target cannot hide a regressed guardrail; collateral regression must remain visible in the verdict.
 
 ## 11. ETW architecture
 
 ```text
-session control
-→ provider/kernel configuration
+service/session control
+→ kernel provider configuration
 → capture
 → event decoding
 → normalized observations
-→ CPU/module attribution
-→ distributions
-→ benchmark evidence
+→ processor attribution
+→ authoritative image/module attribution
+→ distributions/aggregates
+→ repeated-baseline evidence
 ```
 
-DPC/ISR analysis must preserve enough provenance to identify CPU and module/driver where provider data allows it. Unknown versions must not be silently reinterpreted.
+DPC/ISR analysis must preserve enough provenance to identify processor and module/driver where provider data allows it. Unknown versions or unresolved addresses must not be silently reinterpreted.
 
-## 12. Mutation interface contract
+For native routine addresses, module attribution requires authoritative image ranges. Kernel ImageLoad evidence must include modules that were already loaded before the observation, using supported rundown/CAPTURE_STATE behavior. If that evidence is absent or ambiguous, preserve the raw address and mark the module unknown.
+
+Raw event sets are not transferred wholesale through IPC. The privileged Service should perform bounded normalization/aggregation and return typed evidence needed by the UI/benchmarking layers.
+
+## 12. IPC and privilege contract
+
+Phase 2 IPC is local, typed, versioned and observation-only. The current surface contains only explicit supported operations such as service status and kernel-latency observation.
+
+- no arbitrary command name;
+- no arbitrary shell/process execution;
+- no arbitrary registry path/value;
+- bounded request/response frames;
+- bounded client/server I/O deadlines;
+- remote/network access denied by the pipe security boundary;
+- protocol/version mismatch fails closed.
+
+Phase 3 mutation must extend this contract with mutation-specific authorization rather than weakening the Phase 2 observation surface.
+
+## 13. Mutation interface contract
 
 Each mutation mechanism should expose narrow concepts such as:
 
@@ -227,7 +247,7 @@ Revert(snapshot)
 
 No IPC command accepts arbitrary registry paths, PowerShell or process command lines.
 
-## 13. Persistence and recovery
+## 14. Persistence and recovery
 
 Before the first real mutation ships:
 
@@ -237,7 +257,7 @@ Before the first real mutation ships:
 4. external changes are not overwritten blindly;
 5. Keep/Revert final state is verified before journal closure.
 
-## 14. Permanent test strategy
+## 15. Permanent test strategy
 
 **Maximum: 10 permanent automated tests repository-wide.**
 
@@ -247,7 +267,7 @@ If a later risk is more important, replace/merge a lower-value test. More than 1
 
 Hardware validation and release checklists are separate and do not count toward the cap.
 
-## 15. Release and CI contract
+## 16. Release and CI contract
 
 Main CI:
 
@@ -255,22 +275,25 @@ Main CI:
 restore
 → Release build
 → permanent critical tests
-→ self-contained win-x64 publish
-→ artifact upload
+→ self-contained win-x64 App publish
+→ self-contained win-x64 Service publish
+→ combined artifact upload
 ```
 
 Warnings are errors. Fix root causes instead of broad suppression.
 
-CI proves build/package and selected invariants only; it does not prove hardware latency improvement.
+CI proves build/package and selected invariants only; it does not prove hardware latency improvement or close physical-hardware validation items.
 
-## 16. Hardware-validation contract
+## 17. Hardware-validation contract
 
-Optimization claims require physical Windows 11 evidence with enough system/app/hardware context to interpret the result. GitHub-hosted Windows Server runners can validate API/build behavior but cannot close hardware-dependent performance claims.
+Optimization claims and hardware-dependent observation gates require physical Windows 11 evidence with enough system/app/hardware context to interpret the result. GitHub-hosted Windows Server runners can validate API/build behavior but cannot close hardware-dependent performance claims.
 
-## 17. Mandatory step-back review
+## 18. Mandatory step-back review
 
 Before closing a subsection, re-review assumptions, API semantics, naming/evidence claims, partial-error behavior, resource lifetime, privilege impact, YAGNI, scaling behavior, test-cap compliance, documentation drift and current owner constraints. Fix contradictions before calling work complete.
 
-## 18. Architecture change rule
+Every closed stage must also leave an explicit next-stage sequence in `PROJECT_STATUS.md`; a completion report without next steps is incomplete.
+
+## 19. Architecture change rule
 
 A new ADR is required for changes to language/runtime/UI framework, privilege model, IPC authority, persistence/recovery semantics, benchmark verdict semantics, native-code introduction, permanent-test cap, packaging identity/model, or supported OS/architecture commitment.

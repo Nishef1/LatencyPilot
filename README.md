@@ -9,7 +9,7 @@ LatencyPilot is a Windows 11 performance-analysis and tuning tool built around o
 It is not a registry-tweak pack, debloater, or one-click FPS booster. The product is intended to measure the effect of low-level changes on the actual machine, expose improvements and regressions, and preserve enough state to safely revert each supported experiment.
 
 > [!IMPORTANT]
-> LatencyPilot is in **pre-alpha**. Phase 2 is currently building the read-only observation engine. System mutation remains disabled by design.
+> LatencyPilot is in **pre-alpha**. Phase 2 is currently building the trustworthy read-only observation engine. System mutation remains disabled by design.
 
 ## Why LatencyPilot
 
@@ -39,10 +39,13 @@ Windows exposes powerful interrupt, CPU-topology, ETW, USB, networking and sched
 - Phase 1 — buildable foundation + comparison core: **closed**
 - Phase 2 — read-only observation engine: **in progress**
 - System mutation capability: **none by design**
+- Permanent tests: **9 / hard maximum 10**
 
-Phase 2 already contains read-only CPU topology, PnP stable identities, driver metadata and stored interrupt-configuration inspection. Active IRQ assignment/resource state and ETW DPC/ISR attribution are still required before the observation phase can close.
+Phase 2 currently contains CPU topology, PnP stable identities, driver metadata, stored interrupt configuration, allocated IRQ/resource inspection, a privileged read-only Windows Service, typed local Named Pipe IPC, and DPC/ISR ETW observation with per-processor aggregation plus p50/p95/p99/p99.9/max summaries.
 
-See [`ROADMAP.md`](ROADMAP.md) for the 100% definition and [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the evidence ledger.
+The major Phase 2 work still open is authoritative DPC/ISR module attribution, physical Windows 11 validation, repeated baseline/noise/drift quality analysis, and the final evidence UX. A short single capture is intentionally called an **observation**, not a trustworthy baseline.
+
+See [`ROADMAP.md`](ROADMAP.md) for the 100% definition and phase transitions, and [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the detailed current execution ladder.
 
 ## Architecture
 
@@ -53,15 +56,15 @@ Current baseline:
 - **Desktop UI:** WinUI 3
 - **Windows UI/runtime:** Windows App SDK 2.4 Stable
 - **Distribution:** unpackaged, self-contained Windows 11 x64
-- **Privileged operations:** narrow Windows Service when mutation begins
-- **IPC:** versioned Named Pipes
+- **Privileged boundary:** narrow Windows Service already used for Phase 2 read-only kernel ETW observation; Phase 3 later extends it for validated/recoverable mutation
+- **IPC:** typed/versioned local Named Pipes
 - **Tracing:** ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`
 - **Graphics telemetry:** PresentMon where applicable
 - **Windows integration:** SetupAPI, Configuration Manager, CPU topology/CPU Sets, Raw Input and documented device-policy APIs
 - **Persistence:** SQLite when durable experiment/recovery state is introduced
 - **Tests:** MSTest + Microsoft.Testing.Platform, hard maximum 10 permanent automated tests
 
-The desktop application remains non-elevated. Privileged mutations must cross a narrow service boundary with explicit validation, journaling, verification and recovery.
+The desktop application remains non-elevated. Privileged observation and all future privileged mutation cross the narrow Service boundary. Mutation-specific commands are not present in Phase 2.
 
 See [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN.md), [`AGENTS.md`](AGENTS.md) and [`docs/adr/`](docs/adr/).
 
@@ -76,6 +79,8 @@ stored interrupt configuration
 ```
 
 For example, a registry `MSISupported` value is not presented as proof that MSI/MSI-X is actively delivering interrupts at runtime. Naming and UI claims must match what the underlying Windows source actually proves.
+
+Likewise, a raw DPC/ISR routine address is not presented as a driver name unless authoritative kernel image mapping resolves it. Already-loaded native modules require the appropriate image rundown/CAPTURE_STATE evidence rather than future ImageLoad events alone.
 
 ## Benchmark philosophy
 
@@ -121,7 +126,7 @@ Hardware validation is separate from CI and does not count toward the permanent-
 
 ## Building
 
-The .NET SDK is pinned in `global.json`. GitHub Actions restores the toolchain, builds Release, runs the permanent critical suite, and publishes a self-contained Windows x64 artifact.
+The .NET SDK is pinned in `global.json`. GitHub Actions restores the toolchain, builds Release, runs the permanent critical suite, publishes self-contained Windows x64 App and Service outputs, and uploads them together as the Windows artifact.
 
 Typical local commands, if the SDK is installed:
 
@@ -130,6 +135,7 @@ dotnet restore LatencyPilot.slnx
 dotnet build LatencyPilot.slnx -c Release
 dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj -c Release
 dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj -c Release -r win-x64 --self-contained true
+dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj -c Release -r win-x64 --self-contained true
 ```
 
 ## Safety model
@@ -149,6 +155,10 @@ Detect applicability
 → Verify final state
 → Close journal
 ```
+
+## Progress discipline
+
+Every meaningful implementation stage must report what completed, the evidence, what remains open, the exact next stage with ordered substeps, and what follows that stage. `PROJECT_STATUS.md` keeps this execution ladder so progress cannot depend on chat memory.
 
 ## Contributing
 
