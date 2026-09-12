@@ -9,15 +9,15 @@ Last updated: 2026-09-12
 - Product completion: **Phases 0–1 closed; Phase 2 in progress**
 - Current product version: **0.0.0 pre-alpha**
 - Current execution stage: **Stage B — physical Windows 11 observation validation**
-- Current release target: **v0.0.0 GitHub prerelease for physical validation**
+- Current published release: **`v0.0.0` GitHub prerelease**, release `387676994`
 - Current mutation capability: **None by design**
 - Supported target: **Windows 11 x64**
 - Current desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
 - Privileged boundary: **Windows Service exists for read-only kernel observation; mutation commands do not exist**
 - Permanent automated tests: **9 / hard maximum 10**
-- Latest Stage A green CI: **run `34713147459`**, commit `c58cd5fa9c15debb4541a7e49d550a950a14dc2d`
-- Latest Stage A artifact: **`LatencyPilot-win-x64`**, artifact `10304225886`, SHA-256 `52cf154a29e4f524f29d402d33f723cb3dbd9b17299c34edb774226f58016dd3`
-- Latest Stage A CI result: **Release build 0 warnings / 0 errors + 9/9 permanent tests + App publish + Service publish + physical-validation artifact upload all succeeded.**
+- Latest green CI: **run `34713425020`**, commit `cde8a72243413945cabc55dd748a95462a6a774c`
+- Release workflow evidence: **run `34713425026` succeeded**, including version validation, Release build, 9/9 tests, App publish, Service publish, bundle/checksum creation and GitHub prerelease publication.
+- Published release ZIP: **`LatencyPilot-0.0.0-win-x64.zip`**, 149,358,785 bytes, GitHub SHA-256 `ef046b30caba6896c7e13b4c68dc069a38b8887159fa02ade3556db1a2ec42dd`.
 
 ## Phase 0 — CLOSED
 
@@ -66,7 +66,8 @@ Evidence:
 - UI → Service → ETW vertical slice: run `34710054683`;
 - bounded client/server IPC deadlines: run `34710502158`;
 - observation naming + p99.9 UI: run `34710672075`;
-- authoritative module-attribution Stage A closure: run `34713147459`.
+- authoritative module-attribution Stage A closure: run `34713147459`;
+- first packaged prerelease: release run `34713425026`, tag `v0.0.0`.
 
 ## Phase 2 — IN PROGRESS
 
@@ -195,9 +196,15 @@ Step-back result: **closed in CI, not physically validated.** The physical-valid
 
 Runbook: `docs/PHYSICAL_VALIDATION.md`.
 
-Work in order:
+Release prerequisite completed:
 
-1. publish/download the `v0.0.0` Windows x64 prerelease and verify its SHA-256 checksum;
+- [x] `v0.0.0` prerelease published with Windows x64 ZIP + SHA-256 checksum;
+- [x] release workflow independently repeated version validation, build, 9/9 tests and App/Service publish;
+- [x] bundle contains `VERSION.txt`, `BUILD_INFO.txt` and the Stage B validation runbook.
+
+Physical work in order:
+
+1. download `v0.0.0` on the target Windows 11 x64 machine and verify its published SHA-256 checksum;
 2. confirm `VERSION.txt` and `BUILD_INFO.txt` identify the exact release and commit;
 3. install the read-only observation Service from the extracted bundle;
 4. launch the WinUI App as a normal non-elevated user and verify Service connectivity;
@@ -268,6 +275,7 @@ No mutation work is allowed to jump ahead of Stage C/D or the Phase 3 safety sub
 - release workflow reruns restore/build/9-test gate and publishes both App and Service;
 - every release bundle contains `VERSION.txt`, `BUILD_INFO.txt` and the Stage B validation runbook;
 - every GitHub release ZIP has a SHA-256 checksum companion;
+- `v0.0.0` is published as a prerelease for Stage B physical validation;
 - `0.0.x` releases remain GitHub prereleases until later exit gates justify stable semantics.
 
 ## Comparison-core correction discovered during earlier step-back review
