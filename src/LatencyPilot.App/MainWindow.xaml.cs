@@ -109,7 +109,7 @@ public sealed partial class MainWindow : Window
                 CultureInfo.InvariantCulture,
                 $"{capture.ResolvedModuleEventCount:N0} resolved / {capture.UnresolvedModuleEventCount:N0} unresolved ({resolvedPercent:F1}% resolved).{truncationSuffix}");
 
-            var topModule = capture.Modules.FirstOrDefault();
+            var topModule = capture.Modules.Count == 0 ? null : capture.Modules[0];
             TopModuleText.Text = topModule is null
                 ? "No routine address was resolved to an authoritative image range."
                 : string.Create(
