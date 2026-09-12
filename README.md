@@ -42,13 +42,15 @@ Windows exposes powerful interrupt, CPU-topology, ETW, USB, networking and sched
 - Stage A — authoritative DPC/ISR module attribution: **closed in CI**
 - Stage B — physical Windows 11 validation: **current**
 - System mutation capability: **none by design**
-- Permanent tests: **9 / hard maximum 10**
+- Permanent tests: **7 / hard maximum 10**
 
 Phase 2 currently contains CPU topology, PnP stable identities, driver metadata, stored interrupt configuration, allocated IRQ/resource inspection, a privileged read-only Windows Service, typed local Named Pipe IPC, DPC/ISR ETW observation with per-processor aggregation, p50/p95/p99/p99.9/max summaries, and authoritative routine-address attribution against kernel image ranges. Already-loaded images are recovered through kernel image rundown at session stop. Ambiguous or missing mappings remain explicitly unresolved instead of being guessed.
 
-The Phase 2 desktop now exposes service health, the read-only safety boundary, system topology/inventory, DPC/ISR tail metrics, module-attribution coverage, top contributors and CPU concentration. Repeated baseline/noise/drift analysis is still intentionally deferred to Stage C. A short single capture is called an **observation**, not a trustworthy baseline.
+The observation boundary is fail-closed and bounded: unknown protocol fields are rejected, network identities are denied, the Phase 2 pipe surface is limited to interactive local identities plus required service identities, and abandoned clients cancel active capture work. App/Service failures are recorded in bounded structured local logs correlated by protocol `RequestId`.
 
-See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the live execution ladder, and [`docs/PHYSICAL_VALIDATION.md`](docs/PHYSICAL_VALIDATION.md) for Stage B.
+The Phase 2 desktop exposes service health, the read-only safety boundary, system topology/inventory, DPC/ISR tail metrics, module-attribution coverage, top contributors and CPU concentration. Repeated baseline/noise/drift analysis is still intentionally deferred to Stage C. A short single capture is called an **observation**, not a trustworthy baseline.
+
+See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the live execution ladder, [`docs/PHYSICAL_VALIDATION.md`](docs/PHYSICAL_VALIDATION.md) for Stage B, and [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) for local logging/correlation rules.
 
 ## Pre-alpha releases
 
@@ -57,11 +59,11 @@ Release versions use exactly three numeric components: `MAJOR.MINOR.PATCH`. `Dir
 Version 0.0.1 produces two Windows 11 x64 distributions from the same self-contained payload:
 
 - `LatencyPilot-0.0.1-win-x64-setup.exe` — recommended installation path. Installs the app and the read-only observation service, and manages service removal during uninstall.
-- `LatencyPilot-0.0.1-win-x64-portable.zip` — extractable portable bundle containing the app, service, runtime dependencies, service scripts, validation guide and build metadata.
+- `LatencyPilot-0.0.1-win-x64-portable.zip` — extractable portable bundle containing the app, service payload, runtime dependencies, service scripts, validation/diagnostics guides and build metadata.
 
 Both distributions are fully self-contained and do not require a separate .NET or Windows App Runtime download. Each release asset has a SHA-256 checksum companion.
 
-The App runs as a normal, non-elevated user. Kernel ETW observation remains behind the privileged Windows Service. In the portable bundle, register the included service from the extracted directory to use privileged observation features, and unregister it before moving or deleting that directory. See [`docs/PORTABLE.md`](docs/PORTABLE.md).
+The App runs as a normal, non-elevated user. Kernel ETW observation remains behind the privileged Windows Service. In the portable bundle, `Install-Service.ps1` copies the Service payload into `%ProgramFiles%\LatencyPilot\Service` before LocalSystem registration; the privileged binary is therefore not executed from an ordinary user-writable extraction folder. `Uninstall-Service.ps1` removes the registration and protected Service copy. See [`docs/PORTABLE.md`](docs/PORTABLE.md).
 
 ## Architecture
 
@@ -78,9 +80,10 @@ Current baseline:
 - **Graphics telemetry:** PresentMon where applicable
 - **Windows integration:** SetupAPI, Configuration Manager, CPU topology/CPU Sets, Raw Input and documented device-policy APIs
 - **Persistence:** SQLite when durable experiment/recovery state is introduced
+- **Diagnostics:** `Microsoft.Extensions.Logging` Service abstraction plus bounded Serilog compact-JSON rolling files
 - **Tests:** MSTest + Microsoft.Testing.Platform, hard maximum 10 permanent automated tests
 
-The desktop application remains non-elevated. Privileged observation and all future privileged mutation cross the narrow Service boundary. Mutation-specific commands are not present in Phase 2.
+The desktop application remains non-elevated. Privileged observation and all future privileged mutation cross the narrow Service boundary. Mutation-specific commands are not present in Phase 2, and the current observation ACL is not considered sufficient future mutation authorization.
 
 See [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN.md), [`AGENTS.md`](AGENTS.md) and [`docs/adr/`](docs/adr/).
 
@@ -98,6 +101,8 @@ For example, a registry `MSISupported` value is not presented as proof that MSI/
 
 Likewise, a raw DPC/ISR routine address is not presented as a driver name unless authoritative kernel image mapping resolves it. The current observation engine tracks image load/unload lifetime, consumes stop-time image rundown for modules that predate the capture, rejects invalid ranges, and leaves overlapping/missing mappings unresolved.
 
+Partial device metadata is preserved where possible. An unreadable optional property/resource no longer implies the entire present-device inventory is invalid.
+
 ## Benchmark philosophy
 
 Depending on subsystem, evidence may include:
@@ -111,6 +116,8 @@ Depending on subsystem, evidence may include:
 - Raw Input report interval/jitter;
 - USB ETW or NDIS/RSS evidence;
 - audio/stability guardrails where measurable.
+
+All current percentile reporting uses the same documented linear interpolation estimator from `LatencyPilot.Benchmarking.Statistics.Percentiles`; the Service does not define a second percentile rule.
 
 Results distinguish **Improved**, **Regressed**, **Tradeoff**, **NoMeasurableDifference**, and **Inconclusive** rather than forcing every run into one score.
 
@@ -131,6 +138,7 @@ tests/
 
 docs/
   BENCHMARK_METHODOLOGY.md
+  DIAGNOSTICS.md
   PHYSICAL_VALIDATION.md
   PORTABLE.md
   adr/
@@ -138,13 +146,33 @@ docs/
 
 ## Testing policy
 
-The permanent automated suite is intentionally small and has a **hard repository-wide maximum of 10 tests**. Tests are reserved for high-blast-radius correctness/safety contracts. Temporary implementation/debug tests may be created and deleted before finalization.
+The permanent automated suite is intentionally small and has a **hard repository-wide maximum of 10 tests**. The current suite uses seven broader permanent test methods covering state-machine safety, benchmark verdict semantics, invalid metrics, canonical percentiles, fail-closed protocol framing, the read-only protocol surface and a real Windows inventory/topology invariant.
+
+Test count is not a quality goal. When a newer parser/recovery/mutation risk has greater blast radius, merge or remove a lower-value permanent test and reuse that slot. Scenario matrices should be consolidated inside a durable contract test when practical. Temporary implementation/debug tests may be created and deleted before finalization.
 
 Hardware validation is separate from CI and does not count toward the permanent-test cap.
 
+## Diagnostics
+
+Operational diagnostics are local-first and intentionally separate from benchmark evidence.
+
+Desktop App logs:
+
+```text
+%LOCALAPPDATA%\LatencyPilot\Logs\App\latencypilot-app-*.json
+```
+
+Service logs:
+
+```text
+%PROGRAMDATA%\LatencyPilot\Logs\Service\latencypilot-service-*.json
+```
+
+They use compact JSON, bounded rolling/retention and async file writes. The protocol `RequestId` connects App-side request entries to Service-side capture entries. LatencyPilot does not log one event per raw DPC/ISR sample because diagnostic I/O must not become part of the latency measurement workload. See [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md).
+
 ## Building
 
-The .NET SDK is pinned in `global.json`. GitHub Actions restores the toolchain, builds Release, runs the permanent critical suite, publishes self-contained Windows x64 App and Service outputs, and builds both the offline setup EXE and portable ZIP from the same payload.
+The .NET SDK is pinned in `global.json`. GitHub Actions restores the toolchain, builds Release, runs the permanent critical suite, publishes self-contained Windows x64 App and Service outputs, validates the WinUI resource/GUI smoke path, and builds both the offline setup EXE and portable ZIP from the same payload.
 
 ### Fast local development
 
@@ -205,6 +233,8 @@ Detect applicability
 → Close journal
 ```
 
+None of those future mutation steps are implied merely by the existence of the Phase 2 read-only Service.
+
 ## Progress discipline
 
 Every meaningful implementation stage must report what completed, the evidence, what remains open, the exact next stage with ordered substeps, and what follows that stage. `PROJECT_STATUS.md` keeps this execution ladder so progress cannot depend on chat memory.
@@ -219,7 +249,7 @@ Issues and upstream contributions are welcome under [`CONTRIBUTING.md`](CONTRIBU
 
 ## Security
 
-Do not publicly disclose vulnerabilities that could enable privilege escalation, unsafe device-policy mutation, arbitrary service commands or recovery bypass. Follow [`SECURITY.md`](SECURITY.md).
+Do not publicly disclose vulnerabilities that could enable privilege escalation, unsafe device-policy mutation, arbitrary service commands, diagnostics-data exposure or recovery bypass. Follow [`SECURITY.md`](SECURITY.md).
 
 ---
 
