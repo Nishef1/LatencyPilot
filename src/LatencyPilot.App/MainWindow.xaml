@@ -2,192 +2,54 @@
     x:Class="LatencyPilot.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid x:Name="RootGrid" Background="White" Loaded="RootGrid_Loaded">
+        <ScrollViewer>
+            <StackPanel Padding="24" Spacing="10">
+                <TextBlock Text="LatencyPilot" FontSize="28" FontWeight="SemiBold" Foreground="Black" />
+                <TextBlock x:Name="VersionText" Text="v0.0.1" Foreground="DimGray" />
+                <TextBlock Text="WinUI startup probe · read-only observation build" Foreground="DimGray" />
 
-    <Grid x:Name="RootGrid" Background="#F6F8FB" Loaded="RootGrid_Loaded">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <Grid MaxWidth="1440" Padding="28,24,28,40" HorizontalAlignment="Center">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="16" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="18" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border x:Name="ServiceStatusDot" Width="8" Height="8" Background="Goldenrod" />
+                    <TextBlock x:Name="ServiceStatusBadgeText" Text="Checking service" Foreground="Black" />
+                </StackPanel>
+                <TextBlock x:Name="ServiceStatusText" Text="Checking service…" Foreground="Black" TextWrapping="Wrap" />
 
-                <Grid Grid.Row="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Spacing="3">
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Text="LatencyPilot" FontSize="30" FontWeight="SemiBold" Foreground="#111827" />
-                            <Border Padding="8,3" Margin="0,7,0,0" VerticalAlignment="Top" CornerRadius="10" Background="#E8EEF4">
-                                <TextBlock x:Name="VersionText" Text="v0.0.1" FontSize="12" Foreground="#526173" />
-                            </Border>
-                        </StackPanel>
-                        <TextBlock Text="Evidence-driven Windows latency analysis" FontSize="14" Foreground="#667085" />
-                    </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="RefreshServiceButton" Content="Refresh service" Click="RefreshServiceButton_Click" />
+                    <Button x:Name="CaptureObservationButton" Content="Capture 5 seconds" IsEnabled="False" Click="CaptureObservationButton_Click" />
+                </StackPanel>
 
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
-                        <Border Padding="12,7" CornerRadius="14" Background="White" BorderBrush="#D9E0E8" BorderThickness="1">
-                            <StackPanel Orientation="Horizontal" Spacing="7">
-                                <Border x:Name="ServiceStatusDot" Width="8" Height="8" CornerRadius="4" Background="#B7791F" />
-                                <TextBlock x:Name="ServiceStatusBadgeText" Text="Checking service" FontSize="12" Foreground="#111827" />
-                            </StackPanel>
-                        </Border>
-                        <Border Padding="12,7" CornerRadius="14" Background="White" BorderBrush="#D9E0E8" BorderThickness="1">
-                            <TextBlock Text="Read-only" FontSize="12" Foreground="#0F7A5A" />
-                        </Border>
-                    </StackPanel>
-                </Grid>
+                <TextBlock Text="System inventory" FontSize="18" FontWeight="SemiBold" Foreground="Black" />
+                <TextBlock x:Name="OperatingSystemText" Text="Loading…" Foreground="Black" TextWrapping="Wrap" />
+                <TextBlock x:Name="OsArchitectureText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="ProcessArchitectureText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="ProcessAvailableProcessorCountText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="HardwareLogicalProcessorCountText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="PhysicalCoreCountText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="SmtCoreCountText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="PackageCountText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="ProcessorGroupCountText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="PresentDeviceCountText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="TopologyStatusText" Foreground="DimGray" TextWrapping="Wrap" />
+                <TextBlock x:Name="DeviceInventoryStatusText" Foreground="DimGray" TextWrapping="Wrap" />
 
-                <Border Grid.Row="2" Padding="18,16" CornerRadius="16" Background="White" BorderBrush="#D9E0E8" BorderThickness="1">
-                    <Grid ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <Border Width="10" Height="10" Margin="0,4,0,0" CornerRadius="5" Background="#176B87" VerticalAlignment="Top" />
-                        <StackPanel Grid.Column="1" Spacing="4">
-                            <TextBlock Text="Phase 2 · observation engine" FontSize="15" FontWeight="SemiBold" Foreground="#111827" />
-                            <TextBlock Text="Read-only DPC/ISR observation, CPU concentration and driver attribution." FontSize="13" TextWrapping="Wrap" Foreground="#667085" />
-                        </StackPanel>
-                        <Button Grid.Column="2" x:Name="RefreshServiceButton" VerticalAlignment="Center" Click="RefreshServiceButton_Click" Content="Refresh service" />
-                    </Grid>
-                </Border>
-
-                <Grid Grid.Row="4" ColumnSpacing="18">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="2*" />
-                        <ColumnDefinition Width="3*" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0" Spacing="18">
-                        <Border Padding="20" CornerRadius="16" Background="White" BorderBrush="#D9E0E8" BorderThickness="1">
-                            <StackPanel Spacing="16">
-                                <StackPanel Spacing="3">
-                                    <TextBlock Text="System" FontSize="18" FontWeight="SemiBold" Foreground="#111827" />
-                                    <TextBlock Text="Read-only inventory from Windows APIs" FontSize="12" Foreground="#667085" />
-                                </StackPanel>
-
-                                <StackPanel Spacing="4">
-                                    <TextBlock Text="Operating system" FontSize="12" Foreground="#667085" />
-                                    <TextBlock x:Name="OperatingSystemText" Text="Loading…" TextWrapping="Wrap" Foreground="#111827" />
-                                </StackPanel>
-
-                                <Grid ColumnSpacing="10" RowSpacing="10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <Border Grid.Row="0" Grid.Column="0" Padding="14" CornerRadius="12" Background="#F0F3F7">
-                                        <StackPanel Spacing="4"><TextBlock Text="Logical CPUs" FontSize="12" Foreground="#667085" /><TextBlock x:Name="HardwareLogicalProcessorCountText" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="#111827" /></StackPanel>
-                                    </Border>
-                                    <Border Grid.Row="0" Grid.Column="1" Padding="14" CornerRadius="12" Background="#F0F3F7">
-                                        <StackPanel Spacing="4"><TextBlock Text="Physical cores" FontSize="12" Foreground="#667085" /><TextBlock x:Name="PhysicalCoreCountText" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="#111827" /></StackPanel>
-                                    </Border>
-                                    <Border Grid.Row="1" Grid.Column="0" Padding="14" CornerRadius="12" Background="#F0F3F7">
-                                        <StackPanel Spacing="4"><TextBlock Text="SMT cores" FontSize="12" Foreground="#667085" /><TextBlock x:Name="SmtCoreCountText" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="#111827" /></StackPanel>
-                                    </Border>
-                                    <Border Grid.Row="1" Grid.Column="1" Padding="14" CornerRadius="12" Background="#F0F3F7">
-                                        <StackPanel Spacing="4"><TextBlock Text="PnP devices" FontSize="12" Foreground="#667085" /><TextBlock x:Name="PresentDeviceCountText" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="#111827" /></StackPanel>
-                                    </Border>
-                                </Grid>
-
-                                <Grid ColumnSpacing="10">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="3">
-                                        <TextBlock Text="CPU packages / groups" FontSize="12" Foreground="#667085" />
-                                        <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock x:Name="PackageCountText" Text="—" Foreground="#111827" /><TextBlock Text="/" Foreground="#667085" /><TextBlock x:Name="ProcessorGroupCountText" Text="—" Foreground="#111827" /></StackPanel>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Spacing="3">
-                                        <TextBlock Text="OS / process" FontSize="12" Foreground="#667085" />
-                                        <StackPanel Orientation="Horizontal" Spacing="6"><TextBlock x:Name="OsArchitectureText" Text="—" Foreground="#111827" /><TextBlock Text="/" Foreground="#667085" /><TextBlock x:Name="ProcessArchitectureText" Text="—" Foreground="#111827" /></StackPanel>
-                                    </StackPanel>
-                                </Grid>
-
-                                <StackPanel Spacing="4">
-                                    <TextBlock Text="Processors available to app" FontSize="12" Foreground="#667085" />
-                                    <TextBlock x:Name="ProcessAvailableProcessorCountText" Text="—" Foreground="#111827" />
-                                </StackPanel>
-                                <TextBlock x:Name="TopologyStatusText" FontSize="12" TextWrapping="Wrap" Foreground="#667085" />
-                                <TextBlock x:Name="DeviceInventoryStatusText" FontSize="12" TextWrapping="Wrap" Foreground="#667085" />
-                            </StackPanel>
-                        </Border>
-
-                        <Border Padding="20" CornerRadius="16" Background="White" BorderBrush="#D9E0E8" BorderThickness="1">
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="Safety boundary" FontSize="16" FontWeight="SemiBold" Foreground="#111827" />
-                                <TextBlock Text="0.0.1 is observation-only. MSI, affinity, power and network mutation remain disabled." FontSize="13" TextWrapping="Wrap" Foreground="#667085" />
-                                <TextBlock Text="A single observation is not an optimization recommendation." FontSize="12" Foreground="#B7791F" />
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-
-                    <Border Grid.Column="1" Padding="22" CornerRadius="16" Background="White" BorderBrush="#D9E0E8" BorderThickness="1">
-                        <StackPanel Spacing="18">
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <StackPanel Spacing="4">
-                                    <TextBlock Text="Kernel latency observation" FontSize="20" FontWeight="SemiBold" Foreground="#111827" />
-                                    <TextBlock Text="A five-second DPC/ISR window. Validated baselines arrive in Stage C." FontSize="12" TextWrapping="Wrap" Foreground="#667085" />
-                                </StackPanel>
-                                <Button Grid.Column="1" x:Name="CaptureObservationButton" IsEnabled="False" Click="CaptureObservationButton_Click" Content="Capture 5 seconds" />
-                            </Grid>
-
-                            <Border Padding="14" CornerRadius="12" Background="#F0F3F7">
-                                <StackPanel Spacing="4">
-                                    <TextBlock x:Name="ServiceStatusText" Text="Checking service…" FontSize="12" TextWrapping="Wrap" Foreground="#667085" />
-                                    <TextBlock x:Name="KernelCaptureStatusText" Text="No observation has been captured yet." TextWrapping="Wrap" Foreground="#111827" />
-                                </StackPanel>
-                            </Border>
-
-                            <Grid ColumnSpacing="10">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Padding="14" CornerRadius="12" Background="#F0F3F7"><StackPanel Spacing="4"><TextBlock Text="DPC events" FontSize="12" Foreground="#667085" /><TextBlock x:Name="DpcCountText" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="#111827" /><TextBlock x:Name="DpcP99Text" Text="—" FontSize="12" Foreground="#667085" /></StackPanel></Border>
-                                <Border Grid.Column="1" Padding="14" CornerRadius="12" Background="#F0F3F7"><StackPanel Spacing="4"><TextBlock Text="DPC p99.9" FontSize="12" Foreground="#667085" /><TextBlock x:Name="DpcP999Text" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="#111827" /><TextBlock Text="tail latency" FontSize="12" Foreground="#667085" /></StackPanel></Border>
-                                <Border Grid.Column="2" Padding="14" CornerRadius="12" Background="#F0F3F7"><StackPanel Spacing="4"><TextBlock Text="ISR events" FontSize="12" Foreground="#667085" /><TextBlock x:Name="IsrCountText" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="#111827" /><TextBlock x:Name="IsrP99Text" Text="—" FontSize="12" Foreground="#667085" /></StackPanel></Border>
-                                <Border Grid.Column="3" Padding="14" CornerRadius="12" Background="#F0F3F7"><StackPanel Spacing="4"><TextBlock Text="ISR p99.9" FontSize="12" Foreground="#667085" /><TextBlock x:Name="IsrP999Text" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="#111827" /><TextBlock Text="tail latency" FontSize="12" Foreground="#667085" /></StackPanel></Border>
-                            </Grid>
-
-                            <Grid ColumnSpacing="18">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <StackPanel Spacing="6">
-                                    <TextBlock Text="Driver attribution" FontSize="14" FontWeight="SemiBold" Foreground="#111827" />
-                                    <ProgressBar x:Name="ModuleCoverageBar" Minimum="0" Maximum="100" Value="0" />
-                                    <TextBlock x:Name="ModuleAttributionCoverageText" Text="—" FontSize="12" TextWrapping="Wrap" Foreground="#667085" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" MinWidth="120" Spacing="4">
-                                    <TextBlock Text="CPUs observed" FontSize="12" Foreground="#667085" />
-                                    <TextBlock x:Name="ObservedProcessorCountText" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="#111827" />
-                                </StackPanel>
-                            </Grid>
-
-                            <Grid ColumnSpacing="16">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Spacing="8">
-                                    <TextBlock Text="Top modules" FontSize="15" FontWeight="SemiBold" Foreground="#111827" />
-                                    <TextBlock x:Name="TopModuleText" Text="No observation yet." FontSize="12" TextWrapping="Wrap" Foreground="#667085" />
-                                    <ListView x:Name="TopModulesList" MinHeight="120" MaxHeight="250" SelectionMode="None" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Spacing="8">
-                                    <TextBlock Text="CPU concentration" FontSize="15" FontWeight="SemiBold" Foreground="#111827" />
-                                    <TextBlock Text="Ranked by observed DPC + ISR event count" FontSize="12" Foreground="#667085" />
-                                    <ListView x:Name="TopProcessorsList" MinHeight="120" MaxHeight="250" SelectionMode="None" />
-                                </StackPanel>
-                            </Grid>
-
-                            <TextBlock x:Name="ObservationQualityText" Text="Quality evidence will appear after capture." FontSize="12" TextWrapping="Wrap" Foreground="#667085" />
-                        </StackPanel>
-                    </Border>
-                </Grid>
-            </Grid>
+                <TextBlock Text="Kernel latency observation" FontSize="18" FontWeight="SemiBold" Foreground="Black" />
+                <TextBlock x:Name="KernelCaptureStatusText" Text="No observation has been captured yet." Foreground="Black" TextWrapping="Wrap" />
+                <TextBlock x:Name="DpcCountText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="DpcP99Text" Text="—" Foreground="Black" />
+                <TextBlock x:Name="DpcP999Text" Text="—" Foreground="Black" />
+                <TextBlock x:Name="IsrCountText" Text="—" Foreground="Black" />
+                <TextBlock x:Name="IsrP99Text" Text="—" Foreground="Black" />
+                <TextBlock x:Name="IsrP999Text" Text="—" Foreground="Black" />
+                <TextBlock x:Name="ObservedProcessorCountText" Text="—" Foreground="Black" />
+                <ProgressBar x:Name="ModuleCoverageBar" Minimum="0" Maximum="100" Value="0" />
+                <TextBlock x:Name="ModuleAttributionCoverageText" Text="—" Foreground="DimGray" TextWrapping="Wrap" />
+                <TextBlock x:Name="TopModuleText" Text="No observation yet." Foreground="DimGray" TextWrapping="Wrap" />
+                <ListView x:Name="TopModulesList" MaxHeight="160" SelectionMode="None" />
+                <ListView x:Name="TopProcessorsList" MaxHeight="160" SelectionMode="None" />
+                <TextBlock x:Name="ObservationQualityText" Text="Quality evidence will appear after capture." Foreground="DimGray" TextWrapping="Wrap" />
+            </StackPanel>
         </ScrollViewer>
     </Grid>
 </Window>
