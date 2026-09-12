@@ -12,6 +12,8 @@ namespace LatencyPilot.Service;
 
 internal sealed class ObservationHost : BackgroundService
 {
+    private static readonly TimeSpan PipeIoTimeout = TimeSpan.FromSeconds(3);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -83,18 +85,39 @@ internal sealed class ObservationHost : BackgroundService
         NamedPipeServerStream server,
         CancellationToken stoppingToken)
     {
-        var request = await PipeMessageFraming.ReadAsync<ObservationRequest>(
-            server,
-            ObservationProtocol.MaximumRequestBytes,
-            stoppingToken).ConfigureAwait(false);
+        ObservationRequest request;
+        using (var requestDeadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken))
+        {
+            requestDeadline.CancelAfter(PipeIoTimeout);
+            try
+            {
+                request = await PipeMessageFraming.ReadAsync<ObservationRequest>(
+                    server,
+                    ObservationProtocol.MaximumRequestBytes,
+                    requestDeadline.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+        }
 
         var response = HandleRequest(request, stoppingToken);
 
-        await PipeMessageFraming.WriteAsync(
-            server,
-            response,
-            ObservationProtocol.MaximumResponseBytes,
-            stoppingToken).ConfigureAwait(false);
+        using var responseDeadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        responseDeadline.CancelAfter(PipeIoTimeout);
+        try
+        {
+            await PipeMessageFraming.WriteAsync(
+                server,
+                response,
+                ObservationProtocol.MaximumResponseBytes,
+                responseDeadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+        {
+            // Client stopped reading. Drop the connection and accept the next request.
+        }
     }
 
     private static ObservationResponse HandleRequest(

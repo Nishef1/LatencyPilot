@@ -6,6 +6,8 @@ namespace LatencyPilot.App.Services;
 internal static class ObservationServiceClient
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan StatusTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan CaptureCompletionMargin = TimeSpan.FromSeconds(5);
 
     public static async Task<ObservationServiceStatus> GetStatusAsync(
         CancellationToken cancellationToken = default)
@@ -16,6 +18,7 @@ internal static class ObservationServiceClient
                 Guid.NewGuid(),
                 ObservationCommand.GetStatus,
                 null),
+            StatusTimeout,
             cancellationToken).ConfigureAwait(false);
 
         return response.ServiceStatus
@@ -35,6 +38,7 @@ internal static class ObservationServiceClient
                 new KernelLatencyCaptureRequest(
                     checked((int)duration.TotalMilliseconds),
                     maximumEvents)),
+            duration + CaptureCompletionMargin,
             cancellationToken).ConfigureAwait(false);
 
         return response.KernelLatencyCapture
@@ -43,43 +47,55 @@ internal static class ObservationServiceClient
 
     private static async Task<ObservationResponse> SendAsync(
         ObservationRequest request,
+        TimeSpan operationTimeout,
         CancellationToken cancellationToken)
     {
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(operationTimeout);
+        var operationToken = timeoutSource.Token;
+
         using var pipe = new NamedPipeClientStream(
             ".",
             ObservationProtocol.PipeName,
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
 
-        await pipe.ConnectAsync(ConnectTimeout, cancellationToken).ConfigureAwait(false);
-
-        await PipeMessageFraming.WriteAsync(
-            pipe,
-            request,
-            ObservationProtocol.MaximumRequestBytes,
-            cancellationToken).ConfigureAwait(false);
-
-        var response = await PipeMessageFraming.ReadAsync<ObservationResponse>(
-            pipe,
-            ObservationProtocol.MaximumResponseBytes,
-            cancellationToken).ConfigureAwait(false);
-
-        if (response.ProtocolVersion != ProtocolVersion.Current)
+        try
         {
-            throw new InvalidDataException("Observation service protocol version mismatch.");
-        }
+            await pipe.ConnectAsync(ConnectTimeout, operationToken).ConfigureAwait(false);
 
-        if (response.RequestId != request.RequestId)
+            await PipeMessageFraming.WriteAsync(
+                pipe,
+                request,
+                ObservationProtocol.MaximumRequestBytes,
+                operationToken).ConfigureAwait(false);
+
+            var response = await PipeMessageFraming.ReadAsync<ObservationResponse>(
+                pipe,
+                ObservationProtocol.MaximumResponseBytes,
+                operationToken).ConfigureAwait(false);
+
+            if (response.ProtocolVersion != ProtocolVersion.Current)
+            {
+                throw new InvalidDataException("Observation service protocol version mismatch.");
+            }
+
+            if (response.RequestId != request.RequestId)
+            {
+                throw new InvalidDataException("Observation service response RequestId mismatch.");
+            }
+
+            if (response.Status == ObservationResponseStatus.Error)
+            {
+                throw new InvalidOperationException(
+                    response.ErrorMessage ?? "Observation service rejected the request.");
+            }
+
+            return response;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutSource.IsCancellationRequested)
         {
-            throw new InvalidDataException("Observation service response RequestId mismatch.");
+            throw new TimeoutException("Observation service operation exceeded its deadline.");
         }
-
-        if (response.Status == ObservationResponseStatus.Error)
-        {
-            throw new InvalidOperationException(
-                response.ErrorMessage ?? "Observation service rejected the request.");
-        }
-
-        return response;
     }
 }
