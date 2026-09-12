@@ -5,6 +5,7 @@ obj/
 .idea/
 TestResults/
 artifacts/
+src/LatencyPilot.App/Assets/AppIcon.ico
 *.user
 *.suo
 *.cache
