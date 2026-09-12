@@ -43,17 +43,6 @@ public static class BenchmarkComparer
                 "Primary metric regressed beyond the configured threshold.");
         }
 
-        if (Math.Abs(relativeImprovement) < policy.MinimumRelativeChange)
-        {
-            return new ComparisonResult(
-                ExperimentVerdict.NoMeasurableDifference,
-                baselineValue,
-                candidateValue,
-                relativeImprovement,
-                [],
-                "Observed change is inside the configured noise threshold.");
-        }
-
         var regressedGuardrails = new List<string>();
         foreach (var (guardrailBaseline, guardrailCandidate) in guardrails ?? [])
         {
@@ -79,6 +68,25 @@ public static class BenchmarkComparer
             {
                 regressedGuardrails.Add(guardrailBaseline.Name);
             }
+        }
+
+        if (Math.Abs(relativeImprovement) < policy.MinimumRelativeChange)
+        {
+            return regressedGuardrails.Count > 0
+                ? new ComparisonResult(
+                    ExperimentVerdict.Regressed,
+                    baselineValue,
+                    candidateValue,
+                    relativeImprovement,
+                    regressedGuardrails,
+                    "Primary metric did not measurably improve and one or more guardrails regressed.")
+                : new ComparisonResult(
+                    ExperimentVerdict.NoMeasurableDifference,
+                    baselineValue,
+                    candidateValue,
+                    relativeImprovement,
+                    [],
+                    "Observed change is inside the configured noise threshold.");
         }
 
         return regressedGuardrails.Count > 0

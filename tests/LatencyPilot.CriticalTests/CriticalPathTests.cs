@@ -47,6 +47,19 @@ public sealed class CriticalPathTests
     }
 
     [TestMethod]
+    public void NeutralPrimaryWithGuardrailRegressionIsRegression()
+    {
+        var result = BenchmarkComparer.Compare(
+            Series("DPC p99", 100),
+            Series("DPC p99", 99),
+            [(Series("USB jitter", 10), Series("USB jitter", 12))],
+            Policy);
+
+        Assert.AreEqual(ExperimentVerdict.Regressed, result.Verdict);
+        CollectionAssert.Contains(result.RegressedGuardrails.ToList(), "USB jitter");
+    }
+
+    [TestMethod]
     public void ClearPrimaryImprovementIsDetected()
     {
         var result = BenchmarkComparer.Compare(
