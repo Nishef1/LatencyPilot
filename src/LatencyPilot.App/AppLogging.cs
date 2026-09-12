@@ -14,31 +14,43 @@ internal static class AppLogging
             return;
         }
 
-        var logDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LatencyPilot",
-            "Logs",
-            "App");
-        Directory.CreateDirectory(logDirectory);
+        try
+        {
+            var logDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "LatencyPilot",
+                "Logs",
+                "App");
+            Directory.CreateDirectory(logDirectory);
 
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Information()
-            .Enrich.WithProperty("Component", "App")
-            .Enrich.WithProperty("ProcessId", Environment.ProcessId)
-            .WriteTo.Async(
-                sink => sink.File(
-                    new CompactJsonFormatter(),
-                    Path.Combine(logDirectory, "latencypilot-app-.json"),
-                    rollingInterval: RollingInterval.Day,
-                    fileSizeLimitBytes: 32 * 1024 * 1024,
-                    rollOnFileSizeLimit: true,
-                    retainedFileCountLimit: 10,
-                    flushToDiskInterval: TimeSpan.FromSeconds(2)),
-                bufferSize: 4096,
-                blockWhenFull: false)
-            .CreateLogger();
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .Enrich.WithProperty("Component", "App")
+                .Enrich.WithProperty("ProcessId", Environment.ProcessId)
+                .WriteTo.Async(
+                    sink => sink.File(
+                        new CompactJsonFormatter(),
+                        Path.Combine(logDirectory, "latencypilot-app-.json"),
+                        rollingInterval: RollingInterval.Day,
+                        fileSizeLimitBytes: 32 * 1024 * 1024,
+                        rollOnFileSizeLimit: true,
+                        retainedFileCountLimit: 10,
+                        flushToDiskInterval: TimeSpan.FromSeconds(2)),
+                    bufferSize: 4096,
+                    blockWhenFull: false)
+                .CreateLogger();
 
-        Log.Information("LatencyPilot application logging initialized.");
+            Log.Information("LatencyPilot application logging initialized.");
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            UnauthorizedAccessException or
+            System.Security.SecurityException)
+        {
+            // File diagnostics are best-effort. The app must still start when its log
+            // directory is unavailable; StartupFailureReporter remains the last-resort
+            // path for actual startup failures.
+        }
     }
 
     public static void Close()
