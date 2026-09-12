@@ -12,25 +12,28 @@ namespace LatencyPilot.App;
 public sealed partial class MainWindow : Window
 {
     private bool _observationServiceReady;
+    private bool _initialLoadStarted;
 
     public MainWindow()
     {
         InitializeComponent();
         Title = "LatencyPilot";
         VersionText.Text = $"v{GetProductVersion()}";
-
-        var system = SystemInventoryReader.Capture();
-        OperatingSystemText.Text = system.OperatingSystem;
-        OsArchitectureText.Text = system.OsArchitecture;
-        ProcessArchitectureText.Text = system.ProcessArchitecture;
-        ProcessAvailableProcessorCountText.Text = system.ProcessAvailableProcessorCount.ToString(CultureInfo.InvariantCulture);
-
-        CaptureProcessorTopology();
-        CaptureDeviceInventory();
     }
 
     private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
     {
+        if (_initialLoadStarted)
+        {
+            return;
+        }
+
+        _initialLoadStarted = true;
+        await Task.Yield();
+        await Task.WhenAll(
+            CaptureSystemInventoryAsync(),
+            CaptureProcessorTopologyAsync(),
+            CaptureDeviceInventoryAsync());
         await RefreshObservationServiceStatusAsync();
     }
 
@@ -254,11 +257,31 @@ public sealed partial class MainWindow : Window
             ? "—"
             : value.Value.ToString("F1", CultureInfo.InvariantCulture) + " µs";
 
-    private void CaptureProcessorTopology()
+    private async Task CaptureSystemInventoryAsync()
     {
         try
         {
-            var topology = ProcessorTopologyReader.Capture();
+            var system = await Task.Run(() => SystemInventoryReader.Capture());
+            OperatingSystemText.Text = system.OperatingSystem;
+            OsArchitectureText.Text = system.OsArchitecture;
+            ProcessArchitectureText.Text = system.ProcessArchitecture;
+            ProcessAvailableProcessorCountText.Text = system.ProcessAvailableProcessorCount.ToString(CultureInfo.InvariantCulture);
+        }
+        catch (Exception exception)
+        {
+            OperatingSystemText.Text = "Unavailable";
+            OsArchitectureText.Text = "—";
+            ProcessArchitectureText.Text = "—";
+            ProcessAvailableProcessorCountText.Text = "—";
+            TopologyStatusText.Text = $"System inventory failed: {exception.Message}";
+        }
+    }
+
+    private async Task CaptureProcessorTopologyAsync()
+    {
+        try
+        {
+            var topology = await Task.Run(() => ProcessorTopologyReader.Capture());
             HardwareLogicalProcessorCountText.Text = topology.LogicalProcessorCount.ToString(CultureInfo.InvariantCulture);
             PhysicalCoreCountText.Text = topology.PhysicalCoreCount.ToString(CultureInfo.InvariantCulture);
             PackageCountText.Text = topology.Packages.Count.ToString(CultureInfo.InvariantCulture);
@@ -277,11 +300,11 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void CaptureDeviceInventory()
+    private async Task CaptureDeviceInventoryAsync()
     {
         try
         {
-            var inventory = DeviceInventoryReader.CapturePresentDevices();
+            var inventory = await Task.Run(() => DeviceInventoryReader.CapturePresentDevices());
             PresentDeviceCountText.Text = inventory.PresentDeviceCount.ToString(CultureInfo.InvariantCulture);
             DeviceInventoryStatusText.Text = "Present devices captured through SetupAPI using stable device instance IDs.";
         }
