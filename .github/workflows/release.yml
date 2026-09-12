@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Three-part version, for example 0.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.401
+
+      - name: Resolve and validate version
+        id: version
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $version = '${{ inputs.version }}'
+          }
+          else {
+            $tag = '${{ github.ref_name }}'
+            if ($tag -notmatch '^v([0-9]+)\.([0-9]+)\.([0-9]+)$') {
+              throw "Release tag must use vMAJOR.MINOR.PATCH, for example v0.0.0."
+            }
+            $version = $tag.Substring(1)
+          }
+
+          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw "Version must be exactly three numeric components: MAJOR.MINOR.PATCH."
+          }
+
+          $projectVersion = (& dotnet msbuild src/LatencyPilot.App/LatencyPilot.App.csproj -nologo -getProperty:Version).Trim()
+          if ($projectVersion -ne $version) {
+            throw "Requested release version '$version' does not match repository Version '$projectVersion'."
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        run: dotnet restore LatencyPilot.slnx
+
+      - name: Build Release
+        run: dotnet build LatencyPilot.slnx --configuration Release --no-restore
+
+      - name: Critical tests
+        run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release --no-build
+
+      - name: Publish Windows x64 app
+        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/release/App
+
+      - name: Publish Windows x64 service
+        run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/release/Service
+
+      - name: Assemble release bundle
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          Copy-Item scripts/Install-Service.ps1 artifacts/release/Install-Service.ps1
+          Copy-Item scripts/Uninstall-Service.ps1 artifacts/release/Uninstall-Service.ps1
+          Copy-Item README.md artifacts/release/README.md
+          Copy-Item LICENSE artifacts/release/LICENSE
+          Set-Content -LiteralPath artifacts/release/VERSION.txt -Value $version -NoNewline
+
+          $archive = "artifacts/LatencyPilot-$version-win-x64.zip"
+          Compress-Archive -Path artifacts/release/* -DestinationPath $archive -CompressionLevel Optimal
+
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$archive.sha256" -Value "$hash  $(Split-Path $archive -Leaf)" -NoNewline
+
+      - name: Upload release build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LatencyPilot-${{ steps.version.outputs.version }}-win-x64
+          path: |
+            artifacts/LatencyPilot-${{ steps.version.outputs.version }}-win-x64.zip
+            artifacts/LatencyPilot-${{ steps.version.outputs.version }}-win-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $tag = '${{ steps.version.outputs.tag }}'
+          $archive = "artifacts/LatencyPilot-$version-win-x64.zip"
+          $checksum = "$archive.sha256"
+
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            git tag $tag $env:GITHUB_SHA
+            git push origin $tag
+          }
+
+          gh release create $tag $archive $checksum --title "LatencyPilot $version" --prerelease --generate-notes --verify-tag
