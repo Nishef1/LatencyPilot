@@ -1,6 +1,6 @@
 # LatencyPilot Portable
 
-The portable package is a self-contained Windows 11 x64 bundle. It includes the LatencyPilot app, the read-only observation service, .NET runtime files required by the published binaries, Windows App SDK files, service scripts, validation documentation, build metadata and license files.
+The portable package is a self-contained Windows 11 x64 bundle. It includes the LatencyPilot desktop app, the read-only observation service, .NET runtime files required by the published binaries, Windows App SDK files, service scripts, validation documentation, build metadata and license files.
 
 No separate .NET or Windows App Runtime download is required.
 
@@ -8,7 +8,9 @@ No separate .NET or Windows App Runtime download is required.
 
 1. Extract the entire portable ZIP to a writable folder.
 2. Keep the extracted folder intact while LatencyPilot is in use.
-3. Run `App\LatencyPilot.exe` for the desktop UI.
+3. Run `LatencyPilot.exe` directly from the root of the extracted folder.
+
+The portable archive deliberately puts the desktop executable at the top level so the package behaves like an application distribution rather than a build tree. The privileged observation service remains under `Service\`.
 
 ## Kernel observation features
 
@@ -27,6 +29,14 @@ When you want to move or delete the portable folder, unregister the service firs
 ```
 
 The service path points into the extracted portable folder, so moving that folder while the service is registered will break the service path.
+
+## Startup diagnostics
+
+If the WinUI shell cannot be created, LatencyPilot shows a startup error dialog and writes the underlying exception to:
+
+```text
+%LOCALAPPDATA%\LatencyPilot\startup-error.log
+```
 
 ## Safety boundary
 
