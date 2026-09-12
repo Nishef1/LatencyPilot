@@ -20,6 +20,7 @@ DefaultGroupName=LatencyPilot
 DisableProgramGroupPage=yes
 OutputDir=..\artifacts\installer
 OutputBaseFilename=LatencyPilot-{#AppVersion}-win-x64-setup
+SetupIconFile=..\artifacts\payload\App\Assets\AppIcon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
