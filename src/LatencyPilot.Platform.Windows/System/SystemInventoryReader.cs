@@ -3,9 +3,9 @@ using LatencyPilot.Core.System;
 
 namespace LatencyPilot.Platform.Windows.System;
 
-public sealed class SystemInventoryReader
+public static class SystemInventoryReader
 {
-    public SystemInventorySnapshot Capture() => new(
+    public static SystemInventorySnapshot Capture() => new(
         RuntimeInformation.OSDescription,
         RuntimeInformation.OSArchitecture.ToString(),
         RuntimeInformation.ProcessArchitecture.ToString(),
