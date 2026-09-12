@@ -23,15 +23,21 @@ internal static class InterruptResourceReader
             return InterruptResourceSnapshot.ApiUnavailable(result);
         }
 
-        EnsureSuccess(result, "CM_Get_First_Log_Conf");
+        if (result != ConfigurationManager.Success)
+        {
+            return InterruptResourceSnapshot.ReadFailed(result);
+        }
 
         var resources = new List<AllocatedInterruptResourceSnapshot>();
         nint currentDescriptor = 0;
         var sourceHandle = logConfiguration;
+        uint? failureStatus = null;
+        var apiUnavailable = false;
+        var nonNativeReadFailure = false;
 
         try
         {
-            while (true)
+            while (failureStatus is null && !nonNativeReadFailure)
             {
                 result = ConfigurationManager.CM_Get_Next_Res_Des(
                     out var nextDescriptor,
@@ -42,8 +48,13 @@ internal static class InterruptResourceReader
 
                 if (currentDescriptor != 0)
                 {
-                    FreeResourceDescriptor(currentDescriptor);
+                    var freeResult = ConfigurationManager.CM_Free_Res_Des_Handle(currentDescriptor);
                     currentDescriptor = 0;
+                    if (freeResult != ConfigurationManager.Success)
+                    {
+                        failureStatus = freeResult;
+                        break;
+                    }
                 }
 
                 if (result == ConfigurationManager.NoMoreResourceDescriptors)
@@ -53,68 +64,113 @@ internal static class InterruptResourceReader
 
                 if (result == ConfigurationManager.CallNotImplemented)
                 {
-                    return InterruptResourceSnapshot.ApiUnavailable(result);
+                    failureStatus = result;
+                    apiUnavailable = true;
+                    break;
                 }
 
-                EnsureSuccess(result, "CM_Get_Next_Res_Des");
+                if (result != ConfigurationManager.Success)
+                {
+                    failureStatus = result;
+                    break;
+                }
 
                 currentDescriptor = nextDescriptor;
                 sourceHandle = nextDescriptor;
-                resources.Add(ReadIrqDescriptor(nextDescriptor));
-            }
+                if (!TryReadIrqDescriptor(
+                    nextDescriptor,
+                    out var resource,
+                    out var readFailureStatus))
+                {
+                    if (readFailureStatus is null)
+                    {
+                        nonNativeReadFailure = true;
+                    }
+                    else
+                    {
+                        failureStatus = readFailureStatus;
+                    }
 
-            return InterruptResourceSnapshot.Available(resources.ToArray());
+                    break;
+                }
+
+                resources.Add(resource);
+            }
         }
         finally
         {
             if (currentDescriptor != 0)
             {
-                FreeResourceDescriptor(currentDescriptor);
+                var freeResult = ConfigurationManager.CM_Free_Res_Des_Handle(currentDescriptor);
+                if (failureStatus is null && !nonNativeReadFailure && freeResult != ConfigurationManager.Success)
+                {
+                    failureStatus = freeResult;
+                }
             }
 
-            var freeResult = ConfigurationManager.CM_Free_Log_Conf_Handle(logConfiguration);
-            EnsureSuccess(freeResult, "CM_Free_Log_Conf_Handle");
+            var freeLogConfigurationResult = ConfigurationManager.CM_Free_Log_Conf_Handle(logConfiguration);
+            if (failureStatus is null &&
+                !nonNativeReadFailure &&
+                freeLogConfigurationResult != ConfigurationManager.Success)
+            {
+                failureStatus = freeLogConfigurationResult;
+            }
         }
+
+        if (apiUnavailable && failureStatus == ConfigurationManager.CallNotImplemented)
+        {
+            return InterruptResourceSnapshot.ApiUnavailable(failureStatus.Value);
+        }
+
+        if (failureStatus is not null || nonNativeReadFailure)
+        {
+            return InterruptResourceSnapshot.ReadFailed(failureStatus);
+        }
+
+        return InterruptResourceSnapshot.Available(resources.ToArray());
     }
 
-    private static unsafe AllocatedInterruptResourceSnapshot ReadIrqDescriptor(nint resourceDescriptor)
+    private static unsafe bool TryReadIrqDescriptor(
+        nint resourceDescriptor,
+        out AllocatedInterruptResourceSnapshot resource,
+        out uint? failureStatus)
     {
         var result = ConfigurationManager.CM_Get_Res_Des_Data_Size(out var size, resourceDescriptor, 0);
-        EnsureSuccess(result, "CM_Get_Res_Des_Data_Size");
-
-        var descriptorSize = checked((uint)Marshal.SizeOf<IrqDescriptor64>());
-        if (size < descriptorSize)
+        if (result != ConfigurationManager.Success)
         {
-            throw new InvalidDataException($"Allocated IRQ descriptor is {size} bytes; expected at least {descriptorSize} bytes.");
+            resource = default!;
+            failureStatus = result;
+            return false;
         }
 
-        var buffer = new byte[checked((int)size)];
+        var descriptorSize = checked((uint)Marshal.SizeOf<IrqDescriptor64>());
+        if (size < descriptorSize || size > int.MaxValue)
+        {
+            resource = default!;
+            failureStatus = null;
+            return false;
+        }
+
+        var buffer = new byte[(int)size];
         fixed (byte* pointer = buffer)
         {
             result = ConfigurationManager.CM_Get_Res_Des_Data(resourceDescriptor, pointer, size, 0);
         }
 
-        EnsureSuccess(result, "CM_Get_Res_Des_Data");
+        if (result != ConfigurationManager.Success)
+        {
+            resource = default!;
+            failureStatus = result;
+            return false;
+        }
 
         var descriptor = MemoryMarshal.Read<IrqDescriptor64>(buffer);
-        return new AllocatedInterruptResourceSnapshot(
+        resource = new AllocatedInterruptResourceSnapshot(
             descriptor.AllocatedIrq,
             descriptor.Group,
             descriptor.Affinity,
             descriptor.Flags);
-    }
-
-    private static void FreeResourceDescriptor(nint resourceDescriptor)
-    {
-        var result = ConfigurationManager.CM_Free_Res_Des_Handle(resourceDescriptor);
-        EnsureSuccess(result, "CM_Free_Res_Des_Handle");
-    }
-
-    private static void EnsureSuccess(uint result, string operation)
-    {
-        if (result != ConfigurationManager.Success)
-        {
-            throw new InvalidOperationException($"{operation} failed with CONFIGRET 0x{result:X8}.");
-        }
+        failureStatus = null;
+        return true;
     }
 }
