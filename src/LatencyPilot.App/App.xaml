@@ -1,0 +1,13 @@
+<Application x:Class="LatencyPilot.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <SolidColorBrush x:Key="CanvasBrush" Color="#F6F7F9" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="TextBrush" Color="#16181D" />
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#666B75" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#E2E5EA" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#176B87" />
+    </Application.Resources>
+</Application>
