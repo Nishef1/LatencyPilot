@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Platform.Windows.Interop;
+using Microsoft.Win32;
 
 namespace LatencyPilot.Platform.Windows.Devices;
 
@@ -14,6 +15,9 @@ public static class DeviceInventoryReader
     private const int ErrorNotFound = 1168;
     private const uint RegSz = 1;
     private const uint DevPropTypeString = 0x00000012;
+    private const string InterruptManagementKey = "Interrupt Management";
+    private const string MsiPropertiesKey = "MessageSignaledInterruptProperties";
+    private const string AffinityPolicyKey = "Affinity Policy";
 
     public static DeviceInventorySnapshot CapturePresentDevices()
     {
@@ -49,11 +53,80 @@ public static class DeviceInventoryReader
                 new DriverMetadataSnapshot(
                     ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverVersion),
                     ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverProvider),
-                    ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverInfPath))));
+                    ReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverInfPath)),
+                ReadInterruptConfiguration(deviceInfoSet, ref deviceInfo)));
         }
 
         devices.Sort(static (left, right) => StringComparer.OrdinalIgnoreCase.Compare(left.InstanceId, right.InstanceId));
         return new DeviceInventorySnapshot(devices.ToArray(), DateTimeOffset.UtcNow);
+    }
+
+    private static InterruptConfigurationSnapshot ReadInterruptConfiguration(
+        SafeDeviceInfoSetHandle deviceInfoSet,
+        ref SpDevInfoData deviceInfo)
+    {
+        using var hardwareKey = SetupApi.OpenDeviceHardwareRegistryKey(deviceInfoSet, ref deviceInfo);
+        using var interruptManagement = hardwareKey.OpenSubKey(InterruptManagementKey, writable: false);
+        if (interruptManagement is null)
+        {
+            return new InterruptConfigurationSnapshot(null, null, null, null);
+        }
+
+        using var msi = interruptManagement.OpenSubKey(MsiPropertiesKey, writable: false);
+        using var affinity = interruptManagement.OpenSubKey(AffinityPolicyKey, writable: false);
+
+        return new InterruptConfigurationSnapshot(
+            ReadDword(msi, "MSISupported"),
+            ReadDword(msi, "MessageNumberLimit"),
+            ReadDword(affinity, "DevicePolicy"),
+            ReadAffinityMask(affinity, "AssignmentSetOverride"));
+    }
+
+    private static uint? ReadDword(RegistryKey? key, string valueName)
+    {
+        if (key?.GetValue(valueName) is not { } value)
+        {
+            return null;
+        }
+
+        if (key.GetValueKind(valueName) != RegistryValueKind.DWord || value is not int dword)
+        {
+            throw new InvalidDataException($"Registry value '{valueName}' has an unexpected type.");
+        }
+
+        return unchecked((uint)dword);
+    }
+
+    private static ulong? ReadAffinityMask(RegistryKey? key, string valueName)
+    {
+        if (key?.GetValue(valueName) is not { } value)
+        {
+            return null;
+        }
+
+        return key.GetValueKind(valueName) switch
+        {
+            RegistryValueKind.DWord when value is int dword => unchecked((uint)dword),
+            RegistryValueKind.QWord when value is long qword => unchecked((ulong)qword),
+            RegistryValueKind.Binary when value is byte[] bytes => DecodeAffinityMask(bytes, valueName),
+            _ => throw new InvalidDataException($"Registry value '{valueName}' has an unsupported affinity-mask type."),
+        };
+    }
+
+    private static ulong DecodeAffinityMask(byte[] bytes, string valueName)
+    {
+        if (bytes.Length is 0 || bytes.Length > sizeof(ulong))
+        {
+            throw new InvalidDataException($"Registry value '{valueName}' exceeds the x64 KAFFINITY size.");
+        }
+
+        ulong mask = 0;
+        for (var index = 0; index < bytes.Length; index++)
+        {
+            mask |= (ulong)bytes[index] << (index * 8);
+        }
+
+        return mask;
     }
 
     private static unsafe string ReadInstanceId(SafeDeviceInfoSetHandle deviceInfoSet, ref SpDevInfoData deviceInfo)

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
 namespace LatencyPilot.Platform.Windows.Interop;
@@ -58,16 +59,49 @@ internal static partial class SetupApi
 {
     private const uint DigcfPresent = 0x00000002;
     private const uint DigcfAllClasses = 0x00000004;
+    private const uint DicsFlagGlobal = 0x00000001;
+    private const uint DiregDev = 0x00000001;
+    private const uint KeyRead = 0x00020019;
+    private static readonly IntPtr InvalidHandleValue = new(-1);
 
     internal static SafeDeviceInfoSetHandle GetPresentDeviceInfoSet()
     {
         var rawHandle = SetupDiGetClassDevs(IntPtr.Zero, null, IntPtr.Zero, DigcfPresent | DigcfAllClasses);
-        if (rawHandle == new IntPtr(-1))
+        if (rawHandle == InvalidHandleValue)
         {
             throw new Win32Exception(Marshal.GetLastPInvokeError(), "Unable to enumerate present Plug and Play devices.");
         }
 
         return new SafeDeviceInfoSetHandle(rawHandle);
+    }
+
+    internal static RegistryKey OpenDeviceHardwareRegistryKey(
+        SafeDeviceInfoSetHandle deviceInfoSet,
+        ref SpDevInfoData deviceInfoData)
+    {
+        var rawHandle = SetupDiOpenDevRegKey(
+            deviceInfoSet,
+            ref deviceInfoData,
+            DicsFlagGlobal,
+            0,
+            DiregDev,
+            KeyRead);
+
+        if (rawHandle == InvalidHandleValue)
+        {
+            throw new Win32Exception(Marshal.GetLastPInvokeError(), "Unable to open the device hardware registry key for read-only access.");
+        }
+
+        var safeHandle = new SafeRegistryHandle(rawHandle, ownsHandle: true);
+        try
+        {
+            return RegistryKey.FromHandle(safeHandle, RegistryView.Default);
+        }
+        catch
+        {
+            safeHandle.Dispose();
+            throw;
+        }
     }
 
     [LibraryImport("setupapi.dll", EntryPoint = "SetupDiGetClassDevsW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
@@ -115,6 +149,15 @@ internal static partial class SetupApi
         uint propertyBufferSize,
         out uint requiredSize,
         uint flags);
+
+    [LibraryImport("setupapi.dll", SetLastError = true)]
+    private static partial IntPtr SetupDiOpenDevRegKey(
+        SafeDeviceInfoSetHandle deviceInfoSet,
+        ref SpDevInfoData deviceInfoData,
+        uint scope,
+        uint hardwareProfile,
+        uint keyType,
+        uint samDesired);
 
     [LibraryImport("setupapi.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
