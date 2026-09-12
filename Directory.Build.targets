@@ -1,0 +1,20 @@
+<Project>
+  <!--
+    Work around WindowsAppSDK #6720 for unpackaged WinUI apps on dotnet publish.
+    The MRT Core build path generates the app PRI but does not currently add it
+    to ResolvedFileToPublish. Keep this target additive and Exists-guarded so it
+    becomes inert when the SDK fixes its publish wiring.
+  -->
+  <Target Name="LatencyPilotAddProjectPriToPublish"
+          BeforeTargets="ComputeResolvedFilesToPublishList"
+          DependsOnTargets="$(GenerateProjectPriFile)"
+          Condition="'$(UseWinUI)' == 'true' and '$(WindowsPackageType)' == 'None'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(ProjectPriFullPath)"
+                             Condition="Exists('$(ProjectPriFullPath)')">
+        <RelativePath>$(ProjectPriFileName)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+</Project>
