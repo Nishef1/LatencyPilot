@@ -98,7 +98,12 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale tag $tag." }
             }
           }
-          git tag -d $tag 2>$null | Out-Null
+
+          $localTag = (git tag --list $tag).Trim()
+          if ($localTag) {
+            git tag -d $tag | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Failed to delete local tag $tag." }
+          }
 
       - name: Restore win-x64 graph
         run: dotnet restore LatencyPilot.slnx --runtime win-x64
