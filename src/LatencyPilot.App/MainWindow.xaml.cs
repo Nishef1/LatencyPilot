@@ -1,4 +1,5 @@
 using System.Windows;
+using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
 
 namespace LatencyPilot.App;
@@ -15,6 +16,12 @@ public partial class MainWindow : Window
         ProcessArchitectureText.Text = system.ProcessArchitecture;
         ProcessAvailableProcessorCountText.Text = system.ProcessAvailableProcessorCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
+        CaptureProcessorTopology();
+        CaptureDeviceInventory();
+    }
+
+    private void CaptureProcessorTopology()
+    {
         try
         {
             var topology = ProcessorTopologyReader.Capture();
@@ -33,6 +40,21 @@ public partial class MainWindow : Window
             ProcessorGroupCountText.Text = "Unavailable";
             SmtCoreCountText.Text = "Unavailable";
             TopologyStatusText.Text = $"Topology capture failed: {exception.Message}";
+        }
+    }
+
+    private void CaptureDeviceInventory()
+    {
+        try
+        {
+            var inventory = DeviceInventoryReader.CapturePresentDevices();
+            PresentDeviceCountText.Text = inventory.PresentDeviceCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            DeviceInventoryStatusText.Text = "Present devices captured through SetupAPI using stable device instance IDs.";
+        }
+        catch (Exception exception)
+        {
+            PresentDeviceCountText.Text = "Unavailable";
+            DeviceInventoryStatusText.Text = $"Device inventory failed: {exception.Message}";
         }
     }
 }

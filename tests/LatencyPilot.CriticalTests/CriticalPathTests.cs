@@ -2,6 +2,7 @@ using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Core.Experiments;
 using LatencyPilot.Core.Metrics;
 using LatencyPilot.Core.Results;
+using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -88,18 +89,21 @@ public sealed class CriticalPathTests
     }
 
     [TestMethod]
-    public void WindowsProcessorTopologyCaptureIsInternallyConsistent()
+    public void WindowsReadOnlyInventoryCaptureIsInternallyConsistent()
     {
         var topology = ProcessorTopologyReader.Capture();
         var logicalProcessors = topology.Cores
             .SelectMany(static core => core.LogicalProcessors)
             .Distinct()
             .ToArray();
+        var devices = DeviceInventoryReader.CapturePresentDevices();
 
         Assert.IsTrue(topology.PhysicalCoreCount > 0);
         Assert.IsTrue(topology.Packages.Count > 0);
         Assert.AreEqual(logicalProcessors.Length, topology.LogicalProcessorCount);
         Assert.IsTrue(topology.ProcessorGroupCount > 0);
+        Assert.IsTrue(devices.PresentDeviceCount > 0);
+        Assert.IsTrue(devices.Devices.All(static device => !string.IsNullOrWhiteSpace(device.InstanceId)));
     }
 
     private static MetricSeries Series(string name, double value, int count = 20) =>

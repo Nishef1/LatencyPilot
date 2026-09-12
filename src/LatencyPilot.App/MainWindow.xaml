@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="LatencyPilot"
         Width="980"
-        Height="720"
+        Height="740"
         MinWidth="820"
-        MinHeight="600"
+        MinHeight="620"
         Background="{StaticResource CanvasBrush}"
         FontFamily="Segoe UI"
         Foreground="{StaticResource TextBrush}">
@@ -64,7 +64,7 @@
                     BorderThickness="1">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <TextBlock Text="System and CPU topology" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="System inventory" FontSize="18" FontWeight="SemiBold" />
                         <TextBlock Margin="0,18,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Operating system" />
                         <TextBlock x:Name="OperatingSystemText" TextWrapping="Wrap" />
                         <TextBlock Margin="0,14,0,4" Foreground="{StaticResource MutedTextBrush}" Text="OS / process architecture" />
@@ -90,7 +90,13 @@
                             <TextBlock x:Name="ProcessorGroupCountText" />
                         </StackPanel>
                         <TextBlock x:Name="TopologyStatusText"
-                                   Margin="0,18,0,0"
+                                   Margin="0,10,0,0"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Margin="0,18,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Present Plug and Play devices" />
+                        <TextBlock x:Name="PresentDeviceCountText" />
+                        <TextBlock x:Name="DeviceInventoryStatusText"
+                                   Margin="0,10,0,0"
                                    Foreground="{StaticResource MutedTextBrush}"
                                    TextWrapping="Wrap" />
                     </StackPanel>
@@ -105,8 +111,8 @@
                     BorderThickness="1">
                 <StackPanel>
                     <TextBlock Text="Observation roadmap" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Margin="0,18,0,0" Text="Present-device inventory" FontWeight="SemiBold" />
-                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="Stable PnP instance identities and class information before interrupt mapping." />
+                    <TextBlock Margin="0,18,0,0" Text="Interrupt and driver metadata" FontWeight="SemiBold" />
+                    <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="Read current interrupt policy, MSI/MSI-X observability and driver/provider versions without mutation." />
                     <TextBlock Margin="0,18,0,0" Text="Read-only ETW baseline" FontWeight="SemiBold" />
                     <TextBlock Margin="0,5,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="DPC/ISR capture, per-CPU distribution and driver attribution." />
                     <TextBlock Margin="0,18,0,0" Text="Baseline quality" FontWeight="SemiBold" />
