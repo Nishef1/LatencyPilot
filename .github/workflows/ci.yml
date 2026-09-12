@@ -38,7 +38,10 @@ jobs:
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release --no-build
 
       - name: Publish Windows x64 app
-        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/LatencyPilot-win-x64
+        run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/LatencyPilot-win-x64/App
+
+      - name: Publish Windows x64 service
+        run: dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/LatencyPilot-win-x64/Service
 
       - name: Upload Windows x64 artifact
         uses: actions/upload-artifact@v4
