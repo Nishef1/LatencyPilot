@@ -13,6 +13,10 @@
     <RootNamespace>LatencyPilot.App</RootNamespace>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <HotReloadAutoRestart>true</HotReloadAutoRestart>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
   </ItemGroup>
@@ -30,7 +34,10 @@
     </Content>
   </ItemGroup>
 
-  <Target Name="GenerateLatencyPilotIcon" BeforeTargets="PrepareForBuild">
+  <Target Name="GenerateLatencyPilotIcon"
+          BeforeTargets="PrepareForBuild"
+          Inputs="$(MSBuildProjectDirectory)\..\..\eng\Generate-AppIcon.ps1"
+          Outputs="$(MSBuildProjectDirectory)\Assets\AppIcon.ico">
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\eng\Generate-AppIcon.ps1&quot; -OutputPath &quot;$(MSBuildProjectDirectory)\Assets\AppIcon.ico&quot;" />
   </Target>
 </Project>
