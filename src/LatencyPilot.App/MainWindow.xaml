@@ -104,27 +104,27 @@
                     BorderThickness="1">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <TextBlock Text="Kernel latency baseline" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                        <TextBlock Text="Kernel latency observation" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
                         <TextBlock Margin="0,6,0,0"
                                    Foreground="{StaticResource MutedTextBrush}"
                                    TextWrapping="Wrap"
-                                   Text="DPC and ISR observation is requested through the local privileged service. No tuning command exists in this phase." />
+                                   Text="This is a single DPC/ISR observation window, not yet a quality-gated baseline. Privileged capture runs only through the local service." />
 
                         <TextBlock Margin="0,18,0,4" Foreground="{StaticResource MutedTextBrush}" Text="Observation service" />
                         <TextBlock x:Name="ServiceStatusText" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap" Text="Checking service…" />
 
-                        <Button x:Name="CaptureBaselineButton"
+                        <Button x:Name="CaptureObservationButton"
                                 Margin="0,18,0,0"
                                 HorizontalAlignment="Left"
                                 IsEnabled="False"
-                                Click="CaptureBaselineButton_Click"
-                                Content="Capture 5 s baseline" />
+                                Click="CaptureObservationButton_Click"
+                                Content="Capture 5 s observation" />
 
                         <TextBlock x:Name="KernelCaptureStatusText"
                                    Margin="0,10,0,0"
                                    Foreground="{StaticResource MutedTextBrush}"
                                    TextWrapping="Wrap"
-                                   Text="No kernel capture has been run yet." />
+                                   Text="No kernel observation has been run yet." />
 
                         <Grid Margin="0,20,0,0">
                             <Grid.ColumnDefinitions>
@@ -135,14 +135,22 @@
                             <StackPanel Grid.Column="0">
                                 <TextBlock Foreground="{StaticResource MutedTextBrush}" Text="DPC events" />
                                 <TextBlock x:Name="DpcCountText" Margin="0,4,0,0" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Text="—" />
-                                <TextBlock Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" Text="DPC p99" />
-                                <TextBlock x:Name="DpcP99Text" Margin="0,4,0,0" Foreground="{StaticResource TextBrush}" Text="—" />
+                                <TextBlock Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" Text="DPC p99 / p99.9" />
+                                <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
+                                    <TextBlock x:Name="DpcP99Text" Foreground="{StaticResource TextBrush}" Text="—" />
+                                    <TextBlock Text=" / " Foreground="{StaticResource MutedTextBrush}" />
+                                    <TextBlock x:Name="DpcP999Text" Foreground="{StaticResource TextBrush}" Text="—" />
+                                </StackPanel>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Foreground="{StaticResource MutedTextBrush}" Text="ISR events" />
                                 <TextBlock x:Name="IsrCountText" Margin="0,4,0,0" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Text="—" />
-                                <TextBlock Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" Text="ISR p99" />
-                                <TextBlock x:Name="IsrP99Text" Margin="0,4,0,0" Foreground="{StaticResource TextBrush}" Text="—" />
+                                <TextBlock Margin="0,14,0,0" Foreground="{StaticResource MutedTextBrush}" Text="ISR p99 / p99.9" />
+                                <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
+                                    <TextBlock x:Name="IsrP99Text" Foreground="{StaticResource TextBrush}" Text="—" />
+                                    <TextBlock Text=" / " Foreground="{StaticResource MutedTextBrush}" />
+                                    <TextBlock x:Name="IsrP999Text" Foreground="{StaticResource TextBrush}" Text="—" />
+                                </StackPanel>
                             </StackPanel>
                         </Grid>
 

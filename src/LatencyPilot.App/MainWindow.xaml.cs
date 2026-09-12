@@ -32,7 +32,7 @@ public sealed partial class MainWindow : Window
 
     private async Task RefreshObservationServiceStatusAsync()
     {
-        CaptureBaselineButton.IsEnabled = false;
+        CaptureObservationButton.IsEnabled = false;
         ServiceStatusText.Text = "Checking service…";
 
         try
@@ -46,7 +46,7 @@ public sealed partial class MainWindow : Window
             }
 
             _observationServiceReady = true;
-            CaptureBaselineButton.IsEnabled = true;
+            CaptureObservationButton.IsEnabled = true;
             ServiceStatusText.Text = "Connected. Privileged observation is available; mutation remains disabled.";
         }
         catch (TimeoutException)
@@ -67,7 +67,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void CaptureBaselineButton_Click(object sender, RoutedEventArgs e)
+    private async void CaptureObservationButton_Click(object sender, RoutedEventArgs e)
     {
         if (!_observationServiceReady)
         {
@@ -78,7 +78,7 @@ public sealed partial class MainWindow : Window
             }
         }
 
-        CaptureBaselineButton.IsEnabled = false;
+        CaptureObservationButton.IsEnabled = false;
         KernelCaptureStatusText.Text = "Capturing DPC/ISR activity for 5 seconds…";
 
         try
@@ -90,26 +90,28 @@ public sealed partial class MainWindow : Window
             DpcCountText.Text = capture.Dpc.Count.ToString("N0", CultureInfo.InvariantCulture);
             IsrCountText.Text = capture.Isr.Count.ToString("N0", CultureInfo.InvariantCulture);
             DpcP99Text.Text = FormatMicroseconds(capture.Dpc.P99Microseconds);
+            DpcP999Text.Text = FormatMicroseconds(capture.Dpc.P999Microseconds);
             IsrP99Text.Text = FormatMicroseconds(capture.Isr.P99Microseconds);
+            IsrP999Text.Text = FormatMicroseconds(capture.Isr.P999Microseconds);
             ObservedProcessorCountText.Text = capture.Processors.Count.ToString(CultureInfo.InvariantCulture);
 
             KernelCaptureStatusText.Text = capture.EventsLost == 0 &&
                 capture.InvalidEventCount == 0 &&
                 !capture.EventLimitReached
-                ? $"Capture complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected."
-                : $"Capture incomplete: lost={capture.EventsLost}, invalid={capture.InvalidEventCount}, limitReached={capture.EventLimitReached}.";
+                ? $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected."
+                : $"Observation incomplete: lost={capture.EventsLost}, invalid={capture.InvalidEventCount}, limitReached={capture.EventLimitReached}.";
         }
         catch (TimeoutException)
         {
             ClearCaptureMetrics();
             SetServiceUnavailable("Observation service is not running or did not respond in time.");
-            KernelCaptureStatusText.Text = "Kernel capture did not start.";
+            KernelCaptureStatusText.Text = "Kernel observation did not start or exceeded its deadline.";
         }
         catch (IOException)
         {
             ClearCaptureMetrics();
             SetServiceUnavailable("Observation service connection failed.");
-            KernelCaptureStatusText.Text = "Kernel capture did not complete.";
+            KernelCaptureStatusText.Text = "Kernel observation did not complete.";
         }
         catch (InvalidDataException)
         {
@@ -123,14 +125,14 @@ public sealed partial class MainWindow : Window
         }
         finally
         {
-            CaptureBaselineButton.IsEnabled = _observationServiceReady;
+            CaptureObservationButton.IsEnabled = _observationServiceReady;
         }
     }
 
     private void SetServiceUnavailable(string message)
     {
         _observationServiceReady = false;
-        CaptureBaselineButton.IsEnabled = false;
+        CaptureObservationButton.IsEnabled = false;
         ServiceStatusText.Text = message;
     }
 
@@ -139,7 +141,9 @@ public sealed partial class MainWindow : Window
         DpcCountText.Text = "—";
         IsrCountText.Text = "—";
         DpcP99Text.Text = "—";
+        DpcP999Text.Text = "—";
         IsrP99Text.Text = "—";
+        IsrP999Text.Text = "—";
         ObservedProcessorCountText.Text = "—";
     }
 
