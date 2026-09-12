@@ -117,6 +117,7 @@ public sealed class CriticalPathTests
         Assert.IsTrue(topology.ProcessorGroupCount > 0);
         Assert.IsTrue(devices.PresentDeviceCount > 0);
         Assert.IsTrue(devices.Devices.All(static device => !string.IsNullOrWhiteSpace(device.InstanceId)));
+        Assert.IsTrue(devices.DevicesWithDriverMetadataCount > 0);
     }
 
     private static MetricSeries Series(string name, double value, int count = 20) =>

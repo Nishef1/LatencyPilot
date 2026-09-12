@@ -14,6 +14,22 @@ internal enum DeviceRegistryProperty : uint
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal readonly struct DevicePropertyKey(Guid formatId, uint propertyId)
+{
+    internal readonly Guid FormatId = formatId;
+    internal readonly uint PropertyId = propertyId;
+}
+
+internal static class DevicePropertyKeys
+{
+    private static readonly Guid DriverPackageFormatId = new("a8b865dd-2e3d-4094-ad97-e593a70c75d6");
+
+    internal static readonly DevicePropertyKey DriverVersion = new(DriverPackageFormatId, 3);
+    internal static readonly DevicePropertyKey DriverInfPath = new(DriverPackageFormatId, 5);
+    internal static readonly DevicePropertyKey DriverProvider = new(DriverPackageFormatId, 9);
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal struct SpDevInfoData
 {
     internal uint Size;
@@ -87,6 +103,18 @@ internal static partial class SetupApi
         byte* propertyBuffer,
         uint propertyBufferSize,
         out uint requiredSize);
+
+    [LibraryImport("setupapi.dll", EntryPoint = "SetupDiGetDevicePropertyW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static unsafe partial bool SetupDiGetDeviceProperty(
+        SafeDeviceInfoSetHandle deviceInfoSet,
+        ref SpDevInfoData deviceInfoData,
+        in DevicePropertyKey propertyKey,
+        out uint propertyType,
+        byte* propertyBuffer,
+        uint propertyBufferSize,
+        out uint requiredSize,
+        uint flags);
 
     [LibraryImport("setupapi.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
