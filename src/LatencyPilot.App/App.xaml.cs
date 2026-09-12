@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Serilog;
 
 namespace LatencyPilot.App;
 
@@ -8,9 +9,24 @@ public partial class App : Application
 
     public App()
     {
+        AppLogging.Initialize();
+        AppDomain.CurrentDomain.ProcessExit += static (_, _) => AppLogging.Close();
+        AppDomain.CurrentDomain.UnhandledException += static (_, args) =>
+        {
+            if (args.ExceptionObject is Exception exception)
+            {
+                Log.Fatal(exception, "Unhandled AppDomain exception. Terminating={IsTerminating}.", args.IsTerminating);
+            }
+        };
+        TaskScheduler.UnobservedTaskException += static (_, args) =>
+            Log.Error(args.Exception, "Unobserved task exception.");
+        UnhandledException += static (_, args) =>
+            Log.Error(args.Exception, "Unhandled WinUI exception.");
+
         try
         {
             InitializeComponent();
+            Log.Information("WinUI application initialized.");
         }
         catch (Exception exception)
         {
@@ -27,6 +43,7 @@ public partial class App : Application
             _window.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
             _window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
             _window.Activate();
+            Log.Information("Main window activated.");
         }
         catch (Exception exception)
         {
