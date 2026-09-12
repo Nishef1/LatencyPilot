@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   DOTNET_NOLOGO: true
@@ -53,15 +53,19 @@ jobs:
       - name: Resolve and validate version
         id: version
         shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          DISPATCH_VERSION: ${{ inputs.version }}
         run: |
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
-            if ('${{ github.ref }}' -ne 'refs/heads/main') {
+          if ($env:EVENT_NAME -eq 'workflow_dispatch') {
+            if ($env:GIT_REF -ne 'refs/heads/main') {
               throw 'Manual releases must be dispatched from main.'
             }
-            $version = '${{ inputs.version }}'
+            $version = $env:DISPATCH_VERSION
           }
           else {
-            if ('${{ github.ref }}' -ne 'refs/heads/main') {
+            if ($env:GIT_REF -ne 'refs/heads/main') {
               throw 'Release requests are accepted only from main.'
             }
             $version = (Get-Content -LiteralPath RELEASE_VERSION -Raw).Trim()
@@ -79,32 +83,6 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=v$version" >> $env:GITHUB_OUTPUT
 
-      - name: Remove stale prerelease and tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: pwsh
-        run: |
-          $tag = '${{ steps.version.outputs.tag }}'
-
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release delete $tag --cleanup-tag --yes
-            if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale prerelease/tag $tag." }
-          }
-          else {
-            git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
-            if ($LASTEXITCODE -eq 0) {
-              git push origin ":refs/tags/$tag"
-              if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale tag $tag." }
-            }
-          }
-
-          $localTags = @(git tag --list $tag)
-          if ($localTags.Count -gt 0) {
-            git tag -d $tag | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Failed to delete local tag $tag." }
-          }
-
       - name: Restore win-x64 graph
         run: dotnet restore LatencyPilot.slnx --runtime win-x64
 
@@ -116,6 +94,17 @@ jobs:
 
       - name: Publish Windows x64 app payload
         run: dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore --output artifacts/payload/App -p:DebugType=None -p:DebugSymbols=false -p:PublishReadyToRun=false
+
+      - name: Verify WinUI publish resources
+        shell: pwsh
+        run: |
+          $pri = 'artifacts/payload/App/LatencyPilot.pri'
+          if (-not (Test-Path -LiteralPath $pri)) {
+            throw 'LatencyPilot.pri is missing from the unpackaged WinUI publish output.'
+          }
+          if ((Get-Item -LiteralPath $pri).Length -le 0) {
+            throw 'LatencyPilot.pri is empty.'
+          }
 
       - name: UI window smoke check
         shell: pwsh
@@ -175,28 +164,33 @@ jobs:
 
       - name: Prepare shared payload
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $version = '${{ steps.version.outputs.version }}'
+          $version = $env:RELEASE_VERSION
           Copy-Item scripts/Install-Service.ps1 artifacts/payload/Install-Service.ps1
           Copy-Item scripts/Uninstall-Service.ps1 artifacts/payload/Uninstall-Service.ps1
           Copy-Item docs/PHYSICAL_VALIDATION.md artifacts/payload/PHYSICAL_VALIDATION.md
           Copy-Item docs/PORTABLE.md artifacts/payload/PORTABLE.md
+          Copy-Item docs/DIAGNOSTICS.md artifacts/payload/DIAGNOSTICS.md
           Copy-Item README.md artifacts/payload/README.md
           Copy-Item LICENSE artifacts/payload/LICENSE
           Set-Content -LiteralPath artifacts/payload/VERSION.txt -Value $version -NoNewline
           @(
             "version=$version"
             "commit=$env:GITHUB_SHA"
-            "workflow=${{ github.workflow }}"
-            "workflow_run=${{ github.run_id }}"
-            "ref=${{ github.ref }}"
+            "workflow=$env:GITHUB_WORKFLOW"
+            "workflow_run=$env:GITHUB_RUN_ID"
+            "ref=$env:GITHUB_REF"
             "deployment=self-contained-offline"
           ) | Set-Content -LiteralPath artifacts/payload/BUILD_INFO.txt
 
       - name: Build setup EXE
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $version = '${{ steps.version.outputs.version }}'
+          $version = $env:RELEASE_VERSION
           $env:LATENCYPILOT_VERSION = $version
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path -LiteralPath $iscc)) {
@@ -218,8 +212,10 @@ jobs:
 
       - name: Build portable ZIP
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $version = '${{ steps.version.outputs.version }}'
+          $version = $env:RELEASE_VERSION
           New-Item -ItemType Directory -Force -Path artifacts/portable | Out-Null
           $portableDir = "artifacts/portable/LatencyPilot-$version-win-x64-portable"
           New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
@@ -248,13 +244,42 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Remove stale prerelease and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release delete $tag --cleanup-tag --yes
+            if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale prerelease/tag $tag." }
+          }
+          else {
+            git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
+            if ($LASTEXITCODE -eq 0) {
+              git push origin ":refs/tags/$tag"
+              if ($LASTEXITCODE -ne 0) { throw "Failed to delete stale tag $tag." }
+            }
+          }
+
+          $localTags = @(git tag --list $tag)
+          if ($localTags.Count -gt 0) {
+            git tag -d $tag | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Failed to delete local tag $tag." }
+          }
+
       - name: Create GitHub prerelease and tag
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         shell: pwsh
         run: |
-          $version = '${{ steps.version.outputs.version }}'
-          $tag = '${{ steps.version.outputs.tag }}'
+          $version = $env:RELEASE_VERSION
+          $tag = $env:RELEASE_TAG
           $setup = "artifacts/installer/LatencyPilot-$version-win-x64-setup.exe"
           $setupChecksum = "$setup.sha256"
           $portable = "artifacts/portable/LatencyPilot-$version-win-x64-portable.zip"
