@@ -15,6 +15,7 @@ public sealed partial class MainWindow
     private TextBlock? _measurementScenarioGuidanceText;
     private Border? _measurementScenarioCard;
     private bool _measurementExperienceInitialized;
+    private bool _measurementBusy;
 
     internal void InitializeMeasurementExperience()
     {
@@ -281,6 +282,7 @@ public sealed partial class MainWindow
 
     private void SetMeasurementBusy(bool busy)
     {
+        _measurementBusy = busy;
         SetObservationControlsBusy(busy);
         if (_measurementScenarioComboBox is not null)
         {
