@@ -159,7 +159,7 @@ public sealed partial class MainWindow : Window
         catch (Exception exception)
         {
             Logger.Error(exception, "Evidence export failed.");
-            EvidenceExportStatusText.Text = "Evidence export failed. The capture result remains valid; see the diagnostics log for export details.";
+            EvidenceExportStatusText.Text = "Evidence export failed. The capture result remains available; see the diagnostics log for export details.";
         }
         finally
         {
@@ -238,19 +238,10 @@ public sealed partial class MainWindow : Window
                 $"p99 {FormatLargestP99(processor)} · max {FormatLargestMaximum(processor.Dpc, processor.Isr)}"))
             .ToArray();
 
-        var measurementGuidance = EvidenceExportService.GetMeasurementGuidance(SelectedMeasurementScenario);
         var integrityIssue = GetCaptureIntegrityIssue(capture);
-        if (integrityIssue is null)
-        {
-            KernelCaptureStatusText.Text = $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected.";
-            ObservationQualityText.Text = $"Capture integrity looks clean. {FormatCaptureInterpretation(capture)} {measurementGuidance}";
-        }
-        else
-        {
-            KernelCaptureStatusText.Text = $"Observation completed with quality warning: {integrityIssue}";
-            ObservationQualityText.Text =
-                $"Treat this observation as incomplete evidence. Tail/guidance classification is withheld because capture integrity is not clean. Exact values remain visible for diagnosis. {measurementGuidance}";
-        }
+        KernelCaptureStatusText.Text = integrityIssue is null
+            ? $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected."
+            : $"Observation completed with quality warning: {integrityIssue}";
 
         RenderPremiumCapture(capture);
     }
@@ -420,7 +411,7 @@ public sealed partial class MainWindow : Window
         FormatLargestValue(dpc.P999Microseconds, isr.P999Microseconds);
 
     private static string FormatLargestMaximum(LatencyDistribution dpc, LatencyDistribution isr) =>
-        FormatLargestValue(dpc.MaximumMicroseconds, isr.MaximumMicroseconds);
+        FormatLargestValue(dpc.MaximumMicroseconds, dpc.MaximumMicroseconds is null ? isr.MaximumMicroseconds : isr.MaximumMicroseconds);
 
     private static string FormatLargestValue(double? first, double? second)
     {
@@ -435,45 +426,6 @@ public sealed partial class MainWindow : Window
         }
 
         return FormatMicroseconds(Math.Max(first.Value, second.Value));
-    }
-
-    private static string FormatCaptureInterpretation(KernelLatencyCaptureResponse capture)
-    {
-        var guidanceExceedances =
-            capture.DpcThresholds.GuidanceExceedanceCount + capture.IsrThresholds.GuidanceExceedanceCount;
-        var overOneMillisecond =
-            capture.DpcThresholds.OverOneMillisecondCount + capture.IsrThresholds.OverOneMillisecondCount;
-        var overThreeMilliseconds =
-            capture.DpcThresholds.OverThreeMillisecondsCount + capture.IsrThresholds.OverThreeMillisecondsCount;
-        var oneToThreeMilliseconds = Math.Max(0, overOneMillisecond - overThreeMilliseconds);
-
-        string assessment;
-        if (overThreeMilliseconds > 0)
-        {
-            assessment = string.Create(
-                CultureInfo.InvariantCulture,
-                $"Long-tail diagnostic bucket observed: {overThreeMilliseconds:N0} DPC/ISR event(s) exceeded 3 ms. LatencyPilot records this for investigation; 3 ms is not presented as an official Windows severity or pass/fail boundary.");
-        }
-        else if (overOneMillisecond > 0)
-        {
-            assessment = string.Create(
-                CultureInfo.InvariantCulture,
-                $"Millisecond-tail diagnostic bucket observed: {oneToThreeMilliseconds:N0} DPC/ISR event(s) were between 1 and 3 ms. LatencyPilot records this as context, not as an official Windows user-impact threshold.");
-        }
-        else if (guidanceExceedances > 0)
-        {
-            assessment = string.Create(
-                CultureInfo.InvariantCulture,
-                $"Driver guidance was exceeded, but no millisecond-scale spike was observed. {capture.DpcThresholds.GuidanceExceedanceCount:N0} DPC event(s) exceeded {capture.DpcThresholds.GuidanceThresholdMicroseconds:F0} µs and {capture.IsrThresholds.GuidanceExceedanceCount:N0} ISR event(s) exceeded {capture.IsrThresholds.GuidanceThresholdMicroseconds:F0} µs. This is diagnostic context, not proof of a user-visible problem.");
-        }
-        else
-        {
-            assessment = "Within driver guidance in this capture: no DPC exceeded 100 µs, no ISR exceeded 25 µs, and no millisecond-scale spike was observed. This is encouraging for this workload, but it is not proof that every workload is clean.";
-        }
-
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"{assessment} Max DPC {FormatMicroseconds(capture.Dpc.MaximumMicroseconds)}; max ISR {FormatMicroseconds(capture.Isr.MaximumMicroseconds)}; >1 ms DPC/ISR {capture.DpcThresholds.OverOneMillisecondCount:N0}/{capture.IsrThresholds.OverOneMillisecondCount:N0}; >3 ms {capture.DpcThresholds.OverThreeMillisecondsCount:N0}/{capture.IsrThresholds.OverThreeMillisecondsCount:N0}.");
     }
 
     private static string FormatMicroseconds(double? value) =>
