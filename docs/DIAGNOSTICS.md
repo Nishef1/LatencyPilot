@@ -3,7 +3,16 @@
 Status: **Active diagnostics contract**  
 Last updated: 2026-09-13
 
-LatencyPilot uses bounded structured local logs to make App, IPC, Service and ETW failures diagnosable without turning logging into a second telemetry system or adding measurable work to the latency-capture hot path.
+LatencyPilot uses bounded structured local diagnostics so App, IPC, Service and ETW failures can be reconstructed without turning logging into a second telemetry system or contaminating the measurement hot path.
+
+Current related contracts:
+
+```text
+Observation protocol:  v6
+Evidence schema:       latencypilot-evidence-v8
+Quick snapshot purpose: quick-diagnostic-snapshot
+Decision baseline:     baseline-quality-v2
+```
 
 ## Log locations
 
@@ -19,55 +28,67 @@ Privileged Service:
 %PROGRAMDATA%\LatencyPilot\Logs\Service\latencypilot-service-*.json
 ```
 
-The App and Service intentionally write separate files. They are correlated by the protocol `RequestId` rather than by sharing one multi-process log file.
+The App and Service intentionally write separate files. Correlation uses the protocol `RequestId`, not a shared multi-process file or timestamp guessing.
 
-If WinUI fails before normal diagnostics are usable, the existing last-resort startup file remains:
+If WinUI fails before normal diagnostics are usable, the last-resort startup file remains:
 
 ```text
 %LOCALAPPDATA%\LatencyPilot\startup-error.log
 ```
 
-That fallback file is not the primary diagnostics stream.
+That fallback is not the primary diagnostics stream.
 
-## Implementation
+## Implementation contract
 
-`Microsoft.Extensions.Logging` remains the Service logging abstraction. Serilog provides structured file persistence. The App uses the same Serilog file format directly because it does not host the .NET Generic Host.
+`Microsoft.Extensions.Logging` remains the Service logging abstraction. Serilog provides bounded structured file persistence. The App uses the same compact JSON/CLEF format directly because it does not host the .NET Generic Host.
 
 Current sinks use:
 
-- rendered Compact Log Event Format (CLEF) JSON events so a human-readable `@m` message is available without reimplementing message-template rendering;
-- daily rolling plus a 32 MiB per-file size limit;
+- rendered Compact Log Event Format events, including a human-readable `@m` field;
+- daily rolling with a 32 MiB per-file limit;
 - at most 10 retained files per process;
 - asynchronous bounded buffering;
 - non-blocking behavior when the async buffer is saturated;
-- periodic flushing and shutdown flushing;
-- `Component` and `ProcessId` context.
+- periodic/shutdown flushing;
+- stable `Component` and `ProcessId` context.
 
-Failure to initialize file logging must not prevent the App or Service from starting. Diagnostics are evidence about the product; they are not a prerequisite for the product to run.
+Failure to initialize file logging must not prevent App or Service startup. Diagnostics explain product behavior; they are not a prerequisite for measurement.
 
 ## Live development diagnostics
 
-`live.ps1` keeps the WinUI App non-elevated, installs/runs the privileged observation host through the Windows Service Control Manager, and streams the existing App and Service CLEF files into the same terminal with `[APP]` and `[SERVICE]` prefixes.
-
-This is deliberately a presentation layer over the authoritative structured files rather than a second logging pipeline. The live viewer uses PowerShell file-following only; it does not add synchronous console sinks to the App or Service and does not emit per-event ETW diagnostics.
+`live.ps1` keeps the WinUI App non-elevated, installs/runs the privileged observation host through the Service Control Manager, and streams the existing App/Service CLEF files into the same terminal with `[APP]` and `[SERVICE]` prefixes.
 
 ```powershell
 .\live.ps1
 ```
 
-Remote-code auto-pull is deliberately **disabled by default** because incoming shared/Service changes can require rebuilding and reinstalling the privileged LocalSystem Service. Enable it only as an explicit development choice:
+The terminal viewer is only a presentation layer over persisted logs. It must not add a synchronous console sink or per-event ETW logging to the measured process.
+
+Remote-code auto-pull is deliberately disabled by default because an incoming shared/Service change can rebuild and reinstall the privileged LocalSystem Service. Enable it only explicitly:
 
 ```powershell
 .\live.ps1 -AutoPull
 ```
 
-`-NoAutoPull` remains accepted for compatibility and cannot be combined with `-AutoPull`. Use `-NoLogs` when terminal streaming is not wanted. Live terminal output is a development aid, not benchmark evidence and not a replacement for the persisted structured logs.
+`-NoAutoPull` remains accepted for compatibility and cannot be combined with `-AutoPull`. `-NoLogs` disables terminal streaming.
 
-The App must not be launched from an elevated terminal. When the development Service needs to be refreshed, `live.ps1` requests elevation only for `scripts/Install-Service.ps1`, which copies the built Service payload to the protected `%ProgramFiles%\LatencyPilot\Service` path and registers/starts it as LocalSystem. This preserves the normal-user WinUI boundary while retaining the privilege required for kernel ETW observation.
+The App must not be launched elevated. `live.ps1` requests UAC only for `scripts/Install-Service.ps1`, which copies the Service payload to `%ProgramFiles%\LatencyPilot\Service` and registers/starts it as LocalSystem.
 
 ## Correlation and event identity
 
-Every observation request owns a protocol `RequestId`. The App logs request start/completion/failure with that ID and the Service logs capture lifecycle events with the same ID. Protocol v5 also carries the capture `RequestId` inside exported capture evidence, so a saved evidence JSON can be correlated back to App and Service diagnostics without depending on timestamps alone.
+Every observation request owns a protocol-v6 `RequestId`.
+
+The same ID is used for:
+
+```text
+App request lifecycle
+→ framed IPC request/response
+→ Service capture lifecycle
+→ protocol-v6 KernelLatencyCaptureResponse
+→ evidence-v8 capture object
+```
+
+This lets a saved evidence artifact be correlated to App/Service logs without depending on wall-clock ordering alone.
 
 Stable Service event IDs currently include:
 
@@ -77,65 +98,99 @@ Stable Service event IDs currently include:
 | 1001 | unexpected kernel-capture failure |
 | 1002 | kernel capture started |
 | 1003 | kernel capture completed |
-| 1004 | active observation cancelled after client disconnect/protocol activity while the operation was running |
+| 1004 | active observation cancelled after client disconnect/protocol activity |
 | 1005 | framed pipe request rejected before execution |
-| 1006 | expected kernel-capture unavailability with bounded failure kind/native error provenance |
-| 1007 | pipe client rejected because its Windows session is not the active console session, or its session identity cannot be established |
+| 1006 | expected kernel-capture unavailability with bounded failure/native-error provenance |
+| 1007 | pipe client rejected because its session is not the active console session, or session identity cannot be established |
 
-New event IDs should represent durable operational concepts rather than individual code branches.
+New event IDs must represent durable operational concepts rather than individual code branches.
 
-## Bounded capture summaries
+## Bounded post-capture summaries
 
-After a capture response has passed the App's fail-closed protocol validation, the App writes two additional structured **post-capture** summary events. They are emitted after the authoritative ETW collection window, so they do not add logging work to the ETW callback/hot path.
+After a capture response passes fail-closed protocol validation, the App may write bounded **post-capture** summaries. These happen after the authoritative ETW collection interval and therefore must not add work to the ETW callback path.
 
-The first summary records bounded aggregate evidence:
+The aggregate summary may include:
 
+- requested/actual capture duration;
 - DPC/ISR event counts;
-- p99, sample-gated p99.9 and maximum duration;
-- Microsoft-guidance exceedance counts/rates (`>100 µs` DPC and `>25 µs` ISR);
-- LatencyPilot diagnostic `>1 ms` / `>3 ms` tail buckets;
-- ETW loss, invalid-event/image counts and event-limit state;
-- capture lifecycle duration.
+- p99 and maximum duration;
+- p99.9 only when protocol-v6 sample adequacy permits it (`>=10,000` samples for that distribution);
+- Microsoft driver-duration reference exceedance counts/rates (`>100 µs` DPC, `>25 µs` ISR);
+- LatencyPilot local `>1 ms` / `>3 ms` diagnostic buckets;
+- ETW loss, invalid latency/image events and event-limit state.
 
-The second summary records bounded concentration/attribution evidence:
+The concentration/attribution summary may include:
 
 - resolved/unresolved module counts and coverage percentage;
-- the CPU carrying the largest DPC count and its share;
-- the CPU carrying the largest ISR count and its share;
-- the module contributing the most DPC guidance exceedances;
-- the module contributing the most ISR guidance exceedances.
+- highest-count DPC CPU and share;
+- highest-count ISR CPU and share;
+- module contributing the most DPC reference exceedances;
+- module contributing the most ISR reference exceedances.
 
-Only module names are written to this concise operational summary; full module paths remain available in the explicit evidence JSON. No raw DPC/ISR event stream is logged.
+Only bounded module names belong in this concise operational summary. Full bounded evidence belongs in the explicit JSON export. Raw DPC/ISR events must not be logged.
 
-`scripts/Verify-Evidence.ps1` presents the same high-value aggregate fields from an exported evidence file, verifies schema/revision/RequestId uniqueness, computes SHA-256, and can optionally compare the file against a hash shown by the App:
+## Evidence verification
 
-```powershell
-.\scripts\Verify-Evidence.ps1 .\capture.json -ExpectedSha256 <64-hex-digest>
-```
+`scripts/Verify-Evidence.ps1` is the independent local verifier for saved evidence-v8 artifacts. It validates envelope/provenance, purpose, source revision, RequestId uniqueness, capture shape, p99.9 sample semantics and SHA-256.
 
-For physical closure, provenance and measurement quality are deliberately separate gates. `-RequireCleanCapture` fails when any capture has ETW loss, invalid latency/image events or reaches the event limit. `-RequireValidBaseline` additionally requires `baseline-quality-v1`, exactly five aligned captures, a `Valid` quality result, `IsValidForComparison=true`, and five of five valid capture windows:
+Example:
 
 ```powershell
-.\scripts\Verify-Evidence.ps1 .\baseline.json -RequireCleanCapture -RequireValidBaseline
+.\scripts\Verify-Evidence.ps1 .\capture.json `
+  -ExpectedCommit <exact-clean-source-revision> `
+  -ExpectedSha256 <64-hex-digest>
 ```
 
-A partial or unstable baseline remains exportable evidence, but it cannot pass the closure-ready baseline gate. This helper is a validation/reporting surface over the saved evidence; it does not replace the evidence file itself.
+`-RequireCleanCapture` adds a measurement-integrity gate. It fails when any capture has unavailable/non-zero ETW loss, invalid latency/image events, or an event-limit hit.
+
+```powershell
+.\scripts\Verify-Evidence.ps1 .\LatencyPilot-observation-*.json `
+  -ExpectedCommit <exact-clean-source-revision> `
+  -RequireCleanCapture
+```
+
+`-RequireValidBaseline` is stronger and applies only to `purpose=repeated-decision-baseline`. It requires the current `baseline-quality-v2` closure contract, including:
+
+```text
+exactly 5 aligned captures/windows/runtime windows
+requested duration >= 20,000 ms per window
+actual duration >= 95% of request per window
+clean capture integrity
+DPC event count >= 1,000 per window
+ISR event count >= 1,000 per window
+Status = Valid
+IsValidForComparison = true
+valid capture windows = 5/5
+```
+
+Use both strict switches for Phase 2 decision-baseline closure:
+
+```powershell
+.\scripts\Verify-Evidence.ps1 .\LatencyPilot-baseline-*.json `
+  -ExpectedCommit <exact-clean-source-revision> `
+  -RequireCleanCapture `
+  -RequireValidBaseline
+```
+
+A partial/noisy/undersampled/short baseline remains exportable diagnostic evidence, but it cannot pass the closure-ready gate.
+
+A five-second `quick-diagnostic-snapshot` can pass envelope and clean-capture verification while still remaining explicitly **non-decision-grade**. Clean integrity is necessary, not sufficient, for a benchmark claim.
 
 ## What should be logged
 
-Log bounded lifecycle and failure evidence such as:
+Log bounded lifecycle/failure evidence such as:
 
 - App initialization and main-window activation;
 - Service connection attempts/results;
-- protocol request ID, command, deadline and elapsed duration;
+- request ID, command, deadline and elapsed duration;
 - malformed/oversized/incompatible IPC frames;
 - capture start/completion/cancellation/failure;
-- bounded post-capture latency/concentration summaries after response validation;
+- bounded post-capture aggregate/concentration summaries after response validation;
 - expected ETW-start/capture failures with exception type and native error where available;
 - ETW event-loss/invalid/event-limit summaries;
-- rejected local client-session access at the privileged IPC boundary;
-- unexpected exceptions at App/Service boundaries;
-- partial inventory failures where a user-facing diagnostic is required.
+- rejected local client-session access at the privileged boundary;
+- unexpected App/Service boundary exceptions;
+- partial inventory failures where user-visible diagnostics are required.
 
 Prefer structured properties over concatenated diagnostic text.
 
@@ -143,25 +198,35 @@ Prefer structured properties over concatenated diagnostic text.
 
 Do not log:
 
-- the raw DPC/ISR event stream;
-- hundreds of thousands of per-event records;
+- raw DPC/ISR event streams;
+- one log entry per ETW sample;
 - arbitrary registry dumps;
 - environment-variable dumps;
 - credentials, tokens or secrets;
 - user names or personal file contents merely for convenience;
-- arbitrary command lines;
+- arbitrary shell/process command lines;
 - complete device/driver inventories on every refresh when a bounded summary is enough.
 
-Evidence export is separate from diagnostics. Current local evidence JSON contains the bounded observation/baseline aggregates, protocol correlation ID and a small non-personal environment summary; it does not upload data or turn operational logs into telemetry. Any future support/export path that sends data off-machine must define explicit redaction and user consent first.
+Evidence export is separate from diagnostics. Current evidence is local and bounded; it does not upload data or turn logs into telemetry. Any future support/export path that sends data off-machine requires explicit redaction and user consent.
 
 ## Measurement-safety rule
 
-Logging must not become part of the latency measurement workload. Do not emit a log entry for every ETW event or perform synchronous disk I/O from an ETW callback. Under pathological log pressure, dropping low-value asynchronous diagnostic events is preferable to blocking the observation path and contaminating the measurement.
+Diagnostics must not become part of the workload being measured.
 
-Raw/auditable benchmark evidence is a separate product concern from operational logging. Do not replace benchmark persistence with logs.
+Never perform synchronous disk I/O from ETW callbacks. Never log one record per DPC/ISR event. Under pathological log pressure, dropping low-value asynchronous diagnostic records is preferable to blocking the observation path and changing the result being measured.
+
+Raw/auditable benchmark evidence is a separate product concern from operational logs. Logs do not replace evidence persistence or the future experiment journal.
 
 ## Failure handling
 
-Expected transport/protocol failures should produce bounded warnings/errors and leave the long-lived Service able to accept the next client. Expected kernel-capture failures should preserve enough failure provenance in the Service log to distinguish access/Win32/state failures without leaking implementation details into the UI. Unexpected App boundary failures should be logged and converted into a safe unavailable/error state where possible rather than leaking full exception details into the UI.
+Expected transport/protocol failures should produce bounded diagnostics and leave the long-lived Service able to accept the next client. Expected kernel-capture failures should preserve enough root-cause provenance to distinguish access/Win32/state failures without leaking unnecessary implementation detail into the UI.
 
-When investigating a capture problem, start with the App log entry for the relevant `RequestId`, then find the matching Service entries. Exported protocol-v5 evidence carries the same capture `RequestId`. If no Service entry exists, investigate connection/ACL/session-authorization/service-lifecycle failures before the ETW layer.
+Unexpected App-boundary failures should be logged and converted into a safe unavailable/error state where possible rather than exposing raw exceptions to the user.
+
+When investigating a capture problem:
+
+1. start from the evidence/request `RequestId` when available;
+2. locate the matching App entry;
+3. locate the matching Service entries;
+4. if no Service capture entry exists, investigate connection/ACL/session/service-lifecycle failure before the ETW layer;
+5. if capture completed, reconcile the logged bounded summary against the saved evidence-v8 artifact rather than trusting either source in isolation.
