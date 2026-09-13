@@ -13,6 +13,7 @@ public sealed partial class MainWindow
 
         ApplyBuildProvenanceUi();
         InitializeMeasurementReadinessExperience();
+        InitializeSnapshotSemanticsHardening();
         InitializeDeviceEvidenceUi();
     }
 }
