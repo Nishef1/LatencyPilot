@@ -78,7 +78,7 @@ Proceed to Phase 1: buildable solution → comparison-domain invariants → read
 - [x] solution/shared build settings;
 - [x] Core, Benchmarking, Protocol, Platform.Windows, Persistence, Service and App projects;
 - [x] one focused permanent-test project;
-- [x] historical Windows Release CI at Phase 1 closure. Current hosted validation runs the critical suite plus Release compile gates for App/Service; publish/package/release remains owner-local.
+- [x] historical Windows Release CI at Phase 1 closure. Current hosted validation is intentionally **test-only**; App/Service compile, publish/package and release evidence are owner-local.
 
 ### 1.2 Domain/comparison foundation
 - [x] experiment lifecycle and legal transitions;
@@ -118,10 +118,10 @@ Proceed to Phase 2 in this order: authoritative inventory/resource evidence → 
 - [x] stored interrupt configuration inspection with availability/error provenance;
 - [x] allocated IRQ/resource assignment capture from Configuration Manager with partial/unavailable provenance;
 - [x] optional device-property/resource failures degrade to partial evidence instead of invalidating the entire inventory;
-- [ ] distinguish line/message interrupt evidence where Windows source data permits it;
+- [ ] distinguish line/message interrupt evidence where an authoritative Windows source exposes the actual assigned delivery kind; do not infer it from stored MSI configuration or ConfigMgr `IRQ_DES` flags;
 - [ ] physical Windows 11 validation of representative GPU/xHCI/NIC device inventory and allocated resources.
 
-Stored registry configuration, allocated resource assignment and runtime behavior are separate evidence levels and must remain separate in code/UI.
+Stored registry configuration, allocated resource assignment and runtime behavior are separate evidence levels and must remain separate in code/UI. `MSISupported=1` is stored configuration evidence, not proof that the current assigned interrupt is message-signaled.
 
 ### 2.2 ETW observation
 - [x] controlled privileged ETW observation host in `LatencyPilot.Service`;
@@ -148,16 +148,20 @@ Native routine addresses must remain unresolved unless authoritative kernel imag
 The current Phase 2 observation ACL/session rule is not future mutation authorization. Phase 3 must add mutation-specific authorization before any privileged write command exists. RDP/multi-session observation is not implied by the current active-console rule.
 
 ### 2.3 Baseline quality
-- [ ] repeated baseline windows in the WinUI flow — source implemented and hosted Release compile passes; owner-local runtime/physical evidence pending;
+- [x] repeated five-window baseline flow implemented in WinUI source with quiet inter-window rendering;
+- [ ] physical Windows 11 runtime validation of the repeated baseline flow;
 - [x] stable repeated-window policy/minimum valid windows in deterministic `baseline-quality-v1`;
+- [x] `baseline-quality-v1` requires exactly five contiguous windows; extra windows cannot silently change the versioned interpretation;
 - [x] contiguous window-number sequence is authoritative; UTC timestamps remain provenance rather than a monotonic-order requirement;
 - [x] empirical window-level p99 noise-floor calculation;
 - [x] early/late inter-window drift detection;
 - [x] invalid/extreme-window handling with explicit reasons and no silent deletion;
-- [ ] background/thermal quality warning where observable and reliable;
+- [x] best-effort low-overhead runtime context captures system CPU busy time, AC/DC source, Battery Saver, active power plan and Windows 11 user-configured power mode outside the authoritative ETW window;
+- [x] power-context changes are surfaced as provenance without silently changing the `baseline-quality-v1` validity formula;
+- [ ] thermal quality warning only if an authoritative low-overhead source is identified and physical evidence shows it is required;
 - [ ] invalid/inconclusive baseline cannot unlock a future optimizer — quality gate exists, optimizer integration does not yet exist.
 
-Current `baseline-quality-v1` requires five windows, at least 20 events per metric/window, clean capture integrity, <=30% relative P10-P90 spread, <=20% early/late drift and no >50% extreme-window deviation. These are versioned conservative policy values, not statistical-significance claims.
+Current `baseline-quality-v1` requires exactly five windows, at least 20 events per metric/window, clean capture integrity, <=30% relative P10-P90 spread, <=20% early/late drift and no >50% extreme-window deviation. These are versioned conservative policy values, not statistical-significance claims.
 
 ### 2.4 UX
 - [x] observation-service health/safety status;
@@ -169,9 +173,12 @@ Current `baseline-quality-v1` requires five windows, at least 20 events per metr
 - [x] short capture is labeled observation rather than trustworthy baseline;
 - [x] per-CPU latency/interrupt concentration view;
 - [x] bounded top DPC/ISR contributors after module attribution exists;
-- [x] manual JSON evidence export source preserves bounded aggregate evidence, correlation ID and bounded environment provenance;
+- [x] selectable Real-world / Controlled idle / Before-after measurement scenarios with stale-evidence invalidation;
+- [x] runtime CPU/power context summary and power-context-change warning source;
+- [x] repeated-baseline progress, verdict and explicit reasons UI source;
+- [x] manual JSON evidence export source preserves bounded aggregate evidence, correlation ID, measurement scenario, runtime context and bounded environment provenance;
 - [ ] evidence-export/runtime behavior validation on physical WinUI;
-- [ ] repeated-baseline quality verdict/reasons UI — source implemented and hosted compile passes; owner-local runtime evidence pending;
+- [ ] validate repeated-baseline progress/verdict/reasons behavior on physical WinUI;
 - [ ] validate configuration vs assigned resource vs runtime evidence labels on physical UI;
 - [ ] finish narrow-window/text-scaling/focus/screen-reader sanity pass on physical WinUI.
 
@@ -311,6 +318,6 @@ Repository-wide permanent automated tests may **never exceed 10** unless the own
 
 ## Phase-closing rule
 
-A checkbox is complete only when code/artifact exists on `main` and the required evidence exists. Deterministic correctness and Windows-host compileability may use the hosted validation workflow. Publish/package/runtime-dependent work requires owner-local Windows evidence. Hardware-dependent work requires physical Windows 11 evidence. “Implemented but unverified” remains incomplete. Before closing a subsection, perform the mandatory step-back review defined in `AGENTS.md`.
+A checkbox is complete only when code/artifact exists on `main` and the evidence required by that checkbox exists. Deterministic correctness contracts may use the hosted **Tests** workflow. Hosted CI is intentionally test-only and is not App/Service compile, publish/package, GUI, release or physical-hardware evidence. Compile/package/runtime-dependent work remains owner-local; hardware-dependent work requires physical Windows 11 evidence. “Implemented but unverified” remains incomplete when the checkbox itself requires runtime or physical evidence. Before closing a subsection, perform the mandatory step-back review defined in `AGENTS.md`.
 
 After every meaningful stage, reports must include the exact next stage and the stage after that; `PROJECT_STATUS.md` is the authoritative detailed execution ladder.
