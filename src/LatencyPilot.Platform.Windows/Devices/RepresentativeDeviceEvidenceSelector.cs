@@ -11,7 +11,14 @@ public enum RepresentativeDeviceKind
 
 public sealed record RepresentativeDeviceEvidence(
     RepresentativeDeviceKind Kind,
-    PnPDeviceSnapshot Device);
+    PnPDeviceSnapshot Device)
+{
+    public bool StoredInterruptConfigurationAvailable =>
+        Device.InterruptConfiguration.ReadStatus == InterruptConfigurationReadStatus.Available;
+
+    public bool AllocatedInterruptResourcesAvailable =>
+        Device.InterruptResources.ReadStatus == InterruptResourceReadStatus.Available;
+}
 
 public static class RepresentativeDeviceEvidenceSelector
 {
@@ -55,7 +62,10 @@ public static class RepresentativeDeviceEvidenceSelector
         int maximum)
     {
         foreach (var device in source
-                     .OrderBy(static device => device.DisplayName, StringComparer.OrdinalIgnoreCase)
+                     .OrderByDescending(static device => device.InterruptResources.HasAssignedInterrupts)
+                     .ThenByDescending(static device => device.InterruptConfiguration.HasAnyConfiguration)
+                     .ThenByDescending(static device => device.Driver.IsAvailable)
+                     .ThenBy(static device => device.DisplayName, StringComparer.OrdinalIgnoreCase)
                      .ThenBy(static device => device.InstanceId, StringComparer.OrdinalIgnoreCase)
                      .Take(maximum))
         {
