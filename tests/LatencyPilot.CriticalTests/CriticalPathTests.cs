@@ -233,20 +233,21 @@ public sealed class CriticalPathTests
         Assert.IsTrue(devices.DevicesWithDriverMetadataCount > 0);
 
         Assert.IsTrue(runtimeContext.SystemLoad.KernelTime100Nanoseconds >= runtimeContext.SystemLoad.IdleTime100Nanoseconds);
-        Assert.IsTrue(Enum.IsDefined(typeof(SystemPowerLineState), runtimeContext.Power.LineState));
+        Assert.IsTrue(Enum.IsDefined(runtimeContext.Power.LineState));
         if (runtimeContext.Power.BatteryPercent is not null)
         {
             Assert.IsTrue(runtimeContext.Power.BatteryPercent is >= 0 and <= 100);
         }
         if (runtimeContext.Power.UserConfiguredPowerMode is not null)
         {
-            Assert.IsTrue(Enum.IsDefined(typeof(UserConfiguredPowerMode), runtimeContext.Power.UserConfiguredPowerMode.Value));
+            Assert.IsTrue(Enum.IsDefined(runtimeContext.Power.UserConfiguredPowerMode.Value));
         }
 
         var calculatedBusy = RuntimeMeasurementContextReader.CalculateSystemCpuBusyPercent(
             new SystemLoadSnapshot(100, 500, 300),
             new SystemLoadSnapshot(200, 800, 500));
-        Assert.AreEqual(80d, calculatedBusy, 0.000001);
+        Assert.IsNotNull(calculatedBusy);
+        Assert.AreEqual(80d, calculatedBusy.Value, 0.000001d);
     }
 
     private static BaselineWindowEvidence Window(int number, double dpcP99, double isrP99) =>
