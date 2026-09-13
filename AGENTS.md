@@ -184,7 +184,9 @@ If the review finds a contradiction, fix the design first. Do not preserve an ea
 
 - never call a phase complete because code merely exists;
 - check a roadmap item only when its required evidence exists on `main`;
-- build-dependent items require successful CI;
+- deterministic correctness contracts may use the GitHub Actions **Tests** workflow as automated evidence;
+- GitHub Actions is test-only: do not add cloud solution builds, WinUI publish, installer/package builds, GUI smoke, artifact uploads or release publication unless the repository owner explicitly reverses this policy;
+- build/package-dependent items require owner-local Windows build/package evidence, not hosted CI;
 - hardware-dependent items require physical-hardware evidence;
 - implemented-but-unverified remains incomplete;
 - update status when completing or discovering a blocker;
@@ -195,20 +197,20 @@ If the review finds a contradiction, fix the design first. Do not preserve an ea
 After every meaningful implementation stage or closed subsection, the progress report must state all five items below explicitly:
 
 1. **Completed now** — exact code/capability completed in this stage, without inflating partial work into completion.
-2. **Evidence** — commit, CI run, hardware result, or other proof required by the relevant gate.
+2. **Evidence** — commit, test-only CI run, owner-local build result, hardware result, or other proof required by the relevant gate.
 3. **Still open in this stage/phase** — remaining blockers or unchecked requirements.
 4. **Next stage** — the immediately following stage, broken into concrete substeps in execution order.
 5. **After that** — the next one or two stages so the direction is visible and work does not become locally optimized or circular.
 
 A report that only says “done” or only lists completed work is incomplete.
 
-When a stage is not actually closable because CI, hardware validation, attribution, quality gates, or documentation are missing, say **implemented but not closed** and name the exact missing evidence.
+When a stage is not actually closable because tests, local build/package validation, hardware validation, attribution, quality gates, or documentation are missing, say **implemented but not closed** and name the exact missing evidence.
 
 `PROJECT_STATUS.md` must maintain a current execution ladder with the same structure. When the next action changes, update that ladder in the same logical change or immediately afterward.
 
 ## 17. Change discipline
 
-For every meaningful change: understand existing architecture first, keep commits logically scoped, avoid unrelated churn, update documentation when contracts change, add/modify permanent tests only under the hard-cap policy, never weaken safety logic to make CI pass, and inspect actual failures instead of disabling validation.
+For every meaningful change: understand existing architecture first, keep commits logically scoped, avoid unrelated churn, update documentation when contracts change, add/modify permanent tests only under the hard-cap policy, never weaken safety logic to make tests pass, and inspect actual failures instead of disabling validation.
 
 For **owner-directed automation work**, write directly to `main` by default and do not create or switch to a new branch unless the repository owner explicitly requests one. This constraint does not prohibit normal contributor pull-request workflows; it governs agent/automation changes performed on the owner's behalf.
 
