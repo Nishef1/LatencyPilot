@@ -62,6 +62,13 @@ public sealed class CriticalPathTests
         Assert.IsTrue(stableResult.IsValidForComparison);
         Assert.AreEqual(0, stableResult.Reasons.Count);
 
+        var extraWindow = stable.Append(Window(6, 100.0, 50.0)).ToArray();
+        var extraWindowResult = BaselineQualityAnalyzer.Analyze(extraWindow);
+        Assert.AreEqual(BaselineQualityStatus.Inconclusive, extraWindowResult.Status);
+        Assert.IsFalse(extraWindowResult.IsValidForComparison);
+        Assert.IsTrue(extraWindowResult.Reasons.Any(static reason =>
+            reason.Contains("exactly 5", StringComparison.OrdinalIgnoreCase)));
+
         var drifted = stable
             .Select(window => window.WindowNumber >= 4
                 ? window with { DpcP99Microseconds = 145.0, IsrP99Microseconds = 72.0 }
