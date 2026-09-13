@@ -12,6 +12,7 @@ param(
     [switch]$RequireValidBaseline
 )
 
+# Keep a deterministic strictness level that is supported by Windows PowerShell 5.1.
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
@@ -21,10 +22,10 @@ $ExpectedBaselineMethod = 'baseline-quality-v2'
 $QuickSnapshotPurpose = 'quick-diagnostic-snapshot'
 $DecisionBaselinePurpose = 'repeated-decision-baseline'
 $RequiredBaselineWindows = 5
-$MinimumBaselineRequestedMilliseconds = 20_000
+$MinimumBaselineRequestedMilliseconds = 20000
 $MinimumBaselineDurationRatio = 0.95
-$MinimumBaselineEventsPerMetricWindow = 1_000
-$MinimumSamplesForP999 = 10_000
+$MinimumBaselineEventsPerMetricWindow = 1000
+$MinimumSamplesForP999 = 10000
 $MaximumRelativeNoiseFloor = 0.30
 $MaximumRelativeDrift = 0.20
 $ExtremeWindowRelativeDeviation = 0.50
@@ -81,19 +82,19 @@ function Test-FiniteNumber {
         return $false
     }
 
-    return -not [double]::IsNaN($number) -and -not [double]::IsInfinity($number)
+    return (-not [double]::IsNaN($number)) -and (-not [double]::IsInfinity($number))
 }
 
 function Test-FinitePositive {
     param($Value)
 
-    return (Test-FiniteNumber $Value) -and [double]$Value -gt 0
+    return (Test-FiniteNumber $Value) -and ([double]$Value -gt 0)
 }
 
 function Test-FiniteNonNegative {
     param($Value)
 
-    return (Test-FiniteNumber $Value) -and [double]$Value -ge 0
+    return (Test-FiniteNumber $Value) -and ([double]$Value -ge 0)
 }
 
 function Assert-NearlyEqual {
@@ -125,10 +126,18 @@ function Format-Value {
     param($Value, [string]$Suffix = '')
 
     if ($null -eq $Value) {
-        return '—'
+        return '-'
     }
 
-    if (Test-FiniteNumber $Value) {
+    if ($Value -is [bool]) {
+        return "$Value$Suffix"
+    }
+
+    if ($Value -is [byte] -or $Value -is [sbyte] -or
+        $Value -is [short] -or $Value -is [ushort] -or
+        $Value -is [int] -or $Value -is [uint] -or
+        $Value -is [long] -or $Value -is [ulong] -or
+        $Value -is [float] -or $Value -is [double] -or $Value -is [decimal]) {
         return ('{0:N3}{1}' -f [double]$Value, $Suffix)
     }
 
@@ -262,7 +271,7 @@ function Assert-ThresholdSummary {
         throw "$Context has inconsistent threshold counts."
     }
 
-    if ([double]$guidanceThreshold -lt 1_000 -and $guidanceCount -lt $overOneMillisecond) {
+    if ([double]$guidanceThreshold -lt 1000 -and $guidanceCount -lt $overOneMillisecond) {
         throw "$Context reports fewer guidance exceedances than >1 ms events."
     }
 }
@@ -373,7 +382,7 @@ function Assert-BaselineMetricQuality {
         throw "$Context needs exactly $RequiredBaselineWindows values for closure."
     }
 
-    $sorted = @($Values | Sort-Object)
+    [double[]]$sorted = @($Values | Sort-Object)
     $median = Get-Percentile $sorted 0.50
     $p10 = Get-Percentile $sorted 0.10
     $p90 = Get-Percentile $sorted 0.90
@@ -382,8 +391,10 @@ function Assert-BaselineMetricQuality {
     }
 
     $relativeNoise = ($p90 - $p10) / [Math]::Abs($median)
-    $early = @([double]$Values[0], [double]$Values[1] | Sort-Object)
-    $late = @([double]$Values[3], [double]$Values[4] | Sort-Object)
+    [double[]]$early = @([double]$Values[0], [double]$Values[1])
+    [double[]]$late = @([double]$Values[3], [double]$Values[4])
+    $early = @($early | Sort-Object)
+    $late = @($late | Sort-Object)
     $earlyMedian = Get-Percentile $early 0.50
     $lateMedian = Get-Percentile $late 0.50
     $relativeDrift = [Math]::Abs($lateMedian - $earlyMedian) / [Math]::Abs($median)
@@ -454,6 +465,7 @@ $document = Get-Content -LiteralPath $resolvedPath -Raw | ConvertFrom-Json
 $schema = [string](Get-RequiredPropertyValue $document 'schema' 'Evidence')
 $protocol = [int](Get-RequiredPropertyValue $document 'protocolVersion' 'Evidence')
 $purpose = [string](Get-RequiredPropertyValue $document 'purpose' 'Evidence')
+$productVersion = [string](Get-RequiredPropertyValue $document 'productVersion' 'Evidence')
 $sourceRevision = [string](Get-RequiredPropertyValue $document 'sourceRevisionId' 'Evidence')
 if ($schema -ne $ExpectedSchema) {
     throw "Unexpected evidence schema '$schema'. Expected '$ExpectedSchema'."
@@ -461,8 +473,24 @@ if ($schema -ne $ExpectedSchema) {
 if ($protocol -ne $ExpectedProtocol) {
     throw "Unexpected protocol version '$protocol'. Expected '$ExpectedProtocol'."
 }
+if ($productVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Evidence productVersion '$productVersion' does not use MAJOR.MINOR.PATCH form."
+}
 if ($sourceRevision -notmatch '^[0-9a-fA-F]{40}$') {
     throw 'Evidence does not carry the full 40-hex clean sourceRevisionId required for closure-grade provenance.'
+}
+
+$exportedAtUtcText = [string](Get-RequiredPropertyValue $document 'exportedAtUtc' 'Evidence')
+$parsedExportedAtUtc = [DateTimeOffset]::MinValue
+if (-not [DateTimeOffset]::TryParse($exportedAtUtcText, [ref]$parsedExportedAtUtc)) {
+    throw "Evidence exportedAtUtc '$exportedAtUtcText' is invalid."
+}
+$null = Get-RequiredPropertyValue $document 'environment' 'Evidence'
+$measurementContext = Get-RequiredPropertyValue $document 'measurementContext' 'Evidence'
+$scenarioValue = [string](Get-RequiredPropertyValue $measurementContext 'scenario' 'Measurement context')
+$scenarioDisplayName = [string](Get-RequiredPropertyValue $measurementContext 'displayName' 'Measurement context')
+if ([string]::IsNullOrWhiteSpace($scenarioValue) -or [string]::IsNullOrWhiteSpace($scenarioDisplayName)) {
+    throw 'Evidence measurement context is incomplete.'
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -632,10 +660,13 @@ if ($RequireValidBaseline) {
         $isrP99Values += [double]$isrP99
     }
 
-    if ([string](Get-RequiredPropertyValue $quality 'status' 'Baseline quality') -ne 'Valid' -or
-        -not [bool](Get-RequiredPropertyValue $quality 'isValidForComparison' 'Baseline quality') -or
-        [int](Get-RequiredPropertyValue $quality 'validCaptureWindowCount' 'Baseline quality') -ne $RequiredBaselineWindows -or
-        [int](Get-RequiredPropertyValue $quality 'totalWindowCount' 'Baseline quality') -ne $RequiredBaselineWindows) {
+    $serializedStatus = [string](Get-RequiredPropertyValue $quality 'status' 'Baseline quality')
+    $serializedValid = [bool](Get-RequiredPropertyValue $quality 'isValidForComparison' 'Baseline quality')
+    $serializedValidCaptureCount = [int](Get-RequiredPropertyValue $quality 'validCaptureWindowCount' 'Baseline quality')
+    $serializedTotalCount = [int](Get-RequiredPropertyValue $quality 'totalWindowCount' 'Baseline quality')
+    if ($serializedStatus -ne 'Valid' -or -not $serializedValid -or
+        $serializedValidCaptureCount -ne $RequiredBaselineWindows -or
+        $serializedTotalCount -ne $RequiredBaselineWindows) {
         throw 'Serialized baseline quality is not closure-ready Valid/5-of-5 evidence.'
     }
 
@@ -647,23 +678,14 @@ if ($RequireValidBaseline) {
     }
 }
 
-$measurementContext = Get-OptionalPropertyValue $document 'measurementContext'
-$scenario = 'unknown'
-if ($null -ne $measurementContext) {
-    $displayName = Get-OptionalPropertyValue $measurementContext 'displayName'
-    if (-not [string]::IsNullOrWhiteSpace([string]$displayName)) {
-        $scenario = [string]$displayName
-    }
-}
-
 Write-Host 'Evidence verification passed.' -ForegroundColor Green
 Write-Host "Path:            $resolvedPath"
 Write-Host "Type:            $evidenceType"
 Write-Host "Purpose:         $purpose"
 Write-Host "Schema:          $schema"
 Write-Host "Protocol:        $protocol"
-Write-Host "Product version: $(Get-RequiredPropertyValue $document 'productVersion' 'Evidence')"
-Write-Host "Scenario:        $scenario"
+Write-Host "Product version: $productVersion"
+Write-Host "Scenario:        $scenarioDisplayName ($scenarioValue)"
 Write-Host "Source revision: $sourceRevision"
 Write-Host "Capture IDs:     $($requestIds.Count) unique"
 Write-Host "SHA-256:         $sha256"
