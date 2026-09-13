@@ -304,3 +304,13 @@ Proceed to Phase 7 productization: installer/service lifecycle, signing/provenan
 Run the final 1.0 release audit against the complete product definition, every phase exit gate, active recovery state, documentation, licensing, signing/provenance and representative physical-hardware evidence. Only then tag 1.0.
 
 ---
+
+## Permanent-test rule
+
+Repository-wide permanent automated tests may **never exceed 10** unless the owner explicitly approves the exception and an ADR explains why remaining at 10 would be more harmful. The current suite is intentionally consolidated to **eight** durable contract tests, leaving two slots for higher-blast-radius recovery/mutation risks in later phases. Temporary implementation/debug tests may be created and removed before finalization.
+
+## Phase-closing rule
+
+A checkbox is complete only when code/artifact exists on `main` and the required evidence exists. Deterministic correctness and Windows-host compileability may use the hosted validation workflow. Publish/package/runtime-dependent work requires owner-local Windows evidence. Hardware-dependent work requires physical Windows 11 evidence. “Implemented but unverified” remains incomplete. Before closing a subsection, perform the mandatory step-back review defined in `AGENTS.md`.
+
+After every meaningful stage, reports must include the exact next stage and the stage after that; `PROJECT_STATUS.md` is the authoritative detailed execution ladder.
