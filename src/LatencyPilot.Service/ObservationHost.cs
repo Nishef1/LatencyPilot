@@ -8,6 +8,7 @@ using LatencyPilot.Core.Observation;
 using LatencyPilot.Platform.Windows.Etw;
 using LatencyPilot.Protocol;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging;
 
 namespace LatencyPilot.Service;
@@ -249,11 +250,7 @@ internal sealed class ObservationHost : BackgroundService
         return request.Command switch
         {
             ObservationCommand.GetStatus when request.KernelLatencyCapture is null =>
-                Ok(
-                    request.RequestId,
-                    serviceStatus: new ObservationServiceStatus(
-                        ServiceBoundary.PrivilegedObservationHostImplemented,
-                        ServiceBoundary.MutationAvailable)),
+                Ok(request.RequestId, serviceStatus: CreateServiceStatus()),
 
             ObservationCommand.CaptureKernelLatency =>
                 CaptureKernelLatency(request, stoppingToken),
@@ -265,10 +262,49 @@ internal sealed class ObservationHost : BackgroundService
         };
     }
 
+    private static ObservationServiceStatus CreateServiceStatus() =>
+        new(
+            ServiceBoundary.PrivilegedObservationHostImplemented,
+            ServiceBoundary.MutationAvailable,
+            WindowsServiceHelpers.IsWindowsService(),
+            HasExpectedKernelCapturePrivilege());
+
+    private static bool HasExpectedKernelCapturePrivilege()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var user = identity.User;
+        if (user is not null &&
+            (user.IsWellKnown(WellKnownSidType.LocalSystemSid) ||
+             user.IsWellKnown(WellKnownSidType.LocalServiceSid) ||
+             user.IsWellKnown(WellKnownSidType.NetworkServiceSid)))
+        {
+            return true;
+        }
+
+        var principal = new WindowsPrincipal(identity);
+        if (principal.IsInRole(WindowsBuiltInRole.Administrator))
+        {
+            return true;
+        }
+
+        var performanceLogUsers = new SecurityIdentifier(
+            WellKnownSidType.BuiltinPerformanceLoggingUsersSid,
+            null);
+        return principal.IsInRole(performanceLogUsers);
+    }
+
     private ObservationResponse CaptureKernelLatency(
         ObservationRequest request,
         CancellationToken stoppingToken)
     {
+        if (!WindowsServiceHelpers.IsWindowsService() || !HasExpectedKernelCapturePrivilege())
+        {
+            return Error(
+                request.RequestId,
+                ObservationErrorCode.CaptureUnavailable,
+                "Kernel observation requires the protected privileged Windows Service host.");
+        }
+
         var capture = request.KernelLatencyCapture;
         if (capture is null ||
             capture.DurationMilliseconds is < 100 or > ObservationProtocol.MaximumCaptureDurationMilliseconds ||
@@ -325,8 +361,6 @@ internal sealed class ObservationHost : BackgroundService
         }
         catch (Exception exception)
         {
-            // A failed capture is an unavailable observation, not a reason to stop the
-            // long-lived service host and strand subsequent status/recovery requests.
             KernelLatencyCaptureFailed(logger, exception);
             return CaptureUnavailable(request.RequestId);
         }
