@@ -31,7 +31,9 @@ internal sealed record EvidenceSaveResult(
 
 internal static class EvidenceExportService
 {
-    private const string EvidenceSchema = "latencypilot-evidence-v7";
+    private const string EvidenceSchema = "latencypilot-evidence-v8";
+    private const string QuickSnapshotPurpose = "quick-diagnostic-snapshot";
+    private const string DecisionBaselinePurpose = "repeated-decision-baseline";
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
@@ -52,6 +54,7 @@ internal static class EvidenceExportService
         return JsonSerializer.Serialize(
             new ObservationEvidenceDocument(
                 EvidenceSchema,
+                QuickSnapshotPurpose,
                 productVersion,
                 TryGetSourceRevisionId(),
                 ProtocolVersion.Current,
@@ -105,11 +108,11 @@ internal static class EvidenceExportService
         scenario switch
         {
             MeasurementScenario.RealWorld =>
-                "Keep the apps or game that reproduce the issue open; their activity is part of the evidence.",
+                "Keep the apps or game that reproduce the issue open; their activity is part of the evidence. For a decision baseline, put the workload in a warmed, repeatable state before starting.",
             MeasurementScenario.IdleBaseline =>
                 "Close unnecessary apps and avoid starting unrelated work while the controlled idle measurement runs.",
             MeasurementScenario.BeforeAfter =>
-                "Use the same apps, workload, power state and background activity on both sides of the comparison.",
+                "Use the same warmed workload, apps, power state and background activity on both sides of the comparison.",
             _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown measurement scenario."),
         };
 
@@ -166,6 +169,7 @@ internal static class EvidenceExportService
         return JsonSerializer.Serialize(
             new BaselineEvidenceDocument(
                 EvidenceSchema,
+                DecisionBaselinePurpose,
                 productVersion,
                 TryGetSourceRevisionId(),
                 ProtocolVersion.Current,
@@ -242,6 +246,13 @@ internal static class EvidenceExportService
             {
                 throw new InvalidDataException(
                     $"Baseline evidence timestamp mismatch in window {expectedWindowNumber}.");
+            }
+
+            if (capture.RequestedDurationMilliseconds != window.RequestedDurationMilliseconds ||
+                Math.Abs(capture.ActualDurationMilliseconds - window.ActualDurationMilliseconds) > 0.001d)
+            {
+                throw new InvalidDataException(
+                    $"Baseline evidence duration mismatch in window {expectedWindowNumber}.");
             }
 
             if (capture.RequestId == Guid.Empty || !requestIds.Add(capture.RequestId))
@@ -433,6 +444,7 @@ internal static class EvidenceExportService
 
     private sealed record ObservationEvidenceDocument(
         string Schema,
+        string Purpose,
         string ProductVersion,
         string? SourceRevisionId,
         int ProtocolVersion,
@@ -444,6 +456,7 @@ internal static class EvidenceExportService
 
     private sealed record BaselineEvidenceDocument(
         string Schema,
+        string Purpose,
         string ProductVersion,
         string? SourceRevisionId,
         int ProtocolVersion,
