@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Protocol;
-using Microsoft.UI.Xaml;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 
@@ -29,8 +28,8 @@ internal static class EvidenceExportService
 
     public static string CreateBaselineJson(
         string productVersion,
-        IReadOnlyList<KernelLatencyCaptureResponse> captures,
-        IReadOnlyList<BaselineWindowEvidence> windows,
+        KernelLatencyCaptureResponse[] captures,
+        BaselineWindowEvidence[] windows,
         BaselineQualityResult quality) =>
         JsonSerializer.Serialize(
             new BaselineEvidenceDocument(
@@ -50,11 +49,10 @@ internal static class EvidenceExportService
             $"LatencyPilot-{evidenceType}-{startedAtUtc.UtcDateTime:yyyyMMddTHHmmssfffZ}");
 
     public static async Task<string?> SaveAsync(
-        Window owner,
+        nint windowHandle,
         string json,
         string suggestedFileName)
     {
-        ArgumentNullException.ThrowIfNull(owner);
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
         ArgumentException.ThrowIfNullOrWhiteSpace(suggestedFileName);
 
@@ -66,7 +64,6 @@ internal static class EvidenceExportService
         };
         picker.FileTypeChoices.Add("JSON evidence", [".json"]);
 
-        var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(owner);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, windowHandle);
 
         var file = await picker.PickSaveFileAsync();
@@ -119,7 +116,7 @@ internal static class EvidenceExportService
         int ProtocolVersion,
         DateTimeOffset ExportedAtUtc,
         string BaselineMethodVersion,
-        IReadOnlyList<KernelLatencyCaptureResponse> Captures,
-        IReadOnlyList<BaselineWindowEvidence> Windows,
+        KernelLatencyCaptureResponse[] Captures,
+        BaselineWindowEvidence[] Windows,
         BaselineQualityResult Quality);
 }
