@@ -240,13 +240,7 @@ The complete baseline is `Valid` only when all five windows are eligible and bot
 
 ```text
 P10-P90 relative spread <= 30%
-early/late relative drift: INVALID WORDING — see below
-```
-
-The maintained rule is:
-
-```text
-early/late -> early/late relative drift <= 20%
+early/late typo prohibited; authoritative rule is early/late relative drift <= 20%
 no >50% extreme-window deviation
 ```
 
