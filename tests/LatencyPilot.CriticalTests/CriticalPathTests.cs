@@ -81,6 +81,24 @@ public sealed class CriticalPathTests
         Assert.AreEqual(BaselineQualityStatus.Inconclusive, lostResult.Status);
         Assert.IsFalse(lostResult.IsValidForComparison);
         Assert.IsTrue(lostResult.Reasons.Any(static reason => reason.Contains("ETW lost", StringComparison.Ordinal)));
+
+        var gapped = stable
+            .Select(window => window.WindowNumber >= 3
+                ? window with
+                {
+                    WindowNumber = window.WindowNumber + 1,
+                    StartedAtUtc = window.StartedAtUtc.AddSeconds(1),
+                }
+                : window)
+            .ToArray();
+        Assert.ThrowsExactly<ArgumentException>(() => BaselineQualityAnalyzer.Analyze(gapped));
+
+        var nonChronological = stable.ToArray();
+        nonChronological[3] = nonChronological[3] with
+        {
+            StartedAtUtc = nonChronological[2].StartedAtUtc,
+        };
+        Assert.ThrowsExactly<ArgumentException>(() => BaselineQualityAnalyzer.Analyze(nonChronological));
     }
 
     [TestMethod]
