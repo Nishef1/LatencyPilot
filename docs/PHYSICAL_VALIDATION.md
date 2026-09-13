@@ -85,7 +85,10 @@ Exercise the current keyboard paths at least once:
 Ctrl+R  refresh service
 Ctrl+O  capture one observation
 Ctrl+B  build repeated baseline
+Ctrl+E  export the latest completed aggregate evidence as JSON
 ```
+
+`Ctrl+E` must remain disabled while no completed exportable evidence exists and while a capture sequence is active.
 
 If the UI reports a failure, record the visible message and preserve the relevant App/Service structured log entries. Use protocol `RequestId` to correlate the two sides when available; do not attach unrelated sensitive system information.
 
@@ -114,11 +117,23 @@ Event limit reached:
 
 A non-zero unresolved count is not automatically a failure. LatencyPilot intentionally preserves unknown routine addresses instead of guessing a driver identity.
 
+After the observation completes, export the evidence JSON. The export must contain the full bounded processor/module/unresolved-routine aggregates and capture-integrity metadata returned by the protocol, not only the compact values visible in the dashboard. Unresolved 64-bit routine addresses are exported as hexadecimal strings to avoid precision loss in JSON/JavaScript tooling.
+
+Record the evidence artifact:
+
+```powershell
+Get-FileHash .\LatencyPilot-observation-*.json -Algorithm SHA256
+```
+
+Keep the exported filename and SHA-256 with the validation record.
+
 ## 4. Controlled-load observation
 
 Run one repeatable workload that exercises a representative device path, then capture another five-second observation. Examples include a GPU workload, controlled network transfer, or known USB activity.
 
 Record the same fields as the idle observation plus the exact workload used. Do not interpret a single observation as a baseline or as proof of an optimization.
+
+Export this observation separately and record its SHA-256 as well. Do not overwrite the idle evidence artifact.
 
 ## 5. Repeated baseline quality — Stage C companion evidence
 
@@ -150,6 +165,8 @@ For current `baseline-quality-v1`, a clean five-window run can still be `Inconcl
 Repeat the baseline flow under one controlled, repeatable workload when practical. The purpose is to confirm that the quality UI and reasons behave sensibly under a different but intentionally controlled operating condition, not to prove an optimization.
 
 A non-zero ETW loss count, invalid latency/image events or event-limit hit must make the affected baseline evidence ineligible. If the UI reports `Valid` despite any of those conditions, treat it as a blocker.
+
+After a complete or partially completed baseline sequence, export the evidence JSON and record its SHA-256. The baseline export must contain each completed raw aggregate capture, the derived window evidence, `baseline-quality-v1` method identity, metric quality and all verdict reasons. Export preparation occurs only after the capture sequence stops or completes; it must not add file I/O between authoritative baseline windows.
 
 ## 6. External plausibility comparison
 
@@ -233,8 +250,8 @@ A Stage B result is acceptable only when the validation record includes:
 - matching green Tests workflow run;
 - owner-local App launch-smoke result;
 - physical-machine context;
-- idle observation;
-- controlled-load observation;
+- idle observation plus exported JSON filename/SHA-256;
+- controlled-load observation plus exported JSON filename/SHA-256;
 - attribution plausibility comparison;
 - cleanup/disconnect/failure-path result;
 - representative partial-inventory evidence;
@@ -243,6 +260,6 @@ A Stage B result is acceptable only when the validation record includes:
 - uninstall/removal result;
 - any unresolved blockers.
 
-For Stage C closure, additionally preserve the repeated-baseline evidence from section 5, including all window rows, verdict and reasons.
+For Stage C closure, additionally preserve the repeated-baseline evidence from section 5, including all window rows, verdict/reasons and exported JSON filename/SHA-256.
 
 Do not close Stage B or Stage C from VM/CI evidence alone.
