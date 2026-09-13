@@ -14,7 +14,7 @@ namespace LatencyPilot.App;
 public sealed partial class MainWindow
 {
     private static readonly TimeSpan BaselineObservationDuration = TimeSpan.FromSeconds(20);
-    private static readonly TimeSpan BaselineWarmupDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan BaselinePreSequenceSettleDelay = TimeSpan.FromSeconds(5);
 
     private ComboBox? _measurementScenarioComboBox;
     private TextBlock? _measurementScenarioGuidanceText;
@@ -34,7 +34,7 @@ public sealed partial class MainWindow
         CaptureBaselineButton.Content = "Build baseline · ~2 min";
         ToolTipService.SetToolTip(
             CaptureBaselineButton,
-            "Warm up for five seconds, then capture five repeated 20-second windows for baseline stability (Ctrl+B).");
+            "Settle LatencyPilot for five seconds, then capture five repeated 20-second windows for baseline stability (Ctrl+B). The workload itself should already be warmed/repeatable when applicable.");
 
         RebuildMeasurementScenarioCard();
         RootGrid.ActualThemeChanged += (_, _) => RebuildMeasurementScenarioCard();
@@ -237,7 +237,7 @@ public sealed partial class MainWindow
         BaselineProgressBar.Value = 0;
         BaselineVerdictText.Text = "Capturing";
         BaselineStatusText.Text =
-            $"Warming up for {BaselineWarmupDelay.TotalSeconds:F0} seconds, then capturing {BaselineWindowCount} {baselineWindowDescription} 20-second windows.";
+            $"Settling LatencyPilot/service for {BaselinePreSequenceSettleDelay.TotalSeconds:F0} seconds, then capturing {BaselineWindowCount} {baselineWindowDescription} 20-second windows. The workload should already be at its intended repeatable state.";
         BaselineMetricsText.Text = "Noise and drift will be computed after all required windows complete.";
         BaselineReasonsText.Text =
             $"Scenario: {EvidenceExportService.GetMeasurementDisplayName(scenario)}. {EvidenceExportService.GetMeasurementGuidance(scenario)} Detailed lists and charts are intentionally not redrawn between windows.";
@@ -250,7 +250,7 @@ public sealed partial class MainWindow
 
         try
         {
-            await Task.Delay(BaselineWarmupDelay);
+            await Task.Delay(BaselinePreSequenceSettleDelay);
 
             for (var index = 1; index <= BaselineWindowCount; index++)
             {
@@ -479,7 +479,7 @@ public sealed partial class MainWindow
 
         ObservationQualityText.Text = integrityIssue is null
             ? $"{prefix}Quick snapshot integrity looks clean. {FormatCaptureInterpretation(capture)} This remains diagnostic evidence; use the repeated baseline for stability claims."
-            : $"{prefix}Treat this quick snapshot as incomplete evidence. Tail/guidance classification is withheld because capture integrity is not clean. Exact values remain visible for diagnosis.";
+            : $"{prefix}Treat this quick snapshot as incomplete evidence. Tail/reference interpretation is withheld because capture integrity is not clean. Exact values remain visible for diagnosis.";
     }
 
     private void ApplyP999Adequacy(KernelLatencyCaptureResponse capture)
