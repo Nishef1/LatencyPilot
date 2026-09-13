@@ -96,7 +96,9 @@ function Assert-CaptureShape {
     if ([int]$Capture.requestedDurationMilliseconds -lt 100) {
         throw "$Context has an invalid requested duration."
     }
-    if (-not [double]::IsFinite([double]$Capture.actualDurationMilliseconds) -or [double]$Capture.actualDurationMilliseconds -le 0) {
+
+    $actualDuration = [double]$Capture.actualDurationMilliseconds
+    if ([double]::IsNaN($actualDuration) -or [double]::IsInfinity($actualDuration) -or $actualDuration -le 0) {
         throw "$Context has an invalid actual duration."
     }
 
@@ -122,7 +124,7 @@ function Write-CaptureSummary {
     Write-Host "${Prefix}Integrity:       lost=$($Capture.eventsLost), invalid=$($Capture.invalidEventCount), invalid-images=$($Capture.invalidImageEventCount), event-limit=$($Capture.eventLimitReached)"
     Write-Host "${Prefix}DPC:             count=$($Capture.dpc.count), p99=$(Format-Value $Capture.dpc.p99Microseconds ' us'), p99.9=$(Format-Value $Capture.dpc.p999Microseconds ' us'), max=$(Format-Value $Capture.dpc.maximumMicroseconds ' us'), >100 us=$($Capture.dpcThresholds.guidanceExceedanceCount) ($(Format-Value $dpcRate '%'))"
     Write-Host "${Prefix}ISR:             count=$($Capture.isr.count), p99=$(Format-Value $Capture.isr.p99Microseconds ' us'), p99.9=$(Format-Value $Capture.isr.p999Microseconds ' us'), max=$(Format-Value $Capture.isr.maximumMicroseconds ' us'), >25 us=$($Capture.isrThresholds.guidanceExceedanceCount) ($(Format-Value $isrRate '%'))"
-    Write-Host "${Prefix}Long tail:       >1 ms DPC/ISR=$($Capture.dpcThresholds.overOneMillisecondCount)/$($Capture.isrThresholds.overOneMillisecondCount), >3 ms=$($Capture.dpcThresholds.overThreeMillisecondsCount)/$($Capture.isrThresholds.overThreeMillisecondsCount)"
+    Write-Host "${Prefix}Long tail:       >1 ms DPC/ISR=$($Capture.dpcThresholds.overOneMillisecondCount)/$($Capture.isrThresholds.overOneMillisecondCount), >3 ms=$($Capture.dpcThresholds.overThreeMillisecondsCount)/$($Capture.isrThresholds.overThreeMillisecondCount)"
     Write-Host "${Prefix}Attribution:     $(Format-Value $coverage '%') coverage; resolved=$($Capture.resolvedModuleEventCount), unresolved=$($Capture.unresolvedModuleEventCount)"
 
     if ($topDpcProcessor.Count -ne 0) {
