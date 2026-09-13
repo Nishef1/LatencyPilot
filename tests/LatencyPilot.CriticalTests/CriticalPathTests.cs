@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
+using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Benchmarking.Statistics;
 using LatencyPilot.Core.Experiments;
@@ -36,41 +37,50 @@ public sealed class CriticalPathTests
     [TestMethod]
     public void BenchmarkVerdictMatrixPreservesPrimaryAndGuardrailSemantics()
     {
-        AssertVerdict(
-            "insufficient samples",
-            100,
-            80,
-            ExperimentVerdict.Inconclusive,
-            count: 5);
-        AssertVerdict(
-            "inside noise threshold",
-            100,
-            98,
-            ExperimentVerdict.NoMeasurableDifference);
-        AssertVerdict(
-            "clear primary improvement",
-            100,
-            80,
-            ExperimentVerdict.Improved);
-        AssertVerdict(
-            "clear primary regression",
-            100,
-            120,
-            ExperimentVerdict.Regressed);
-        AssertVerdict(
-            "improvement plus guardrail regression",
-            100,
-            80,
-            ExperimentVerdict.Tradeoff,
-            guardrailBaseline: 10,
-            guardrailCandidate: 12);
-        AssertVerdict(
-            "neutral primary plus guardrail regression",
-            100,
-            99,
-            ExperimentVerdict.Regressed,
-            guardrailBaseline: 10,
-            guardrailCandidate: 12);
+        AssertVerdict("insufficient samples", 100, 80, ExperimentVerdict.Inconclusive, count: 5);
+        AssertVerdict("inside noise threshold", 100, 98, ExperimentVerdict.NoMeasurableDifference);
+        AssertVerdict("clear primary improvement", 100, 80, ExperimentVerdict.Improved);
+        AssertVerdict("clear primary regression", 100, 120, ExperimentVerdict.Regressed);
+        AssertVerdict("improvement plus guardrail regression", 100, 80, ExperimentVerdict.Tradeoff, guardrailBaseline: 10, guardrailCandidate: 12);
+        AssertVerdict("neutral primary plus guardrail regression", 100, 99, ExperimentVerdict.Regressed, guardrailBaseline: 10, guardrailCandidate: 12);
+    }
+
+    [TestMethod]
+    public void BaselineQualityGateRequiresCleanStableRepeatedWindows()
+    {
+        BaselineWindowEvidence[] stable =
+        [
+            Window(1, 100.0, 50.0),
+            Window(2, 102.0, 51.0),
+            Window(3, 99.0, 49.5),
+            Window(4, 101.0, 50.5),
+            Window(5, 100.0, 50.0),
+        ];
+
+        var stableResult = BaselineQualityAnalyzer.Analyze(stable);
+        Assert.AreEqual(BaselineQualityStatus.Valid, stableResult.Status);
+        Assert.IsTrue(stableResult.IsValidForComparison);
+        Assert.AreEqual(0, stableResult.Reasons.Count);
+
+        var drifted = stable
+            .Select(window => window.WindowNumber >= 4
+                ? window with { DpcP99Microseconds = 145.0, IsrP99Microseconds = 72.0 }
+                : window)
+            .ToArray();
+        var driftedResult = BaselineQualityAnalyzer.Analyze(drifted);
+        Assert.AreEqual(BaselineQualityStatus.Inconclusive, driftedResult.Status);
+        Assert.IsTrue(driftedResult.Reasons.Any(static reason => reason.Contains("drift", StringComparison.OrdinalIgnoreCase)));
+
+        var lost = stable.ToArray();
+        lost[2] = lost[2] with
+        {
+            CaptureIntegrityValid = false,
+            CaptureIntegrityIssue = "ETW lost 4 events.",
+        };
+        var lostResult = BaselineQualityAnalyzer.Analyze(lost);
+        Assert.AreEqual(BaselineQualityStatus.Inconclusive, lostResult.Status);
+        Assert.IsFalse(lostResult.IsValidForComparison);
+        Assert.IsTrue(lostResult.Reasons.Any(static reason => reason.Contains("ETW lost", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -103,23 +113,13 @@ public sealed class CriticalPathTests
     [TestMethod]
     public async Task PipeFramingFailsClosedOnMalformedOrUnknownInput()
     {
-        var request = new ObservationRequest(
-            ProtocolVersion.Current,
-            Guid.NewGuid(),
-            ObservationCommand.GetStatus,
-            null);
+        var request = new ObservationRequest(ProtocolVersion.Current, Guid.NewGuid(), ObservationCommand.GetStatus, null);
 
         using (var roundTrip = new MemoryStream())
         {
-            await PipeMessageFraming.WriteAsync(
-                roundTrip,
-                request,
-                ObservationProtocol.MaximumRequestBytes);
+            await PipeMessageFraming.WriteAsync(roundTrip, request, ObservationProtocol.MaximumRequestBytes);
             roundTrip.Position = 0;
-
-            var decoded = await PipeMessageFraming.ReadAsync<ObservationRequest>(
-                roundTrip,
-                ObservationProtocol.MaximumRequestBytes);
+            var decoded = await PipeMessageFraming.ReadAsync<ObservationRequest>(roundTrip, ObservationProtocol.MaximumRequestBytes);
             Assert.AreEqual(request, decoded);
         }
 
@@ -129,9 +129,7 @@ public sealed class CriticalPathTests
         using (var unknownMember = FrameUtf8(json))
         {
             await AssertThrowsAsync<JsonException>(() =>
-                PipeMessageFraming.ReadAsync<ObservationRequest>(
-                    unknownMember,
-                    ObservationProtocol.MaximumRequestBytes).AsTask());
+                PipeMessageFraming.ReadAsync<ObservationRequest>(unknownMember, ObservationProtocol.MaximumRequestBytes).AsTask());
         }
 
         using (var oversized = new MemoryStream())
@@ -140,9 +138,7 @@ public sealed class CriticalPathTests
             BinaryPrimitives.WriteInt32LittleEndian(header, 1024);
             await oversized.WriteAsync(header);
             oversized.Position = 0;
-
-            await AssertThrowsAsync<InvalidDataException>(() =>
-                PipeMessageFraming.ReadAsync<ObservationRequest>(oversized, 16).AsTask());
+            await AssertThrowsAsync<InvalidDataException>(() => PipeMessageFraming.ReadAsync<ObservationRequest>(oversized, 16).AsTask());
         }
 
         using (var truncated = new MemoryStream())
@@ -152,9 +148,7 @@ public sealed class CriticalPathTests
             await truncated.WriteAsync(header);
             await truncated.WriteAsync("{}"u8.ToArray());
             truncated.Position = 0;
-
-            await AssertThrowsAsync<EndOfStreamException>(() =>
-                PipeMessageFraming.ReadAsync<ObservationRequest>(truncated, 64).AsTask());
+            await AssertThrowsAsync<EndOfStreamException>(() => PipeMessageFraming.ReadAsync<ObservationRequest>(truncated, 64).AsTask());
         }
     }
 
@@ -162,13 +156,8 @@ public sealed class CriticalPathTests
     public void ObservationProtocolSurfaceRemainsReadOnly()
     {
         var commands = Enum.GetValues<ObservationCommand>();
-
         CollectionAssert.AreEqual(
-            new[]
-            {
-                ObservationCommand.GetStatus,
-                ObservationCommand.CaptureKernelLatency,
-            },
+            new[] { ObservationCommand.GetStatus, ObservationCommand.CaptureKernelLatency },
             commands);
     }
 
@@ -176,10 +165,7 @@ public sealed class CriticalPathTests
     public void WindowsReadOnlyInventoryCaptureIsInternallyConsistent()
     {
         var topology = ProcessorTopologyReader.Capture();
-        var logicalProcessors = topology.Cores
-            .SelectMany(static core => core.LogicalProcessors)
-            .Distinct()
-            .ToArray();
+        var logicalProcessors = topology.Cores.SelectMany(static core => core.LogicalProcessors).Distinct().ToArray();
         var devices = DeviceInventoryReader.CapturePresentDevices();
 
         Assert.IsTrue(topology.PhysicalCoreCount > 0);
@@ -190,6 +176,9 @@ public sealed class CriticalPathTests
         Assert.IsTrue(devices.Devices.All(static device => !string.IsNullOrWhiteSpace(device.InstanceId)));
         Assert.IsTrue(devices.DevicesWithDriverMetadataCount > 0);
     }
+
+    private static BaselineWindowEvidence Window(int number, double dpcP99, double isrP99) =>
+        new(number, DateTimeOffset.UnixEpoch.AddSeconds(number), true, null, 200, dpcP99, 120, isrP99);
 
     private static void AssertVerdict(
         string scenario,
@@ -215,10 +204,7 @@ public sealed class CriticalPathTests
         }
         else
         {
-            result = BenchmarkComparer.Compare(
-                baselineSeries,
-                candidateSeries,
-                policy: Policy);
+            result = BenchmarkComparer.Compare(baselineSeries, candidateSeries, policy: Policy);
         }
 
         Assert.AreEqual(expected, result.Verdict, scenario);
@@ -249,8 +235,7 @@ public sealed class CriticalPathTests
         }
         catch (Exception exception)
         {
-            Assert.Fail(
-                $"Expected {typeof(TException).Name}, but {exception.GetType().Name} was thrown: {exception.Message}");
+            Assert.Fail($"Expected {typeof(TException).Name}, but {exception.GetType().Name} was thrown: {exception.Message}");
         }
 
         Assert.Fail($"Expected {typeof(TException).Name}, but no exception was thrown.");
