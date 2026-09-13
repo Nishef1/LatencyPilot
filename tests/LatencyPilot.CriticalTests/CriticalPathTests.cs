@@ -62,6 +62,11 @@ public sealed class CriticalPathTests
         Assert.IsTrue(stableResult.IsValidForComparison);
         Assert.AreEqual(0, stableResult.Reasons.Count);
 
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            BaselineQualityAnalyzer.Analyze(
+                stable,
+                new BaselineQualityPolicy(MaximumRelativeNoiseFloor: 0.31)));
+
         var extraWindow = stable.Append(Window(6, 100.0, 50.0)).ToArray();
         var extraWindowResult = BaselineQualityAnalyzer.Analyze(extraWindow);
         Assert.AreEqual(BaselineQualityStatus.Inconclusive, extraWindowResult.Status);
