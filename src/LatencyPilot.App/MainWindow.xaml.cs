@@ -278,9 +278,9 @@ public sealed partial class MainWindow : Window
     {
         DpcCountText.Text = capture.Dpc.Count.ToString("N0", CultureInfo.InvariantCulture);
         IsrCountText.Text = capture.Isr.Count.ToString("N0", CultureInfo.InvariantCulture);
-        DpcP99Text.Text = $"p99 {FormatMicroseconds(capture.Dpc.P99Microseconds)}";
+        DpcP99Text.Text = $"p99 {FormatMicroseconds(capture.Dpc.P99Microseconds)} · max {FormatMicroseconds(capture.Dpc.MaximumMicroseconds)}";
         DpcP999Text.Text = FormatMicroseconds(capture.Dpc.P999Microseconds);
-        IsrP99Text.Text = $"p99 {FormatMicroseconds(capture.Isr.P99Microseconds)}";
+        IsrP99Text.Text = $"p99 {FormatMicroseconds(capture.Isr.P99Microseconds)} · max {FormatMicroseconds(capture.Isr.MaximumMicroseconds)}";
         IsrP999Text.Text = FormatMicroseconds(capture.Isr.P999Microseconds);
         ObservedProcessorCountText.Text = capture.Processors.Count.ToString(CultureInfo.InvariantCulture);
 
@@ -302,14 +302,18 @@ public sealed partial class MainWindow : Window
             .Take(8)
             .Select(module => new ModuleObservationRow(
                 module.ModuleName,
-                $"DPC {module.Dpc.Count:N0} · ISR {module.Isr.Count:N0}",
-                string.Create(CultureInfo.InvariantCulture, $"{module.TotalDurationMicroseconds:F1} µs")))
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"DPC {module.Dpc.Count:N0} ({module.DpcThresholds.GuidanceExceedanceCount:N0} >{module.DpcThresholds.GuidanceThresholdMicroseconds:F0} µs) · ISR {module.Isr.Count:N0} ({module.IsrThresholds.GuidanceExceedanceCount:N0} >{module.IsrThresholds.GuidanceThresholdMicroseconds:F0} µs)"),
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"total {module.TotalDurationMicroseconds:F1} µs · p99.9 {FormatLargestP999(module.Dpc, module.Isr)} · max {FormatLargestMaximum(module.Dpc, module.Isr)}")))
             .ToArray();
 
         var topModule = capture.Modules.Count == 0 ? null : capture.Modules[0];
         TopModuleText.Text = topModule is null
             ? "No routine address was resolved to an authoritative image range."
-            : $"Dominant resolved module: {topModule.ModuleName}";
+            : $"Dominant resolved module by accumulated DPC/ISR duration: {topModule.ModuleName}";
 
         TopProcessorsList.ItemsSource = capture.Processors
             .OrderByDescending(processor => processor.Dpc.Count + processor.Isr.Count)
@@ -319,19 +323,19 @@ public sealed partial class MainWindow : Window
                 string.Create(
                     CultureInfo.InvariantCulture,
                     $"{processor.Dpc.Count + processor.Isr.Count:N0} events · DPC {processor.Dpc.Count:N0} / ISR {processor.Isr.Count:N0}"),
-                $"p99 {FormatLargestP99(processor)}"))
+                $"p99 {FormatLargestP99(processor)} · max {FormatLargestMaximum(processor.Dpc, processor.Isr)}"))
             .ToArray();
 
         var integrityIssue = GetCaptureIntegrityIssue(capture);
         if (integrityIssue is null)
         {
             KernelCaptureStatusText.Text = $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected.";
-            ObservationQualityText.Text = "Capture integrity looks clean. This is still a single observation, not a validated baseline.";
+            ObservationQualityText.Text = $"Capture integrity looks clean. {FormatThresholdEvidence(capture)} Guidance exceedances are diagnostic context, not a pass/fail verdict. This is still a single observation, not a validated baseline.";
         }
         else
         {
             KernelCaptureStatusText.Text = $"Observation completed with quality warning: {integrityIssue}";
-            ObservationQualityText.Text = "Treat this observation as incomplete evidence. It cannot qualify as a clean baseline window.";
+            ObservationQualityText.Text = $"Treat this observation as incomplete evidence. {FormatThresholdEvidence(capture)} It cannot qualify as a clean baseline window.";
         }
     }
 
@@ -531,22 +535,34 @@ public sealed partial class MainWindow : Window
             ?? "unknown";
     }
 
-    private static string FormatLargestP99(ProcessorLatencyDistribution processor)
+    private static string FormatLargestP99(ProcessorLatencyDistribution processor) =>
+        FormatLargestValue(processor.Dpc.P99Microseconds, processor.Isr.P99Microseconds);
+
+    private static string FormatLargestP999(LatencyDistribution dpc, LatencyDistribution isr) =>
+        FormatLargestValue(dpc.P999Microseconds, isr.P999Microseconds);
+
+    private static string FormatLargestMaximum(LatencyDistribution dpc, LatencyDistribution isr) =>
+        FormatLargestValue(dpc.MaximumMicroseconds, isr.MaximumMicroseconds);
+
+    private static string FormatLargestValue(double? first, double? second)
     {
-        var dpc = processor.Dpc.P99Microseconds;
-        var isr = processor.Isr.P99Microseconds;
-        if (dpc is null)
+        if (first is null)
         {
-            return FormatMicroseconds(isr);
+            return FormatMicroseconds(second);
         }
 
-        if (isr is null)
+        if (second is null)
         {
-            return FormatMicroseconds(dpc);
+            return FormatMicroseconds(first);
         }
 
-        return FormatMicroseconds(Math.Max(dpc.Value, isr.Value));
+        return FormatMicroseconds(Math.Max(first.Value, second.Value));
     }
+
+    private static string FormatThresholdEvidence(KernelLatencyCaptureResponse capture) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"Driver-guidance exceedances: DPC {capture.DpcThresholds.GuidanceExceedanceCount:N0} >{capture.DpcThresholds.GuidanceThresholdMicroseconds:F0} µs; ISR {capture.IsrThresholds.GuidanceExceedanceCount:N0} >{capture.IsrThresholds.GuidanceThresholdMicroseconds:F0} µs. >1 ms DPC/ISR {capture.DpcThresholds.OverOneMillisecondCount:N0}/{capture.IsrThresholds.OverOneMillisecondCount:N0}; >3 ms {capture.DpcThresholds.OverThreeMillisecondsCount:N0}/{capture.IsrThresholds.OverThreeMillisecondsCount:N0}." );
 
     private static string FormatMicroseconds(double? value) =>
         value is null
