@@ -216,12 +216,15 @@ public sealed partial class MainWindow
         }
 
         var scenario = SelectedMeasurementScenario;
+        var baselineWindowDescription = scenario == MeasurementScenario.IdleBaseline
+            ? "quiet"
+            : "repeatable";
         ClearExportEvidence("Baseline capture in progress. Export is prepared only after the capture sequence stops or completes.");
         ClearCaptureMetrics();
         SetMeasurementBusy(true);
         BaselineProgressBar.Value = 0;
         BaselineVerdictText.Text = "Capturing";
-        BaselineStatusText.Text = $"Preparing {BaselineWindowCount} quiet five-second windows. The UI will settle before the first capture.";
+        BaselineStatusText.Text = $"Preparing {BaselineWindowCount} {baselineWindowDescription} five-second windows. The UI will settle before the first capture.";
         BaselineMetricsText.Text = "Noise and drift will be computed after all required windows complete.";
         BaselineReasonsText.Text =
             $"Scenario: {EvidenceExportService.GetMeasurementDisplayName(scenario)}. {EvidenceExportService.GetMeasurementGuidance(scenario)} Detailed lists and charts are intentionally not redrawn between windows.";
@@ -262,7 +265,7 @@ public sealed partial class MainWindow
 
                 BaselineProgressBar.Value = index;
                 BaselineStatusText.Text = index < BaselineWindowCount
-                    ? $"Window {index} of {BaselineWindowCount} complete. Settling before the next quiet capture…"
+                    ? $"Window {index} of {BaselineWindowCount} complete. Settling before the next measurement window…"
                     : $"Window {index} of {BaselineWindowCount} complete. Computing baseline quality…";
 
                 if (index < BaselineWindowCount)
