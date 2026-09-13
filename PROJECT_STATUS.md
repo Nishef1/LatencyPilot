@@ -15,8 +15,8 @@ Last updated: 2026-09-13
 - Privileged boundary: **Windows Service exists for read-only kernel observation; mutation commands do not exist**
 - Permanent automated tests: **8 / hard maximum 10**
 - GitHub Actions policy: **Tests only**. Hosted Actions must not build/publish App, Service, Setup, portable distributions or releases.
-- Stage C deterministic test evidence: **Tests run `34744320630` succeeded** on commit `2070bbb6b55465e71d569a12930a298318259a2d` with the eight-test suite.
-- App/WinUI Stage C source is **implemented but not closed** because owner-local Windows compile/run evidence is still required.
+- Stage C deterministic test evidence: **Tests run `34746775306` succeeded** on commit `c3a432a819ea878caac0f26e19c27c20bfed17a1` with the eight-test suite after the contiguous/chronological baseline-evidence hardening.
+- App/WinUI Stage C and Stage D evidence-export source are **implemented but not closed** because owner-local Windows compile/run evidence is still required.
 - `v0.0.1` was historically published but was removed during a failed cloud replacement attempt; it remains a permanently reserved historical version and must not be reused.
 - The latest prerelease currently present on GitHub Releases is **`v0.0.0`**. The next publishable candidate from current source is **`v0.0.2`**, after exact-commit green Tests plus owner-local build/package validation.
 
@@ -204,19 +204,21 @@ Completed now in deterministic source:
 - early/late relative median drift above 20% is inconclusive;
 - >50% per-window deviation from the median is explicitly reported as extreme and never silently deleted;
 - unavailable/non-zero ETW loss, invalid latency/image events or event-limit hit invalidate a capture window;
+- baseline evidence window numbers must be contiguous from `1..N` and timestamps must be strictly chronological before early/late drift is interpreted;
 - overall result is only `Valid` when all required windows and both DPC/ISR p99 metric gates pass; otherwise it is `Inconclusive` with reasons.
 
-Important bug fixed during the Stage C review:
+Important bugs fixed during the Stage C review:
 
 - the previous single-observation UI considered any *known* ETW loss count clean, even when `EventsLost > 0`;
 - current source now requires zero loss and reports non-zero loss as a capture-integrity failure;
-- a lossy window cannot qualify for the repeated baseline.
+- a lossy window cannot qualify for the repeated baseline;
+- gapped or non-chronological baseline evidence can no longer be interpreted as a valid early/late sequence.
 
 Automated evidence:
 
-- one new high-blast-radius permanent test consolidates stable, drifted and ETW-loss baseline scenarios;
-- Tests run `34744320630` passed on commit `2070bbb6b55465e71d569a12930a298318259a2d`;
-- permanent suite is now 8/10.
+- one high-blast-radius permanent test consolidates stable, drifted, ETW-loss, gapped-window and non-chronological baseline scenarios;
+- Tests run `34746775306` passed on commit `c3a432a819ea878caac0f26e19c27c20bfed17a1`;
+- permanent suite remains 8/10.
 
 Still open before baseline quality can close:
 
@@ -249,14 +251,20 @@ Implemented in source but awaiting owner-local WinUI build/run evidence:
 - baseline `Valid` / `Inconclusive` quality verdict;
 - explicit noise, drift, sample-adequacy and integrity reasons;
 - explicit dashboard label separating stored interrupt configuration, allocated IRQ/resource assignment and runtime DPC/ISR evidence;
-- keyboard accelerators for refresh (`Ctrl+R`), single observation (`Ctrl+O`) and repeated baseline (`Ctrl+B`);
-- UI Automation names for capture progress, module coverage and evidence lists;
+- keyboard accelerators for refresh (`Ctrl+R`), single observation (`Ctrl+O`), repeated baseline (`Ctrl+B`) and evidence export (`Ctrl+E`);
+- UI Automation names for capture progress, module coverage, evidence lists and export status;
+- explicit manual JSON export for the latest completed observation or baseline;
+- observation export preserves the complete bounded protocol aggregates: capture provenance, DPC/ISR distributions, all returned processor aggregates, module aggregates and unresolved-routine aggregates;
+- baseline export preserves every completed raw aggregate capture plus derived window evidence, method version, metric quality and verdict reasons;
+- partial baseline evidence remains exportable after a stopped sequence but cannot become a valid baseline merely because it was exported;
+- 64-bit unresolved routine addresses are written as hexadecimal strings so JSON/JavaScript tooling cannot silently lose integer precision;
+- evidence serialization/export is outside authoritative capture windows; no export file I/O is inserted between baseline windows;
 - version-specific safety text removed so the read-only boundary does not drift when product version changes.
 
 Still required:
 
-- [ ] inspectable raw/auditable aggregates beyond the compact summary;
-- [ ] owner-local validation of the new repeated-baseline and keyboard/accessibility source;
+- [ ] owner-local validation of the repeated-baseline, evidence-export and keyboard/accessibility source;
+- [ ] verify exported JSON against the visible observation/baseline and record its SHA-256 during physical validation;
 - [ ] responsive-layout implementation and narrow-window/text-scaling sanity pass;
 - [ ] final screen-reader/focus-order sanity pass on physical WinUI after the current source compiles/runs locally.
 
@@ -266,7 +274,7 @@ Current durable contracts cover:
 
 1. experiment lifecycle rejects illegal transitions;
 2. benchmark verdict matrix preserves primary/guardrail semantics;
-3. repeated baseline quality gate rejects drift/capture-integrity failure and accepts stable evidence;
+3. repeated baseline quality gate rejects drift/capture-integrity/sequence-integrity failure and accepts stable evidence;
 4. non-finite measurements are rejected;
 5. one documented percentile estimator is authoritative;
 6. pipe framing fails closed on malformed/unknown/oversized/truncated input;
@@ -303,7 +311,7 @@ That evidence is useful but does **not** close Stage B for current `main`.
 1. Owner-local build/package the current tested `main` when a new physical-validation artifact is needed; cloud build/release is intentionally absent.
 2. Verify selected setup/portable checksum and `BUILD_INFO.txt` commit for packaged validation.
 3. Install/register the protected-path Service and launch the App non-elevated.
-4. Capture representative idle and controlled-load observations.
+4. Capture representative idle and controlled-load observations, export each aggregate JSON snapshot and record its SHA-256.
 5. Compare representative module/driver attribution against PerfView or LatencyMon where practical.
 6. Exercise App disconnect, Service stop/start and recovery; verify no stale `LatencyPilot-Kernel-*` ETW session remains.
 7. Record explicit zero-mutation evidence for interrupt affinity/MSI/CPU Sets/power/network/device policy.
@@ -311,7 +319,7 @@ That evidence is useful but does **not** close Stage B for current `main`.
 9. Where suitable hardware exists, capture multi-processor-group evidence.
 10. Profile LatencyPilot observer allocation/GC/CPU overhead only as needed to decide whether deeper capture-path optimization is justified.
 
-**Stage B closes only when:** the current locally built/package-identified source produces usable read-only observations on physical Windows 11, attribution is plausible against trusted external evidence, inventory/resource evidence is coherent, cleanup/privilege/zero-mutation boundaries hold, and no observer-overhead issue invalidates the measurements.
+**Stage B closes only when:** the current locally built/package-identified source produces usable read-only observations on physical Windows 11, attribution is plausible against trusted external evidence, inventory/resource evidence is coherent, cleanup/privilege/zero-mutation boundaries hold, exported evidence matches the observed result, and no observer-overhead issue invalidates the measurements.
 
 ## Stage C — repeated baseline and quality engine — IMPLEMENTED IN SOURCE, NOT CLOSED
 
@@ -323,12 +331,13 @@ Implementation order completed:
 4. drift detection implemented;
 5. explicit invalid/inconclusive reasons implemented;
 6. quality verdict/reasons UI source implemented;
-7. deterministic high-blast-radius test added without exceeding the cap.
+7. contiguous/chronological evidence validation added;
+8. deterministic high-blast-radius test expanded without exceeding the cap.
 
 Still open:
 
 1. owner-local WinUI compile/run;
-2. physical repeated-baseline evidence;
+2. physical repeated-baseline evidence plus exported JSON/SHA-256;
 3. reliable background/thermal quality signals where supportable;
 4. explicit optimizer/recommendation gating when that subsystem exists.
 
@@ -340,7 +349,7 @@ Still open:
 
 Work in order:
 
-1. raw/auditable aggregate inspection;
+1. owner-local verification that exported aggregate JSON matches the visible observation/baseline and remains outside the measurement window;
 2. owner-local verification of evidence-level labels and baseline invalid-state presentation;
 3. responsive narrow-window/text-scaling implementation;
 4. final keyboard/focus/screen-reader accessibility sanity pass.
