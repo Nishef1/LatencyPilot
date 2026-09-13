@@ -1,5 +1,4 @@
 using System.Globalization;
-using LatencyPilot.Core.Devices;
 using LatencyPilot.Platform.Windows.Devices;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -197,9 +196,9 @@ public sealed partial class MainWindow
         });
         stack.Children.Add(CreateSelectableEvidenceText(
             $"Instance: {device.InstanceId}\nService: {device.ServiceName ?? "—"} · Class: {device.ClassGuid:D}"));
-        stack.Children.Add(CreateEvidenceLine("Driver", FormatDriverEvidence(device.Driver)));
-        stack.Children.Add(CreateEvidenceLine("Stored configuration", FormatStoredInterruptEvidence(device.InterruptConfiguration)));
-        stack.Children.Add(CreateEvidenceLine("Allocated resources", FormatAllocatedInterruptEvidence(device.InterruptResources)));
+        stack.Children.Add(CreateEvidenceLine("Driver", FormatDriverEvidence(item)));
+        stack.Children.Add(CreateEvidenceLine("Stored configuration", FormatStoredInterruptEvidence(item)));
+        stack.Children.Add(CreateEvidenceLine("Allocated resources", FormatAllocatedInterruptEvidence(item)));
         return panel;
     }
 
@@ -231,8 +230,9 @@ public sealed partial class MainWindow
             _ => "Representative device",
         };
 
-    private static string FormatDriverEvidence(DriverMetadataSnapshot driver)
+    private static string FormatDriverEvidence(RepresentativeDeviceEvidence item)
     {
+        var driver = item.Device.Driver;
         if (!driver.IsAvailable)
         {
             return "metadata unavailable";
@@ -241,9 +241,10 @@ public sealed partial class MainWindow
         return $"provider {driver.Provider ?? "—"} · version {driver.Version ?? "—"} · INF {driver.InfPath ?? "—"}";
     }
 
-    private static string FormatStoredInterruptEvidence(InterruptConfigurationSnapshot configuration)
+    private static string FormatStoredInterruptEvidence(RepresentativeDeviceEvidence item)
     {
-        if (configuration.ReadStatus != InterruptConfigurationReadStatus.Available)
+        var configuration = item.Device.InterruptConfiguration;
+        if (configuration.ReadStatus != LatencyPilot.Core.Devices.InterruptConfigurationReadStatus.Available)
         {
             var native = configuration.NativeErrorCode is null
                 ? string.Empty
@@ -269,9 +270,10 @@ public sealed partial class MainWindow
         return $"{msi} · {messageLimit} · {policy} · {overrideMask}";
     }
 
-    private static string FormatAllocatedInterruptEvidence(InterruptResourceSnapshot resources)
+    private static string FormatAllocatedInterruptEvidence(RepresentativeDeviceEvidence item)
     {
-        if (resources.ReadStatus != InterruptResourceReadStatus.Available)
+        var resources = item.Device.InterruptResources;
+        if (resources.ReadStatus != LatencyPilot.Core.Devices.InterruptResourceReadStatus.Available)
         {
             var native = resources.NativeStatusCode is null
                 ? string.Empty
