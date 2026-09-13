@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace LatencyPilot.Platform.Windows.System;
 
@@ -20,7 +21,9 @@ public sealed record SystemPowerSnapshot(
     bool? BatteryPresent,
     bool? Charging,
     int? BatteryPercent,
-    bool? BatterySaverEnabled);
+    bool? BatterySaverEnabled,
+    Guid? ActiveSchemeId,
+    string? ActiveSchemeName);
 
 public sealed record RuntimeMeasurementContextSnapshot(
     SystemLoadSnapshot SystemLoad,
@@ -34,7 +37,8 @@ public sealed record RuntimeMeasurementContextInterval(
     public bool PowerContextChanged =>
         StartPower.LineState != EndPower.LineState ||
         StartPower.Charging != EndPower.Charging ||
-        StartPower.BatterySaverEnabled != EndPower.BatterySaverEnabled;
+        StartPower.BatterySaverEnabled != EndPower.BatterySaverEnabled ||
+        StartPower.ActiveSchemeId != EndPower.ActiveSchemeId;
 }
 
 public static class RuntimeMeasurementContextReader
@@ -42,6 +46,7 @@ public static class RuntimeMeasurementContextReader
     private const byte UnknownByte = byte.MaxValue;
     private const byte BatteryChargingFlag = 0x08;
     private const byte NoSystemBatteryFlag = 0x80;
+    private const uint ErrorSuccess = 0;
 
     public static RuntimeMeasurementContextSnapshot Capture() =>
         new(CaptureSystemLoad(), CapturePower());
@@ -129,13 +134,67 @@ public static class RuntimeMeasurementContextReader
             1 => true,
             _ => null,
         };
+        var (activeSchemeId, activeSchemeName) = TryCaptureActivePowerScheme();
 
         return new SystemPowerSnapshot(
             lineState,
             batteryPresent,
             charging,
             batteryPercent,
-            batterySaverEnabled);
+            batterySaverEnabled,
+            activeSchemeId,
+            activeSchemeName);
+    }
+
+    private static (Guid? SchemeId, string? SchemeName) TryCaptureActivePowerScheme()
+    {
+        var result = PowerGetActiveScheme(IntPtr.Zero, out var activePolicyGuid);
+        if (result != ErrorSuccess || activePolicyGuid == IntPtr.Zero)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            var schemeId = Marshal.PtrToStructure<Guid>(activePolicyGuid);
+            return (schemeId, TryReadPowerSchemeFriendlyName(schemeId));
+        }
+        finally
+        {
+            _ = LocalFree(activePolicyGuid);
+        }
+    }
+
+    private static string? TryReadPowerSchemeFriendlyName(Guid schemeId)
+    {
+        uint bufferSize = 0;
+        var result = PowerReadFriendlyName(
+            IntPtr.Zero,
+            ref schemeId,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            null,
+            ref bufferSize);
+        if (result != ErrorSuccess || bufferSize == 0)
+        {
+            return null;
+        }
+
+        var buffer = new byte[bufferSize];
+        result = PowerReadFriendlyName(
+            IntPtr.Zero,
+            ref schemeId,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            buffer,
+            ref bufferSize);
+        if (result != ErrorSuccess)
+        {
+            return null;
+        }
+
+        var name = Encoding.Unicode.GetString(buffer).TrimEnd('\0');
+        return string.IsNullOrWhiteSpace(name) ? null : name;
     }
 
     private static ulong ToUInt64(NativeFileTime value) =>
@@ -151,6 +210,23 @@ public static class RuntimeMeasurementContextReader
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetSystemPowerStatus(out NativeSystemPowerStatus systemPowerStatus);
+
+    [DllImport("powrprof.dll")]
+    private static extern uint PowerGetActiveScheme(
+        IntPtr userRootPowerKey,
+        out IntPtr activePolicyGuid);
+
+    [DllImport("powrprof.dll")]
+    private static extern uint PowerReadFriendlyName(
+        IntPtr rootPowerKey,
+        ref Guid schemeGuid,
+        IntPtr subgroupOfPowerSettingsGuid,
+        IntPtr powerSettingGuid,
+        [Out] byte[]? buffer,
+        ref uint bufferSize);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LocalFree(IntPtr memory);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeFileTime
