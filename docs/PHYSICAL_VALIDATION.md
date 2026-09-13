@@ -34,6 +34,7 @@ Primary NIC + driver:
 Primary xHCI/USB controller + driver:
 Power source:
 Active power plan:
+Windows configured power mode:
 Battery Saver state:
 Other monitoring/overlay tools running:
 ```
@@ -134,6 +135,7 @@ Event limit reached:
 Runtime system CPU busy %:
 Runtime power source:
 Runtime active power plan:
+Runtime configured Windows power mode:
 Runtime Battery Saver state:
 Runtime power context changed during capture? :
 ```
@@ -142,7 +144,9 @@ Runtime power context changed during capture? :
 
 `DPC >100 µs` and `ISR >25 µs` are driver-guidance context. `>1 ms` and `>3 ms` are LatencyPilot local diagnostic buckets only; they are not Windows pass/fail/user-impact severity boundaries.
 
-The runtime CPU/power values are **measurement provenance**, not a new pass/fail gate. They are sampled immediately before and after the authoritative ETW capture. A missing optional runtime-context sample must be shown/exported as unavailable rather than converted into a zero value, and it must not invalidate otherwise clean DPC/ISR evidence.
+The runtime CPU/power values are **measurement provenance**, not a new pass/fail gate. They bracket the App's capture request/response interval and therefore approximate the same five-second measurement context without changing the authoritative ETW aggregates. A missing optional runtime-context sample must be shown/exported as unavailable rather than converted into a zero value, and it must not invalidate otherwise clean DPC/ISR evidence.
+
+The active power plan and the Windows 11 user-configured power mode are separate context values. The configured mode is the user's Best power efficiency / Balanced / Best performance preference and can be overridden by other runtime system signals; LatencyPilot must not label it as the guaranteed effective runtime mode.
 
 A non-zero unresolved count is not automatically a failure. Unknown routine addresses remain unknown rather than being guessed.
 
@@ -152,14 +156,14 @@ Export the JSON and record its SHA-256:
 Get-FileHash .\LatencyPilot-observation-*.json -Algorithm SHA256
 ```
 
-The export should use `latencypilot-evidence-v5` and include at least:
+The export should use `latencypilot-evidence-v6` and include at least:
 
 - product/protocol version;
 - source revision when build metadata provides it;
 - export timestamp;
 - selected measurement scenario/context;
 - bounded non-personal environment/topology context;
-- best-effort runtime context (system CPU busy delta plus power source/Battery Saver/active power-plan state before and after capture);
+- best-effort runtime context (system CPU busy delta plus power source, Battery Saver, active power plan and user-configured Windows power mode before/after capture);
 - capture `RequestId`;
 - full bounded processor/module/unresolved-routine aggregates;
 - capture-integrity metadata.
@@ -172,7 +176,7 @@ Select **Real-world workload**. Run one repeatable workload that exercises a rep
 
 Keep that workload active during the five-second observation. Record the same fields as section 4 plus the exact workload and relevant application state.
 
-The visible runtime-context line should reflect the expected higher background/system load and the actual power source/plan in use. If the plan/source/Battery Saver state changes during the capture, preserve that fact with the evidence rather than treating the run as equivalent to one with stable power context.
+The visible runtime-context line should reflect the expected higher background/system load and actual power source/plan/configured mode. If the plan/source/configured mode/Battery Saver state changes during the capture, preserve that fact with the evidence rather than treating the run as equivalent to one with stable power context.
 
 Export separately and record its SHA-256. Do not overwrite the controlled-idle evidence artifact.
 
@@ -189,7 +193,7 @@ The current quiet baseline flow intentionally minimizes UI activity between auth
 - it waits for a settle interval before the first capture;
 - it does not redraw the full health card, module list, CPU list, tail chart or per-window list between capture windows;
 - between windows it updates only lightweight progress/status text;
-- runtime CPU/power snapshots are taken immediately around each capture without rendering full context between windows;
+- runtime CPU/power snapshots are taken around each capture request without rendering full context between windows;
 - the full observation cards are rendered only after the fifth capture is complete;
 - the final observation cards show the final window snapshot, while the baseline verdict uses all five windows.
 
@@ -210,7 +214,7 @@ DPC median / spread / drift:
 ISR median / spread / drift:
 Extreme windows reported:
 Runtime CPU busy average/range across sampled windows:
-Runtime power source/plan/Battery Saver summary:
+Runtime power source/plan/configured-mode/Battery-Saver summary:
 Did power context change during any window or across the sequence? :
 Overall verdict (Valid/Inconclusive):
 Reasons shown:
@@ -237,7 +241,7 @@ After complete or partial baseline termination, export JSON and record SHA-256. 
 - selected scenario/context;
 - every completed bounded aggregate capture and `RequestId`;
 - derived window evidence;
-- best-effort per-window runtime CPU/power context;
+- best-effort per-window runtime CPU/power context, including active plan and configured Windows power mode when available;
 - environment/topology provenance;
 - `baseline-quality-v1` identity;
 - metric quality;
@@ -338,7 +342,7 @@ Stage B requires:
 - Controlled-idle observation + JSON/SHA-256/RequestId;
 - Real-world workload observation + JSON/SHA-256/RequestId;
 - p99.9 adequacy behavior where naturally observable;
-- scenario provenance and runtime CPU/power-plan context in exported evidence;
+- scenario provenance and runtime CPU/power-plan/configured-mode context in exported evidence;
 - attribution plausibility comparison;
 - cleanup/disconnect/failure-path result;
 - representative inventory/resource evidence;
