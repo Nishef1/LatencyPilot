@@ -13,30 +13,24 @@ Last updated: 2026-09-13
 - Current desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
 - Privileged boundary: **read-only Windows Service; mutation commands do not exist**
 - Observation protocol: **v5**
+- Evidence schema: **latencypilot-evidence-v4**
 - Permanent automated tests: **8 / hard maximum 10**
 - Current stage: **Stage B physical validation open; Stage C source implemented but physical/runtime closure open; Stage D evidence UX partially implemented**
 
 ## Current automated evidence
 
-The hosted **Tests** workflow is a validation-only gate. It now performs:
+The hosted **Tests** workflow is intentionally **test-only**. It runs the eight permanent critical tests on `main` and pull requests.
 
-```text
-8 permanent critical tests
-→ Release compile LatencyPilot.Service
-→ Release compile LatencyPilot.App
-```
+Hosted Actions do **not** build or publish the WinUI App, build or publish the Service, create installers/portable packages, run GUI launch smoke, upload release artifacts or publish releases. This is an explicit repository policy in `AGENTS.md`.
 
-It does **not** publish the App/Service, run the published-App launch smoke, build Setup/portable distributions or publish GitHub releases.
+Therefore:
 
-Latest fully green code-affecting evidence before this documentation-sync wave:
+- deterministic contract correctness may use the hosted Tests workflow as evidence;
+- App/Service compile evidence must come from an owner-local Windows build;
+- package/launch-smoke evidence must come from the owner-local release path;
+- hardware behavior and latency claims require physical Windows 11 evidence.
 
-- commit `94b33908ee22ebf8c343c6b227e3e701dc97bd78`;
-- workflow run `34751602266`;
-- eight critical tests passed;
-- Service Release compile passed;
-- WinUI App Release compile passed.
-
-Documentation-only commits after that run do not replace the need for a green exact-HEAD validation run; final reporting must use the newest completed run for the final `main` revision.
+Rapid source commits may cancel superseded workflow runs through Actions concurrency. Final reporting must use a completed Tests run for the exact revision being claimed; a cancelled superseded run is not green evidence for a newer revision.
 
 ## Phase 0 — CLOSED
 
@@ -69,7 +63,7 @@ Phase 1 established the solution, deterministic comparison/domain foundation, fo
 - ACL narrowed to local interactive/service identities;
 - after connection, client Windows session must match the active console session;
 - failure to establish client-session identity fails closed;
-- RDP/multi-session observation is **not** implied by the current Phase 2 rule;
+- RDP/multi-session observation is not implied by the current Phase 2 rule;
 - disconnect/protocol activity cancels active capture work;
 - deadlines remain bounded;
 - current observation authorization is explicitly not future mutation authorization.
@@ -82,28 +76,22 @@ Contract: `docs/DIAGNOSTICS.md`.
 - Service logs under `%PROGRAMDATA%\LatencyPilot\Logs\Service`;
 - bounded rolling/retention;
 - async non-blocking file sinks;
+- `live.ps1` can stream the structured App/Service logs with component prefixes during development;
 - App → IPC → Service correlation through `RequestId`;
 - protocol-v5 capture evidence preserves the same `RequestId`;
-- expected capture-unavailable paths log failure kind/native error through EventId `1006`;
-- rejected non-active client sessions log EventId `1007`;
+- expected capture-unavailable paths retain structured failure provenance;
 - raw per-event DPC/ISR logging remains prohibited from the measurement hot path.
 
-### Protected Service installation
+### Protected Service installation and local development
 
 - portable App may remain in a user-controlled extracted directory;
 - Service payload is copied to `%ProgramFiles%\LatencyPilot\Service` before LocalSystem registration;
 - normal installer use avoids copying the protected payload onto itself;
-- uninstall removes Service registration and the protected managed Service copy.
-
-### Development/release ownership
-
-- normal development uses Visual Studio/`dev.ps1` or `live.ps1`;
-- `live.ps1` keeps the App non-elevated and requests UAC only for protected Service installation/update;
-- remote `origin/main` auto-pull in `live.ps1` is **disabled by default** because shared/Service changes can lead to a privileged Service rebuild/reinstall;
-- `-AutoPull` is the explicit opt-in;
-- `scripts/Publish-Release.ps1` is the owner-run publish/package path;
-- release versions are immutable; existing release/tag identities are refused rather than replaced;
-- owner-local publication still owns self-contained publish, PRI validation, App launch smoke, Setup/portable and GitHub prerelease publication.
+- uninstall removes Service registration and the protected managed Service copy;
+- `run.ps1` builds locally, updates the protected Service through UAC and launches the App non-elevated;
+- `live.ps1` keeps the App non-elevated, uses `dotnet watch` for the App and keeps privileged ETW inside the installed Service;
+- `live.ps1` remote `origin/main` auto-pull is disabled by default; `-AutoPull` is an explicit opt-in because shared/Service changes can trigger privileged Service replacement;
+- `scripts/Publish-Release.ps1` remains the owner-run build/package/release path.
 
 Historical release note: `v0.0.1` was publicly published and later removed during the failed cloud replacement flow. It remains permanently reserved and must not be reused. The next candidate is `v0.0.2`.
 
@@ -157,15 +145,16 @@ Implemented:
 Interpretation rules:
 
 - `DPC >100 µs` and `ISR >25 µs` are Microsoft driver guidance;
-- `>1 ms` and `>3 ms` are LatencyPilot local diagnostic tail buckets, **not** official Windows pass/fail or user-impact severity boundaries;
-- an integrity-warning capture cannot receive a healthy classification merely because threshold counts are low.
+- `>1 ms` and `>3 ms` are LatencyPilot local diagnostic tail buckets, not official Windows pass/fail or user-impact severity boundaries;
+- an integrity-warning capture cannot receive a healthy classification merely because threshold counts are low;
+- raw counts, p99/max, attribution and capture integrity remain authoritative; color/badges are supplemental interpretation cues.
 
 Still open:
 
 - physical current-Service capture/cleanup validation;
 - active-session rejection validation with a second local session where practical;
-- attribution plausibility against PerfView/LatencyMon where practical;
-- observer overhead profiling only if physical evidence shows a meaningful measurement risk.
+- attribution plausibility against an independent observer where practical;
+- observer overhead profiling if physical evidence shows a meaningful measurement risk.
 
 ## 2.3 Baseline quality — IMPLEMENTED IN SOURCE, NOT CLOSED
 
@@ -176,50 +165,70 @@ Still open:
 - clean capture integrity;
 - <=30% relative P10–P90 spread;
 - <=20% early/late drift;
-- no >50% extreme-window deviation.
+- no >50% extreme-window deviation;
+- contiguous `WindowNumber` (`1..N`) as the authoritative sequence;
+- `StartedAtUtc` as provenance rather than a monotonic sequencing clock.
 
-Important sequence rule:
+The consolidated baseline test covers stable, drifted, ETW-loss, gapped-window and backwards-wall-clock scenarios without increasing the permanent test count.
 
-- contiguous `WindowNumber` (`1..N`) is authoritative;
-- `StartedAtUtc` is provenance, not a monotonic clock;
-- an NTP/VM/manual wall-clock adjustment must not crash or invalidate an otherwise contiguous in-process sequence.
+### Quiet repeated-measurement flow
 
-The existing consolidated baseline test covers stable, drifted, ETW-loss, gapped-window and backwards-wall-clock scenarios without increasing the permanent test count.
+The current WinUI source deliberately reduces observer activity during the five-window baseline sequence:
+
+- the chosen measurement scenario is frozen while capture is busy;
+- the UI is given a settle delay before the first capture;
+- no full observation card, module list, processor list, health chart or baseline-window list is redrawn between authoritative capture windows;
+- only lightweight progress/status text is updated between captures;
+- the final observation rendering occurs only after the fifth capture is complete;
+- the baseline verdict still uses all five windows, not merely the final displayed observation;
+- partial baseline evidence remains exportable after a stopped sequence but cannot become valid merely because it was exported.
+
+This is source-level observer-noise hardening, not proof that UI overhead is negligible. Physical profiling/validation remains authoritative.
 
 Still open:
 
 - owner-local/physical five-window execution through the real Service;
 - physical idle + controlled-load quality evidence;
-- authoritative low-overhead background-load and thermal/power warnings if defensible signals are chosen;
+- verify that quiet sequencing behaves correctly with the real compositor/workloads;
+- authoritative low-overhead background-load and thermal/power warnings only if defensible signals are chosen;
 - future optimizer integration must require `IsValidForComparison` before any mutation/keep recommendation can be enabled.
 
 ## 2.4 Evidence UX — IMPLEMENTED IN SOURCE, PHYSICAL VALIDATION OPEN
 
-Implemented/compiled:
+Implemented in source:
 
 - read-only service/safety status;
 - five-second observation;
 - counts, p99/max and sample-gated p99.9;
+- explicit `Need ≥1k` p99.9 state when fewer than 1,000 samples support that tail percentile, while p99/max remain visible;
 - capture-integrity warning state;
 - CPU concentration and bounded module contributors;
+- latency-health badge plus exact-value tail-rate visualization;
+- `>1 ms` / `>3 ms` wording explicitly marked as local diagnostic buckets rather than Windows severity thresholds;
+- explicit selectable measurement scenarios: **Real-world workload**, **Controlled idle**, **Before / after comparison**;
+- scenario-specific guidance tells the user when apps should stay open or be closed;
+- scenario changes invalidate stale visible/export evidence so an old capture cannot be presented under a new context;
 - repeated baseline progress/verdict/reasons UI;
 - explicit configuration vs assigned-resource vs runtime-evidence wording;
 - keyboard accelerators (`Ctrl+R`, `Ctrl+O`, `Ctrl+B`, `Ctrl+E`);
-- accessibility/high-contrast improvements and automation names;
+- accessibility/high-contrast resources and automation metadata;
+- decorative tail bars are removed from the accessibility control view while exact count/denominator/percentage text remains available;
 - adaptive narrow/wide workspace source;
 - manual JSON evidence export;
-- evidence schema `latencypilot-evidence-v3`;
-- observation/baseline export contains bounded capture aggregates, `RequestId`, protocol/product version and bounded non-personal environment provenance;
+- evidence schema `latencypilot-evidence-v4`;
+- observation/baseline export contains bounded capture aggregates, `RequestId`, protocol/product version, measurement scenario/context and bounded non-personal environment provenance;
+- source revision is recorded from build/assembly source-revision metadata when available;
 - unresolved `ulong` routine addresses serialize as hexadecimal strings;
 - export serialization/file I/O stays outside authoritative baseline capture windows.
 
 Still open:
 
-- owner-local runtime validation of the current WinUI source;
+- owner-local compile/runtime validation of the current WinUI source;
 - verify JSON content against visible observation/baseline and retain SHA-256;
 - narrow-window/text-scaling sanity on physical WinUI;
-- focus/screen-reader sanity;
-- physical evidence that capture-warning and sample-insufficient p99.9 states present correctly.
+- keyboard focus/screen-reader sanity;
+- physical evidence that capture-warning, sample-insufficient p99.9 and scenario-change invalidation present correctly;
+- remove or simplify any duplicate explanatory surfaces only after the physical UI pass shows they are redundant.
 
 ## Permanent critical suite — 8 / 10
 
@@ -240,11 +249,12 @@ Two slots remain. They are intentionally not pre-reserved. A future parser/recov
 
 Runbook: `docs/PHYSICAL_VALIDATION.md`.
 
-Required closure evidence now includes:
+Required closure evidence includes:
 
-- exact package commit + green hosted validation run;
-- owner-local published-App launch smoke;
-- protected Service path;
+- exact source revision + completed green Tests run for deterministic contracts;
+- owner-local App/Service build on Windows 11;
+- owner-local published-App launch smoke when release validation is performed;
+- protected Service path and LocalSystem/SCM behavior;
 - idle + controlled-load observations;
 - exported evidence JSON + SHA-256 + RequestId correlation;
 - active-console authorization behavior;
@@ -252,7 +262,7 @@ Required closure evidence now includes:
 - module/processor plausibility;
 - representative inventory/resource evidence;
 - explicit zero-mutation evidence;
-- uninstall/service-removal evidence.
+- uninstall/service-removal evidence where packaging is being validated.
 
 Stage B cannot close from CI/VM evidence alone.
 
@@ -260,26 +270,29 @@ Stage B cannot close from CI/VM evidence alone.
 
 Next ordered work:
 
-1. execute the five-window baseline on current packaged/owner-local source;
-2. preserve complete/partial exported JSON and hashes;
-3. confirm Valid/Inconclusive reasons match capture integrity/noise/drift reality;
-4. repeat under one controlled workload;
-5. decide from physical evidence whether additional background/thermal context is required before closure.
+1. owner-local compile/run current `main`;
+2. execute a five-window **Controlled idle** baseline with the quiet baseline flow;
+3. execute a five-window **Real-world workload** baseline under one repeatable workload;
+4. preserve complete/partial exported JSON and SHA-256 hashes;
+5. confirm Valid/Inconclusive reasons match capture integrity/noise/drift reality;
+6. inspect whether the App itself measurably perturbs the baseline before adding any deeper observer-overhead machinery;
+7. decide from physical evidence whether additional background/thermal/power context is required before closure.
 
 Stage C closes only when the real App → Service → ETW path distinguishes a trustworthy repeated baseline from an unstable/incomplete run.
 
 ## Stage D — Phase 2 evidence UX completion — PARTIAL
 
-After Stage B/C physical evidence:
+After current owner-local/physical evidence:
 
-1. finish any responsive/text-scaling corrections exposed by physical UI;
-2. finish focus/screen-reader corrections;
-3. verify evidence export usability and auditability;
-4. perform the Phase 2 UX/claim step-back review.
+1. finish any responsive/text-scaling corrections exposed by real WinUI rendering;
+2. finish keyboard focus/screen-reader corrections;
+3. verify the scenario selector, health interpretation and evidence export are understandable without hiding raw numbers;
+4. verify evidence export usability/auditability against the visible UI;
+5. perform the Phase 2 UX/claim step-back review.
 
 ## After Phase 2
 
-Phase 3 begins with the safety substrate, **not** with a tweak:
+Phase 3 begins with the safety substrate, not with a tweak:
 
 1. SQLite durable experiment journal/recovery state;
 2. mutation-specific authorization/allowlist extension;
@@ -294,8 +307,8 @@ No mutation work may bypass Stage B/C/D or the Phase 3 safety substrate.
 
 - source version: `0.0.2`;
 - `v0.0.1` is historical/reserved and never reusable;
-- hosted workflow supplies tests + App/Service compile evidence only;
-- owner-local publisher supplies publish/package/runtime launch-smoke evidence;
+- hosted workflow supplies permanent-test evidence only;
+- owner-local Windows owns App/Service compile, publish/package and runtime launch-smoke evidence;
 - published versions are immutable;
 - `main` is the default target for owner-directed automation; do not create/switch branches unless the owner explicitly requests it.
 
