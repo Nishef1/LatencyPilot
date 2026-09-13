@@ -1,156 +1,157 @@
 # Physical Windows 11 Validation
 
-This runbook is for **Stage B** physical validation of the read-only `0.0.x` LatencyPilot observation path and the companion Stage C repeated-baseline evidence. It does not authorize or test system mutation.
+This runbook closes the read-only Phase 2 measurement substrate on physical Windows 11 hardware. It does **not** authorize system mutation.
 
-## Preconditions
+Current authoritative contracts:
 
-- physical Windows 11 x64 machine;
-- exact `main` revision or matching owner-local release candidate identified before testing;
+```text
+Product:             0.0.x pre-alpha
+Observation protocol: v6
+Evidence schema:      latencypilot-evidence-v8
+Quick snapshot:       1 × 5 s, diagnostic only
+Decision baseline:    baseline-quality-v2
+                      5 × 20 s authoritative windows
+                      5 s LatencyPilot/service settle before window 1
+                      750 ms inter-window settle
+Permanent tests:      8/10 maximum slots currently used
+```
+
+## 1. Preconditions
+
+Use a physical Windows 11 x64 machine and record the exact clean `main` revision before testing.
+
+Required conditions:
+
 - App runs as a normal/non-elevated user;
-- elevation is used only for setup/protected Service installation/update/uninstall;
-- `LatencyPilot.Observation` runs from the protected Program Files Service path under the Windows Service Control Manager;
-- exact source revision has a completed green hosted **Tests** run for the eight permanent deterministic tests;
-- App/Service compile and runtime evidence comes from the owner-local Windows machine, not hosted CI;
-- `docs/DIAGNOSTICS.md` is available for App/Service log correlation.
+- elevation is used only for protected Service installation/update/removal;
+- `LatencyPilot.Observation` runs under the Service Control Manager from the protected Program Files Service path;
+- exact source revision has a completed green hosted **Tests** run;
+- App/Service compile and runtime evidence comes from the owner-local Windows machine because hosted CI intentionally remains test-only;
+- mutation remains unavailable;
+- the active local console session is used for the current Phase 2 authorization model.
 
-The current Phase 2 privileged path supports the **active local console session**. RDP/multi-session support is not implied; broader authorization requires a deliberate design rather than weakening this rule.
-
-Record before starting:
+Record:
 
 ```text
 LatencyPilot version:
 Source revision:
 Hosted Tests run:
 Local build command/result:
-Distribution (source/setup/portable):
-Distribution SHA-256 when applicable:
-App launch-smoke result when applicable:
 Windows edition/build:
-Interactive session notes:
-CPU:
-Motherboard/firmware:
+CPU/topology:
 GPU + driver:
 Primary NIC + driver:
-Primary xHCI/USB controller + driver:
-Power source:
-Active power plan:
-Windows configured power mode:
+Primary xHCI controller + driver:
+Power source / plan / configured mode:
 Battery Saver state:
-Other monitoring/overlay tools running:
+Foreground workload/version/scene where applicable:
+Other overlays/monitoring tools:
 ```
 
-## 1. Install/update the protected Service
+## 2. Build, install Service, launch App
 
-For normal source validation from the repository, run from a non-elevated terminal:
+From a normal terminal at the exact clean source revision:
 
 ```powershell
 .\run.ps1
 ```
 
-The script locally builds App/Service, requests UAC only for protected Service installation/update, and launches the App non-elevated.
+The script builds locally, requests UAC only for protected Service installation/update, and launches the App non-elevated.
 
-For setup/portable validation, use the matching release tooling. The privileged Service payload must resolve to:
-
-```text
-%ProgramFiles%\LatencyPilot\Service\LatencyPilot.Service.exe
-```
-
-Verify from elevated PowerShell:
+Verify the Service from elevated PowerShell:
 
 ```powershell
 Get-Service LatencyPilot.Observation
 sc.exe qc LatencyPilot.Observation
 ```
 
-Expected state: `Running`; the configured binary path must use the protected Program Files Service location.
-
-The App must not enable kernel capture merely because something answered the Named Pipe. The status response must prove that the observation host is the installed Windows Service and that the expected kernel-capture privilege context is present while mutation remains disabled.
-
-## 2. Start the App without elevation
-
-Launch LatencyPilot as a normal user in the active local console session. Confirm:
-
-- visible product version is expected;
-- Service reports connected/read-only;
-- mutation remains unavailable;
-- stored configuration, allocated resource assignment and runtime DPC/ISR evidence are presented as separate evidence levels.
-
-Exercise the keyboard paths once:
+Expected Service payload:
 
 ```text
-Ctrl+R  refresh service
-Ctrl+O  capture one observation
-Ctrl+B  build repeated baseline
-Ctrl+E  export completed aggregate evidence
+%ProgramFiles%\LatencyPilot\Service\LatencyPilot.Service.exe
 ```
 
-`Ctrl+E` must be unavailable with no completed evidence and while a capture sequence is busy.
+The App must prove through the status contract that the host is the installed Windows Service with the expected kernel-capture privilege context and that mutation is disabled. A process merely answering the pipe is insufficient.
 
-If a failure occurs, preserve the visible message plus matching App/Service structured log entries. Protocol v5 capture evidence carries the capture `RequestId` used for log correlation.
+Verify the visible header carries the expected clean source revision rather than `dirty` or revision-unavailable provenance.
 
-## 3. Measurement-scenario semantics
+## 3. Keyboard and state sanity
 
-Before each observation or repeated baseline, select the scenario that actually describes the run.
+Exercise once:
+
+```text
+Ctrl+R  refresh Service
+Ctrl+O  quick diagnostic snapshot
+Ctrl+B  repeated decision baseline
+Ctrl+E  export latest completed evidence
+```
+
+`Ctrl+E` must remain unavailable when no completed evidence exists and while a measurement sequence is active.
+
+Protocol v6 capture responses carry unique `RequestId` values for App/Service log correlation.
+
+## 4. Scenario semantics
+
+Select the scenario that actually describes the measurement.
 
 ### Controlled idle
 
-Use for an idle/noise-floor run. Close unnecessary applications and avoid unrelated background work during the measurement.
+Close unnecessary applications and avoid unrelated user work. Normal background Windows activity is part of the idle noise floor; do not fake an impossible zero-activity machine.
 
 ### Real-world workload
 
-Use when diagnosing gaming, browser/video, audio, Discord or another workload. Keep the applications that reproduce the behavior open; their activity is part of the evidence.
+Keep the applications or game that reproduce the issue open. They are part of the evidence. Before starting a **decision baseline**, put the workload at a warmed and repeatable point: for example the same game scene/action loop or application operation.
+
+Do not close relevant apps merely to make the numbers look better.
 
 ### Before / after comparison
 
-Use for a future controlled A/B comparison. Keep apps, workload, power state and background activity consistent on both sides. Consistency matters more than closing everything.
+Use the same warmed workload, foreground applications, power state and background conditions on both sides as closely as practical.
 
-The selected scenario is evidence provenance. Changing the selector after an existing result must invalidate stale visible/export evidence rather than relabeling an old capture under a new context.
+The scenario is evidence provenance. Changing it after a completed measurement must invalidate stale visible/export evidence rather than relabel an old run.
 
-## 4. Controlled-idle observation
+## 5. Quick diagnostic snapshot
 
-Select **Controlled idle**, let the machine settle, then run one five-second observation.
+A quick snapshot is exactly one five-second DPC/ISR capture. It is useful for proving the observation path and generating hypotheses, not for deciding whether the machine is globally healthy or whether a tweak should be kept.
+
+Take at least one **Real-world workload** quick snapshot on the final candidate. Controlled-idle quick snapshot is useful but the decision-grade requirement is the repeated baseline below.
 
 Record:
 
 ```text
 Scenario:
-DPC count:
-ISR count:
-DPC p99 / p99.9 / max:
-ISR p99 / p99.9 / max:
-DPC >100 us count/rate:
-ISR >25 us count/rate:
-DPC/ISR >1 ms local-bucket count/rate:
-DPC/ISR >3 ms local-bucket count/rate:
-Observed processors:
-Resolved module events:
-Unresolved module events:
-Resolved percentage:
-Top resolved modules:
-Top observed CPUs:
+Requested / actual duration:
+DPC count / p99 / p99.9 when available / max:
+ISR count / p99 / p99.9 when available / max:
+DPC >100 us reference count/rate:
+ISR >25 us reference count/rate:
+DPC/ISR >1 ms local-bucket count:
+DPC/ISR >3 ms local-bucket count:
+Top CPUs / concentration:
+Resolved / unresolved attribution counts:
+Top modules:
 ETW events lost:
 Invalid latency events:
 Invalid image events:
 Event limit reached:
-Runtime system CPU busy %:
-Runtime power source:
-Runtime active power plan:
-Runtime configured Windows power mode:
-Runtime Battery Saver state:
-Runtime power context changed during capture? :
+Runtime CPU busy %:
+Power source / plan / configured mode / Battery Saver:
+Power context changed during capture? :
 ```
 
-`p99.9` must be visibly withheld when the corresponding distribution contains fewer than 1,000 samples. The UI should explain that more samples are required while leaving p99/max available.
+Interpretation rules:
 
-`DPC >100 µs` and `ISR >25 µs` are driver-guidance context. `>1 ms` and `>3 ms` are LatencyPilot local diagnostic buckets only; they are not Windows pass/fail/user-impact severity boundaries.
+- `DPC >100 µs` and `ISR >25 µs` are Microsoft driver-duration guidance references, not LatencyPilot pass/fail thresholds.
+- `>1 ms` and `>3 ms` are local diagnostic buckets, not official Windows severity categories.
+- CPU0 concentration is an observation/hypothesis, not an automatic fault.
+- no threshold exceedance in one five-second snapshot is not proof of a consistently clean machine.
+- a p99.9 value is exposed only when that distribution has at least **10,000 samples** under protocol v6.
 
-The runtime CPU/power values are **measurement provenance**, not a new pass/fail gate. They bracket the App's capture request/response interval and therefore approximate the same five-second measurement context without changing the authoritative ETW aggregates. A missing optional runtime-context sample must be shown/exported as unavailable rather than converted into a zero value, and it must not invalidate otherwise clean DPC/ISR evidence.
+Microsoft's ETW documentation requires monitoring lost events. Any unavailable/non-zero loss count, invalid event/image evidence, or event-limit hit makes the capture unsuitable for decision-grade use. cite not applicable in repo document; see BENCHMARK_METHODOLOGY.md references
 
-The active power plan and the Windows 11 user-configured power mode are separate context values. The configured mode is the user's Best power efficiency / Balanced / Best performance preference and can be overridden by other runtime system signals; LatencyPilot must not label it as the guaranteed effective runtime mode.
+### Export and verify snapshot
 
-A non-zero unresolved count is not automatically a failure. Unknown routine addresses remain unknown rather than being guessed.
-
-Export the JSON and record its SHA-256:
+Export JSON and record its SHA-256:
 
 ```powershell
 Get-FileHash .\LatencyPilot-observation-*.json -Algorithm SHA256
@@ -160,106 +161,100 @@ Get-FileHash .\LatencyPilot-observation-*.json -Algorithm SHA256
   -RequireCleanCapture
 ```
 
-The verifier separates envelope/provenance validity from measurement integrity. `-RequireCleanCapture` fails if the capture has ETW loss, invalid latency/image events or reaches the event limit.
-
-The export should use `latencypilot-evidence-v7` and include at least:
-
-- product/protocol version;
-- source revision when build metadata provides it;
-- export timestamp;
-- selected measurement scenario/context;
-- bounded non-personal environment/topology context;
-- best-effort runtime context (system CPU busy delta plus power source, Battery Saver, active power-scheme GUID and user-configured Windows power mode before/after capture);
-- capture `RequestId`;
-- full bounded processor/module/unresolved-routine aggregates;
-- capture-integrity metadata.
-
-The local UI may display the active power-plan friendly name for readability, but evidence-v7 must **not** persist that potentially user-defined friendly name. The active scheme GUID and configured power-mode provenance remain exportable.
-
-Unresolved 64-bit routine addresses must remain hexadecimal strings in JSON.
-
-## 5. Real-world controlled-load observation
-
-Select **Real-world workload**. Run one repeatable workload that exercises a representative path, such as a GPU workload, controlled network transfer, known USB activity or the actual application/game that reproduces the problem.
-
-Keep that workload active during the five-second observation. Record the same fields as section 4 plus the exact workload and relevant application state.
-
-The visible runtime-context line should reflect the expected higher background/system load and actual power source/plan/configured mode. If the plan/source/configured mode/Battery Saver state changes during the capture, preserve that fact with the evidence rather than treating the run as equivalent to one with stable power context.
-
-Export separately and record its SHA-256. Do not overwrite the controlled-idle evidence artifact.
-
-A single observation remains an observation, not a baseline and not proof of an optimization.
-
-## 6. Repeated baseline quality — Stage C companion evidence
-
-### 6.1 Controlled-idle baseline
-
-Select **Controlled idle**, return the machine to the intended idle condition and let it settle. Press **Build baseline**.
-
-The current repeated-baseline flow intentionally minimizes UI activity between authoritative windows:
-
-- it waits for a settle interval before the first capture;
-- it does not redraw the full health card, module list, CPU list, tail chart or per-window list between capture windows;
-- between windows it updates only lightweight progress/status text;
-- runtime CPU/power snapshots are taken around each capture request without rendering full context between windows;
-- the full observation cards are rendered only after the fifth capture is complete;
-- the final observation cards show the final window snapshot, while the baseline verdict uses all five windows.
-
-If detailed contributor lists/charts visibly redraw between windows, treat that as a regression in the low-observer-activity measurement contract.
-
-Record:
+Expected envelope:
 
 ```text
-Scenario:
-Method version:
-Window count:
-Window 1 integrity / DPC count+p99 / ISR count+p99:
-Window 2 integrity / DPC count+p99 / ISR count+p99:
-Window 3 integrity / DPC count+p99 / ISR count+p99:
-Window 4 integrity / DPC count+p99 / ISR count+p99:
-Window 5 integrity / DPC count+p99 / ISR count+p99:
-DPC median / spread / drift:
-ISR median / spread / drift:
-Extreme windows reported:
-Runtime CPU busy average/range across sampled windows:
-Runtime power source/plan/configured-mode/Battery-Saver summary:
-Did power context change during any window or across the sequence? :
-Overall verdict (Valid/Inconclusive):
-Reasons shown:
+schema:   latencypilot-evidence-v8
+purpose:  quick-diagnostic-snapshot
+protocol: 6
 ```
 
-Window numbers `1..N` are the authoritative in-process order. `StartedAtUtc` is provenance, not a monotonic sequencing clock; wall time can move backwards.
+The verifier must explicitly report that a quick snapshot is diagnostic only and is not a benchmark verdict.
 
-For `baseline-quality-v1`, a clean five-window run can still be `Inconclusive` because of insufficient samples, >30% relative P10-P90 noise, >20% early/late drift, or >50% extreme-window deviation. Do not discard inconvenient windows.
+Evidence should contain source/product/protocol provenance, scenario, bounded environment/topology context, best-effort runtime CPU/power context, unique RequestId, processor/module/unresolved aggregates and capture-integrity metadata.
 
-Any non-zero ETW loss, invalid latency/image event or event-limit hit makes the affected window ineligible. A lossy/incomplete capture must not receive a healthy interpretation simply because measured values look low.
+User-defined power-plan friendly names may remain local UI text; persist stable identifiers rather than unnecessary personal labels.
 
-Runtime CPU/power context is not part of the `baseline-quality-v1` validity formula. It exists so a human/future comparison layer can identify obviously mismatched test conditions without silently changing the versioned baseline methodology.
+## 6. Repeated decision baseline — `baseline-quality-v2`
 
-### 6.2 Real-world repeated baseline
+The decision-grade sequence is:
 
-Repeat the five-window flow under one repeatable **Real-world workload**. Keep workload state as consistent as practical through all five windows.
+```text
+workload already warmed/repeatable by the user
+↓
+5 s LatencyPilot/service settle
+↓
+20 s window 1
+750 ms settle
+20 s window 2
+750 ms settle
+20 s window 3
+750 ms settle
+20 s window 4
+750 ms settle
+20 s window 5
+```
 
-The purpose is to verify that quality/noise/drift reasons behave sensibly under a controlled non-idle condition, not to claim an optimization.
+The initial five seconds are **not workload warm-up**. Do not start the sequence while a game is still loading/shader-compiling unless startup behavior itself is the intended workload.
 
-### 6.3 Export baseline evidence
+Detailed module/CPU/tail UI should not be fully redrawn between authoritative windows; lightweight progress text is acceptable. The full cards are rendered after the sequence to reduce observer activity.
 
-After complete or partial baseline termination, export JSON and record SHA-256. The baseline export must include:
+### 6.1 Real-world decision baseline
 
-- selected scenario/context;
-- every completed bounded aggregate capture and `RequestId`;
-- derived window evidence;
-- best-effort per-window runtime CPU/power context, including active scheme GUID and configured Windows power mode when available;
-- environment/topology provenance;
-- `baseline-quality-v1` identity;
-- metric quality;
-- all verdict reasons.
+Select **Real-world workload**. Put the workload in the repeatable state confirmed by the two preparation checks and start **Build baseline**.
 
-As with observation evidence, user-defined power-plan friendly names must remain local UI context and must not be persisted in evidence-v7 JSON.
+For every window record:
 
-Export serialization/file I/O must occur only after the capture sequence stops or completes; it must not add file I/O between authoritative windows.
+```text
+Window number:
+Requested / actual duration:
+Capture integrity:
+DPC event count / p99:
+ISR event count / p99:
+Runtime CPU busy %:
+Power context:
+```
 
-For a baseline intended to close Stage C, verify it with both strict switches:
+Then record:
+
+```text
+DPC p99 median / P10-P90 relative spread / early-late drift:
+ISR p99 median / P10-P90 relative spread / early-late drift:
+Extreme windows:
+Overall status:
+All reasons:
+```
+
+A v2 window is eligible only when:
+
+```text
+requested duration >= 20,000 ms
+actual duration >= 95% of request
+capture integrity clean
+DPC count >= 1,000
+ISR count >= 1,000
+finite positive DPC/ISR p99
+```
+
+The complete baseline is `Valid` only when all five windows are eligible and both DPC and ISR p99 stability screens pass:
+
+```text
+P10-P90 relative spread <= 30%
+early/late relative drift <= 20%
+no >50% extreme-window deviation
+```
+
+Do not delete an inconvenient window to make the result pass.
+
+### 6.2 Controlled-idle decision baseline
+
+Return the machine to the intended controlled-idle state, confirm both preparation checks again and run the same five × 20-second sequence.
+
+This establishes a second context: the machine's repeatable idle behavior rather than the real-world workload behavior. A difference between idle and real-world concentration is useful evidence; neither context should be substituted for the other.
+
+### 6.3 Export and verify each baseline
+
+Export each scenario separately. Do not overwrite artifacts.
 
 ```powershell
 .\scripts\Verify-Evidence.ps1 .\LatencyPilot-baseline-*.json `
@@ -269,43 +264,34 @@ For a baseline intended to close Stage C, verify it with both strict switches:
   -RequireValidBaseline
 ```
 
-`-RequireValidBaseline` requires `baseline-quality-v1`, exactly five aligned captures, `Status=Valid`, `IsValidForComparison=true`, and five of five valid capture windows. Partial or unstable baselines remain legitimate diagnostic evidence but cannot pass this closure-ready gate.
+Expected envelope:
 
-## 7. External plausibility comparison
+```text
+schema:               latencypilot-evidence-v8
+purpose:              repeated-decision-baseline
+baselineMethodVersion: baseline-quality-v2
+protocol:             6
+captures/windows:     exactly 5 aligned entries
+```
 
-Where practical, compare the same machine/workload with an independent observer such as WPA/PerfView or LatencyMon.
+The verifier independently enforces five clean windows, duration adequacy, >=1,000 DPC and ISR events per window and `Status=Valid` / `IsValidForComparison=true`.
 
-The comparison is for broad plausibility of:
+A partial or noisy baseline remains useful diagnostic evidence but must not pass the closure gate.
+
+## 7. Plausibility against an independent observer
+
+Where practical, compare a representative workload with WPA/PerfView or LatencyMon for broad plausibility of:
 
 - DPC/ISR activity;
 - dominant module identities;
 - broad processor concentration;
 - absence of impossible attribution.
 
-Exact counts/percentiles are not required to match because capture windows, aggregation and observer overhead differ.
+Exact counts/percentiles need not match because windows and observer overhead differ. If LatencyPilot attributes an address to an image that cannot authoritatively contain it, treat that as a blocker.
 
-If LatencyPilot maps an address to an image that cannot authoritatively contain it, treat that as a blocker.
+## 8. Representative device evidence
 
-## 8. Failure-path and authorization cleanup
-
-Exercise at least:
-
-1. close the App during an active observation;
-2. relaunch and verify a new status request is accepted promptly;
-3. stop the Service during or immediately after an observation;
-4. start the Service again and reconnect the normal-user App;
-5. run another observation after recovery;
-6. close the App during a repeated-baseline window and confirm a partial sequence cannot become `Valid`;
-7. where practical, exercise malformed/incompatible local protocol input in a controlled developer environment and verify bounded rejection;
-8. where a second interactive session exists, verify a client outside the active console session is rejected without weakening the authorization rule.
-
-After capture-related failure cases, verify no stale `LatencyPilot-Kernel-*` ETW session remains and that a subsequent authorized capture can start normally.
-
-If cleanup or authorization cannot be proven, Stage B remains open.
-
-## 9. Inventory partial-evidence behavior
-
-Inspect representative GPU, NIC and xHCI/USB entries. An unavailable optional property or unreadable interrupt/resource field must not make the entire present-device inventory disappear.
+Inspect representative GPU/display, NIC and actual `USBXHCI` entries.
 
 Keep these evidence levels separate:
 
@@ -315,65 +301,86 @@ allocated IRQ/resource assignment
 runtime DPC/ISR behavior
 ```
 
-A read failure is not equivalent to “no configuration”.
+A read failure is not equivalent to “no configuration”. Stored MSI/affinity policy is not proof of the resource assignment Windows actually allocated.
 
-## 10. Accessibility/responsive sanity
+## 9. Failure, disconnect and cleanup
 
-On physical WinUI, check at least:
+Exercise at least:
+
+1. close the App during a quick snapshot;
+2. relaunch and verify a new status/capture can start promptly;
+3. stop the Service during or immediately after capture;
+4. restart the Service and reconnect the normal-user App;
+5. run another capture after recovery;
+6. close the App during a repeated-baseline window and verify a partial sequence cannot become `Valid`;
+7. verify no stale `LatencyPilot-Kernel-*` ETW session remains after interrupted captures;
+8. where practical, verify incompatible/malformed local protocol input fails bounded/closed;
+9. where a second interactive session exists, verify a client outside the active console session is rejected without weakening authorization.
+
+If cleanup or authorization cannot be proven, Phase 2 remains open.
+
+## 10. Accessibility and responsive sanity
+
+Check on physical WinUI:
 
 - Light, Dark and Windows High Contrast;
 - narrow and wide window widths;
-- Windows text scaling at representative enlarged settings;
+- representative enlarged Windows text scaling;
 - keyboard-only access and logical focus order;
-- screen-reader/UI Automation reading of status, scenario selector, exact metric values, runtime-context summary and baseline verdict.
+- screen-reader/UI Automation reading of Service state, scenario, measurement purpose, exact values, runtime context and baseline verdict.
 
-The tail-rate bars are visual `Grid`/`Border` data bars, not progress controls. Screen readers should rely on the exact count/denominator/percentage text rather than receive misleading operation-progress semantics.
+Color must never be the only state cue.
 
-Color must never be the only state cue; text labels such as capture warning, valid/inconclusive and scenario names must remain understandable without color.
+A quick snapshot must not be announced or visually framed as a health verdict. Exact data and diagnostic purpose should remain clear to assistive technology.
 
 ## 11. Zero-mutation boundary
 
-Stage B is read-only. Observation must not alter interrupt affinity, MSI settings, CPU Sets, power settings, network configuration, device policy, timer settings or unrelated services.
+Phase 2 observation must not alter:
 
-Expected persistent changes are limited to LatencyPilot installation/service files and documented diagnostics/log artifacts.
+- interrupt affinity;
+- MSI settings;
+- CPU Sets;
+- power settings;
+- network configuration;
+- device policy;
+- timer settings;
+- unrelated services.
+
+Expected persistent changes are limited to LatencyPilot installation/Service files and documented diagnostic artifacts.
 
 Any unrelated persistent configuration change is a blocker.
 
-## 12. Uninstall / portable Service removal
+## 12. Removal check when applicable
 
-For installed builds, uninstall normally. For portable validation, use the bundled Service removal path.
-
-Verify afterward:
+For installer/portable validation, verify Service removal semantics:
 
 ```powershell
 Get-Service LatencyPilot.Observation -ErrorAction SilentlyContinue
 Test-Path "$env:ProgramFiles\LatencyPilot\Service"
 ```
 
-Expected result: no LatencyPilot observation Service remains and the protected managed Service payload is removed when uninstall semantics require it.
+Do this for a release candidate; it is not necessary to repeatedly uninstall during ordinary source-development captures.
 
-## Stage B evidence record
+## Phase 2 closure record
 
-Stage B requires:
+Do not close Phase 2 until all required outcomes are evidenced for the **same final clean source candidate**:
 
-- exact source/release revision;
-- completed green **test-only** Tests workflow run for that deterministic source contract;
-- owner-local Windows App/Service build result;
-- package/distribution hash and launch smoke when validating a release candidate;
-- physical-machine and active-console-session context;
-- Controlled-idle observation + JSON/SHA-256/RequestId;
-- Real-world workload observation + JSON/SHA-256/RequestId;
-- p99.9 adequacy behavior where naturally observable;
-- scenario provenance and runtime CPU/power-scheme GUID/configured-mode context in exported evidence;
-- attribution plausibility comparison;
-- cleanup/disconnect/failure-path result;
-- representative inventory/resource evidence;
-- protected Service-path verification;
-- zero-mutation result;
-- accessibility/responsive sanity result;
-- uninstall/removal result when applicable;
-- all unresolved blockers.
+- exact revision + green hosted Tests run;
+- owner-local App and Service compile/run;
+- protected Service path and normal-user App boundary;
+- protocol v6 connection/capture;
+- at least one v8 quick snapshot proving integrity/provenance/attribution behavior;
+- one **Real-world** v8/v2 repeated decision baseline;
+- one **Controlled-idle** v8/v2 repeated decision baseline;
+- representative GPU/NIC/xHCI evidence;
+- attribution plausibility;
+- failure/disconnect/stale-ETW cleanup;
+- active-console authorization sanity;
+- accessibility/responsive sanity;
+- zero-mutation confirmation;
+- JSON/SHA-256/source-revision reconciliation;
+- unresolved blockers explicitly listed.
 
-For Stage C closure, additionally preserve both controlled-idle and one repeatable real-world repeated-baseline result, including all window evidence, runtime-context windows, verdict/reasons, exported evidence-v7 JSON and hashes.
+Historical five-second observations collected under earlier protocol/schema revisions remain useful **diagnostic evidence** for ETW integrity, attribution and hypothesis formation. They do not satisfy the v2 decision-baseline closure requirement.
 
-Do not close Stage B or Stage C from VM/CI evidence alone.
+After Phase 2 closes, Phase 3 may implement reversible mutations. The first candidate must still be measured against a control; no Microsoft default, Reddit tweak, or prior project assumption is automatically accepted as optimal.
