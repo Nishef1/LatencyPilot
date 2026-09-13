@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -35,7 +36,7 @@ internal static class EvidenceExportService
             new ObservationEvidenceDocument(
                 EvidenceSchema,
                 productVersion,
-                TryExtractSourceRevisionId(productVersion),
+                TryGetSourceRevisionId(),
                 ProtocolVersion.Current,
                 DateTimeOffset.UtcNow,
                 CreateEnvironment(),
@@ -132,7 +133,7 @@ internal static class EvidenceExportService
             new BaselineEvidenceDocument(
                 EvidenceSchema,
                 productVersion,
-                TryExtractSourceRevisionId(productVersion),
+                TryGetSourceRevisionId(),
                 ProtocolVersion.Current,
                 DateTimeOffset.UtcNow,
                 CreateEnvironment(),
@@ -181,15 +182,23 @@ internal static class EvidenceExportService
             topology);
     }
 
-    private static string? TryExtractSourceRevisionId(string productVersion)
+    private static string? TryGetSourceRevisionId()
     {
-        var separator = productVersion.LastIndexOf('+');
-        if (separator < 0 || separator == productVersion.Length - 1)
+        var informationalVersion = typeof(EvidenceExportService).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+        if (string.IsNullOrWhiteSpace(informationalVersion))
         {
             return null;
         }
 
-        var candidate = productVersion[(separator + 1)..];
+        var separator = informationalVersion.LastIndexOf('+');
+        if (separator < 0 || separator == informationalVersion.Length - 1)
+        {
+            return null;
+        }
+
+        var candidate = informationalVersion[(separator + 1)..];
         return candidate.Length is >= 7 and <= 40 && candidate.All(Uri.IsHexDigit)
             ? candidate
             : null;
