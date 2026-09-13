@@ -39,10 +39,7 @@ public partial class App : Application
     {
         try
         {
-            var mainWindow = new MainWindow();
-            mainWindow.InitializeMeasurementExperience();
-            mainWindow.InitializeObservationExperienceHardening();
-            _window = mainWindow;
+            _window = new MainWindow();
             _window.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
             _window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
             _window.Activate();
