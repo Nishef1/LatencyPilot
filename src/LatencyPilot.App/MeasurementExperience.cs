@@ -1,6 +1,8 @@
+using System.ComponentModel;
 using System.Globalization;
 using LatencyPilot.App.Services;
 using LatencyPilot.Benchmarking.Baselines;
+using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -13,8 +15,11 @@ public sealed partial class MainWindow
 {
     private ComboBox? _measurementScenarioComboBox;
     private TextBlock? _measurementScenarioGuidanceText;
+    private TextBlock? _measurementRuntimeContextText;
     private Border? _measurementScenarioCard;
     private bool _measurementBusy;
+    private string _lastRuntimeContextSummary =
+        "Runtime context will appear after capture: average system CPU busy time, power source and Battery Saver state.";
 
     private void InitializeMeasurementExperience()
     {
@@ -69,6 +74,7 @@ public sealed partial class MainWindow
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var heading = new StackPanel { Spacing = 3 };
         heading.Children.Add(new TextBlock
@@ -91,6 +97,7 @@ public sealed partial class MainWindow
         {
             MinWidth = 230,
             VerticalAlignment = VerticalAlignment.Center,
+            IsEnabled = !_measurementBusy,
         };
         _measurementScenarioComboBox.Items.Add(EvidenceExportService.GetMeasurementDisplayName(MeasurementScenario.RealWorld));
         _measurementScenarioComboBox.Items.Add(EvidenceExportService.GetMeasurementDisplayName(MeasurementScenario.IdleBaseline));
@@ -120,6 +127,18 @@ public sealed partial class MainWindow
         Grid.SetColumnSpan(_measurementScenarioGuidanceText, 2);
         root.Children.Add(_measurementScenarioGuidanceText);
         UpdateMeasurementScenarioGuidance();
+
+        _measurementRuntimeContextText = new TextBlock
+        {
+            Text = _lastRuntimeContextSummary,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = ThemeBrush("MutedTextBrush"),
+        };
+        AutomationProperties.SetName(_measurementRuntimeContextText, "Runtime measurement context");
+        Grid.SetRow(_measurementRuntimeContextText, 2);
+        Grid.SetColumnSpan(_measurementRuntimeContextText, 2);
+        root.Children.Add(_measurementRuntimeContextText);
 
         card.Child = root;
         return card;
@@ -155,14 +174,18 @@ public sealed partial class MainWindow
 
         try
         {
+            var runtimeStart = TryCaptureRuntimeContext();
             var capture = await ObservationServiceClient.CaptureKernelLatencyAsync(
                 ObservationDuration,
                 ObservationMaximumEvents);
+            var runtimeEnd = TryCaptureRuntimeContext();
+            var runtimeContext = CreateRuntimeInterval(runtimeStart, runtimeEnd);
 
             RenderCapture(capture);
             ApplyP999Adequacy(capture);
             ApplyScenarioResultContext(capture, scenario);
-            PrepareObservationEvidenceForScenario(capture, scenario);
+            UpdateRuntimeContextSummary(runtimeContext);
+            PrepareObservationEvidenceForScenario(capture, scenario, runtimeContext);
         }
         catch (Exception exception)
         {
@@ -192,9 +215,11 @@ public sealed partial class MainWindow
         BaselineReasonsText.Text =
             $"Scenario: {EvidenceExportService.GetMeasurementDisplayName(scenario)}. {EvidenceExportService.GetMeasurementGuidance(scenario)} Detailed lists and charts are intentionally not redrawn between windows.";
         BaselineWindowsList.ItemsSource = null;
+        ResetRuntimeContextSummary("Runtime context is being sampled around each authoritative window without redrawing detailed UI between captures.");
 
         var windows = new List<BaselineWindowEvidence>(BaselineWindowCount);
         var captures = new List<KernelLatencyCaptureResponse>(BaselineWindowCount);
+        var runtimeWindows = new List<MeasurementRuntimeWindow>(BaselineWindowCount);
 
         try
         {
@@ -202,11 +227,17 @@ public sealed partial class MainWindow
 
             for (var index = 1; index <= BaselineWindowCount; index++)
             {
+                var runtimeStart = TryCaptureRuntimeContext();
                 var capture = await ObservationServiceClient.CaptureKernelLatencyAsync(
                     ObservationDuration,
                     ObservationMaximumEvents);
+                var runtimeEnd = TryCaptureRuntimeContext();
 
                 captures.Add(capture);
+                runtimeWindows.Add(new MeasurementRuntimeWindow(
+                    index,
+                    CreateRuntimeInterval(runtimeStart, runtimeEnd)));
+
                 var integrityIssue = GetCaptureIntegrityIssue(capture);
                 windows.Add(new BaselineWindowEvidence(
                     index,
@@ -234,6 +265,7 @@ public sealed partial class MainWindow
             var finalCapture = captures[^1];
             RenderCapture(finalCapture);
             ApplyP999Adequacy(finalCapture);
+            UpdateRuntimeContextSummary(runtimeWindows);
             KernelCaptureStatusText.Text =
                 "Repeated baseline complete. The observation cards show only the final window snapshot; the baseline verdict below uses all five windows.";
             ObservationQualityText.Text =
@@ -241,7 +273,7 @@ public sealed partial class MainWindow
 
             var quality = BaselineQualityAnalyzer.Analyze(windows, BaselinePolicy);
             RenderBaselineQuality(quality);
-            PrepareBaselineEvidenceForScenario(captures, windows, quality, isPartial: false, scenario);
+            PrepareBaselineEvidenceForScenario(captures, windows, runtimeWindows, quality, isPartial: false, scenario);
         }
         catch (Exception exception)
         {
@@ -249,12 +281,13 @@ public sealed partial class MainWindow
             BaselineVerdictText.Text = "Inconclusive";
             BaselineStatusText.Text = $"Baseline capture stopped after {windows.Count} of {BaselineWindowCount} windows.";
             BaselineWindowsList.ItemsSource = CreateBaselineWindowRows(windows);
+            UpdateRuntimeContextSummary(runtimeWindows);
 
             if (windows.Count > 0)
             {
                 var partialQuality = BaselineQualityAnalyzer.Analyze(windows, BaselinePolicy);
                 RenderBaselineQuality(partialQuality, preserveStatusText: true);
-                PrepareBaselineEvidenceForScenario(captures, windows, partialQuality, isPartial: true, scenario);
+                PrepareBaselineEvidenceForScenario(captures, windows, runtimeWindows, partialQuality, isPartial: true, scenario);
             }
             else
             {
@@ -266,6 +299,114 @@ public sealed partial class MainWindow
         {
             SetMeasurementBusy(false);
         }
+    }
+
+    private RuntimeMeasurementContextSnapshot? TryCaptureRuntimeContext()
+    {
+        try
+        {
+            return RuntimeMeasurementContextReader.Capture();
+        }
+        catch (Win32Exception exception)
+        {
+            Logger.Warning(exception, "Runtime measurement context could not be captured; latency evidence remains usable without this optional context.");
+            return null;
+        }
+    }
+
+    private static RuntimeMeasurementContextInterval? CreateRuntimeInterval(
+        RuntimeMeasurementContextSnapshot? start,
+        RuntimeMeasurementContextSnapshot? end) =>
+        start is null || end is null
+            ? null
+            : RuntimeMeasurementContextReader.CreateInterval(start, end);
+
+    private void UpdateRuntimeContextSummary(RuntimeMeasurementContextInterval? context)
+    {
+        if (context is null)
+        {
+            ResetRuntimeContextSummary("Runtime CPU/power context was unavailable for this capture. The DPC/ISR evidence itself remains valid if capture integrity is clean.");
+            return;
+        }
+
+        var cpu = context.SystemCpuBusyPercent is null
+            ? "system CPU busy unavailable"
+            : string.Create(CultureInfo.InvariantCulture, $"system CPU busy {context.SystemCpuBusyPercent.Value:F1}%");
+        var power = FormatPowerContext(context.StartPower);
+        var change = context.PowerContextChanged
+            ? $" Power state changed during capture: {power} → {FormatPowerContext(context.EndPower)}."
+            : $" Power context stayed stable: {power}.";
+
+        ResetRuntimeContextSummary($"Runtime context: {cpu}.{change}");
+    }
+
+    private void UpdateRuntimeContextSummary(List<MeasurementRuntimeWindow> runtimeWindows)
+    {
+        var contexts = runtimeWindows
+            .Where(static window => window.Context is not null)
+            .Select(static window => window.Context!)
+            .ToArray();
+        if (contexts.Length == 0)
+        {
+            ResetRuntimeContextSummary("Runtime CPU/power context was unavailable for the baseline windows. Baseline quality still depends on capture integrity, sample adequacy, noise and drift.");
+            return;
+        }
+
+        var cpuValues = contexts
+            .Where(static context => context.SystemCpuBusyPercent is not null)
+            .Select(static context => context.SystemCpuBusyPercent!.Value)
+            .ToArray();
+        var cpuSummary = cpuValues.Length == 0
+            ? "system CPU busy unavailable"
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"system CPU busy avg {cpuValues.Average():F1}% (range {cpuValues.Min():F1}–{cpuValues.Max():F1}%)");
+
+        var firstPower = contexts[0].StartPower;
+        var lastPower = contexts[^1].EndPower;
+        var powerChanged = contexts.Any(static context => context.PowerContextChanged) ||
+            !PowerStateEquivalent(firstPower, lastPower);
+        var powerSummary = powerChanged
+            ? $"power context changed during the sequence ({FormatPowerContext(firstPower)} → {FormatPowerContext(lastPower)})"
+            : $"power context stayed stable ({FormatPowerContext(firstPower)})";
+
+        ResetRuntimeContextSummary(
+            $"Runtime context: {contexts.Length}/{runtimeWindows.Count} window(s) sampled; {cpuSummary}; {powerSummary}.");
+    }
+
+    private void ResetRuntimeContextSummary(string message)
+    {
+        _lastRuntimeContextSummary = message;
+        if (_measurementRuntimeContextText is not null)
+        {
+            _measurementRuntimeContextText.Text = message;
+        }
+    }
+
+    private static bool PowerStateEquivalent(SystemPowerSnapshot first, SystemPowerSnapshot second) =>
+        first.LineState == second.LineState &&
+        first.Charging == second.Charging &&
+        first.BatterySaverEnabled == second.BatterySaverEnabled;
+
+    private static string FormatPowerContext(SystemPowerSnapshot power)
+    {
+        var source = power.LineState switch
+        {
+            SystemPowerLineState.Online => "AC power",
+            SystemPowerLineState.Offline => "battery power",
+            _ => "power source unknown",
+        };
+        var battery = power.BatteryPresent == true && power.BatteryPercent is not null
+            ? string.Create(CultureInfo.InvariantCulture, $", battery {power.BatteryPercent.Value}%")
+            : string.Empty;
+        var saver = power.BatterySaverEnabled switch
+        {
+            true => ", Battery Saver on",
+            false => ", Battery Saver off",
+            null => ", Battery Saver unknown",
+        };
+
+        return source + battery + saver;
     }
 
     private void SetMeasurementBusy(bool busy)
@@ -329,14 +470,15 @@ public sealed partial class MainWindow
 
     private void PrepareObservationEvidenceForScenario(
         KernelLatencyCaptureResponse capture,
-        MeasurementScenario scenario)
+        MeasurementScenario scenario,
+        RuntimeMeasurementContextInterval? runtimeContext)
     {
         try
         {
             SetExportEvidence(
-                EvidenceExportService.CreateObservationJson(GetProductVersion(), scenario, capture),
+                EvidenceExportService.CreateObservationJson(GetProductVersion(), scenario, capture, runtimeContext),
                 EvidenceExportService.CreateSuggestedFileName("observation", capture.StartedAtUtc),
-                $"Observation evidence is ready for JSON export with scenario '{EvidenceExportService.GetMeasurementDisplayName(scenario)}'.");
+                $"Observation evidence is ready for JSON export with scenario '{EvidenceExportService.GetMeasurementDisplayName(scenario)}' and best-effort runtime context.");
         }
         catch (Exception exception)
         {
@@ -346,8 +488,9 @@ public sealed partial class MainWindow
     }
 
     private void PrepareBaselineEvidenceForScenario(
-        IReadOnlyList<KernelLatencyCaptureResponse> captures,
-        IReadOnlyList<BaselineWindowEvidence> windows,
+        List<KernelLatencyCaptureResponse> captures,
+        List<BaselineWindowEvidence> windows,
+        List<MeasurementRuntimeWindow> runtimeWindows,
         BaselineQualityResult quality,
         bool isPartial,
         MeasurementScenario scenario)
@@ -356,11 +499,11 @@ public sealed partial class MainWindow
         {
             var evidenceType = isPartial ? "baseline-partial" : "baseline";
             SetExportEvidence(
-                EvidenceExportService.CreateBaselineJson(GetProductVersion(), scenario, captures, windows, quality),
+                EvidenceExportService.CreateBaselineJson(GetProductVersion(), scenario, captures, windows, runtimeWindows, quality),
                 EvidenceExportService.CreateSuggestedFileName(evidenceType, captures[0].StartedAtUtc),
                 isPartial
-                    ? $"Partial baseline evidence is ready for JSON export with scenario '{EvidenceExportService.GetMeasurementDisplayName(scenario)}'."
-                    : $"Full baseline evidence is ready for JSON export with scenario '{EvidenceExportService.GetMeasurementDisplayName(scenario)}'.");
+                    ? $"Partial baseline evidence is ready for JSON export with scenario '{EvidenceExportService.GetMeasurementDisplayName(scenario)}' and best-effort runtime context."
+                    : $"Full baseline evidence is ready for JSON export with scenario '{EvidenceExportService.GetMeasurementDisplayName(scenario)}' and best-effort runtime context.");
         }
         catch (Exception exception)
         {
