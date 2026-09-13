@@ -28,6 +28,31 @@ internal static class EvidenceExportService
 
     public static string CreateBaselineJson(
         string productVersion,
+        List<KernelLatencyCaptureResponse> captures,
+        List<BaselineWindowEvidence> windows,
+        BaselineQualityResult quality) =>
+        CreateBaselineJson(
+            productVersion,
+            captures.ToArray(),
+            windows.ToArray(),
+            quality);
+
+    public static string CreateSuggestedFileName(string evidenceType, DateTimeOffset startedAtUtc) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"LatencyPilot-{evidenceType}-{startedAtUtc.UtcDateTime:yyyyMMddTHHmmssfffZ}");
+
+    public static Task<string?> SaveAsync(
+        LatencyPilot.App.MainWindow owner,
+        string json,
+        string suggestedFileName) =>
+        SaveAsync(
+            WinRT.Interop.WindowNative.GetWindowHandle(owner),
+            json,
+            suggestedFileName);
+
+    private static string CreateBaselineJson(
+        string productVersion,
         KernelLatencyCaptureResponse[] captures,
         BaselineWindowEvidence[] windows,
         BaselineQualityResult quality) =>
@@ -43,12 +68,7 @@ internal static class EvidenceExportService
                 quality),
             JsonOptions);
 
-    public static string CreateSuggestedFileName(string evidenceType, DateTimeOffset startedAtUtc) =>
-        string.Create(
-            CultureInfo.InvariantCulture,
-            $"LatencyPilot-{evidenceType}-{startedAtUtc.UtcDateTime:yyyyMMddTHHmmssfffZ}");
-
-    public static async Task<string?> SaveAsync(
+    private static async Task<string?> SaveAsync(
         nint windowHandle,
         string json,
         string suggestedFileName)
