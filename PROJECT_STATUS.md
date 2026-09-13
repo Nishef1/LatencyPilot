@@ -13,7 +13,7 @@ Last updated: 2026-09-13
 - Current desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
 - Privileged boundary: **read-only Windows Service; mutation commands do not exist**
 - Observation protocol: **v5**
-- Evidence schema: **latencypilot-evidence-v6**
+- Evidence schema: **latencypilot-evidence-v7**
 - Permanent automated tests: **8 / hard maximum 10**
 - Current stage: **Phase 2 source implementation is substantially complete; Stage B physical validation, Stage C physical baseline closure and Stage D physical UX closure remain open**
 - Current owner instruction for this implementation loop: **do not run App/Service builds; hosted CI remains test-only**
@@ -66,7 +66,7 @@ Phase 1 established the solution, deterministic comparison/domain foundation, fo
 - connected client session must match the active console session;
 - failure to establish client-session identity fails closed;
 - disconnect/protocol activity cancels active capture work;
-- deadlines remain bounded;
+- request-specific operation deadlines remain bounded;
 - current observation authorization is explicitly not future mutation authorization;
 - the App requires the status response to prove the host is the installed Windows Service with expected kernel-capture privilege context before capture is enabled.
 
@@ -200,12 +200,13 @@ Best-effort runtime context brackets each App capture request/response interval 
 
 - system CPU busy percentage from `GetSystemTimes` cumulative deltas;
 - AC/DC source, battery state and Battery Saver from `GetSystemPowerStatus`;
-- active power-plan GUID/friendly name from `PowerGetActiveScheme` / `PowerReadFriendlyName`;
+- active power-plan GUID/friendly name from `PowerGetActiveScheme` / `PowerReadFriendlyName` for local UI context;
 - Windows 11 user-configured AC/DC power mode from `PowerGetUserConfiguredACPowerMode` / `PowerGetUserConfiguredDCPowerMode`;
 - configured power mode is treated as the user's configured Best power efficiency / Balanced / Best performance preference, not proof of effective runtime power-management state;
 - plan/source/configured-mode/Battery-Saver changes are surfaced as provenance;
 - failure to collect optional context does not invalidate otherwise clean DPC/ISR evidence or become a fake zero;
-- runtime context does not silently alter `baseline-quality-v1`.
+- runtime context does not silently alter `baseline-quality-v1`;
+- evidence-v7 exports the active scheme GUID/configured mode but deliberately omits the potentially user-defined power-plan friendly name.
 
 Still open:
 
@@ -237,7 +238,8 @@ Implemented in source:
 - accessibility/high-contrast resources and automation metadata;
 - adaptive narrow/wide workspace source;
 - manual JSON evidence export;
-- evidence schema `latencypilot-evidence-v6`;
+- evidence schema `latencypilot-evidence-v7`;
+- evidence-v7 excludes user-defined power-plan friendly names while preserving active-scheme GUID/configured-mode provenance;
 - baseline export now fail-closes on capture/window/runtime-window count mismatch, non-contiguous evidence ordering, timestamp mismatch, empty/duplicate capture `RequestId`, quality-window mismatch or baseline-method mismatch;
 - source revision is recorded from release/assembly metadata when available;
 - unresolved `ulong` routine addresses serialize as hexadecimal strings;
@@ -297,7 +299,7 @@ Current implementation-loop work is source-only:
 4. keep physical controlled-idle and real-world baseline execution deferred until the owner explicitly resumes runtime validation;
 5. do not add speculative thermal/observer-overhead machinery without physical evidence.
 
-When physical validation is resumed, Stage C requires controlled-idle and repeatable real-world five-window evidence, exported v6 JSON/hashes and plausible runtime context. Stage C closes only when the real App → Service → ETW path distinguishes trustworthy repeated evidence from unstable/incomplete evidence.
+When physical validation is resumed, Stage C requires controlled-idle and repeatable real-world five-window evidence, exported v7 JSON/hashes and plausible runtime context. Stage C closes only when the real App → Service → ETW path distinguishes trustworthy repeated evidence from unstable/incomplete evidence.
 
 ## Stage D — Phase 2 evidence UX — SOURCE IMPLEMENTED, PHYSICAL UX CLOSURE OPEN
 
