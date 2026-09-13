@@ -2,14 +2,18 @@ namespace LatencyPilot.Protocol;
 
 public static class ObservationProtocol
 {
-    public const string PipeName = "LatencyPilot.Observation.v5";
+    public const string PipeName = "LatencyPilot.Observation.v6";
     public const int MaximumRequestBytes = 64 * 1024;
     public const int MaximumResponseBytes = 1024 * 1024;
     public const int MaximumCaptureDurationMilliseconds = 30_000;
     public const int MaximumCaptureEvents = 500_000;
     public const int MaximumModuleContributors = 256;
     public const int MaximumUnresolvedRoutineContributors = 64;
-    public const int MinimumSamplesForP999 = 1_000;
+
+    // p99.9 needs substantially more evidence than p99. At 10,000 samples,
+    // roughly ten observations are expected in the upper 0.1% tail. This is
+    // still an adequacy floor rather than a confidence guarantee.
+    public const int MinimumSamplesForP999 = 10_000;
 }
 
 public enum ObservationCommand
