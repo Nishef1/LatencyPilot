@@ -101,6 +101,8 @@ Current automation contract:
 - normal UI development uses Debug + Visual Studio Hot Reload or `dev.ps1`;
 - `scripts/Publish-Release.ps1` is the explicit owner-run local Windows release path;
 - the local publisher requires a clean/up-to-date `main` and green Tests evidence for the exact commit before local build/package/publication;
+- the owner-local publisher verifies the WinUI PRI and launch-smoke-tests the published App before packaging/publication;
+- successful package metadata records the matching Tests run and `app_launch_smoke=passed`;
 - published semantic versions are immutable; the publisher has no delete/replace mode and refuses an existing release/tag;
 - release creation uses GitHub CLI `gh release create --target <exact-commit>` so a missing tag is created at the exact tested commit without a separate tag push;
 - prereleases are explicitly published with `--latest=false`;
@@ -245,14 +247,18 @@ Implemented in source but awaiting owner-local WinUI build/run evidence:
 - five-window `Build baseline` action;
 - progress and per-window integrity/DPC/ISR evidence rows;
 - baseline `Valid` / `Inconclusive` quality verdict;
-- explicit noise, drift, sample-adequacy and integrity reasons.
+- explicit noise, drift, sample-adequacy and integrity reasons;
+- explicit dashboard label separating stored interrupt configuration, allocated IRQ/resource assignment and runtime DPC/ISR evidence;
+- keyboard accelerators for refresh (`Ctrl+R`), single observation (`Ctrl+O`) and repeated baseline (`Ctrl+B`);
+- UI Automation names for capture progress, module coverage and evidence lists;
+- version-specific safety text removed so the read-only boundary does not drift when product version changes.
 
 Still required:
 
 - [ ] inspectable raw/auditable aggregates beyond the compact summary;
-- [ ] owner-local validation of the new repeated-baseline UX;
-- [ ] clear evidence-level labels for stored configuration vs assigned resource vs runtime behavior;
-- [ ] responsive/keyboard/accessibility sanity pass for the Phase 2 evidence surfaces.
+- [ ] owner-local validation of the new repeated-baseline and keyboard/accessibility source;
+- [ ] responsive-layout implementation and narrow-window/text-scaling sanity pass;
+- [ ] final screen-reader/focus-order sanity pass on physical WinUI after the current source compiles/runs locally.
 
 ## Permanent critical suite — 8 / 10
 
@@ -335,9 +341,9 @@ Still open:
 Work in order:
 
 1. raw/auditable aggregate inspection;
-2. evidence-level labels for configuration, allocated resources and runtime ETW;
-3. complete baseline invalid-state presentation after local validation;
-4. responsive/keyboard/accessibility sanity pass for the Phase 2 surfaces.
+2. owner-local verification of evidence-level labels and baseline invalid-state presentation;
+3. responsive narrow-window/text-scaling implementation;
+4. final keyboard/focus/screen-reader accessibility sanity pass.
 
 **Stage D closes only when:** all remaining Phase 2 UX requirements are met and the Phase 2 exit gate can be exercised on physical Windows 11.
 
@@ -365,12 +371,13 @@ No mutation work may jump ahead of Stage C/D or the Phase 3 safety substrate.
 - `RELEASE_VERSION` is an explicit local release request and must equal the source version;
 - `v0.0.1` is historically published/reserved and must never be reused even though the release/tag is currently absent;
 - GitHub Actions is test-only and runs the permanent critical suite;
-- App/Service Release build, WinUI publish/PRI validation, Setup and portable creation are owner-local Windows responsibilities;
+- App/Service Release build, WinUI publish/PRI validation, published-App launch smoke, Setup and portable creation are owner-local Windows responsibilities;
 - `scripts/Publish-Release.ps1` is the explicit owner-run publisher and requires green Tests evidence for the exact `main` commit;
 - the publisher refuses existing tags/releases, does not replace/delete published versions, and creates a missing tag through `gh release create --target <exact-commit>`;
+- prereleases are explicitly published with `--latest=false`;
 - `docs/RELEASING.md` is the publication contract;
 - daily development uses Debug + Visual Studio Hot Reload or `dev.ps1`;
-- published distributions contain version/build metadata and SHA-256 companions;
+- published distributions contain version/build metadata, launch-smoke provenance and SHA-256 companions;
 - `0.0.x` releases remain prereleases until later exit gates justify stable semantics.
 
 ## Hard test rule
