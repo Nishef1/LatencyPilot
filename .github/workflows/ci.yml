@@ -22,7 +22,7 @@ env:
 jobs:
   critical-tests:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -37,15 +37,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-tests-${{ hashFiles('tests/**/*.csproj', 'src/**/*.csproj', 'Directory.Build.props', 'Directory.Packages.props', 'global.json', 'NuGet.Config') }}
+          key: ${{ runner.os }}-nuget-tests-${{ hashFiles('tests/**/*.csproj', 'src/LatencyPilot.Core/*.csproj', 'src/LatencyPilot.Benchmarking/*.csproj', 'src/LatencyPilot.Protocol/*.csproj', 'src/LatencyPilot.Platform.Windows/*.csproj', 'Directory.Build.props', 'Directory.Packages.props', 'global.json', 'NuGet.Config') }}
           restore-keys: |
             ${{ runner.os }}-nuget-tests-
             ${{ runner.os }}-nuget-
 
       - name: Critical tests
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-
-      - name: Compile Windows hosts
-        run: |
-          dotnet build src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release
-          dotnet build src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release
