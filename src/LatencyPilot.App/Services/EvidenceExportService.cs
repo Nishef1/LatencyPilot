@@ -184,6 +184,36 @@ internal static class EvidenceExportService
 
     private static string? TryGetSourceRevisionId()
     {
+        foreach (var path in new[]
+                 {
+                     Path.Combine(AppContext.BaseDirectory, "BUILD_INFO.txt"),
+                     Path.Combine(AppContext.BaseDirectory, "..", "BUILD_INFO.txt"),
+                 })
+        {
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+
+                var commitLine = File.ReadLines(path)
+                    .FirstOrDefault(static line => line.StartsWith("commit=", StringComparison.Ordinal));
+                var buildInfoRevision = ValidateRevisionId(commitLine?["commit=".Length..]);
+                if (buildInfoRevision is not null)
+                {
+                    return buildInfoRevision;
+                }
+            }
+            catch (Exception exception) when (
+                exception is IOException or
+                UnauthorizedAccessException)
+            {
+                // Release metadata is provenance enrichment. If it cannot be read,
+                // fall back to assembly metadata rather than invalidating evidence.
+            }
+        }
+
         var informationalVersion = typeof(EvidenceExportService).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion;
@@ -193,16 +223,15 @@ internal static class EvidenceExportService
         }
 
         var separator = informationalVersion.LastIndexOf('+');
-        if (separator < 0 || separator == informationalVersion.Length - 1)
-        {
-            return null;
-        }
+        return separator < 0 || separator == informationalVersion.Length - 1
+            ? null
+            : ValidateRevisionId(informationalVersion[(separator + 1)..]);
+    }
 
-        var candidate = informationalVersion[(separator + 1)..];
-        return candidate.Length is >= 7 and <= 40 && candidate.All(Uri.IsHexDigit)
+    private static string? ValidateRevisionId(string? candidate) =>
+        candidate is { Length: >= 7 and <= 40 } && candidate.All(Uri.IsHexDigit)
             ? candidate
             : null;
-    }
 
     private static JsonSerializerOptions CreateJsonOptions()
     {
