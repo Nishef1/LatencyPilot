@@ -5,6 +5,8 @@ param(
 
     [switch]$ForceRestore,
 
+    [switch]$AutoPull,
+
     [switch]$NoAutoPull,
 
     [switch]$NoLogs
@@ -13,6 +15,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+if ($AutoPull -and $NoAutoPull) {
+    throw 'Use either -AutoPull or -NoAutoPull, not both.'
+}
+
+$autoPullEnabled = $AutoPull -and -not $NoAutoPull
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $appProject = Join-Path $repoRoot 'src\LatencyPilot.App\LatencyPilot.App.csproj'
 $serviceProject = Join-Path $repoRoot 'src\LatencyPilot.Service\LatencyPilot.Service.csproj'
@@ -246,11 +253,11 @@ try {
     if (-not $NoLogs) {
         Write-Host 'App and Service structured logs are streamed into this terminal with [APP]/[SERVICE] prefixes.'
     }
-    if ($NoAutoPull) {
-        Write-Host 'Auto-pull is disabled. Local file edits will still be watched.'
+    if ($autoPullEnabled) {
+        Write-Host "Auto-pull is enabled explicitly. Watching origin/main every $PollSeconds second(s); clean fast-forward updates may rebuild/reinstall the privileged Service."
     }
     else {
-        Write-Host "Watching origin/main every $PollSeconds second(s). Clean fast-forward updates are applied automatically."
+        Write-Host 'Auto-pull is disabled by default. Use -AutoPull only when you intentionally want clean origin/main updates applied during live mode.'
     }
     Write-Host 'Press Ctrl+C to stop the App watcher and live log viewers. The installed observation Service remains available.'
     Write-Host ''
@@ -268,7 +275,7 @@ try {
             throw 'The protected LatencyPilot observation Service is not running. Re-run live.ps1 to rebuild/install it and inspect the [SERVICE] log stream.'
         }
 
-        if ($NoAutoPull) {
+        if (-not $autoPullEnabled) {
             continue
         }
 
