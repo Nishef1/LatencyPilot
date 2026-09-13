@@ -84,6 +84,37 @@ Stable Service event IDs currently include:
 
 New event IDs should represent durable operational concepts rather than individual code branches.
 
+## Bounded capture summaries
+
+After a capture response has passed the App's fail-closed protocol validation, the App writes two additional structured **post-capture** summary events. They are emitted after the authoritative ETW collection window, so they do not add logging work to the ETW callback/hot path.
+
+The first summary records bounded aggregate evidence:
+
+- DPC/ISR event counts;
+- p99, sample-gated p99.9 and maximum duration;
+- Microsoft-guidance exceedance counts/rates (`>100 µs` DPC and `>25 µs` ISR);
+- LatencyPilot diagnostic `>1 ms` / `>3 ms` tail buckets;
+- ETW loss, invalid-event/image counts and event-limit state;
+- capture lifecycle duration.
+
+The second summary records bounded concentration/attribution evidence:
+
+- resolved/unresolved module counts and coverage percentage;
+- the CPU carrying the largest DPC count and its share;
+- the CPU carrying the largest ISR count and its share;
+- the module contributing the most DPC guidance exceedances;
+- the module contributing the most ISR guidance exceedances.
+
+Only module names are written to this concise operational summary; full module paths remain available in the explicit evidence JSON. No raw DPC/ISR event stream is logged.
+
+`scripts/Verify-Evidence.ps1` presents the same high-value aggregate fields from an exported evidence file, verifies schema/revision/RequestId uniqueness, computes SHA-256, and can optionally compare the file against a hash shown by the App:
+
+```powershell
+.\scripts\Verify-Evidence.ps1 .\capture.json -ExpectedSha256 <64-hex-digest>
+```
+
+This helper is a validation/reporting surface over the saved evidence; it does not replace the evidence file itself.
+
 ## What should be logged
 
 Log bounded lifecycle and failure evidence such as:
@@ -93,6 +124,7 @@ Log bounded lifecycle and failure evidence such as:
 - protocol request ID, command, deadline and elapsed duration;
 - malformed/oversized/incompatible IPC frames;
 - capture start/completion/cancellation/failure;
+- bounded post-capture latency/concentration summaries after response validation;
 - expected ETW-start/capture failures with exception type and native error where available;
 - ETW event-loss/invalid/event-limit summaries;
 - rejected local client-session access at the privileged IPC boundary;
