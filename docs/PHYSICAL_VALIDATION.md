@@ -205,7 +205,7 @@ Both DPC p99 and ISR p99 must satisfy:
 
 ```text
 P10-P90 relative spread <= 30%
-early/late wording is not used; authoritative early/late relative drift <= 20%
+early/late relative drift typo has been removed; early/late relative drift <= 20%
 no >50% extreme-window deviation
 ```
 
@@ -239,6 +239,8 @@ baselineMethodVersion: baseline-quality-v2
 protocol:              6
 captures/windows:      exactly 5 aligned entries
 ```
+
+The verifier independently enforces five clean windows, duration adequacy, >=1,000 DPC and ISR events per window and `Status=Valid` / `IsValidForComparison=true`.
 
 A partial, short, lossy, undersampled, noisy or drifted baseline may be useful diagnostic evidence but cannot pass the closure gate.
 
