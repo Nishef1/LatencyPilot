@@ -1,42 +1,64 @@
 # LatencyPilot Portable
 
-The portable package is a self-contained Windows 11 x64 bundle. It includes the LatencyPilot desktop app, the read-only observation service payload, .NET runtime files required by the published binaries, Windows App SDK files, service scripts, validation/diagnostics documentation, build metadata and license files.
+The portable package is a self-contained Windows 11 x64 bundle. It includes the LatencyPilot desktop App, the read-only observation Service payload, required .NET and Windows App SDK runtime files, Service scripts, validation/diagnostics documentation, build metadata and license files.
 
-No separate .NET or Windows App Runtime download is required.
+No separate .NET or Windows App Runtime installation is required for the packaged payload.
 
 ## Use
 
 1. Extract the entire portable ZIP to a folder you control.
-2. Run `LatencyPilot.exe` directly from the root of the extracted folder for normal-user, non-elevated UI and local read-only inventory.
-3. Install the optional privileged observation service only if you need kernel DPC/ISR observation.
+2. Run `LatencyPilot.exe` from the root of the extracted folder for the normal-user, non-elevated UI and local read-only inventory.
+3. Install the optional privileged observation Service only when kernel DPC/ISR observation is needed.
 
-The portable archive deliberately puts the desktop executable at the top level so the package behaves like an application distribution rather than a build tree. The bundled Service payload remains under `Service\`, but it is **not** registered to run as LocalSystem from that extracted folder.
+The archive deliberately puts the desktop executable at the top level so it behaves like an application distribution rather than a build tree. The bundled Service payload remains under `Service\`, but it is **not** registered to run as LocalSystem from that user-writable extraction folder.
 
-## Kernel observation features
+## Privileged observation Service
 
-LatencyPilot deliberately keeps privileged ETW collection behind a narrow Windows Service boundary. To use DPC/ISR kernel observation and driver/module attribution, register the included read-only service from an elevated PowerShell window:
+LatencyPilot keeps kernel ETW collection behind a narrow Windows Service boundary. To enable DPC/ISR observation and module attribution, register the bundled read-only Service from elevated PowerShell:
 
 ```powershell
 .\Install-Service.ps1
 ```
 
-For security, the script copies the Service payload into the protected machine-wide location:
+The install script copies the Service payload to the protected machine-wide location:
 
 ```text
 %ProgramFiles%\LatencyPilot\Service
 ```
 
-and registers the Windows Service against that protected copy. The extracted portable folder therefore remains movable after installation; the LocalSystem service executable is not loaded from a normal user-writable extraction path.
+and registers the Windows Service against that protected copy. The LocalSystem executable is therefore not loaded from the ordinary portable extraction directory.
 
-The desktop UI itself should still be launched normally, not elevated.
+Launch the desktop App normally, not elevated.
 
-To unregister the observation service and remove the protected Service payload:
+To unregister the observation Service and remove the protected payload:
 
 ```powershell
 .\Uninstall-Service.ps1
 ```
 
 The App remains usable for non-privileged read-only features after the Service is removed.
+
+## Current Phase 2 measurement contract
+
+Current `0.0.2` source remains read-only. Mutation commands do not exist.
+
+The portable App exposes two different measurement products:
+
+```text
+Quick snapshot:      1 × 5 s, diagnostic only
+Decision baseline:   baseline-quality-v2
+                     5 × 20 s authoritative windows
+                     5 s LatencyPilot/service settle before window 1
+                     750 ms inter-window settle
+Protocol:            v6
+Evidence:            latencypilot-evidence-v8
+```
+
+A quick snapshot is useful for integrity, module attribution, CPU concentration and hypothesis generation. It is not a validated baseline, health verdict or optimization recommendation.
+
+A decision baseline requires the workload to be warmed/repeatable before the sequence starts where applicable. The initial five-second delay is LatencyPilot/service settling, not workload warm-up.
+
+Evidence intended for Phase 2 closure should be exported and independently checked with `scripts/Verify-Evidence.ps1` from the source tree or the equivalent validation tooling bundled with the matching candidate.
 
 ## Diagnostics
 
@@ -52,7 +74,7 @@ Primary structured Service logs:
 %PROGRAMDATA%\LatencyPilot\Logs\Service\latencypilot-service-*.json
 ```
 
-If the WinUI shell cannot be created before normal diagnostics are available, LatencyPilot also writes the underlying startup exception to the last-resort file:
+If WinUI fails before normal diagnostics are available, LatencyPilot also writes the underlying startup exception to:
 
 ```text
 %LOCALAPPDATA%\LatencyPilot\startup-error.log
@@ -62,8 +84,19 @@ See `DIAGNOSTICS.md` for correlation, retention and privacy rules.
 
 ## Safety boundary
 
-Version 0.0.1 remains read-only. The service exposes observation commands only; interrupt affinity, MSI policy, CPU Sets, power policy, networking and device-policy mutation are not enabled.
+The Phase 2 Service surface is observation-only. Interrupt affinity, MSI policy, CPU Sets, power policy, networking and device-policy mutation remain disabled.
 
-The Named Pipe is local, denies network identities, and grants the Phase 2 observation surface to interactive local sessions plus the required Windows service identities. Future mutation commands require a separate mutation-specific authorization design; this Phase 2 access rule must not be reused as mutation authorization.
+The Named Pipe is local, denies network identities, and admits the required local interactive/service identities before an additional active-console-session authorization check. Failure to establish or match the active client session rejects access.
 
-A single five-second capture is an observation, not a validated baseline or optimization recommendation.
+This observation authorization is **not** future mutation authorization. Phase 3 must add mutation-specific authorization/allowlisting together with durable journaling, applied-state verification and rollback before privileged writes exist.
+
+## Removal sanity
+
+After uninstalling the portable Service integration, verify when applicable:
+
+```powershell
+Get-Service LatencyPilot.Observation -ErrorAction SilentlyContinue
+Test-Path "$env:ProgramFiles\LatencyPilot\Service"
+```
+
+A release candidate should not leave an unexplained privileged Service registration or protected payload behind after its documented removal path completes.
