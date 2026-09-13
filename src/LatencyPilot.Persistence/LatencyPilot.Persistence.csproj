@@ -1,4 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Intentionally empty during Phase 2. This project is the reserved boundary for
+    Phase 3 durable experiment journaling, recovery state, and benchmark history.
+    Do not add placeholder helpers before that persistence work is implemented.
+  -->
   <ItemGroup>
     <ProjectReference Include="../LatencyPilot.Core/LatencyPilot.Core.csproj" />
   </ItemGroup>
