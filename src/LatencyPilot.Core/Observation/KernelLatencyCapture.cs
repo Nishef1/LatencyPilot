@@ -6,7 +6,7 @@ public enum KernelLatencyEventKind
     Isr,
 }
 
-public sealed record KernelLatencyEvent(
+public readonly record struct KernelLatencyEvent(
     KernelLatencyEventKind Kind,
     int ProcessorNumber,
     double TimeStampRelativeMilliseconds,
