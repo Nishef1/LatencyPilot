@@ -2,7 +2,7 @@ namespace LatencyPilot.Protocol;
 
 public static class ObservationProtocol
 {
-    public const string PipeName = "LatencyPilot.Observation.v5";
+    public const string PipeName = "LatencyPilot.Observation.v4";
     public const int MaximumRequestBytes = 64 * 1024;
     public const int MaximumResponseBytes = 1024 * 1024;
     public const int MaximumCaptureDurationMilliseconds = 30_000;
@@ -58,7 +58,6 @@ public sealed record ObservationServiceStatus(
     bool KernelCapturePrivilegeExpected);
 
 public sealed record KernelLatencyCaptureResponse(
-    Guid RequestId,
     DateTimeOffset StartedAtUtc,
     int RequestedDurationMilliseconds,
     double ActualDurationMilliseconds,
