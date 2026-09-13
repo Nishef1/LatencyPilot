@@ -19,6 +19,9 @@ public sealed partial class MainWindow : Window
     private static readonly BaselineQualityPolicy BaselinePolicy = new();
     private const int ObservationMaximumEvents = 200_000;
     private const int BaselineWindowCount = 5;
+    private const string MeasurementContextGuidance =
+        "Measurement context: for a diagnostic capture, keep the apps and workload that reproduce the issue open. " +
+        "For a controlled idle baseline, close unnecessary apps. For before/after comparisons, keep the same apps, workload, power state and background activity on both sides.";
 
     private bool _observationServiceReady;
     private bool _initialLoadStarted;
@@ -31,6 +34,7 @@ public sealed partial class MainWindow : Window
         Title = "LatencyPilot";
         VersionText.Text = $"v{GetProductVersion()}";
         BaselineProgressBar.Maximum = BaselineWindowCount;
+        ObservationQualityText.Text = MeasurementContextGuidance;
     }
 
     private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
@@ -124,7 +128,8 @@ public sealed partial class MainWindow : Window
         ClearExportEvidence("Capture in progress. Evidence export becomes available after completion.");
         SetObservationControlsBusy(true);
         KernelCaptureStatusText.Text = "Capturing DPC/ISR activity for 5 seconds…";
-        ObservationQualityText.Text = "Capture in progress. No interpretation is made until the observation completes.";
+        ObservationQualityText.Text =
+            "Capture in progress. Keep the apps/workload you are trying to diagnose open; they are part of the measurement context. No interpretation is made until capture completes.";
 
         try
         {
@@ -158,7 +163,8 @@ public sealed partial class MainWindow : Window
         BaselineVerdictText.Text = "Capturing";
         BaselineStatusText.Text = $"Preparing {BaselineWindowCount} repeated five-second windows…";
         BaselineMetricsText.Text = "Noise and drift will be computed after all required windows complete.";
-        BaselineReasonsText.Text = "No window is silently discarded from the quality gate.";
+        BaselineReasonsText.Text =
+            "Keep the test context consistent across all five windows. For an idle baseline, close unnecessary apps; for a real-world baseline, keep the same workload active. No window is silently discarded.";
         BaselineWindowsList.ItemsSource = null;
 
         var windows = new List<BaselineWindowEvidence>(BaselineWindowCount);
@@ -330,12 +336,12 @@ public sealed partial class MainWindow : Window
         if (integrityIssue is null)
         {
             KernelCaptureStatusText.Text = $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected.";
-            ObservationQualityText.Text = $"Capture integrity looks clean. {FormatThresholdEvidence(capture)} Guidance exceedances are diagnostic context, not a pass/fail verdict. This is still a single observation, not a validated baseline.";
+            ObservationQualityText.Text = $"Capture integrity looks clean. {FormatCaptureInterpretation(capture)} {MeasurementContextGuidance}";
         }
         else
         {
             KernelCaptureStatusText.Text = $"Observation completed with quality warning: {integrityIssue}";
-            ObservationQualityText.Text = $"Treat this observation as incomplete evidence. {FormatThresholdEvidence(capture)} It cannot qualify as a clean baseline window.";
+            ObservationQualityText.Text = $"Treat this observation as incomplete evidence. {FormatCaptureInterpretation(capture)} {MeasurementContextGuidance}";
         }
     }
 
@@ -352,8 +358,8 @@ public sealed partial class MainWindow : Window
         BaselineMetricsText.Text =
             $"{FormatBaselineMetric(quality.DpcP99)}\n{FormatBaselineMetric(quality.IsrP99)}";
         BaselineReasonsText.Text = quality.Reasons.Count == 0
-            ? "Noise, drift, sample adequacy and capture integrity are inside the current quality limits. This baseline may be used by later comparison stages."
-            : string.Join(" ", quality.Reasons);
+            ? "This baseline is stable enough for later comparisons. Valid means repeatable under this test context; it does not mean the latency values are automatically good. Keep the same workload and background-app state when comparing a candidate."
+            : $"Inconclusive means the run was not stable or complete enough for a fair comparison; it does not by itself mean the system latency is bad. {string.Join(" ", quality.Reasons)}";
     }
 
     private static string FormatBaselineMetric(BaselineMetricQuality metric)
@@ -524,7 +530,7 @@ public sealed partial class MainWindow : Window
         TopModuleText.Text = "No observation yet.";
         TopModulesList.ItemsSource = null;
         TopProcessorsList.ItemsSource = null;
-        ObservationQualityText.Text = "Quality evidence will appear after capture.";
+        ObservationQualityText.Text = MeasurementContextGuidance;
     }
 
     private static string GetProductVersion()
@@ -559,10 +565,44 @@ public sealed partial class MainWindow : Window
         return FormatMicroseconds(Math.Max(first.Value, second.Value));
     }
 
-    private static string FormatThresholdEvidence(KernelLatencyCaptureResponse capture) =>
-        string.Create(
+    private static string FormatCaptureInterpretation(KernelLatencyCaptureResponse capture)
+    {
+        var guidanceExceedances =
+            capture.DpcThresholds.GuidanceExceedanceCount + capture.IsrThresholds.GuidanceExceedanceCount;
+        var overOneMillisecond =
+            capture.DpcThresholds.OverOneMillisecondCount + capture.IsrThresholds.OverOneMillisecondCount;
+        var overThreeMilliseconds =
+            capture.DpcThresholds.OverThreeMillisecondsCount + capture.IsrThresholds.OverThreeMillisecondsCount;
+        var oneToThreeMilliseconds = Math.Max(0, overOneMillisecond - overThreeMilliseconds);
+
+        string assessment;
+        if (overThreeMilliseconds > 0)
+        {
+            assessment = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Severe media-impact range observed: {overThreeMilliseconds:N0} DPC/ISR event(s) exceeded 3 ms. Microsoft's streaming-media assessment treats >3 ms as error-level in that media scenario. This is a strong investigation signal, not a universal system-fail verdict.");
+        }
+        else if (overOneMillisecond > 0)
+        {
+            assessment = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Potential real-time impact range observed: {oneToThreeMilliseconds:N0} DPC/ISR event(s) were between 1 and 3 ms. Microsoft's streaming-media assessment warns on long-running DPC/ISR in this range.");
+        }
+        else if (guidanceExceedances > 0)
+        {
+            assessment = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Driver guidance was exceeded, but no millisecond-scale spike was observed. {capture.DpcThresholds.GuidanceExceedanceCount:N0} DPC event(s) exceeded {capture.DpcThresholds.GuidanceThresholdMicroseconds:F0} µs and {capture.IsrThresholds.GuidanceExceedanceCount:N0} ISR event(s) exceeded {capture.IsrThresholds.GuidanceThresholdMicroseconds:F0} µs. This is diagnostic context, not proof of a user-visible problem.");
+        }
+        else
+        {
+            assessment = "Within driver guidance in this capture: no DPC exceeded 100 µs, no ISR exceeded 25 µs, and no millisecond-scale spike was observed. This is encouraging for this workload, but it is not proof that every workload is clean.";
+        }
+
+        return string.Create(
             CultureInfo.InvariantCulture,
-            $"Driver-guidance exceedances: DPC {capture.DpcThresholds.GuidanceExceedanceCount:N0} >{capture.DpcThresholds.GuidanceThresholdMicroseconds:F0} µs; ISR {capture.IsrThresholds.GuidanceExceedanceCount:N0} >{capture.IsrThresholds.GuidanceThresholdMicroseconds:F0} µs. >1 ms DPC/ISR {capture.DpcThresholds.OverOneMillisecondCount:N0}/{capture.IsrThresholds.OverOneMillisecondCount:N0}; >3 ms {capture.DpcThresholds.OverThreeMillisecondsCount:N0}/{capture.IsrThresholds.OverThreeMillisecondsCount:N0}." );
+            $"{assessment} Max DPC {FormatMicroseconds(capture.Dpc.MaximumMicroseconds)}; max ISR {FormatMicroseconds(capture.Isr.MaximumMicroseconds)}; >1 ms DPC/ISR {capture.DpcThresholds.OverOneMillisecondCount:N0}/{capture.IsrThresholds.OverOneMillisecondCount:N0}; >3 ms {capture.DpcThresholds.OverThreeMillisecondsCount:N0}/{capture.IsrThresholds.OverThreeMillisecondsCount:N0}.");
+    }
 
     private static string FormatMicroseconds(double? value) =>
         value is null
