@@ -315,6 +315,16 @@
                                             <KeyboardAccelerator Modifiers="Control" Key="B" />
                                         </Button.KeyboardAccelerators>
                                     </Button>
+                                    <Button x:Name="ExportEvidenceButton"
+                                            IsEnabled="False"
+                                            Click="ExportEvidenceButton_Click"
+                                            Content="Export evidence"
+                                            ToolTipService.ToolTip="Export the latest completed aggregate evidence as JSON (Ctrl+E)"
+                                            AutomationProperties.AcceleratorKey="Ctrl+E">
+                                        <Button.KeyboardAccelerators>
+                                            <KeyboardAccelerator Modifiers="Control" Key="E" />
+                                        </Button.KeyboardAccelerators>
+                                    </Button>
                                 </StackPanel>
                             </Grid>
 
@@ -354,6 +364,7 @@
                             </Grid>
 
                             <TextBlock x:Name="ObservationQualityText" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource MutedTextBrush}" Text="Quality evidence will appear after capture." />
+                            <TextBlock x:Name="EvidenceExportStatusText" FontSize="11" TextWrapping="Wrap" Foreground="{ThemeResource MutedTextBrush}" Text="Complete an observation or repeated baseline to enable JSON evidence export." AutomationProperties.Name="Evidence export status" />
 
                             <Border Padding="16" CornerRadius="12" Background="{ThemeResource SurfaceAltBrush}">
                                 <StackPanel Spacing="10">
