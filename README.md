@@ -41,7 +41,7 @@ Windows exposes powerful interrupt, CPU-topology, ETW, USB, networking and sched
 - Phase 2 — read-only observation engine: **in progress**
 - Stage A — authoritative DPC/ISR module attribution: **closed historically**
 - Stage B — physical Windows 11 validation: **open**
-- Stage C — repeated baseline quality engine: **implemented in source; CI compile passes, owner-local runtime/physical validation pending**
+- Stage C — repeated baseline quality engine: **implemented in source; owner-local compile/runtime/physical validation pending**
 - System mutation capability: **none by design**
 - Permanent tests: **8 / hard maximum 10**
 
@@ -51,7 +51,7 @@ The observation boundary is fail-closed and bounded: unknown protocol fields are
 
 Protocol v5 carries the capture `RequestId` into bounded evidence, so exported JSON can correlate directly with App/Service structured logs. Expected privileged capture failures preserve bounded failure-kind/native-error diagnostics rather than collapsing every failure into an opaque unavailable state.
 
-The Stage C source adds a five-window `Build baseline` flow and deterministic `baseline-quality-v1` interpretation in `LatencyPilot.Benchmarking`. It checks capture integrity, minimum metric evidence, inter-window noise, drift and extreme windows; a lossy/noisy/drifted baseline is `Inconclusive` rather than silently accepted. Window number is the authoritative sequence; UTC timestamps are provenance rather than a monotonic-order requirement. Hosted CI now compiles the WinUI App and Service, but owner-local runtime/publish/physical evidence is still required before Stage C is closed.
+The Stage C source adds a five-window `Build baseline` flow and deterministic `baseline-quality-v1` interpretation in `LatencyPilot.Benchmarking`. It checks capture integrity, minimum metric evidence, inter-window noise, drift and extreme windows; a lossy/noisy/drifted baseline is `Inconclusive` rather than silently accepted. Window number is the authoritative sequence; UTC timestamps are provenance rather than a monotonic-order requirement. Hosted Tests cover the selected deterministic contracts only; owner-local Windows build/runtime/publish and physical evidence are still required before Stage C is closed.
 
 See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the live execution ladder, [`docs/PHYSICAL_VALIDATION.md`](docs/PHYSICAL_VALIDATION.md) for Stage B, [`docs/BENCHMARK_METHODOLOGY.md`](docs/BENCHMARK_METHODOLOGY.md) for baseline/statistics semantics, and [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) for local logging/correlation rules.
 
@@ -184,15 +184,13 @@ They use compact JSON, bounded rolling/retention and async file writes. The prot
 
 The .NET SDK is pinned in `global.json`.
 
-GitHub Actions is a **validation-only** workflow. On each `main` revision and pull request it runs the permanent critical suite and then Release-compiles both Windows hosts:
+GitHub Actions is intentionally **test-only**. On each `main` revision and pull request it runs the permanent critical suite:
 
 ```powershell
 dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-dotnet build src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release
-dotnet build src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release
 ```
 
-Hosted Actions does **not** publish the App/Service, run the published-App launch smoke, build Setup/portable distributions, run production release packaging or publish GitHub releases. Publish/package/runtime evidence remains owner-local.
+Hosted Actions does **not** build or publish the App/Service, run the published-App launch smoke, build Setup/portable distributions, run production release packaging or publish GitHub releases. App/Service build, publish/package and runtime evidence remain owner-local.
 
 ### Fast local development
 
