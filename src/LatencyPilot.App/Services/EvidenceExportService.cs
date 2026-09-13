@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LatencyPilot.Benchmarking.Baselines;
@@ -20,6 +21,13 @@ internal enum MeasurementScenario
 internal sealed record MeasurementRuntimeWindow(
     int WindowNumber,
     RuntimeMeasurementContextInterval? Context);
+
+internal sealed record EvidenceSaveResult(
+    string Path,
+    string Sha256)
+{
+    public override string ToString() => $"{Path} · SHA-256 {Sha256}";
+}
 
 internal static class EvidenceExportService
 {
@@ -110,7 +118,7 @@ internal static class EvidenceExportService
             CultureInfo.InvariantCulture,
             $"LatencyPilot-{evidenceType}-{startedAtUtc.UtcDateTime:yyyyMMddTHHmmssfffZ}");
 
-    public static async Task<string?> SaveAsync(
+    public static async Task<EvidenceSaveResult?> SaveAsync(
         LatencyPilot.App.MainWindow owner,
         string json,
         string suggestedFileName)
@@ -135,7 +143,10 @@ internal static class EvidenceExportService
         }
 
         await File.WriteAllTextAsync(result.Path, json);
-        return result.Path;
+        await using var stream = File.OpenRead(result.Path);
+        using var sha256 = SHA256.Create();
+        var digest = await sha256.ComputeHashAsync(stream);
+        return new EvidenceSaveResult(result.Path, Convert.ToHexString(digest));
     }
 
     private static string CreateBaselineJson(
