@@ -51,7 +51,7 @@ The observation boundary is fail-closed and bounded: unknown protocol fields are
 
 Protocol v5 carries the capture `RequestId` into bounded evidence, so exported JSON can correlate directly with App/Service structured logs. Expected privileged capture failures preserve bounded failure-kind/native-error diagnostics rather than collapsing every failure into an opaque unavailable state.
 
-The Stage C source adds a five-window `Build baseline` flow and deterministic `baseline-quality-v1` interpretation in `LatencyPilot.Benchmarking`. It checks capture integrity, minimum metric evidence, inter-window noise, drift and extreme windows; a lossy/noisy/drifted baseline is `Inconclusive` rather than silently accepted. Window number is the authoritative sequence; UTC timestamps are provenance rather than a monotonic-order requirement. Hosted Tests cover the selected deterministic contracts only; owner-local Windows build/runtime/publish and physical evidence are still required before Stage C is closed.
+The Stage C source adds an exactly-five-window `Build baseline` flow and deterministic `baseline-quality-v1` interpretation in `LatencyPilot.Benchmarking`. It checks capture integrity, minimum metric evidence, inter-window noise, drift and extreme windows; a lossy/noisy/drifted or structurally mismatched baseline is `Inconclusive` rather than silently accepted. Window number is the authoritative sequence; UTC timestamps are provenance rather than a monotonic-order requirement. Best-effort system CPU/power context is captured around each observation window as provenance and does not silently change the baseline-validity formula. Hosted Tests cover the selected deterministic contracts only; owner-local Windows build/runtime/publish and physical evidence are still required before Stage C is closed.
 
 See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the live execution ladder, [`docs/PHYSICAL_VALIDATION.md`](docs/PHYSICAL_VALIDATION.md) for Stage B, [`docs/BENCHMARK_METHODOLOGY.md`](docs/BENCHMARK_METHODOLOGY.md) for baseline/statistics semantics, and [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) for local logging/correlation rules.
 
@@ -84,7 +84,7 @@ Current baseline:
 - **Tracing:** ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`
 - **Graphics telemetry:** PresentMon where applicable
 - **Windows integration:** SetupAPI, Configuration Manager, CPU topology/CPU Sets, Raw Input and documented device-policy APIs
-- **Persistence:** SQLite when durable experiment/recovery state is introduced
+- **Persistence:** SQLite when Phase 3 durable experiment/recovery state is introduced; no empty persistence project is retained during Phase 2
 - **Diagnostics:** `Microsoft.Extensions.Logging` Service abstraction plus bounded Serilog compact-JSON rolling files
 - **Tests:** MSTest + Microsoft.Testing.Platform, hard maximum 10 permanent automated tests
 
@@ -126,7 +126,7 @@ All current percentile calculation uses the same documented linear interpolation
 
 DPC `>100 µs` and ISR `>25 µs` are presented as Microsoft driver guidance. The `>1 ms` and `>3 ms` rows are LatencyPilot diagnostic tail buckets, not official Windows pass/fail or user-impact severity boundaries.
 
-`baseline-quality-v1` currently requires five sequential windows, at least 20 events per DPC/ISR metric per clean window, <=30% relative P10-P90 spread, <=20% early/late drift and no >50% extreme-window deviation. These are conservative versioned quality-policy thresholds, not statistical-significance claims.
+`baseline-quality-v1` currently requires exactly five sequential windows, at least 20 events per DPC/ISR metric per clean window, <=30% relative P10-P90 spread, <=20% early/late drift and no >50% extreme-window deviation. These are conservative versioned quality-policy thresholds, not statistical-significance claims.
 
 Results distinguish **Improved**, **Regressed**, **Tradeoff**, **NoMeasurableDifference**, and **Inconclusive** rather than forcing every run into one score.
 
@@ -138,7 +138,6 @@ src/
   LatencyPilot.Benchmarking/
   LatencyPilot.Protocol/
   LatencyPilot.Platform.Windows/
-  LatencyPilot.Persistence/
   LatencyPilot.Service/
   LatencyPilot.App/
 
@@ -154,9 +153,11 @@ docs/
   adr/
 ```
 
+The Phase 3 persistence project will be introduced with its actual SQLite journal/recovery schema instead of being pre-created as an empty Phase 2 scaffold.
+
 ## Testing policy
 
-The permanent automated suite is intentionally small and has a **hard repository-wide maximum of 10 tests**. The current suite uses eight broader permanent test methods covering state-machine safety, benchmark verdict semantics, repeated-baseline quality, invalid metrics, canonical percentiles, fail-closed protocol framing/correlation, the read-only protocol surface and a real Windows inventory/topology invariant.
+The permanent automated suite is intentionally small and has a **hard repository-wide maximum of 10 tests**. The current suite uses eight broader permanent test methods covering state-machine safety, benchmark verdict semantics, repeated-baseline quality, invalid metrics, canonical percentiles, fail-closed protocol framing/correlation, the read-only protocol surface and a real Windows inventory/topology/runtime-context invariant.
 
 Test count is not a quality goal. When a newer parser/recovery/mutation risk has greater blast radius, merge or remove a lower-value permanent test and reuse that slot. Scenario matrices should be consolidated inside a durable contract test when practical. Temporary implementation/debug tests may be created and deleted before finalization.
 
