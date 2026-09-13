@@ -19,7 +19,7 @@ public sealed partial class MainWindow
     private Border? _measurementScenarioCard;
     private bool _measurementBusy;
     private string _lastRuntimeContextSummary =
-        "Runtime context will appear after capture: average system CPU busy time, power source and Battery Saver state.";
+        "Runtime context will appear after capture: average system CPU busy time, power source, active power plan and Battery Saver state.";
 
     private void InitializeMeasurementExperience()
     {
@@ -65,38 +65,29 @@ public sealed partial class MainWindow
             BorderThickness = new Thickness(1),
         };
 
-        var root = new Grid
-        {
-            ColumnSpacing = 16,
-            RowSpacing = 8,
-        };
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var root = new StackPanel { Spacing = 9 };
+        card.Child = root;
 
-        var heading = new StackPanel { Spacing = 3 };
-        heading.Children.Add(new TextBlock
+        root.Children.Add(new TextBlock
         {
             Text = "Measurement scenario",
             FontSize = 14,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
         });
-        heading.Children.Add(new TextBlock
+        root.Children.Add(new TextBlock
         {
             Text = "Choose the context before capture so the result and exported evidence describe what was actually measured.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Foreground = ThemeBrush("MutedTextBrush"),
         });
-        root.Children.Add(heading);
 
         _measurementScenarioComboBox = new ComboBox
         {
             MinWidth = 230,
-            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 360,
+            HorizontalAlignment = HorizontalAlignment.Left,
             IsEnabled = !_measurementBusy,
         };
         _measurementScenarioComboBox.Items.Add(EvidenceExportService.GetMeasurementDisplayName(MeasurementScenario.RealWorld));
@@ -114,7 +105,6 @@ public sealed partial class MainWindow
         AutomationProperties.SetHelpText(
             _measurementScenarioComboBox,
             "Select whether this run represents a real-world workload, controlled idle, or a before/after comparison.");
-        Grid.SetColumn(_measurementScenarioComboBox, 1);
         root.Children.Add(_measurementScenarioComboBox);
 
         _measurementScenarioGuidanceText = new TextBlock
@@ -123,8 +113,6 @@ public sealed partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
             Foreground = ThemeBrush("MutedTextBrush"),
         };
-        Grid.SetRow(_measurementScenarioGuidanceText, 1);
-        Grid.SetColumnSpan(_measurementScenarioGuidanceText, 2);
         root.Children.Add(_measurementScenarioGuidanceText);
         UpdateMeasurementScenarioGuidance();
 
@@ -136,16 +124,39 @@ public sealed partial class MainWindow
             Foreground = ThemeBrush("MutedTextBrush"),
         };
         AutomationProperties.SetName(_measurementRuntimeContextText, "Runtime measurement context");
-        Grid.SetRow(_measurementRuntimeContextText, 2);
-        Grid.SetColumnSpan(_measurementRuntimeContextText, 2);
         root.Children.Add(_measurementRuntimeContextText);
 
-        card.Child = root;
         return card;
     }
 
     private void MeasurementScenarioComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         UpdateMeasurementScenarioGuidance();
+
+    private void MeasurementScenarioSelection_InvalidatesPreviousEvidence(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (_latestEvidenceJson is null && BaselineWindowsList.ItemsSource is null)
+        {
+            ResetRuntimeContextSummary(
+                "Runtime context will appear after capture: average system CPU busy time, power source, active power plan and Battery Saver state.");
+            return;
+        }
+
+        ClearCaptureMetrics();
+        ClearExportEvidence("Measurement scenario changed. Capture again before exporting evidence for the new context.");
+
+        BaselineProgressBar.Value = 0;
+        BaselineVerdictText.Text = "Not captured";
+        BaselineStatusText.Text = "Measurement scenario changed. Build a new baseline for this context.";
+        BaselineMetricsText.Text = "No baseline has been captured for the selected scenario.";
+        BaselineReasonsText.Text = EvidenceExportService.GetMeasurementGuidance(SelectedMeasurementScenario);
+        BaselineWindowsList.ItemsSource = null;
+        KernelCaptureStatusText.Text = "Measurement scenario changed. Capture again to produce context-matched evidence.";
+        ObservationQualityText.Text = EvidenceExportService.GetMeasurementGuidance(SelectedMeasurementScenario);
+        ResetRuntimeContextSummary(
+            "Measurement scenario changed. Capture again to collect context-matched CPU and power evidence.");
+    }
 
     private void UpdateMeasurementScenarioGuidance()
     {
@@ -386,7 +397,8 @@ public sealed partial class MainWindow
     private static bool PowerStateEquivalent(SystemPowerSnapshot first, SystemPowerSnapshot second) =>
         first.LineState == second.LineState &&
         first.Charging == second.Charging &&
-        first.BatterySaverEnabled == second.BatterySaverEnabled;
+        first.BatterySaverEnabled == second.BatterySaverEnabled &&
+        first.ActiveSchemeId == second.ActiveSchemeId;
 
     private static string FormatPowerContext(SystemPowerSnapshot power)
     {
@@ -396,6 +408,11 @@ public sealed partial class MainWindow
             SystemPowerLineState.Offline => "battery power",
             _ => "power source unknown",
         };
+        var scheme = !string.IsNullOrWhiteSpace(power.ActiveSchemeName)
+            ? $", plan {power.ActiveSchemeName}"
+            : power.ActiveSchemeId is not null
+                ? ", active power plan detected"
+                : ", power plan unavailable";
         var battery = power.BatteryPresent == true && power.BatteryPercent is not null
             ? string.Create(CultureInfo.InvariantCulture, $", battery {power.BatteryPercent.Value}%")
             : string.Empty;
@@ -406,7 +423,7 @@ public sealed partial class MainWindow
             null => ", Battery Saver unknown",
         };
 
-        return source + battery + saver;
+        return source + scheme + battery + saver;
     }
 
     private void SetMeasurementBusy(bool busy)
