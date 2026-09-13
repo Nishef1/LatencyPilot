@@ -59,13 +59,15 @@ Unless an ADR explicitly changes it:
 - SetupAPI + Configuration Manager for PnP/device discovery;
 - CPU Sets / processor-topology APIs;
 - Raw Input for host-side input-report timing;
-- SQLite for durable experiment/recovery state;
+- SQLite for durable experiment/recovery state when Phase 3 begins;
 - MSTest + Microsoft.Testing.Platform for the small critical suite;
 - `Microsoft.Extensions.Logging` plus bounded local Serilog file sinks for operational diagnostics.
 
 Native C++ is not a baseline dependency. A native component requires profiling evidence and an ADR.
 
 ## 4. High-level architecture
+
+Current Phase 2 source architecture:
 
 ```text
 ┌────────────────────────────────────────────┐
@@ -81,29 +83,30 @@ Native C++ is not a baseline dependency. A native component requires profiling e
 │ privileged boundary                        │
 │ Phase 2: read-only kernel observation      │
 │ Phase 3+: validated mutation + recovery    │
-└───────────────┬────────────────────────────┘
-                │
-       ┌────────┴───────────────────┐
-       ▼                            ▼
-┌─────────────────────────┐  ┌─────────────────────────┐
-│ Platform.Windows        │  │ Persistence             │
-│ ETW / SetupAPI / CM     │  │ SQLite                  │
-│ MSI / affinity          │  │ snapshots + journal     │
-│ CPU / Raw Input / USB   │  │ benchmark history       │
-│ PresentMon / RSS        │  │ recovery records        │
-└────────────┬────────────┘  └─────────────────────────┘
-             │
-             ▼
-       Windows 11 / hardware
+└───────────────────┬────────────────────────┘
+                    ▼
+┌────────────────────────────────────────────┐
+│ Platform.Windows                           │
+│ ETW / SetupAPI / CM                        │
+│ MSI / affinity / CPU / Raw Input / USB     │
+│ PresentMon / RSS                           │
+└───────────────────┬────────────────────────┘
+                    ▼
+              Windows 11 / hardware
 
 Pure/shared layers:
 Benchmarking → Core
 Platform.Windows → Core
 Protocol (standalone typed IPC contract)
-Persistence (reserved, dependency-free Phase 2 boundary)
 ```
 
-Mutation remains disabled until Phase 3 safety infrastructure exists. The Service already exists in Phase 2 because privileged kernel ETW observation must not force the WinUI process to run elevated. The Persistence box is the accepted Phase 3 boundary; it is intentionally dependency-free and not wired into the Phase 2 Service graph yet.
+Phase 3 adds a real persistence boundary only when durable journaling/recovery work begins:
+
+```text
+Service → Persistence (SQLite journal + recovery + history)
+```
+
+Mutation remains disabled until Phase 3 safety infrastructure exists. The Service already exists in Phase 2 because privileged kernel ETW observation must not force the WinUI process to run elevated. Persistence is an accepted Phase 3 responsibility, not a placeholder Phase 2 project; its project/schema/migrations should be introduced together when the durable recovery contract is implemented.
 
 ## 5. Project responsibilities
 
@@ -121,8 +124,8 @@ All raw Windows mechanisms: inventory, ETW, DPC/ISR interpretation, SetupAPI/CM,
 
 Raw P/Invoke and registry paths do not leave this project except for narrowly scoped Windows-host security/lifecycle calls that belong directly to the Service boundary (for example named-pipe client-session authorization).
 
-### `LatencyPilot.Persistence`
-Reserved Phase 3 boundary for SQLite, migrations, snapshots, pending/closed journal records, benchmark history and recovery state. It remains intentionally empty and dependency-free in Phase 2 rather than carrying placeholder helpers or speculative references with no active persistence contract.
+### Future Phase 3 persistence boundary
+Durable SQLite migrations, snapshots, pending/closed journal records, benchmark history and recovery state belong in a dedicated persistence boundary once Phase 3 begins. There is intentionally no empty `LatencyPilot.Persistence` project during Phase 2; create the project together with the concrete schema/recovery contract rather than reserving a namespace with placeholder code.
 
 ### `LatencyPilot.Service`
 The narrow privileged execution boundary. During Phase 2 it hosts only privileged read-only observation. During Phase 3 it may gain mutation authority only after durable journaling, validation, authorization, verification and recovery exist. It never becomes a generic scripting host.
@@ -137,15 +140,14 @@ Core                 ← no project dependency
 Benchmarking         → Core
 Protocol             ← no project dependency
 Platform.Windows     → Core
-Persistence          ← no project dependency in Phase 2
 Service              → Core + Benchmarking + Protocol + Platform.Windows
 App                  → Benchmarking + Protocol + Platform.Windows
 CriticalTests        → only projects needed by the current critical scenarios
 ```
 
-The Service and App depend on `Benchmarking` only for shared deterministic evidence/statistics semantics. They must not duplicate layer-specific percentile, noise or drift interpretations. `Protocol` stays independent because its wire DTOs/framing currently need no Core types. `Persistence` stays dependency-free until Phase 3 durable journaling/recovery introduces a demonstrated dependency. The App does not carry a redundant direct Core reference when its active features are already expressed through Benchmarking and Platform.Windows boundaries.
+The Service and App depend on `Benchmarking` only for shared deterministic evidence/statistics semantics. They must not duplicate layer-specific percentile, noise or drift interpretations. `Protocol` stays independent because its wire DTOs/framing currently need no Core types. The App does not carry a redundant direct Core reference when its active features are already expressed through Benchmarking and Platform.Windows boundaries. Add the Phase 3 persistence project/dependency only when durable journaling/recovery introduces the concrete need.
 
-No cyclic references. No speculative abstraction projects. Do not retain project references merely for possible future work.
+No cyclic references. No speculative abstraction projects. Do not retain projects or references merely for possible future work.
 
 ## 7. UI and deployment contract
 
@@ -214,7 +216,7 @@ Phase 2 observation supports DPC/ISR count and duration distributions including 
 
 `baseline-quality-v1` adds the first conservative repeated-baseline gate:
 
-- exactly five sequential five-second windows are requested by the current App flow;
+- exactly five sequential five-second windows are required by the current App flow and method version;
 - authoritative ordering is the contiguous `WindowNumber` sequence, while UTC timestamps are provenance and are not treated as a monotonic clock;
 - a metric window requires at least 20 DPC/ISR events and a finite positive p99 value;
 - any unavailable or non-zero ETW loss count, invalid latency/image event, or event-limit hit makes that capture window invalid;
@@ -224,7 +226,7 @@ Phase 2 observation supports DPC/ISR count and duration distributions including 
 - a window more than 50% away from the median is explicitly reported as extreme and is never silently discarded;
 - all required windows and both DPC/ISR p99 metrics must pass for the result to become `Valid`; otherwise the baseline is `Inconclusive`.
 
-These values are a versioned quality gate, not a claim of statistical significance. Physical evidence may justify revising them in a later methodology version. Background-load and thermal/power quality signals remain open until authoritative, sufficiently low-overhead evidence is chosen.
+These values are a versioned quality gate, not a claim of statistical significance. Physical evidence may justify revising them in a later methodology version. Runtime CPU/power context is provenance rather than a baseline-validity gate; thermal context remains open until an authoritative, sufficiently low-overhead source is justified by physical evidence.
 
 A neutral target cannot hide a regressed guardrail; collateral regression must remain visible in the verdict.
 
@@ -287,11 +289,14 @@ No IPC command accepts arbitrary registry paths, PowerShell or process command l
 
 Before the first real mutation ships:
 
-1. original state is durable before apply;
-2. incomplete experiments survive app/service/Windows interruption;
-3. recovery re-reads actual machine state before action;
-4. external changes are not overwritten blindly;
-5. Keep/Revert final state is verified before journal closure.
+1. create the concrete Phase 3 persistence project together with its SQLite schema/migrations and recovery contract;
+2. original state is durable before apply;
+3. incomplete experiments survive app/service/Windows interruption;
+4. recovery re-reads actual machine state before action;
+5. external changes are not overwritten blindly;
+6. Keep/Revert final state is verified before journal closure.
+
+Do not create an empty persistence project in advance merely to reserve the future boundary.
 
 ## 15. Permanent test strategy
 
@@ -306,7 +311,7 @@ Prefer a small portfolio of:
 - one or a few Windows integration invariants that exercise real read-only APIs;
 - data/scenario matrices consolidated inside a durable high-value test rather than one permanent test per branch.
 
-The repeated-baseline quality gate is a high-blast-radius safety contract because accepting a noisy/lossy baseline would invalidate all later optimization decisions; one consolidated permanent scenario test protects stable, drifted, capture-loss, sequence-gap and wall-clock-adjustment cases.
+The repeated-baseline quality gate is a high-blast-radius safety contract because accepting a noisy/lossy baseline would invalidate all later optimization decisions; one consolidated permanent scenario test protects stable, drifted, capture-loss, sequence-gap, wall-clock-adjustment and exact-window-count cases.
 
 The protocol/framing contract also carries v5 correlation and p99.9-adequacy round-trip scenarios inside its existing test method rather than consuming another permanent slot.
 
