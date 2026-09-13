@@ -226,7 +226,7 @@ try {
             continue
         }
 
-        & git fetch --quiet origin main 2>$null
+        & git fetch --quiet origin "+refs/heads/main:refs/remotes/origin/main" 2>$null
         if ($LASTEXITCODE -ne 0) {
             if (-not $fetchWarningShown) {
                 Write-Warning "Could not fetch origin/main. Live mode will keep running and retry automatically."
