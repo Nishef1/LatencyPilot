@@ -69,8 +69,10 @@ internal static class ObservationServiceClient
             throw new InvalidDataException("Observation service returned a status payload for a capture request.");
         }
 
-        return response.KernelLatencyCapture
+        var capture = response.KernelLatencyCapture
             ?? throw new InvalidDataException("Observation service returned no kernel-latency payload.");
+        ValidateCapture(capture);
+        return capture;
     }
 
     private static async Task<ObservationResponse> SendAsync(
@@ -191,6 +193,48 @@ internal static class ObservationServiceClient
             response.ErrorMessage is not null)
         {
             throw new InvalidDataException("Observation service returned an inconsistent success response.");
+        }
+    }
+
+    private static void ValidateCapture(KernelLatencyCaptureResponse capture)
+    {
+        ValidateThresholdSummary("DPC", capture.Dpc, capture.DpcThresholds);
+        ValidateThresholdSummary("ISR", capture.Isr, capture.IsrThresholds);
+
+        foreach (var processor in capture.Processors)
+        {
+            ValidateThresholdSummary("processor DPC", processor.Dpc, processor.DpcThresholds);
+            ValidateThresholdSummary("processor ISR", processor.Isr, processor.IsrThresholds);
+        }
+
+        foreach (var module in capture.Modules)
+        {
+            ValidateThresholdSummary("module DPC", module.Dpc, module.DpcThresholds);
+            ValidateThresholdSummary("module ISR", module.Isr, module.IsrThresholds);
+        }
+
+        foreach (var routine in capture.UnresolvedRoutines)
+        {
+            ValidateThresholdSummary("unresolved DPC", routine.Dpc, routine.DpcThresholds);
+            ValidateThresholdSummary("unresolved ISR", routine.Isr, routine.IsrThresholds);
+        }
+    }
+
+    private static void ValidateThresholdSummary(
+        string context,
+        LatencyDistribution distribution,
+        LatencyThresholdSummary thresholds)
+    {
+        if (!double.IsFinite(thresholds.GuidanceThresholdMicroseconds) ||
+            thresholds.GuidanceThresholdMicroseconds <= 0d ||
+            thresholds.GuidanceExceedanceCount < 0 ||
+            thresholds.OverOneMillisecondCount < 0 ||
+            thresholds.OverThreeMillisecondsCount < 0 ||
+            thresholds.GuidanceExceedanceCount > distribution.Count ||
+            thresholds.OverOneMillisecondCount > distribution.Count ||
+            thresholds.OverThreeMillisecondsCount > thresholds.OverOneMillisecondCount)
+        {
+            throw new InvalidDataException($"Observation service returned inconsistent {context} threshold evidence.");
         }
     }
 }
