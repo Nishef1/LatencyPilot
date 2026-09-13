@@ -133,11 +133,7 @@ function Format-Value {
         return "$Value$Suffix"
     }
 
-    if ($Value -is [byte] -or $Value -is [sbyte] -or
-        $Value -is [System.Int16] -or $Value -is [System.UInt16] -or
-        $Value -is [int] -or $Value -is [uint] -or
-        $Value -is [long] -or $Value -is [ulong] -or
-        $Value -is [float] -or $Value -is [double] -or $Value -is [decimal]) {
+    if (Test-FiniteNumber $Value) {
         return ('{0:N3}{1}' -f [double]$Value, $Suffix)
     }
 
