@@ -39,12 +39,10 @@ public partial class App : Application
     {
         try
         {
-            var mainWindow = new MainWindow();
-            mainWindow.InitializeMeasurementReadinessExperience();
-            mainWindow.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
-            mainWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
-            _window = mainWindow;
-            mainWindow.Activate();
+            _window = new MainWindow();
+            _window.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
+            _window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
+            _window.Activate();
             Log.Information("Main window activated.");
         }
         catch (Exception exception)
