@@ -45,4 +45,16 @@
           Outputs="$(MSBuildProjectDirectory)\Assets\AppIcon.ico">
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\eng\Generate-AppIcon.ps1&quot; -OutputPath &quot;$(MSBuildProjectDirectory)\Assets\AppIcon.ico&quot;" />
   </Target>
+
+  <Target Name="WriteLatencyPilotSourceBuildInfo"
+          AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\eng\Write-SourceBuildInfo.ps1&quot; -OutputPath &quot;$(TargetDir)BUILD_INFO.txt&quot; -Version &quot;$(Version)&quot;" />
+  </Target>
+
+  <Target Name="WriteLatencyPilotPublishedBuildInfo"
+          AfterTargets="Publish"
+          Condition="'$(DesignTimeBuild)' != 'true' and '$(PublishDir)' != ''">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\eng\Write-SourceBuildInfo.ps1&quot; -OutputPath &quot;$(PublishDir)BUILD_INFO.txt&quot; -Version &quot;$(Version)&quot;" />
+  </Target>
 </Project>
