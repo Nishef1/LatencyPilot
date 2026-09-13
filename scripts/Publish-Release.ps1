@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version,
-    [switch]$ReplaceExisting
+    [string]$Version
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,11 +98,6 @@ try {
         throw "No successful Tests workflow run exists for commit $commit. Let CI pass before publishing."
     }
 
-    $repoName = (gh repo view --json nameWithOwner --jq '.nameWithOwner').Trim()
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoName)) {
-        throw 'Unable to resolve the GitHub repository name.'
-    }
-
     $tag = "v$Version"
     gh release view $tag --json tagName *> $null
     $releaseExists = $LASTEXITCODE -eq 0
@@ -111,8 +105,8 @@ try {
     git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
     $remoteTagExists = $LASTEXITCODE -eq 0
 
-    if (($releaseExists -or $remoteTagExists) -and -not $ReplaceExisting) {
-        throw "Release/tag $tag already exists. Re-run with -ReplaceExisting only when replacement is intentional."
+    if ($releaseExists -or $remoteTagExists) {
+        throw "Release/tag $tag already exists. Published versions are immutable; choose a new product version instead of replacing it."
     }
 
     $artifactsRoot = Join-Path $repoRoot 'artifacts'
@@ -206,18 +200,6 @@ try {
     $portableHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $portable).Hash.ToLowerInvariant()
     $portableChecksum = "$portable.sha256"
     Set-Content -LiteralPath $portableChecksum -Value "$portableHash  $(Split-Path $portable -Leaf)" -NoNewline
-
-    if ($ReplaceExisting) {
-        if ($releaseExists) {
-            Invoke-Native -FilePath 'gh' -ArgumentList @('release', 'delete', $tag, '--cleanup-tag', '--yes')
-        }
-        elseif ($remoteTagExists) {
-            $encodedTag = [Uri]::EscapeDataString($tag)
-            Invoke-Native -FilePath 'gh' -ArgumentList @(
-                'api', '--method', 'DELETE', "repos/$repoName/git/refs/tags/$encodedTag"
-            )
-        }
-    }
 
     Invoke-Native -FilePath 'gh' -ArgumentList @(
         'release', 'create', $tag,
