@@ -3,78 +3,74 @@
 Status: **Authoritative architecture baseline**  
 Last updated: 2026-09-13
 
-`ROADMAP.md` defines the final product and phase exit gates. `PROJECT_STATUS.md` records what is actually complete and the current execution ladder. ADRs record accepted architecture changes.
+`ROADMAP.md` defines required product/phase outcomes. `PROJECT_STATUS.md` records current evidence and the execution ladder. ADRs record accepted architecture changes.
 
 ## 1. Purpose
 
-LatencyPilot is a Windows 11 latency experimentation platform. It observes the machine, isolates a narrowly scoped candidate change, verifies what actually changed, compares target and collateral effects, and lets the user keep or revert the experiment.
+LatencyPilot is a Windows 11 latency experimentation platform:
 
 ```text
 Measure → Experiment → Verify → Compare → Keep or Revert
 ```
 
-For a system-changing feature:
+A system-changing feature is incomplete unless it can follow:
 
 ```text
 Detect applicability
-→ Snapshot original state
+→ Snapshot exact original state
 → Validate candidate
 → Journal pending experiment
-→ Apply
+→ Apply one change
 → Verify actual state
-→ Benchmark
-→ Classify
+→ Measure control/candidate
+→ Compare target + guardrails
 → Keep or Revert
 → Verify final state
 → Close journal
 ```
 
-A mutation that cannot satisfy that lifecycle is not eligible for automatic optimization.
+Phase 2 deliberately stops before mutation and establishes the measurement substrate that future decisions depend on.
 
 ## 2. Target platform
 
 Initial supported target:
 
-- Windows 11;
-- x64;
+- Windows 11 x64;
 - active local interactive desktop session;
 - local machine only;
-- self-contained .NET + Windows App SDK release.
+- self-contained .NET / Windows App SDK deployment.
 
-The current Phase 2 privileged observation pipe authorizes only the active console session after the connection is accepted. RDP/multi-session behavior is not an implied supported path and must be deliberately validated/designed before being broadened. ARM64 is not a 1.0 commitment until every required dependency and hardware-validation path is demonstrated.
+The current privileged observation path authorizes the active console session. RDP/multi-session support is not implied. ARM64 is not a 1.0 commitment until dependencies and physical validation exist.
 
-## 3. Frozen technology baseline
+## 3. Technology baseline
 
-Unless an ADR explicitly changes it:
+Unless an ADR changes it:
 
 - C# 14;
 - .NET 10 LTS;
 - WinUI 3;
 - Windows App SDK 2.4 Stable;
-- unpackaged application with self-contained Windows App SDK runtime;
-- Windows Service as the narrow privileged boundary for Phase 2 kernel observation and later Phase 3 mutation;
-- versioned Named Pipes for local IPC;
+- unpackaged App with self-contained Windows App SDK runtime;
+- narrow Windows Service privileged boundary;
+- typed/versioned local Named Pipes;
 - ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`;
-- PresentMon for graphics/frame telemetry where required;
-- SetupAPI + Configuration Manager for PnP/device discovery;
-- CPU Sets / processor-topology APIs;
-- Raw Input for host-side input-report timing;
-- SQLite for durable experiment/recovery state when Phase 3 begins;
-- MSTest + Microsoft.Testing.Platform for the small critical suite;
-- `Microsoft.Extensions.Logging` plus bounded local Serilog file sinks for operational diagnostics.
+- PresentMon for graphics/frame telemetry where applicable;
+- SetupAPI + Configuration Manager for PnP/device evidence;
+- processor-topology / CPU-set APIs;
+- Raw Input for host-observable input timing;
+- SQLite for durable mutation journal/history when Phase 3 actually begins;
+- MSTest + Microsoft.Testing.Platform for the capped critical suite;
+- bounded structured local diagnostics.
 
-Native C++ is not a baseline dependency. A native component requires profiling evidence and an ADR.
+Native C++ is not a baseline dependency. Add it only with profiling evidence and an ADR.
 
 ## 4. High-level architecture
-
-Current Phase 2 source architecture:
 
 ```text
 ┌────────────────────────────────────────────┐
 │ LatencyPilot.App                           │
 │ WinUI 3 / normal user / non-elevated      │
-│ local read-only inventory + evidence UX    │
-│ baseline/experiment/decision UX            │
+│ inventory + evidence + experiment UX      │
 └───────────────────┬────────────────────────┘
                     │ typed/versioned local Named Pipe
                     ▼
@@ -82,14 +78,13 @@ Current Phase 2 source architecture:
 │ LatencyPilot.Service                       │
 │ privileged boundary                        │
 │ Phase 2: read-only kernel observation      │
-│ Phase 3+: validated mutation + recovery    │
+│ Phase 3+: narrow verified mutation         │
 └───────────────────┬────────────────────────┘
                     ▼
 ┌────────────────────────────────────────────┐
-│ Platform.Windows                           │
-│ ETW / SetupAPI / CM                        │
-│ MSI / affinity / CPU / Raw Input / USB     │
-│ PresentMon / RSS                           │
+│ LatencyPilot.Platform.Windows              │
+│ ETW / SetupAPI / CM / topology             │
+│ later: affinity/MSI/Raw Input/RSS/etc.     │
 └───────────────────┬────────────────────────┘
                     ▼
               Windows 11 / hardware
@@ -100,178 +95,267 @@ Platform.Windows → Core
 Protocol (standalone typed IPC contract)
 ```
 
-Phase 3 adds a real persistence boundary only when durable journaling/recovery work begins:
-
-```text
-Service → Persistence (SQLite journal + recovery + history)
-```
-
-Mutation remains disabled until Phase 3 safety infrastructure exists. The Service already exists in Phase 2 because privileged kernel ETW observation must not force the WinUI process to run elevated. Persistence is an accepted Phase 3 responsibility, not a placeholder Phase 2 project; its project/schema/migrations should be introduced together when the durable recovery contract is implemented.
+Phase 3 adds the concrete persistence boundary when the real SQLite journal/recovery schema is introduced. There is intentionally no empty Phase 2 persistence project.
 
 ## 5. Project responsibilities
 
 ### `LatencyPilot.Core`
-Stable domain concepts and invariants only. No WinUI, ETW implementation details, registry paths, SQLite, P/Invoke, Windows Service hosting or machine state.
+Stable domain concepts/invariants only. No WinUI, ETW implementation, registry paths, P/Invoke, Service hosting or SQLite.
 
 ### `LatencyPilot.Benchmarking`
-Percentiles, distributions, repeated-baseline quality, noise/drift analysis, comparisons, guardrails and verdicts. Keep deterministic and hardware-independent where possible.
+Canonical percentiles, distributions, repeated-baseline quality, noise/drift, comparisons, guardrails and verdicts. Hardware-independent where possible.
 
 ### `LatencyPilot.Protocol`
-Versioned IPC commands/events/DTOs/errors only. Never generic privileged execution. Phase 2 commands are observation-only and explicitly allowlisted. The project is intentionally standalone and must not acquire domain dependencies unless the wire contract actually requires them.
+Typed/versioned IPC commands, DTOs and errors only. Never a generic privileged execution surface.
+
+Current read-only contract:
+
+```text
+ProtocolVersion.Current = 6
+Pipe = LatencyPilot.Observation.v6
+Commands = GetStatus, CaptureKernelLatency
+MutationAvailable = false
+```
 
 ### `LatencyPilot.Platform.Windows`
-All raw Windows mechanisms: inventory, ETW, DPC/ISR interpretation, SetupAPI/CM, PCI/device topology, interrupt configuration/assignment, CPU topology, Raw Input, USB/xHCI, NDIS/RSS, PresentMon and narrow registry/device-policy adapters.
+Raw Windows mechanisms: topology, inventory, ETW, SetupAPI/CM, resource/configuration evidence and later narrow affinity/MSI/Raw Input/USB/RSS/PresentMon adapters.
 
-Raw P/Invoke and registry paths do not leave this project except for narrowly scoped Windows-host security/lifecycle calls that belong directly to the Service boundary (for example named-pipe client-session authorization).
+Windows-specific semantics should not leak into pure Core/Benchmarking layers.
 
 ### Future Phase 3 persistence boundary
-Durable SQLite migrations, snapshots, pending/closed journal records, benchmark history and recovery state belong in a dedicated persistence boundary once Phase 3 begins. There is intentionally no empty `LatencyPilot.Persistence` project during Phase 2; create the project together with the concrete schema/recovery contract rather than reserving a namespace with placeholder code.
+SQLite migrations, exact original-state snapshots, pending/closed journal entries, recovery state and experiment history. Create this boundary only together with the concrete durable-state contract.
 
 ### `LatencyPilot.Service`
-The narrow privileged execution boundary. During Phase 2 it hosts only privileged read-only observation. During Phase 3 it may gain mutation authority only after durable journaling, validation, authorization, verification and recovery exist. It never becomes a generic scripting host.
+The privileged boundary. During Phase 2: privileged read-only observation only. During Phase 3: mutation authority may be added only with mutation-specific authorization, durable journal/recovery, validation, apply verification and rollback.
+
+The Service never becomes a generic scripting host.
 
 ### `LatencyPilot.App`
-The non-elevated WinUI 3 experience. It presents inventory, evidence, trade-offs, decisions and recovery state. It may perform local non-privileged read-only inventory directly through `Platform.Windows`; privileged observation/mutation crosses `Protocol` to the Service. Repeated-baseline interpretation is delegated to deterministic `Benchmarking` logic rather than duplicated in the UI. Because current `Platform.Windows` inventory/topology APIs expose stable `Core` snapshot types in their public signatures, the App also requires a direct `Core` project reference for compile-time type resolution.
+Normal-user WinUI experience. Local non-privileged inventory may call `Platform.Windows` directly. Privileged observation/mutation crosses typed Protocol to the Service. Repeated-baseline interpretation belongs in deterministic Benchmarking, not duplicated in UI code.
 
 ## 6. Dependency direction
 
 ```text
 Core                 ← no project dependency
 Benchmarking         → Core
-Protocol             ← no project dependency
+Protocol             ← standalone
 Platform.Windows     → Core
 Service              → Core + Benchmarking + Protocol + Platform.Windows
 App                  → Core + Benchmarking + Protocol + Platform.Windows
-CriticalTests        → only projects needed by the current critical scenarios
+CriticalTests        → only projects needed by durable critical scenarios
 ```
 
-The Service and App depend on `Benchmarking` only for shared deterministic evidence/statistics semantics. They must not duplicate layer-specific percentile, noise or drift interpretations. `Protocol` stays independent because its wire DTOs/framing currently need no Core types. The App's direct Core reference is intentional rather than redundant: the active public `Platform.Windows` API surface returns Core-owned inventory/topology snapshot types, and C# consumers require the defining assembly at compile time. Remove that direct reference only if the platform boundary is deliberately redesigned so Core types no longer cross its public signatures. Add the Phase 3 persistence project/dependency only when durable journaling/recovery introduces the concrete need.
+No cycles and no speculative abstraction projects.
 
-No cyclic references. No speculative abstraction projects. Do not retain projects or references merely for possible future work.
+## 7. UI/deployment contract
 
-## 7. UI and deployment contract
+ADR 0002 supersedes historical WPF with WinUI 3. ADR 0003 establishes the privileged read-only Service in Phase 2.
 
-ADR 0002 supersedes the WPF portion of ADR 0001. ADR 0003 moves the privileged Service boundary into Phase 2 for read-only kernel observation.
-
-`LatencyPilot.App` uses WinUI 3 and Windows App SDK 2.4 Stable. Current deployment is:
+Current App deployment:
 
 ```text
 WindowsPackageType=None
 WindowsAppSDKSelfContained=true
-runtime target=win-x64
+RuntimeIdentifier=win-x64
 ```
 
-The release artifact publishes App and Service separately under one Windows x64 distribution. The app is unpackaged. MSIX/package identity is not introduced without a separate need/decision. `PublishSingleFile` is not enabled by default because it adds extraction and publish constraints without current value.
+The App stays non-elevated. Installer/portable Service installation places the privileged Service payload under the protected Program Files tree before LocalSystem registration.
 
-Installer deployments place App and Service under the protected Program Files tree. Portable distributions may place the normal-user App in a user-controlled extraction directory, but an elevated `Install-Service.ps1` copies the privileged Service payload to `%ProgramFiles%\LatencyPilot\Service` before LocalSystem registration. A LocalSystem service must not execute from an ordinary user-writable portable extraction path.
+Do not add a second UI toolkit or speculative MVVM/navigation/DI framework solely for architectural fashion.
 
-The UI should use WinUI controls and Windows 11 interaction/accessibility conventions, but should not add a second UI toolkit or speculative MVVM/DI/navigation framework. Stable reusable visual trees should prefer XAML/UserControl composition over large imperative code-built trees when doing so reduces lifecycle and maintenance complexity without introducing a framework.
+## 8. Evidence semantics
 
-## 8. Observation semantics
+Evidence layers remain distinct:
 
-Do not collapse different evidence levels into one field.
+```text
+stored interrupt configuration
+≠ allocated IRQ/resource assignment
+≠ runtime DPC/ISR behavior
+```
 
 Examples:
 
-- registry `MSISupported` / affinity policy = **stored configuration**;
-- ConfigMgr allocated IRQ resources = **assigned resource state**;
-- ETW DPC/ISR events = **runtime behavior**.
+- registry MSI/affinity fields = stored configuration;
+- ConfigMgr resource assignment = allocated resource evidence;
+- ETW DPC/ISR = runtime behavior.
 
-A configuration hint must not be named or displayed as proof of active interrupt delivery.
+A stored hint must not be named/displayed as proof of active delivery state. Optional device metadata failures degrade to partial evidence rather than inventing meaning or invalidating the entire inventory.
 
-Partial device metadata is representable. A device without a readable hardware key is not equivalent to “no interrupt configuration”; preserve availability/error provenance instead of failing the entire inventory or silently inventing null semantics. Optional property/resource failures should degrade that device to partial evidence where safe; only an actual inventory-enumeration failure should normally abort the whole snapshot.
+Native routine addresses remain unresolved unless authoritative image-range evidence maps them. Already-loaded images require image rundown/lifetime handling; do not guess module identity from an address alone.
 
-A single short ETW capture is an **observation**, not a trustworthy baseline. Baseline terminology requires repeated windows plus explicit capture-integrity, sample-adequacy, noise and drift handling.
+## 9. Measurement hierarchy
 
-Microsoft driver guidance thresholds (currently 100 µs DPC and 25 µs ISR) may be labeled as guidance. Additional `>1 ms` / `>3 ms` counts are local diagnostic tail buckets only and must not be represented as official Windows pass/fail or user-impact severity boundaries.
+The system deliberately distinguishes a fast diagnostic capture from decision-grade evidence.
 
-## 9. Experiment lifecycle
-
-The initial state machine is deliberately small:
+### Quick diagnostic snapshot
 
 ```text
-Planned
-→ MeasuringBaseline
-→ CandidateApplied
-→ MeasuringCandidate
-→ AwaitingDecision
-→ Kept | Reverted
+1 × 5 s
+purpose = quick-diagnostic-snapshot
 ```
 
-When persistent mutation/recovery arrives, extend states to distinguish snapshot persisted, apply pending, applied/unverified, verified, benchmark complete, revert pending and recovery required. Never infer safety state from nullable fields.
+Use for:
 
-## 10. Measurement contract
+- ETW integrity;
+- attribution;
+- CPU concentration;
+- obvious tail buckets;
+- hypothesis generation.
 
-Current comparison semantics include finite samples, deterministic percentile calculation, minimum sample policy, minimum relative change/noise threshold, metric direction, guardrails and explicit `Inconclusive` behavior.
+Do not emit a system-health/stability/optimization verdict from one quick snapshot.
 
-The canonical percentile estimator is owned by `LatencyPilot.Benchmarking.Statistics.Percentiles`. For sorted samples it uses linear interpolation at zero-based position:
+### Repeated decision baseline
+
+Current implemented method:
 
 ```text
-position = (sampleCount - 1) * percentile
+method = baseline-quality-v2
+purpose = repeated-decision-baseline
+5 s observer/service settle
+5 × 20 s authoritative windows
+750 ms inter-window settle
 ```
 
-between the surrounding samples. Service observation summaries, baseline quality and benchmark comparisons must use this same estimator; introducing a second nearest-rank or layer-specific percentile implementation is prohibited unless the methodology is intentionally versioned and documented.
+The five-second pre-sequence delay is not workload warm-up. Real-world/before-after workloads must already be warmed/repeatable unless startup behavior is deliberately the subject.
 
-Phase 2 observation supports DPC/ISR count and duration distributions including p50/p95/p99/max. p99.9 is exposed only when the individual distribution has at least 1,000 samples; otherwise it is explicitly absent rather than presenting a mathematically available but under-supported extreme percentile as strong evidence.
+Each window requires:
 
-`baseline-quality-v1` adds the first conservative repeated-baseline gate:
+- requested duration >=20,000 ms;
+- actual duration >=95% of request;
+- clean capture integrity;
+- >=1,000 DPC events;
+- >=1,000 ISR events;
+- finite positive DPC/ISR p99.
 
-- exactly five sequential five-second windows are required by the current App flow and method version;
-- authoritative ordering is the contiguous `WindowNumber` sequence, while UTC timestamps are provenance and are not treated as a monotonic clock;
-- a metric window requires at least 20 DPC/ISR events and a finite positive p99 value;
-- any unavailable or non-zero ETW loss count, invalid latency/image event, or event-limit hit makes that capture window invalid;
-- per-metric normal variability is summarized as `(P90 - P10) / |median|` across eligible window-level p99 values;
-- variability above 30% is inconclusive;
-- drift compares early and late window medians relative to the overall median; above 20% is inconclusive;
-- a window more than 50% away from the median is explicitly reported as extreme and is never silently discarded;
-- all required windows and both DPC/ISR p99 metrics must pass for the result to become `Valid`; otherwise the baseline is `Inconclusive`.
+Stability policy:
 
-These values are a versioned quality gate, not a claim of statistical significance. Physical evidence may justify revising them in a later methodology version. Runtime CPU/power context is provenance rather than a baseline-validity gate; thermal context remains open until an authoritative, sufficiently low-overhead source is justified by physical evidence.
+- P10–P90 relative spread <=30%;
+- early/late relative drift <=20%;
+- no >50% extreme-window deviation;
+- exactly five contiguous `WindowNumber` values;
+- no silent outlier/window deletion.
 
-A neutral target cannot hide a regressed guardrail; collateral regression must remain visible in the verdict.
+`Valid` means repeatable enough for this versioned comparison contract, not “healthy” or “optimal”.
 
-## 11. ETW architecture
+### Controlled experiment
+
+Future mutation decisions require control/candidate repetition. Prefer balanced/interleaved ordering such as ABBA/BAAB where practical. Default/current Windows state remains a valid control; a non-default candidate must win on local measured target + guardrail evidence.
+
+## 10. Percentile/sample semantics
+
+All percentile layers use the canonical estimator in `LatencyPilot.Benchmarking.Statistics.Percentiles`:
 
 ```text
-service/session control
-→ kernel provider configuration
+position = (n - 1) * p
+linear interpolation between surrounding sorted samples
+```
+
+Current protocol response exposes:
+
+- count;
+- p50;
+- p95;
+- p99;
+- p99.9 when adequate;
+- max.
+
+Protocol v6 exposes p99.9 only when the individual distribution has at least **10,000 samples**. This is an adequacy floor, not a formal confidence guarantee.
+
+The broader product methodology still expects mean/p90/dispersion/outlier measures where later experiment layers need them. The narrow Phase 2 DTO is not the final analytics model.
+
+## 11. DPC/ISR reference semantics
+
+Current display may retain:
+
+- DPC `>100 µs`: Microsoft driver-duration guidance reference;
+- ISR `>25 µs`: Microsoft driver-duration guidance reference;
+- `>1 ms` / `>3 ms`: LatencyPilot local diagnostic buckets.
+
+These are not the optimizer objective and not a Windows/system-health score.
+
+A global exceedance percentage can move because the denominator changes, so later candidate ranking must use distributions, module attribution, CPU concentration, repeated-run stability and workload-specific guardrails rather than one reference-line rate.
+
+CPU0 concentration is an observation/hypothesis. It is not a hard fault or automatic candidate exclusion.
+
+## 12. ETW architecture
+
+```text
+Service session control
+→ kernel provider/session configuration
 → capture
-→ event decoding
-→ normalized observations
+→ decoding/normalization
 → processor attribution
-→ authoritative image/module attribution
-→ distributions/aggregates
-→ repeated-baseline evidence
+→ image/module attribution
+→ bounded distributions/aggregates
+→ App/evidence
+→ repeated-baseline analysis
 ```
 
-DPC/ISR analysis must preserve enough provenance to identify processor and module/driver where provider data allows it. Unknown versions or unresolved addresses must not be silently reinterpreted.
+Rules:
 
-For native routine addresses, module attribution requires authoritative image ranges. Kernel ImageLoad evidence must include modules that were already loaded before the observation, using supported rundown/CAPTURE_STATE behavior. If that evidence is absent or ambiguous, preserve the raw address and mark the module unknown.
+- ETW loss/invalid evidence is preserved;
+- an event-limit hit is not silently treated as complete evidence;
+- raw event sets are not transferred wholesale over IPC;
+- unresolved mappings stay unresolved;
+- no raw per-event diagnostic file logging in the measurement hot path.
 
-Raw event sets are not transferred wholesale through IPC. The privileged Service should perform bounded normalization/aggregation and return typed evidence needed by the UI/benchmarking layers.
+## 13. Evidence schema/provenance
 
-## 12. IPC and privilege contract
+Current evidence schema:
 
-Phase 2 protocol v5 IPC is local, typed, versioned and observation-only. The current surface contains only explicit supported operations such as service status and kernel-latency observation.
+```text
+latencypilot-evidence-v8
+```
 
-- no arbitrary command name;
-- no arbitrary shell/process execution;
+Purpose is explicit:
+
+```text
+quick-diagnostic-snapshot
+repeated-decision-baseline
+```
+
+Evidence carries source/product/protocol provenance, scenario, RequestIds, bounded environment/runtime context and capture/baseline data.
+
+A clean owner-local build may claim its exact commit via `BUILD_INFO.txt`. A dirty working tree intentionally does not claim an exact authoritative clean revision.
+
+After save, the App computes SHA-256. `scripts/Verify-Evidence.ps1` independently enforces v8/v2 envelope, source revision, RequestId uniqueness, p99.9 sample semantics, capture integrity and decision-baseline closure invariants.
+
+## 14. Runtime context
+
+Best-effort runtime context includes:
+
+- system CPU busy percentage;
+- AC/DC source;
+- battery/Battery Saver state where applicable;
+- active power scheme identifier;
+- Windows configured power mode.
+
+Runtime context is provenance. Missing optional context does not become fake zero and does not automatically invalidate clean DPC/ISR evidence. Power-state changes remain visible for later drift reasoning.
+
+Thermal telemetry is not added merely because it might be useful; use an authoritative low-overhead source only when physical evidence justifies it.
+
+## 15. IPC/privilege contract
+
+Protocol v6 is local, typed, bounded and observation-only.
+
+- no arbitrary command names;
+- no shell/process execution;
 - no arbitrary registry path/value;
 - bounded request/response frames;
-- JSON framing rejects unknown members rather than silently accepting a wider contract;
-- bounded client/server I/O deadlines;
-- an active capture is cancelled when its client disconnects or violates the one-request connection contract;
-- remote/network identities are denied by the pipe security boundary;
-- the pipe ACL admits local interactive identities plus required service identities, then the Service fail-closes unless the connected client session matches the active console session;
-- failure to resolve client session identity is a rejection, not a fallback to broad access;
-- each successful capture carries the same `RequestId` as its enclosing response so exported evidence can correlate directly to App/Service diagnostics;
-- protocol/version mismatch fails closed.
+- unknown JSON members fail closed;
+- bounded client/server deadlines;
+- disconnect cancels active work;
+- network identities denied;
+- local interactive ACL plus active-console-session check;
+- inability to resolve required client session identity fails closed;
+- successful capture RequestId matches response/evidence/log correlation;
+- protocol mismatch fails closed.
 
-The current active-console rule deliberately narrows Phase 2 local observation. It does not establish RDP/multi-session support. The current Phase 2 ACL/session check is **not** mutation authorization. Phase 3 mutation must extend this contract with narrower mutation-specific authorization/allowlisting rather than reusing or weakening the observation surface.
+This observation authorization is not mutation authorization. Phase 3 adds a narrower write surface rather than weakening/reusing observation assumptions.
 
-## 13. Mutation interface contract
+## 16. Future mutation contract
 
-Each mutation mechanism should expose narrow concepts such as:
+Narrow mutation mechanisms should expose concepts such as:
 
 ```text
 IsApplicable(target)
@@ -283,85 +367,87 @@ Verify(expected, actual)
 Revert(snapshot)
 ```
 
-No IPC command accepts arbitrary registry paths, PowerShell or process command lines.
+No mutation command accepts arbitrary PowerShell, process command lines or registry paths.
 
-## 14. Persistence and recovery
+For GPU affinity specifically:
 
-Before the first real mutation ships:
+- preserve default/current state as control;
+- use processor-group and physical-core topology;
+- treat SMT siblings deliberately;
+- use CPU concentration only as candidate-prior evidence;
+- screen bounded candidates;
+- confirm finalists with longer balanced repeated runs;
+- combine DPC/ISR evidence with applicable PresentMon frame/CPU/GPU/latency metrics;
+- evaluate subsystem guardrails;
+- Keep only on reproducible improvement, else Revert.
 
-1. create the concrete Phase 3 persistence project together with its SQLite schema/migrations and recovery contract;
-2. original state is durable before apply;
-3. incomplete experiments survive app/service/Windows interruption;
-4. recovery re-reads actual machine state before action;
-5. external changes are not overwritten blindly;
-6. Keep/Revert final state is verified before journal closure.
+## 17. Persistence/recovery
 
-Do not create an empty persistence project in advance merely to reserve the future boundary.
+Before the first real mutation:
 
-## 15. Permanent test strategy
+1. create the actual Phase 3 persistence project/schema/migrations;
+2. persist original state before apply;
+3. persist experiment stage so interruption/reboot is recoverable;
+4. re-read actual machine state during recovery;
+5. never overwrite external changes blindly;
+6. verify final kept/reverted state before closing the journal.
 
-**Maximum: 10 permanent automated tests repository-wide.**
+## 18. Test strategy
 
-No coverage-percentage target. No test-per-file policy. Permanent tests protect only high-blast-radius correctness/safety contracts. Temporary implementation/debug tests may be created and removed before finalization.
+Permanent automated tests have a repository-wide hard maximum of **10**; current count is **8**.
 
-Prefer a small portfolio of:
+Tests protect high-blast-radius contracts, not line coverage. Consolidate scenario matrices inside durable tests when readable. Temporary investigative tests may be created/executed/deleted.
 
-- deterministic domain/statistics contract tests;
-- protocol framing and privilege-surface safety contracts;
-- one or a few Windows integration invariants that exercise real read-only APIs;
-- data/scenario matrices consolidated inside a durable high-value test rather than one permanent test per branch.
+Current high-value contracts include:
 
-The repeated-baseline quality gate is a high-blast-radius safety contract because accepting a noisy/lossy baseline would invalidate all later optimization decisions; one consolidated permanent scenario test protects stable, drifted, capture-loss, sequence-gap, wall-clock-adjustment and exact-window-count cases.
+- experiment state legality;
+- verdict + guardrail semantics;
+- `baseline-quality-v2` stable/drifted/dirty/too-short/undersampled/sequence cases;
+- non-finite measurement rejection;
+- canonical percentile rule;
+- fail-closed protocol framing/correlation;
+- read-only protocol surface;
+- Windows inventory/topology/runtime-context consistency.
 
-The protocol/framing contract also carries v5 correlation and p99.9-adequacy round-trip scenarios inside its existing test method rather than consuming another permanent slot.
+Physical hardware validation remains separate from automated tests.
 
-If a later parser/recovery/mutation risk is more important, replace/merge a lower-value test. More than 10 permanent tests requires explicit owner approval plus ADR justification that remaining at 10 is more harmful.
+## 19. Diagnostics contract
 
-Hardware validation and release checklists are separate and do not count toward the cap.
+Operational logging is local, structured and bounded. App and Service logs correlate request/capture activity through protocol v6 `RequestId` values.
 
-## 16. Diagnostics contract
+Expected capture/session rejection paths preserve bounded failure provenance. Logging must not become the measurement workload: no per-event DPC/ISR file writes.
 
-Operational logging is local, structured and bounded. App and Service write separate compact-JSON rolling files and correlate request/capture activity through the protocol `RequestId`. Protocol v5 preserves that ID in capture evidence too. Expected kernel-capture unavailability and rejected client-session access must retain bounded structured failure provenance. Logging is asynchronous so file I/O does not run in the ETW callback path.
+See `docs/DIAGNOSTICS.md`.
 
-Do not emit one log event per raw DPC/ISR event, dump arbitrary registry/environment state, or treat operational logs as benchmark persistence. Logging failure must not prevent App/Service startup. See `docs/DIAGNOSTICS.md` for paths, retention, event IDs and privacy rules.
+## 20. Observer effect
 
-## 17. Release and CI contract
+LatencyPilot can perturb what it measures. Avoid unnecessary allocation, GC pressure, synchronous I/O and detailed UI redraws inside authoritative windows.
 
-GitHub Actions is intentionally a deterministic **test-only** gate:
+Repeated baseline intentionally avoids full detailed redraws between windows. Optimization of the observer itself requires profiling evidence; performance work must not silently change event/statistical meaning.
 
-```text
-checkout
-→ pinned .NET SDK
-→ NuGet cache
-→ dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-```
+## 21. Release/validation boundary
 
-Hosted CI does **not** build or publish the WinUI App/Service, perform GUI launch smoke, build Setup/portable distributions, upload production binaries or publish releases. App/Service compile evidence belongs to the owner-local Windows path, matching the repository policy in `AGENTS.md`.
+Hosted CI is intentionally test-only. It does not prove WinUI compile, Service execution, ETW correctness or physical behavior.
 
-Owner-local Windows validation owns build/publish/package/runtime evidence:
+Phase 2 closes only with owner-local physical Windows evidence on one exact clean source revision, as defined in `docs/PHYSICAL_VALIDATION.md` and `PROJECT_STATUS.md`.
 
-```text
-local Debug/F5 or dev.ps1 for normal iteration
-→ owner-local App/Service build
-→ owner-local self-contained App/Service publish
-→ owner-local PRI and App launch-smoke validation
-→ owner-local Setup + portable creation/publication
-```
+Release packaging/signing is a separate later gate; a local physical source run is not automatically release-ready.
 
-The explicit owner-run publication flow is documented in `docs/RELEASING.md` and implemented by `scripts/Publish-Release.ps1`. Warnings remain errors; fix root causes instead of broad suppression.
+## 22. Security invariants
 
-Hosted Tests evidence proves only the selected deterministic/integration contracts exercised by that suite. Owner-local Windows build/publish/package evidence proves buildability and the releasable distribution for the tested revision. Neither alone proves hardware latency improvement or closes physical-hardware validation items.
+The privileged boundary must never expose:
 
-## 18. Hardware-validation contract
+- generic shell execution;
+- arbitrary process launch;
+- arbitrary registry write;
+- arbitrary file write;
+- unauthenticated remote access;
+- unconstrained device policy mutation.
 
-Optimization claims and hardware-dependent observation gates require physical Windows 11 evidence with enough system/app/hardware context to interpret the result. GitHub-hosted Windows runners supply only the repository's selected automated-test evidence and cannot close App/Service build, publish/package/runtime, or physical-hardware performance claims.
+Observation remains read-only through Phase 2. Mutation requires durable rollback/recovery plus explicit authorization and verification.
 
-## 19. Mandatory step-back review
+## 23. Completion discipline
 
-Before closing a subsection, re-review assumptions, API semantics, naming/evidence claims, partial-error behavior, resource lifetime, privilege impact, YAGNI, scaling behavior, test-cap compliance, documentation drift and current owner constraints. Fix contradictions before calling work complete.
+A green build/test does not prove visual quality or physical measurement correctness. A clean five-second snapshot does not prove stability. A Valid repeated baseline does not prove a future candidate is better. A favorable primary metric does not hide a regressed guardrail.
 
-Every closed stage must also leave an explicit next-stage sequence in `PROJECT_STATUS.md`; a completion report without next steps is incomplete.
-
-## 20. Architecture change rule
-
-A new ADR is required for changes to language/runtime/UI framework, privilege model, IPC authority, persistence/recovery semantics, benchmark verdict semantics, native-code introduction, permanent-test cap, packaging identity/model, or supported OS/architecture commitment.
+Every completion claim should use the smallest current evidence that could falsify it and stop once the requested gate is actually proven.
