@@ -77,7 +77,7 @@ public sealed partial class MainWindow
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(new TextBlock
         {
-            Text = "Baseline preparation",
+            Text = "Decision-baseline preparation",
             FontSize = 13,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
@@ -102,7 +102,7 @@ public sealed partial class MainWindow
 
         root.Children.Add(new TextBlock
         {
-            Text = "These checks only gate the five-window repeated baseline. A single 5-second observation stays available whenever the service is ready.",
+            Text = "These checks gate the five × 20-second repeated baseline. The 5-second quick snapshot remains available for diagnostics, but it cannot establish stability or an optimization verdict.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = ThemeBrush("MutedTextBrush"),
@@ -199,19 +199,19 @@ public sealed partial class MainWindow
         {
             MeasurementScenario.IdleBaseline => (
                 "Unnecessary apps are closed and I will not start unrelated work during the baseline.",
-                "I will leave the PC otherwise idle and keep the same power state through all five windows.",
+                "I will leave the PC otherwise idle and keep the same power state through all five 20-second windows.",
                 "Controlled idle is intentionally quiet. Close unnecessary applications; normal background Windows activity does not invalidate the run by itself.",
-                "Keep user activity and power conditions stable so inter-window variation reflects the machine rather than a changing workload."),
+                "Keep user activity and power conditions stable for the full decision baseline so inter-window variation reflects the machine rather than a changing workload."),
             MeasurementScenario.BeforeAfter => (
-                "I can reproduce the same apps or game, workload and power state before and after the change.",
-                "I will keep background activity as similar as practical on both sides of the comparison.",
-                "Before/after evidence is only comparable when the foreground workload and power conditions are reproduced.",
-                "Background apps do not have to be closed; they should be kept as consistent as practical between both sides."),
+                "The same apps or game are already warmed and ready to reproduce the same workload before and after the change.",
+                "I will reproduce the same scene or workload and keep power/background activity as similar as practical on both sides.",
+                "The five-second LatencyPilot settle period is not workload warm-up. Finish loading, shader compilation, startup transitions or other one-time work before starting the baseline unless those transitions are intentionally the workload being tested.",
+                "Before/after evidence is comparable only when the foreground workload, power conditions and background state are reproduced closely enough on both sides."),
             _ => (
-                "The apps or game that reproduce the issue are open and I will use them normally during the baseline.",
-                "I will keep the workload and background activity roughly consistent through all five windows.",
-                "For a real-world run, do not close the apps that are part of the problem just to make the latency numbers look better.",
-                "Other applications may remain open. Consistency matters more than artificially making the system idle."),
+                "The apps or game that reproduce the issue are open, warmed and at a repeatable point before I start the baseline.",
+                "I will keep the workload pattern and background activity as consistent as practical through all five 20-second windows.",
+                "For a real-world run, keep the applications that are part of the problem. Do not close them merely to improve the numbers. Finish one-time startup/loading work first unless it is intentionally what you are measuring.",
+                "Other applications may remain open. Repeatability matters more than artificially making the machine idle; use the same scene, action loop or workload pattern through the full sequence."),
         };
 
         _measurementContextReadyCheckBox.Content = contextText;
@@ -260,19 +260,19 @@ public sealed partial class MainWindow
             else if (!prepared)
             {
                 _measurementReadinessStatusText.Text =
-                    "Repeated baseline locked until both checks are confirmed. Single 5-second capture remains available.";
+                    "Decision baseline locked until both checks are confirmed. The 5-second quick snapshot remains available for diagnostic evidence only.";
                 _measurementReadinessStatusText.Foreground = ThemeBrush("MutedTextBrush");
             }
             else if (!serviceConnected)
             {
                 _measurementReadinessStatusText.Text =
-                    "Preparation confirmed. Repeated baseline will unlock when the read-only observation service is connected.";
+                    "Preparation confirmed. Decision baseline will unlock when the read-only observation service is connected.";
                 _measurementReadinessStatusText.Foreground = ThemeBrush("AccentBrush");
             }
             else
             {
                 _measurementReadinessStatusText.Text =
-                    "Ready for repeated baseline. Keep the confirmed conditions stable through all five windows.";
+                    "Ready for the five × 20-second decision baseline. Keep the confirmed conditions stable for the full sequence.";
                 _measurementReadinessStatusText.Foreground = ThemeBrush("SuccessBrush");
             }
         }
