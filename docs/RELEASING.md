@@ -3,24 +3,25 @@
 Status: **Owner-run release contract**  
 Last updated: 2026-09-13
 
-LatencyPilot keeps GitHub Actions **validation-only**. The hosted workflow runs the permanent critical suite and Release-compiles the Windows App/Service hosts, but it does not publish self-contained payloads, build production distributions or publish releases.
+LatencyPilot keeps GitHub Actions **test-only**. The hosted workflow runs the permanent critical suite, but it does not build/publish the Windows App or Service, build production distributions, run GUI smoke, upload release artifacts or publish releases.
 
-Release packaging and publication are explicit owner actions from a clean, up-to-date `main` checkout using:
+Release compilation, packaging and publication are explicit owner actions from a clean, up-to-date `main` checkout using:
 
 ```powershell
 .\scripts\Publish-Release.ps1
 ```
 
-The script builds the Windows distributions locally, launch-smoke-tests the published WinUI App, and publishes the GitHub prerelease through the authenticated GitHub CLI account.
+The script builds the Windows hosts/distributions locally, launch-smoke-tests the published WinUI App, and publishes the GitHub prerelease through the authenticated GitHub CLI account.
 
 ## Why this model
 
-The repository separates two concerns:
+The repository separates three kinds of evidence:
 
-- GitHub Actions supplies reproducible automated correctness evidence for the permanent critical suite plus a Release compile gate for `LatencyPilot.App` and `LatencyPilot.Service`.
-- The repository owner explicitly publishes, smoke-validates, packages and releases artifacts from the exact validated `main` revision.
+- GitHub Actions supplies reproducible automated correctness evidence for the permanent critical suite only.
+- The repository owner supplies real Windows compile/publish/package/startup evidence from the exact validated `main` revision.
+- Physical Windows 11 validation supplies Service/ETW/hardware evidence that hosted CI cannot prove.
 
-This avoids an implicit cloud publish/release pipeline while preserving a hard requirement that the release commit itself has green hosted validation evidence and that the actual published WinUI payload can start on the owner Windows machine before publication.
+This avoids an implicit cloud build/publish/release pipeline while preserving the requirement that a release commit itself has green deterministic Tests evidence and that the actual WinUI/Service payload is built and exercised on the owner Windows machine before publication.
 
 ## Prerequisites
 
@@ -48,12 +49,13 @@ Historical note: `v0.0.1` was previously published and is therefore reserved, ev
 4. the requested version has exactly `MAJOR.MINOR.PATCH` form;
 5. the requested version matches the project `Version` property;
 6. GitHub CLI authentication is available;
-7. a successful `Tests` workflow run exists for the exact release commit;
+7. a successful **test-only** `Tests` workflow run exists for the exact release commit;
 8. neither the release nor remote tag already exists;
-9. the self-contained WinUI publish contains a non-empty `LatencyPilot.pri`;
-10. the published `LatencyPilot.exe` opens the expected `LatencyPilot` main window and remains alive for the local startup-smoke interval without writing a startup-failure report.
+9. the owner-local Release build/publish steps succeed;
+10. the self-contained WinUI publish contains a non-empty `LatencyPilot.pri`;
+11. the published `LatencyPilot.exe` opens the expected `LatencyPilot` main window and remains alive for the local startup-smoke interval without writing a startup-failure report.
 
-The matching `Tests` workflow run currently includes the eight permanent tests plus Release compile gates for the App and Service. It is still not publish/package/runtime evidence.
+The matching hosted `Tests` workflow is deterministic test evidence only. It is not App/Service compile, publish, package, GUI, Service, ETW or physical-hardware evidence.
 
 These checks are release gates, not convenience warnings.
 
@@ -117,17 +119,18 @@ The prerelease is explicitly published with `--latest=false`; pre-alpha validati
 
 ## Relation to Stage B physical validation
 
-A Stage B validation record must refer to the exact package it tested. Record at minimum:
+A Stage B validation record must refer to the exact source/package it tested. Record at minimum:
 
 - product version;
 - release revision when present;
-- Git commit from `BUILD_INFO.txt`;
-- matching hosted Tests/compile workflow run from `BUILD_INFO.txt`;
-- App launch-smoke result from `BUILD_INFO.txt`;
-- setup/portable SHA-256;
+- Git commit from build/package metadata;
+- matching green **test-only** Tests workflow run;
+- owner-local App/Service build result;
+- App launch-smoke result when validating a published payload;
+- setup/portable SHA-256 when applicable;
 - physical-machine evidence required by `PHYSICAL_VALIDATION.md`.
 
-A green hosted validation run plus a successful startup smoke still does not prove ETW correctness on the target PC or hardware-level validity. Conversely, a locally built release without green hosted validation for the exact commit is not an approved LatencyPilot release candidate.
+A green hosted Tests run plus a successful local build/startup smoke still does not prove ETW correctness on the target PC or hardware-level validity. Conversely, a locally built release without green hosted deterministic tests for the exact commit is not an approved LatencyPilot release candidate.
 
 ## Failure discipline
 
