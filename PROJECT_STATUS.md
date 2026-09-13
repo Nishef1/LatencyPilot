@@ -8,16 +8,16 @@ Last updated: 2026-09-13
 
 - Product completion: **Phases 0–1 closed; Phase 2 in progress**
 - Current product version: **0.0.1 pre-alpha**
-- Current execution stage: **Stage B — physical Windows 11 observation validation**
+- Current execution stage: **Stage C baseline-quality implementation is underway; Stage B physical validation remains open**
 - Current mutation capability: **None by design**
 - Supported target: **Windows 11 x64**
 - Current desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
 - Privileged boundary: **Windows Service exists for read-only kernel observation; mutation commands do not exist**
-- Permanent automated tests: **7 / hard maximum 10**
-- Latest green code-validation CI: **run `34743464368`**, commit `6ade8eac29ea9fc6539b3c7fc84867e71963795d`
-- Latest `main` after that validation contains documentation-only methodology updates; no code change follows the green code-validation commit.
-- Current published prerelease: **`v0.0.1`**, release `387708633`, published before the 2026-09-13 hardening/performance wave.
-- Therefore the existing public `v0.0.1` artifacts are historical Stage B candidates, **not** evidence that the current hardened `main` distribution has been physically validated.
+- Permanent automated tests: **8 / hard maximum 10**
+- GitHub Actions policy: **Tests only**. Hosted Actions must not build/publish App, Service, Setup, portable distributions or releases.
+- Stage C deterministic test evidence: **Tests run `34744320630` succeeded** on commit `2070bbb6b55465e71d569a12930a298318259a2d` with the eight-test suite.
+- App/WinUI Stage C source is **implemented but not closed** because owner-local Windows compile/run evidence is still required.
+- Current published prerelease remains historical `v0.0.1`; it predates the latest observation hardening and Stage C source, so it is not evidence for current `main`.
 
 ## Phase 0 — CLOSED
 
@@ -27,7 +27,7 @@ Governance, licensing, contribution policy, security policy, architecture, bench
 
 Phase 1 established the buildable solution, domain/comparison foundation, non-mutating app vertical slice and focused critical suite.
 
-Historical note: Phase 1 originally closed with WPF. ADR 0002 later superseded the UI choice with WinUI 3. The historical WPF evidence remains valid as historical evidence and is not rewritten.
+Historical note: Phase 1 originally closed with WPF. ADR 0002 later superseded the UI choice with WinUI 3. Historical Phase 1 build/CI evidence remains historical evidence and is not rewritten by the current test-only CI policy.
 
 ## Architecture changes completed during Phase 2
 
@@ -59,7 +59,7 @@ Current implementation:
 - request/response frames are bounded and unknown JSON members fail closed;
 - network identities are denied by pipe ACL;
 - Phase 2 observation access is limited to interactive local identities plus required service identities rather than all authenticated users;
-- client disconnect or unexpected extra client data cancels the active capture instead of intentionally leaving detached privileged work running;
+- client disconnect or unexpected extra client data cancels active capture work instead of intentionally leaving detached privileged work running;
 - client/server deadlines remain bounded;
 - the current Phase 2 ACL is explicitly **not** future mutation authorization.
 
@@ -90,19 +90,19 @@ Current behavior:
 - normal installer use detects that source/destination are already the same protected directory and avoids copying onto itself;
 - uninstall removes both service registration and the protected managed Service copy.
 
-### Release/CI hardening — IMPLEMENTED
+### Local development and release ownership — IMPLEMENTED
 
-Current CI/release rules:
+Current automation contract:
 
-- CI uses pinned revisions for official GitHub Actions;
-- PR validation includes App publish, WinUI PRI check, GUI smoke, Service publish, setup build and portable build;
-- release-workflow changes themselves trigger CI validation;
-- release publication requires an explicit release request rather than a workflow-file edit;
-- release runs use `cancel-in-progress: false`;
-- a replacement prerelease/tag is not removed until restore/build/tests/package/upload have succeeded;
-- workflow inputs are passed through environment variables before PowerShell consumption rather than direct script interpolation.
+- GitHub Actions contains a **Tests** workflow only;
+- the Tests workflow runs the permanent critical suite for every `main` revision and pull request;
+- hosted App/Service builds, WinUI publish, GUI smoke, Setup/portable creation, artifact upload and cloud release publication were removed;
+- normal UI development uses Debug + Visual Studio Hot Reload or `dev.ps1`;
+- `scripts/Publish-Release.ps1` is the explicit owner-run local Windows release path;
+- the local publisher requires a clean/up-to-date `main` and green Tests evidence for the exact commit before local build/package/publication;
+- `docs/RELEASING.md` documents the owner-run flow.
 
-The hardened publication flow has **not** been intentionally rerun to replace the public prerelease during this work. CI validates build/package behavior; it does not prove GitHub publication semantics end-to-end.
+This separation is intentional: test CI supplies automated correctness evidence; build/package evidence belongs to the owner's Windows machine.
 
 ## Phase 2 — IN PROGRESS
 
@@ -110,7 +110,7 @@ Goal: trustworthy, strictly read-only Windows observation before any system muta
 
 ### 2.1 Inventory and evidence provenance
 
-Implemented and CI-verified:
+Implemented and automated-test/previous-local validated where applicable:
 
 - [x] processor-group-aware package/core/logical processor topology implementation;
 - [x] stable present PnP device instance IDs through SetupAPI;
@@ -137,7 +137,7 @@ stored interrupt configuration
 
 ### 2.2 ETW observation
 
-Implemented and CI-verified:
+Implemented:
 
 - [x] controlled kernel ETW session creation with LatencyPilot-owned collision-resistant session names;
 - [x] DPC and ISR collection;
@@ -166,7 +166,7 @@ Still required before 2.2 can close:
 
 The 2026-09-13 hardening wave reduced avoidable observer allocation without changing event/statistical semantics:
 
-- `KernelLatencyEvent` is now a readonly value type rather than one heap object per captured event;
+- `KernelLatencyEvent` is a readonly value type rather than one heap object per captured event;
 - module attribution updates the existing capture buffer instead of allocating a second full attributed event array;
 - processor/module/unresolved-routine aggregation no longer materializes a full event array per contributor solely to compute duration summaries;
 - duration buffers already owned by aggregation are sorted in place rather than copied again;
@@ -177,30 +177,51 @@ Evidence:
 - value-type event storage commit `7f31cf4ae5a52d12a23c15c4cadaec648a90e455`;
 - in-place attribution commit `fe47c57b186ac03c455ad7a15c34a7bd92a33b24`;
 - reduced aggregation materialization commit `e3cab4f30b9c95d8d3163d84168eed93457e95bf`;
-- in-place duration-buffer sorting commit `6ade8eac29ea9fc6539b3c7fc84867e71963795d`;
-- full green CI run `34743464368` on `6ade8eac...`.
+- in-place duration-buffer sorting commit `6ade8eac29ea9fc6539b3c7fc84867e71963795d`.
 
-This is a scoped allocation correction, **not** a claim that observer overhead is now negligible. Deeper pooling/ref/streaming work requires profiler/physical evidence because additional value-type copying or aggregation complexity can create new trade-offs. `docs/BENCHMARK_METHODOLOGY.md` now treats observer overhead as a measurement-validity concern.
+This is a scoped allocation correction, **not** a claim that observer overhead is negligible. Deeper pooling/ref/streaming work still requires profiler/physical evidence.
 
-### 2.4 Baseline quality — NOT STARTED
+### 2.4 Baseline quality — IMPLEMENTED IN SOURCE, NOT CLOSED
 
-A single five-second capture is deliberately called an **observation**, not a baseline.
+A single five-second capture remains an **observation**, not a baseline.
 
-Required:
+Completed now in deterministic source:
 
-- [ ] repeated baseline windows;
-- [ ] stable run protocol and minimum number of valid windows;
-- [ ] measured noise floor per relevant metric;
-- [ ] inter-window drift detection;
-- [ ] outlier/invalid-window handling without silently deleting inconvenient measurements;
-- [ ] background-load warning where observable;
-- [ ] thermal/power-state warning where observable and reliable enough to use;
-- [ ] baseline validity verdict with reasons;
-- [ ] invalid/inconclusive baseline cannot unlock optimization.
+- `LatencyPilot.Benchmarking.Baselines.BaselineQualityAnalyzer` owns repeated-baseline interpretation;
+- method version is `baseline-quality-v1`;
+- five required windows are the current App capture policy;
+- a metric needs at least 20 events per clean window and a finite positive p99;
+- relative noise floor is `(P90 - P10) / |median|` across window-level p99 values;
+- noise above 30% is inconclusive;
+- early/late relative median drift above 20% is inconclusive;
+- >50% per-window deviation from the median is explicitly reported as extreme and never silently deleted;
+- unavailable/non-zero ETW loss, invalid latency/image events or event-limit hit invalidate a capture window;
+- overall result is only `Valid` when all required windows and both DPC/ISR p99 metric gates pass; otherwise it is `Inconclusive` with reasons.
+
+Important bug fixed during the Stage C review:
+
+- the previous single-observation UI considered any *known* ETW loss count clean, even when `EventsLost > 0`;
+- current source now requires zero loss and reports non-zero loss as a capture-integrity failure;
+- a lossy window cannot qualify for the repeated baseline.
+
+Automated evidence:
+
+- one new high-blast-radius permanent test consolidates stable, drifted and ETW-loss baseline scenarios;
+- Tests run `34744320630` passed on commit `2070bbb6b55465e71d569a12930a298318259a2d`;
+- permanent suite is now 8/10.
+
+Still open before baseline quality can close:
+
+- [ ] owner-local Windows compile of the current WinUI App source;
+- [ ] owner-local execution of the five-window baseline flow through the real Service;
+- [ ] physical evidence that quality output behaves sensibly across idle/controlled-load runs;
+- [ ] authoritative low-overhead background-load warning if a defensible signal is chosen;
+- [ ] authoritative low-overhead thermal/power-state warning if a defensible signal is chosen;
+- [ ] future optimizer/recommendation integration must explicitly require `IsValidForComparison`; no optimizer currently exists to wire this gate into.
 
 ### 2.5 UX — PARTIAL
 
-Implemented:
+Implemented and previously validated:
 
 - [x] WinUI service-health status;
 - [x] explicit read-only safety boundary;
@@ -213,33 +234,38 @@ Implemented:
 - [x] bounded top module contributor view;
 - [x] no single capture is mislabeled as a trustworthy baseline.
 
+Implemented in source but awaiting owner-local WinUI build/run evidence:
+
+- five-window `Build baseline` action;
+- progress and per-window integrity/DPC/ISR evidence rows;
+- baseline `Valid` / `Inconclusive` quality verdict;
+- explicit noise, drift, sample-adequacy and integrity reasons.
+
 Still required:
 
 - [ ] inspectable raw/auditable aggregates beyond the compact summary;
-- [ ] repeated-baseline/noise/drift UX;
-- [ ] baseline quality verdict/reason;
+- [ ] owner-local validation of the new repeated-baseline UX;
 - [ ] clear evidence-level labels for stored configuration vs assigned resource vs runtime behavior;
 - [ ] responsive/keyboard/accessibility sanity pass for the Phase 2 evidence surfaces.
 
-## Permanent critical suite — 7 / 10
-
-The permanent suite was consolidated so test count does not grow with every historical bug.
+## Permanent critical suite — 8 / 10
 
 Current durable contracts cover:
 
 1. experiment lifecycle rejects illegal transitions;
 2. benchmark verdict matrix preserves primary/guardrail semantics;
-3. non-finite measurements are rejected;
-4. one documented percentile estimator is authoritative;
-5. pipe framing fails closed on malformed/unknown/oversized/truncated input;
-6. observation protocol command surface remains read-only;
-7. real Windows read-only inventory/topology capture remains internally coherent.
+3. repeated baseline quality gate rejects drift/capture-integrity failure and accepts stable evidence;
+4. non-finite measurements are rejected;
+5. one documented percentile estimator is authoritative;
+6. pipe framing fails closed on malformed/unknown/oversized/truncated input;
+7. observation protocol command surface remains read-only;
+8. real Windows read-only inventory/topology capture remains internally coherent.
 
-Three slots remain below the hard cap. They are not pre-reserved; future recovery/mutation/parser risks may replace or consolidate lower-value tests.
+Two slots remain below the hard cap. They are intentionally not pre-reserved; later recovery/mutation/parser risks may replace or consolidate lower-value tests.
 
 ## Stage A — authoritative module/driver attribution — CLOSED
 
-Stage A remains closed in CI. Historical closure evidence includes:
+Historical closure evidence includes:
 
 - attribution implementation commit `6d63e1b2c12eaa0081d8babd846f8ca2cc7776b8`;
 - TraceEvent compatibility correction `4e83ab9d0c460828dce4cead22aa47858b9708b9`;
@@ -248,7 +274,7 @@ Stage A remains closed in CI. Historical closure evidence includes:
 
 Physical plausibility validation remains part of Stage B rather than retroactively reopening Stage A implementation work.
 
-## Stage B — physical Windows 11 observation validation — CURRENT
+## Stage B — physical Windows 11 observation validation — OPEN
 
 Runbook: `docs/PHYSICAL_VALIDATION.md`.
 
@@ -258,12 +284,12 @@ Existing local evidence from 2026-09-12:
 - one observation succeeded after intentional Service stop/start recovery;
 - UI showed processor concentration, bounded module contributors and 100% resolved attribution on that host.
 
-That evidence is useful but does **not** close Stage B.
+That evidence is useful but does **not** close Stage B for current `main`.
 
 ### Stage B blockers now
 
-1. Produce an explicit packaged prerelease from the **current hardened `main`** before treating package-level physical validation as current evidence. The existing public `v0.0.1` predates this hardening wave.
-2. Verify the selected setup/portable checksum and `BUILD_INFO.txt` commit.
+1. Owner-local build/package the current tested `main` when a new physical-validation artifact is needed; cloud build/release is intentionally absent.
+2. Verify selected setup/portable checksum and `BUILD_INFO.txt` commit for packaged validation.
 3. Install/register the protected-path Service and launch the App non-elevated.
 4. Capture representative idle and controlled-load observations.
 5. Compare representative module/driver attribution against PerfView or LatencyMon where practical.
@@ -271,26 +297,30 @@ That evidence is useful but does **not** close Stage B.
 7. Record explicit zero-mutation evidence for interrupt affinity/MSI/CPU Sets/power/network/device policy.
 8. Validate representative topology, stored interrupt configuration and allocated-resource evidence on GPU/xHCI/NIC devices.
 9. Where suitable hardware exists, capture multi-processor-group evidence.
-10. Profile LatencyPilot observer allocation/GC/CPU overhead only as needed to determine whether deeper capture-path optimization is justified.
+10. Profile LatencyPilot observer allocation/GC/CPU overhead only as needed to decide whether deeper capture-path optimization is justified.
 
-**Stage B closes only when:** the current packaged build produces usable read-only observations on physical Windows 11, attribution is plausible against trusted external evidence, inventory/resource evidence is coherent, cleanup/privilege/zero-mutation boundaries hold, and no observer-overhead issue invalidates the measurements.
+**Stage B closes only when:** the current locally built/package-identified source produces usable read-only observations on physical Windows 11, attribution is plausible against trusted external evidence, inventory/resource evidence is coherent, cleanup/privilege/zero-mutation boundaries hold, and no observer-overhead issue invalidates the measurements.
 
-**Immediately after Stage B:** Stage C repeated baseline and quality engine.
+## Stage C — repeated baseline and quality engine — IMPLEMENTED IN SOURCE, NOT CLOSED
 
-## Stage C — repeated baseline and quality engine
+Implementation order completed:
 
-Work in order:
+1. repeated-window policy defined;
+2. five-window App orchestration implemented;
+3. per-metric variability/noise floor implemented;
+4. drift detection implemented;
+5. explicit invalid/inconclusive reasons implemented;
+6. quality verdict/reasons UI source implemented;
+7. deterministic high-blast-radius test added without exceeding the cap.
 
-1. define repeated-window capture protocol;
-2. collect multiple valid windows;
-3. compute per-metric variability/noise floor;
-4. detect drift between windows;
-5. define invalid/inconclusive baseline reasons;
-6. add background/thermal quality signals only where evidence is reliable;
-7. prevent optimization/recommendation when the baseline quality gate fails;
-8. expose quality verdict and reasons in WinUI.
+Still open:
 
-**Stage C closes only when:** LatencyPilot can distinguish a trustworthy repeated baseline from a single noisy observation.
+1. owner-local WinUI compile/run;
+2. physical repeated-baseline evidence;
+3. reliable background/thermal quality signals where supportable;
+4. explicit optimizer/recommendation gating when that subsystem exists.
+
+**Stage C closes only when:** LatencyPilot can distinguish a trustworthy repeated baseline from a single noisy observation on the actual Windows App/Service path, not merely in deterministic tests.
 
 **Immediately after Stage C:** Stage D Phase 2 evidence UX completion.
 
@@ -300,7 +330,7 @@ Work in order:
 
 1. raw/auditable aggregate inspection;
 2. evidence-level labels for configuration, allocated resources and runtime ETW;
-3. baseline quality verdict/reasons and invalid-state presentation;
+3. complete baseline invalid-state presentation after local validation;
 4. responsive/keyboard/accessibility sanity pass for the Phase 2 surfaces.
 
 **Stage D closes only when:** all remaining Phase 2 UX requirements are met and the Phase 2 exit gate can be exercised on physical Windows 11.
@@ -326,19 +356,18 @@ No mutation work may jump ahead of Stage C/D or the Phase 3 safety substrate.
 
 - product versions are exactly `MAJOR.MINOR.PATCH`;
 - current source version is `0.0.1` in `Directory.Build.props`;
-- `RELEASE_VERSION` is an explicit release request and must equal the source version;
-- release publication is explicit; changing release workflow code alone does not publish a release;
-- release workflow reruns restore/build/**7-test** gate and publishes both App and Service;
-- release replacement is staged so existing prerelease/tag removal occurs only after new artifacts exist;
-- CI validates setup and portable packaging on both main pushes and pull requests where relevant;
-- daily development uses Debug + Visual Studio Hot Reload or `dev.ps1`; publish/setup are validation/release gates, not the normal edit loop;
-- every release bundle contains version/build metadata and validation/diagnostics documentation;
-- every published setup/portable asset has a SHA-256 companion;
+- `RELEASE_VERSION` is an explicit local release request and must equal the source version;
+- GitHub Actions is test-only and runs the permanent critical suite;
+- App/Service Release build, WinUI publish/PRI validation, Setup and portable creation are owner-local Windows responsibilities;
+- `scripts/Publish-Release.ps1` is the explicit owner-run publisher and requires green Tests evidence for the exact `main` commit;
+- `docs/RELEASING.md` is the publication contract;
+- daily development uses Debug + Visual Studio Hot Reload or `dev.ps1`;
+- published distributions contain version/build metadata and SHA-256 companions;
 - `0.0.x` releases remain prereleases until later exit gates justify stable semantics.
 
 ## Hard test rule
 
-Permanent automated tests may not exceed **10**. Current count: **7**. Temporary implementation/debug tests may be created and removed. Exceeding 10 requires explicit owner approval plus an ADR explaining why staying within 10 creates greater risk.
+Permanent automated tests may not exceed **10**. Current count: **8**. Temporary implementation/debug tests may be created and removed. Exceeding 10 requires explicit owner approval plus an ADR explaining why staying within 10 creates greater risk.
 
 ## Owner-directed automation branch rule
 
