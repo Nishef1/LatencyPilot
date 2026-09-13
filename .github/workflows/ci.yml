@@ -3,34 +3,8 @@ name: Tests
 on:
   push:
     branches: [main]
-    paths:
-      - 'src/LatencyPilot.Core/**'
-      - 'src/LatencyPilot.Benchmarking/**'
-      - 'src/LatencyPilot.Protocol/**'
-      - 'src/LatencyPilot.Platform.Windows/**'
-      - 'tests/**'
-      - 'Directory.Build.props'
-      - 'Directory.Build.targets'
-      - 'Directory.Packages.props'
-      - 'global.json'
-      - 'NuGet.Config'
-      - '.editorconfig'
-      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'src/LatencyPilot.Core/**'
-      - 'src/LatencyPilot.Benchmarking/**'
-      - 'src/LatencyPilot.Protocol/**'
-      - 'src/LatencyPilot.Platform.Windows/**'
-      - 'tests/**'
-      - 'Directory.Build.props'
-      - 'Directory.Build.targets'
-      - 'Directory.Packages.props'
-      - 'global.json'
-      - 'NuGet.Config'
-      - '.editorconfig'
-      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 permissions:
