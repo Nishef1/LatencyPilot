@@ -52,7 +52,9 @@ public sealed record ObservationResponse(
 
 public sealed record ObservationServiceStatus(
     bool PrivilegedObservationHostImplemented,
-    bool MutationAvailable);
+    bool MutationAvailable,
+    bool RunningAsWindowsService,
+    bool KernelCapturePrivilegeExpected);
 
 public sealed record KernelLatencyCaptureResponse(
     DateTimeOffset StartedAtUtc,
