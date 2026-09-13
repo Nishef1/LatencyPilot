@@ -108,9 +108,7 @@ public sealed partial class MainWindow
 
             _deviceEvidenceStatusText.Text = string.Create(
                 CultureInfo.InvariantCulture,
-                $"{inventory.PresentDeviceCount:N0} present · {inventory.DevicesWithDriverMetadataCount:N0} with driver metadata · " +
-                $"{inventory.DevicesWithReadableInterruptConfigurationCount:N0} with readable stored interrupt configuration · " +
-                $"{inventory.DevicesWithAssignedInterruptsCount:N0} with allocated IRQ resources.");
+                $"{inventory.PresentDeviceCount:N0} present · {inventory.DevicesWithDriverMetadataCount:N0} with driver metadata · {inventory.DevicesWithReadableInterruptConfigurationCount:N0} with readable stored interrupt configuration · {inventory.DevicesWithAssignedInterruptsCount:N0} with allocated IRQ resources.");
 
             await ShowDeviceEvidenceDialogAsync(representativeDevices);
         }
