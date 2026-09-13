@@ -11,11 +11,11 @@ function Invoke-Native {
     param(
         [Parameter(Mandatory)]
         [string]$FilePath,
-        [Parameter(ValueFromRemainingArguments)]
-        [string[]]$Arguments
+        [Parameter(Mandatory)]
+        [string[]]$ArgumentList
     )
 
-    & $FilePath @Arguments
+    & $FilePath @ArgumentList
     if ($LASTEXITCODE -ne 0) {
         throw "$FilePath exited with code $LASTEXITCODE."
     }
@@ -38,17 +38,13 @@ function Resolve-InnoSetupCompiler {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location $repoRoot
 try {
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        throw 'git is required.'
-    }
-    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-        throw 'dotnet is required.'
-    }
-    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-        throw 'GitHub CLI (gh) is required.'
+    foreach ($requiredCommand in 'git', 'dotnet', 'gh') {
+        if (-not (Get-Command $requiredCommand -ErrorAction SilentlyContinue)) {
+            throw "$requiredCommand is required."
+        }
     }
 
-    Invoke-Native gh auth status
+    Invoke-Native -FilePath 'gh' -ArgumentList @('auth', 'status')
 
     $branch = (git branch --show-current).Trim()
     if ($LASTEXITCODE -ne 0 -or $branch -ne 'main') {
@@ -63,7 +59,7 @@ try {
         throw 'The working tree must be clean before publishing a release.'
     }
 
-    Invoke-Native git fetch origin main --quiet
+    Invoke-Native -FilePath 'git' -ArgumentList @('fetch', 'origin', 'main', '--quiet')
 
     $commit = (git rev-parse HEAD).Trim()
     $originMain = (git rev-parse origin/main).Trim()
@@ -103,20 +99,19 @@ try {
         throw "No successful Tests workflow run exists for commit $commit. Let CI pass before publishing."
     }
 
+    $repoName = (gh repo view --json nameWithOwner --jq '.nameWithOwner').Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoName)) {
+        throw 'Unable to resolve the GitHub repository name.'
+    }
+
     $tag = "v$Version"
-    $existingRelease = $null
     gh release view $tag --json tagName *> $null
-    if ($LASTEXITCODE -eq 0) {
-        $existingRelease = $tag
-    }
+    $releaseExists = $LASTEXITCODE -eq 0
 
-    $remoteTagExists = $false
     git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
-    if ($LASTEXITCODE -eq 0) {
-        $remoteTagExists = $true
-    }
+    $remoteTagExists = $LASTEXITCODE -eq 0
 
-    if (($null -ne $existingRelease -or $remoteTagExists) -and -not $ReplaceExisting) {
+    if (($releaseExists -or $remoteTagExists) -and -not $ReplaceExisting) {
         throw "Release/tag $tag already exists. Re-run with -ReplaceExisting only when replacement is intentional."
     }
 
@@ -135,33 +130,41 @@ try {
     Write-Host "Publishing LatencyPilot $Version (revision $revision) from $commit"
     Write-Host "Validated by Tests workflow run $($greenTestRun.databaseId)."
 
-    Invoke-Native dotnet restore LatencyPilot.slnx --runtime win-x64
-    Invoke-Native dotnet build LatencyPilot.slnx --configuration Release --no-restore
+    Invoke-Native -FilePath 'dotnet' -ArgumentList @(
+        'restore', 'LatencyPilot.slnx', '--runtime', 'win-x64'
+    )
+    Invoke-Native -FilePath 'dotnet' -ArgumentList @(
+        'build', 'LatencyPilot.slnx', '--configuration', 'Release', '--no-restore'
+    )
 
-    Invoke-Native dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj `
-        --configuration Release `
-        --runtime win-x64 `
-        --self-contained true `
-        --no-restore `
-        --output $appOutput `
-        -p:DebugType=None `
-        -p:DebugSymbols=false `
-        -p:PublishReadyToRun=false
+    Invoke-Native -FilePath 'dotnet' -ArgumentList @(
+        'publish', 'src/LatencyPilot.App/LatencyPilot.App.csproj',
+        '--configuration', 'Release',
+        '--runtime', 'win-x64',
+        '--self-contained', 'true',
+        '--no-restore',
+        '--output', $appOutput,
+        '-p:DebugType=None',
+        '-p:DebugSymbols=false',
+        '-p:PublishReadyToRun=false'
+    )
 
     $pri = Join-Path $appOutput 'LatencyPilot.pri'
     if (-not (Test-Path -LiteralPath $pri -PathType Leaf) -or (Get-Item -LiteralPath $pri).Length -le 0) {
         throw 'LatencyPilot.pri is missing or empty in the WinUI publish output.'
     }
 
-    Invoke-Native dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj `
-        --configuration Release `
-        --runtime win-x64 `
-        --self-contained true `
-        --no-restore `
-        --output $serviceOutput `
-        -p:DebugType=None `
-        -p:DebugSymbols=false `
-        -p:PublishReadyToRun=false
+    Invoke-Native -FilePath 'dotnet' -ArgumentList @(
+        'publish', 'src/LatencyPilot.Service/LatencyPilot.Service.csproj',
+        '--configuration', 'Release',
+        '--runtime', 'win-x64',
+        '--self-contained', 'true',
+        '--no-restore',
+        '--output', $serviceOutput,
+        '-p:DebugType=None',
+        '-p:DebugSymbols=false',
+        '-p:PublishReadyToRun=false'
+    )
 
     Copy-Item scripts/Install-Service.ps1 (Join-Path $payloadRoot 'Install-Service.ps1')
     Copy-Item scripts/Uninstall-Service.ps1 (Join-Path $payloadRoot 'Uninstall-Service.ps1')
@@ -182,7 +185,7 @@ try {
 
     $env:LATENCYPILOT_VERSION = $Version
     $iscc = Resolve-InnoSetupCompiler
-    Invoke-Native $iscc installer/LatencyPilot.iss
+    Invoke-Native -FilePath $iscc -ArgumentList @('installer/LatencyPilot.iss')
 
     $setup = Join-Path $installerOutput "LatencyPilot-$Version-win-x64-setup.exe"
     if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) {
@@ -205,27 +208,28 @@ try {
     Set-Content -LiteralPath $portableChecksum -Value "$portableHash  $(Split-Path $portable -Leaf)" -NoNewline
 
     if ($ReplaceExisting) {
-        gh release view $tag *> $null
-        if ($LASTEXITCODE -eq 0) {
-            Invoke-Native gh release delete $tag --cleanup-tag --yes
+        if ($releaseExists) {
+            Invoke-Native -FilePath 'gh' -ArgumentList @('release', 'delete', $tag, '--cleanup-tag', '--yes')
         }
-        else {
-            git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
-            if ($LASTEXITCODE -eq 0) {
-                Invoke-Native git push origin ":refs/tags/$tag"
-            }
+        elseif ($remoteTagExists) {
+            $encodedTag = [Uri]::EscapeDataString($tag)
+            Invoke-Native -FilePath 'gh' -ArgumentList @(
+                'api', '--method', 'DELETE', "repos/$repoName/git/refs/tags/$encodedTag"
+            )
         }
     }
 
-    Invoke-Native gh release create $tag `
-        $setup `
-        $setupChecksum `
-        $portable `
-        $portableChecksum `
-        --target $commit `
-        --title "LatencyPilot $Version" `
-        --prerelease `
-        --generate-notes
+    Invoke-Native -FilePath 'gh' -ArgumentList @(
+        'release', 'create', $tag,
+        $setup,
+        $setupChecksum,
+        $portable,
+        $portableChecksum,
+        '--target', $commit,
+        '--title', "LatencyPilot $Version",
+        '--prerelease',
+        '--generate-notes'
+    )
 
     Write-Host ''
     Write-Host "Published $tag from $commit."
