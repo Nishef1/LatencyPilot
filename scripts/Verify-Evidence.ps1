@@ -246,7 +246,7 @@ if ($integrityIssues.Count -eq 0) {
 else {
     Write-Host "Measurement integrity: WARNING ($($integrityIssues.Count) issue(s))" -ForegroundColor Yellow
     $integrityIssues | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
-    if ($RequireCleanCapture) {
+    if ($RequireCleanCapture -or $RequireValidBaseline) {
         throw 'Evidence envelope is valid, but capture integrity is not clean.'
     }
 }
