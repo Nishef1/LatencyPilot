@@ -22,6 +22,8 @@ public sealed partial class MainWindow : Window
 
     private bool _observationServiceReady;
     private bool _initialLoadStarted;
+    private string? _latestEvidenceJson;
+    private string? _latestEvidenceSuggestedFileName;
 
     public MainWindow()
     {
@@ -119,6 +121,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        ClearExportEvidence("Capture in progress. Evidence export becomes available after completion.");
         SetObservationControlsBusy(true);
         KernelCaptureStatusText.Text = "Capturing DPC/ISR activity for 5 seconds…";
         ObservationQualityText.Text = "Capture in progress. No interpretation is made until the observation completes.";
@@ -130,6 +133,7 @@ public sealed partial class MainWindow : Window
                 ObservationMaximumEvents);
 
             RenderCapture(capture);
+            TryPrepareObservationEvidence(capture);
         }
         catch (Exception exception)
         {
@@ -148,6 +152,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        ClearExportEvidence("Baseline capture in progress. Export is prepared only after the capture sequence stops or completes.");
         SetObservationControlsBusy(true);
         BaselineProgressBar.Value = 0;
         BaselineVerdictText.Text = "Capturing";
@@ -157,6 +162,7 @@ public sealed partial class MainWindow : Window
         BaselineWindowsList.ItemsSource = null;
 
         var windows = new List<BaselineWindowEvidence>(BaselineWindowCount);
+        var captures = new List<KernelLatencyCaptureResponse>(BaselineWindowCount);
 
         try
         {
@@ -167,6 +173,7 @@ public sealed partial class MainWindow : Window
                     ObservationDuration,
                     ObservationMaximumEvents);
 
+                captures.Add(capture);
                 RenderCapture(capture);
                 var integrityIssue = GetCaptureIntegrityIssue(capture);
                 windows.Add(new BaselineWindowEvidence(
@@ -190,6 +197,7 @@ public sealed partial class MainWindow : Window
 
             var quality = BaselineQualityAnalyzer.Analyze(windows, BaselinePolicy);
             RenderBaselineQuality(quality);
+            TryPrepareBaselineEvidence(captures, windows, quality, isPartial: false);
         }
         catch (Exception exception)
         {
@@ -201,6 +209,7 @@ public sealed partial class MainWindow : Window
             {
                 var partialQuality = BaselineQualityAnalyzer.Analyze(windows, BaselinePolicy);
                 RenderBaselineQuality(partialQuality, preserveStatusText: true);
+                TryPrepareBaselineEvidence(captures, windows, partialQuality, isPartial: true);
             }
             else
             {
@@ -211,6 +220,38 @@ public sealed partial class MainWindow : Window
         finally
         {
             SetObservationControlsBusy(false);
+        }
+    }
+
+    private async void ExportEvidenceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_latestEvidenceJson is null || _latestEvidenceSuggestedFileName is null)
+        {
+            EvidenceExportStatusText.Text = "No completed observation or baseline evidence is available to export.";
+            return;
+        }
+
+        ExportEvidenceButton.IsEnabled = false;
+        try
+        {
+            var savedPath = await EvidenceExportService.SaveAsync(
+                this,
+                _latestEvidenceJson,
+                _latestEvidenceSuggestedFileName);
+
+            if (savedPath is not null)
+            {
+                EvidenceExportStatusText.Text = $"Evidence exported to {savedPath}";
+            }
+        }
+        catch (Exception exception)
+        {
+            Logger.Error(exception, "Evidence export failed.");
+            EvidenceExportStatusText.Text = "Evidence export failed. The capture result remains valid; see the diagnostics log for export details.";
+        }
+        finally
+        {
+            ExportEvidenceButton.IsEnabled = _latestEvidenceJson is not null;
         }
     }
 
@@ -230,6 +271,7 @@ public sealed partial class MainWindow : Window
         CaptureObservationButton.IsEnabled = !busy && _observationServiceReady;
         CaptureBaselineButton.IsEnabled = !busy && _observationServiceReady;
         RefreshServiceButton.IsEnabled = !busy;
+        ExportEvidenceButton.IsEnabled = !busy && _latestEvidenceJson is not null;
     }
 
     private void RenderCapture(KernelLatencyCaptureResponse capture)
@@ -367,6 +409,61 @@ public sealed partial class MainWindow : Window
         }
 
         return issues.Count == 0 ? null : string.Join(" ", issues);
+    }
+
+    private void TryPrepareObservationEvidence(KernelLatencyCaptureResponse capture)
+    {
+        try
+        {
+            SetExportEvidence(
+                EvidenceExportService.CreateObservationJson(GetProductVersion(), capture),
+                EvidenceExportService.CreateSuggestedFileName("observation", capture.StartedAtUtc),
+                "Full bounded observation aggregates are ready for JSON export.");
+        }
+        catch (Exception exception)
+        {
+            Logger.Error(exception, "Observation evidence preparation failed.");
+            ClearExportEvidence("Observation completed, but evidence export preparation failed. See the diagnostics log for details.");
+        }
+    }
+
+    private void TryPrepareBaselineEvidence(
+        IReadOnlyList<KernelLatencyCaptureResponse> captures,
+        IReadOnlyList<BaselineWindowEvidence> windows,
+        BaselineQualityResult quality,
+        bool isPartial)
+    {
+        try
+        {
+            var evidenceType = isPartial ? "baseline-partial" : "baseline";
+            SetExportEvidence(
+                EvidenceExportService.CreateBaselineJson(GetProductVersion(), captures, windows, quality),
+                EvidenceExportService.CreateSuggestedFileName(evidenceType, captures[0].StartedAtUtc),
+                isPartial
+                    ? "Partial baseline aggregates and quality reasons are ready for JSON export."
+                    : "Full baseline aggregates, windows and quality reasons are ready for JSON export.");
+        }
+        catch (Exception exception)
+        {
+            Logger.Error(exception, "Baseline evidence preparation failed.");
+            ClearExportEvidence("Baseline result remains available, but evidence export preparation failed. See the diagnostics log for details.");
+        }
+    }
+
+    private void SetExportEvidence(string json, string suggestedFileName, string status)
+    {
+        _latestEvidenceJson = json;
+        _latestEvidenceSuggestedFileName = suggestedFileName;
+        ExportEvidenceButton.IsEnabled = true;
+        EvidenceExportStatusText.Text = status;
+    }
+
+    private void ClearExportEvidence(string status)
+    {
+        _latestEvidenceJson = null;
+        _latestEvidenceSuggestedFileName = null;
+        ExportEvidenceButton.IsEnabled = false;
+        EvidenceExportStatusText.Text = status;
     }
 
     private void HandleCaptureFailure(Exception exception, string operationName)
