@@ -210,6 +210,8 @@ When a stage is not actually closable because CI, hardware validation, attributi
 
 For every meaningful change: understand existing architecture first, keep commits logically scoped, avoid unrelated churn, update documentation when contracts change, add/modify permanent tests only under the hard-cap policy, never weaken safety logic to make CI pass, and inspect actual failures instead of disabling validation.
 
+For **owner-directed automation work**, write directly to `main` by default and do not create or switch to a new branch unless the repository owner explicitly requests one. This constraint does not prohibit normal contributor pull-request workflows; it governs agent/automation changes performed on the owner's behalf.
+
 ## 18. Licensing
 
 LatencyPilot is source-available and is not an OSI open-source project. Do not replace `LICENSE`, `CLA.md` or contribution terms unless explicitly instructed by the repository owner. Verify third-party license compatibility before copying or adding dependencies.
