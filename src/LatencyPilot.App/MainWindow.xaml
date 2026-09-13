@@ -39,7 +39,7 @@
                                 <TextBlock x:Name="VersionText"
                                            FontSize="12"
                                            Foreground="{ThemeResource MutedTextBrush}"
-                                           Text="v0.0.1" />
+                                           Text="v—" />
                             </Border>
                         </StackPanel>
                         <TextBlock Text="Evidence-driven Windows latency analysis"
@@ -116,7 +116,13 @@
                                 x:Name="RefreshServiceButton"
                                 VerticalAlignment="Center"
                                 Click="RefreshServiceButton_Click"
-                                Content="Refresh service" />
+                                Content="Refresh service"
+                                ToolTipService.ToolTip="Refresh service status (Ctrl+R)"
+                                AutomationProperties.AcceleratorKey="Ctrl+R">
+                            <Button.KeyboardAccelerators>
+                                <KeyboardAccelerator Modifiers="Control" Key="R" />
+                            </Button.KeyboardAccelerators>
+                        </Button>
                     </Grid>
                 </Border>
 
@@ -249,8 +255,12 @@
                                            FontSize="16"
                                            FontWeight="SemiBold"
                                            Foreground="{ThemeResource TextBrush}" />
-                                <TextBlock Text="The service exposes typed read-only observation commands only. MSI, affinity, power, network and device-policy mutation are disabled in 0.0.1."
+                                <TextBlock Text="The service exposes typed read-only observation commands only. MSI, affinity, power, network and device-policy mutation are disabled in this pre-alpha build."
                                            FontSize="13"
+                                           TextWrapping="Wrap"
+                                           Foreground="{ThemeResource MutedTextBrush}" />
+                                <TextBlock Text="Evidence levels stay separate: stored interrupt configuration ≠ allocated IRQ/resource assignment ≠ runtime DPC/ISR behavior."
+                                           FontSize="12"
                                            TextWrapping="Wrap"
                                            Foreground="{ThemeResource MutedTextBrush}" />
                                 <TextBlock Text="Only a repeated baseline that passes capture-integrity, sample, noise and drift checks can qualify for later comparison."
@@ -284,8 +294,27 @@
                                                Foreground="{ThemeResource MutedTextBrush}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
-                                    <Button x:Name="CaptureObservationButton" IsEnabled="False" Click="CaptureObservationButton_Click" Content="Capture 5 seconds" />
-                                    <Button x:Name="CaptureBaselineButton" IsEnabled="False" Click="CaptureBaselineButton_Click" Style="{StaticResource AccentButtonStyle}" Content="Build baseline" />
+                                    <Button x:Name="CaptureObservationButton"
+                                            IsEnabled="False"
+                                            Click="CaptureObservationButton_Click"
+                                            Content="Capture 5 seconds"
+                                            ToolTipService.ToolTip="Capture a five-second observation (Ctrl+O)"
+                                            AutomationProperties.AcceleratorKey="Ctrl+O">
+                                        <Button.KeyboardAccelerators>
+                                            <KeyboardAccelerator Modifiers="Control" Key="O" />
+                                        </Button.KeyboardAccelerators>
+                                    </Button>
+                                    <Button x:Name="CaptureBaselineButton"
+                                            IsEnabled="False"
+                                            Click="CaptureBaselineButton_Click"
+                                            Style="{StaticResource AccentButtonStyle}"
+                                            Content="Build baseline"
+                                            ToolTipService.ToolTip="Build a five-window baseline (Ctrl+B)"
+                                            AutomationProperties.AcceleratorKey="Ctrl+B">
+                                        <Button.KeyboardAccelerators>
+                                            <KeyboardAccelerator Modifiers="Control" Key="B" />
+                                        </Button.KeyboardAccelerators>
+                                    </Button>
                                 </StackPanel>
                             </Grid>
 
@@ -306,7 +335,7 @@
 
                             <Grid ColumnSpacing="18">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <StackPanel Spacing="6"><TextBlock Text="Driver attribution" FontSize="14" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" /><ProgressBar x:Name="ModuleCoverageBar" Minimum="0" Maximum="100" Value="0" /><TextBlock x:Name="ModuleAttributionCoverageText" Text="—" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource MutedTextBrush}" /></StackPanel>
+                                <StackPanel Spacing="6"><TextBlock Text="Driver attribution" FontSize="14" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" /><ProgressBar x:Name="ModuleCoverageBar" Minimum="0" Maximum="100" Value="0" AutomationProperties.Name="Resolved driver attribution coverage" /><TextBlock x:Name="ModuleAttributionCoverageText" Text="—" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource MutedTextBrush}" /></StackPanel>
                                 <StackPanel Grid.Column="1" MinWidth="120" Spacing="4"><TextBlock Text="CPUs observed" FontSize="12" Foreground="{ThemeResource MutedTextBrush}" /><TextBlock x:Name="ObservedProcessorCountText" Text="—" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" /></StackPanel>
                             </Grid>
 
@@ -315,12 +344,12 @@
                                 <StackPanel Grid.Column="0" Spacing="8">
                                     <TextBlock Text="Top modules" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
                                     <TextBlock x:Name="TopModuleText" Text="No observation yet." FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource MutedTextBrush}" />
-                                    <ListView x:Name="TopModulesList" MinHeight="120" MaxHeight="250" IsItemClickEnabled="False" SelectionMode="None"><ListView.ItemTemplate><DataTemplate><Grid Padding="0,7" ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel Spacing="2"><TextBlock Text="{Binding Name}" Foreground="{ThemeResource TextBrush}" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding EventSummary}" FontSize="11" Foreground="{ThemeResource MutedTextBrush}" /></StackPanel><TextBlock Grid.Column="1" Text="{Binding DurationSummary}" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource MutedTextBrush}" /></Grid></DataTemplate></ListView.ItemTemplate></ListView>
+                                    <ListView x:Name="TopModulesList" MinHeight="120" MaxHeight="250" IsItemClickEnabled="False" SelectionMode="None" AutomationProperties.Name="Top observed kernel modules"><ListView.ItemTemplate><DataTemplate><Grid Padding="0,7" ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel Spacing="2"><TextBlock Text="{Binding Name}" Foreground="{ThemeResource TextBrush}" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding EventSummary}" FontSize="11" Foreground="{ThemeResource MutedTextBrush}" /></StackPanel><TextBlock Grid.Column="1" Text="{Binding DurationSummary}" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource MutedTextBrush}" /></Grid></DataTemplate></ListView.ItemTemplate></ListView>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Spacing="8">
                                     <TextBlock Text="CPU concentration" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
                                     <TextBlock Text="Ranked by observed DPC + ISR event count" FontSize="12" Foreground="{ThemeResource MutedTextBrush}" />
-                                    <ListView x:Name="TopProcessorsList" MinHeight="120" MaxHeight="250" IsItemClickEnabled="False" SelectionMode="None"><ListView.ItemTemplate><DataTemplate><Grid Padding="0,7" ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel Spacing="2"><TextBlock Text="{Binding Name}" Foreground="{ThemeResource TextBrush}" /><TextBlock Text="{Binding EventSummary}" FontSize="11" Foreground="{ThemeResource MutedTextBrush}" /></StackPanel><TextBlock Grid.Column="1" Text="{Binding TailSummary}" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource MutedTextBrush}" /></Grid></DataTemplate></ListView.ItemTemplate></ListView>
+                                    <ListView x:Name="TopProcessorsList" MinHeight="120" MaxHeight="250" IsItemClickEnabled="False" SelectionMode="None" AutomationProperties.Name="Observed CPU concentration"><ListView.ItemTemplate><DataTemplate><Grid Padding="0,7" ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel Spacing="2"><TextBlock Text="{Binding Name}" Foreground="{ThemeResource TextBrush}" /><TextBlock Text="{Binding EventSummary}" FontSize="11" Foreground="{ThemeResource MutedTextBrush}" /></StackPanel><TextBlock Grid.Column="1" Text="{Binding TailSummary}" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource MutedTextBrush}" /></Grid></DataTemplate></ListView.ItemTemplate></ListView>
                                 </StackPanel>
                             </Grid>
 
@@ -333,11 +362,11 @@
                                         <StackPanel Spacing="3"><TextBlock Text="Repeated baseline quality" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" /><TextBlock Text="Five clean windows · minimum 20 events per metric/window · explicit noise/drift gate" FontSize="11" TextWrapping="Wrap" Foreground="{ThemeResource MutedTextBrush}" /></StackPanel>
                                         <TextBlock Grid.Column="1" x:Name="BaselineVerdictText" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" Text="Not captured" />
                                     </Grid>
-                                    <ProgressBar x:Name="BaselineProgressBar" Minimum="0" Maximum="5" Value="0" />
+                                    <ProgressBar x:Name="BaselineProgressBar" Minimum="0" Maximum="5" Value="0" AutomationProperties.Name="Baseline capture progress" />
                                     <TextBlock x:Name="BaselineStatusText" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource TextBrush}" Text="Build a repeated baseline to measure normal inter-window variation." />
                                     <TextBlock x:Name="BaselineMetricsText" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource MutedTextBrush}" Text="No baseline metrics yet." />
                                     <TextBlock x:Name="BaselineReasonsText" FontSize="11" TextWrapping="Wrap" Foreground="{ThemeResource MutedTextBrush}" Text="Capture integrity, sample adequacy, noise and drift reasons will appear here." />
-                                    <ListView x:Name="BaselineWindowsList" MaxHeight="230" IsItemClickEnabled="False" SelectionMode="None">
+                                    <ListView x:Name="BaselineWindowsList" MaxHeight="230" IsItemClickEnabled="False" SelectionMode="None" AutomationProperties.Name="Baseline capture windows">
                                         <ListView.ItemTemplate><DataTemplate><Grid Padding="0,6" ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" /><TextBlock Grid.Column="1" Text="{Binding IntegritySummary}" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource MutedTextBrush}" /><TextBlock Grid.Column="2" Text="{Binding DpcSummary}" FontSize="11" Foreground="{ThemeResource MutedTextBrush}" /><TextBlock Grid.Column="3" Text="{Binding IsrSummary}" FontSize="11" Foreground="{ThemeResource MutedTextBrush}" /></Grid></DataTemplate></ListView.ItemTemplate>
                                     </ListView>
                                 </StackPanel>
