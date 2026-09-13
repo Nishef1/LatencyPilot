@@ -10,9 +10,6 @@ namespace LatencyPilot.App;
 
 public sealed partial class MainWindow
 {
-    private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
-    private static readonly Guid NetworkDeviceClass = new("4D36E972-E325-11CE-BFC1-08002BE10318");
-
     private Button? _inspectDeviceEvidenceButton;
     private TextBlock? _deviceEvidenceStatusText;
 
@@ -104,7 +101,7 @@ public sealed partial class MainWindow
         try
         {
             var inventory = await Task.Run(DeviceInventoryReader.CapturePresentDevices);
-            var representativeDevices = SelectRepresentativeDevices(inventory);
+            var representativeDevices = RepresentativeDeviceEvidenceSelector.Select(inventory);
 
             _deviceEvidenceStatusText.Text = string.Create(
                 CultureInfo.InvariantCulture,
@@ -123,7 +120,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private async Task ShowDeviceEvidenceDialogAsync(IReadOnlyList<RepresentativeDevice> devices)
+    private async Task ShowDeviceEvidenceDialogAsync(IReadOnlyList<RepresentativeDeviceEvidence> devices)
     {
         var content = new StackPanel { Spacing = 12 };
         content.Children.Add(new TextBlock
@@ -169,7 +166,7 @@ public sealed partial class MainWindow
         await dialog.ShowAsync();
     }
 
-    private Border BuildDeviceEvidencePanel(RepresentativeDevice item)
+    private Border BuildDeviceEvidencePanel(RepresentativeDeviceEvidence item)
     {
         var device = item.Device;
         var panel = new Border
@@ -185,7 +182,7 @@ public sealed partial class MainWindow
         panel.Child = stack;
         stack.Children.Add(new TextBlock
         {
-            Text = item.Category,
+            Text = GetRepresentativeDeviceLabel(item.Kind),
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("AccentBrush"),
@@ -225,42 +222,14 @@ public sealed partial class MainWindow
             Foreground = ThemeBrush("MutedTextBrush"),
         };
 
-    private static IReadOnlyList<RepresentativeDevice> SelectRepresentativeDevices(DeviceInventorySnapshot inventory)
-    {
-        var selected = new List<RepresentativeDevice>();
-        AddCategory(
-            selected,
-            inventory.Devices.Where(static device => device.ClassGuid == DisplayDeviceClass),
-            "Display / GPU class",
-            maximum: 2);
-        AddCategory(
-            selected,
-            inventory.Devices.Where(static device => device.ClassGuid == NetworkDeviceClass),
-            "Network adapter class",
-            maximum: 3);
-        AddCategory(
-            selected,
-            inventory.Devices.Where(static device =>
-                string.Equals(device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase)),
-            "xHCI controller (USBXHCI service)",
-            maximum: 3);
-        return selected;
-    }
-
-    private static void AddCategory(
-        List<RepresentativeDevice> destination,
-        IEnumerable<PnPDeviceSnapshot> source,
-        string category,
-        int maximum)
-    {
-        foreach (var device in source
-                     .OrderBy(static device => device.DisplayName, StringComparer.OrdinalIgnoreCase)
-                     .ThenBy(static device => device.InstanceId, StringComparer.OrdinalIgnoreCase)
-                     .Take(maximum))
+    private static string GetRepresentativeDeviceLabel(RepresentativeDeviceKind kind) =>
+        kind switch
         {
-            destination.Add(new RepresentativeDevice(category, device));
-        }
-    }
+            RepresentativeDeviceKind.DisplayAdapter => "Display / GPU class",
+            RepresentativeDeviceKind.NetworkAdapter => "Network adapter class",
+            RepresentativeDeviceKind.XhciController => "xHCI controller (USBXHCI service)",
+            _ => "Representative device",
+        };
 
     private static string FormatDriverEvidence(DriverMetadataSnapshot driver)
     {
@@ -322,6 +291,4 @@ public sealed partial class MainWindow
                     CultureInfo.InvariantCulture,
                     $"IRQ {resource.Irq} · group {resource.ProcessorGroup} · affinity 0x{resource.AffinityMask:X} · raw ConfigMgr flags 0x{resource.RawFlags:X4}")));
     }
-
-    private sealed record RepresentativeDevice(string Category, PnPDeviceSnapshot Device);
 }
