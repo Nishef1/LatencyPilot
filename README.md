@@ -9,7 +9,7 @@ LatencyPilot is a Windows 11 performance-analysis and tuning tool built around o
 It is not a registry-tweak pack, debloater, or one-click FPS booster. The product is intended to measure the effect of low-level changes on the actual machine, expose improvements and regressions, and preserve enough state to safely revert each supported experiment.
 
 > [!IMPORTANT]
-> LatencyPilot is in **pre-alpha**. Current product version: **0.0.1**. Phase 2 is building the trustworthy read-only observation and baseline-quality engine. System mutation remains disabled by design.
+> LatencyPilot is in **pre-alpha**. Current product version: **0.0.2**. Phase 2 is building the trustworthy read-only observation and baseline-quality engine. System mutation remains disabled by design.
 
 ## Why LatencyPilot
 
@@ -35,7 +35,7 @@ Windows exposes powerful interrupt, CPU-topology, ETW, USB, networking and sched
 
 ## Current state
 
-- Version — **0.0.1 pre-alpha**
+- Version — **0.0.2 pre-alpha**
 - Phase 0 — governance/architecture: **closed**
 - Phase 1 — buildable foundation + comparison core: **closed**
 - Phase 2 — read-only observation engine: **in progress**
@@ -55,14 +55,16 @@ See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PR
 
 ## Pre-alpha releases
 
-Release versions use exactly three numeric components: `MAJOR.MINOR.PATCH`. `Directory.Build.props` is the product-version source of truth and `RELEASE_VERSION` is the explicit release request. Published versions are immutable; once a tag exists, later source changes require a new product version before publication.
+Release versions use exactly three numeric components: `MAJOR.MINOR.PATCH`. `Directory.Build.props` is the product-version source of truth and `RELEASE_VERSION` is the explicit release request. Published versions are immutable: a version that has been publicly published remains reserved even if its release/tag is later removed.
 
-The historical public `v0.0.1` release contains:
+`v0.0.1` was previously published and is retained as a historical reserved version, but it is no longer present on the current GitHub Releases page. The latest currently published prerelease is `v0.0.0`. Current `main` has advanced to **0.0.2** and must not reuse the retired `v0.0.1` identity.
+
+The retired `v0.0.1` publication produced two Windows 11 x64 distributions from the same self-contained payload:
 
 - `LatencyPilot-0.0.1-win-x64-setup.exe` — installer for the app and read-only observation service.
 - `LatencyPilot-0.0.1-win-x64-portable.zip` — extractable portable bundle with app, service payload, runtime dependencies, service scripts, validation/diagnostics guides and build metadata.
 
-Current `main` has advanced beyond those published `v0.0.1` artifacts. Do not treat the old binaries as evidence for the current source. The next published candidate must use a new semantic version and be built locally by the repository owner from the exact tested `main` revision.
+Those historical binaries are not evidence for current source. The next publishable candidate is `v0.0.2`, built locally by the repository owner from the exact tested `main` revision after owner-local build/package validation.
 
 The App runs as a normal, non-elevated user. Kernel ETW observation remains behind the privileged Windows Service. In the portable bundle, `Install-Service.ps1` copies the Service payload into `%ProgramFiles%\LatencyPilot\Service` before LocalSystem registration; the privileged binary is therefore not executed from an ordinary user-writable extraction folder. `Uninstall-Service.ps1` removes the registration and protected Service copy. See [`docs/PORTABLE.md`](docs/PORTABLE.md).
 
