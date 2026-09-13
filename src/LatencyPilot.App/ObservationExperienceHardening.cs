@@ -11,6 +11,7 @@ public sealed partial class MainWindow
             _measurementScenarioComboBox.IsEnabled = !_measurementBusy;
         }
 
+        InitializeMeasurementReadinessExperience();
         InitializeDeviceEvidenceUi();
     }
 }
