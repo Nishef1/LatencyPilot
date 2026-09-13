@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LatencyPilot.Benchmarking.Baselines;
+using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
 using Windows.Storage;
 using Windows.Storage.Pickers;
@@ -71,14 +72,37 @@ internal static class EvidenceExportService
                 quality),
             JsonOptions);
 
-    private static EvidenceEnvironment CreateEnvironment() =>
-        new(
+    private static EvidenceEnvironment CreateEnvironment()
+    {
+        EvidenceTopology? topology = null;
+        try
+        {
+            var snapshot = ProcessorTopologyReader.Capture();
+            topology = new EvidenceTopology(
+                snapshot.Packages.Count,
+                snapshot.PhysicalCoreCount,
+                snapshot.LogicalProcessorCount,
+                snapshot.ProcessorGroupCount,
+                snapshot.SmtCoreCount);
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException or
+            InvalidOperationException or
+            System.ComponentModel.Win32Exception)
+        {
+            // Evidence export is best-effort context enrichment. A topology read
+            // failure must not invalidate an otherwise completed observation.
+        }
+
+        return new EvidenceEnvironment(
             RuntimeInformation.OSDescription,
             System.Environment.OSVersion.VersionString,
             RuntimeInformation.OSArchitecture.ToString(),
             RuntimeInformation.ProcessArchitecture.ToString(),
             System.Environment.ProcessorCount,
-            System.Environment.Version.ToString());
+            System.Environment.Version.ToString(),
+            topology);
+    }
 
     private static async Task<string?> SaveAsync(
         nint windowHandle,
@@ -135,13 +159,21 @@ internal static class EvidenceExportService
             writer.WriteStringValue(string.Create(CultureInfo.InvariantCulture, $"0x{value:X16}"));
     }
 
+    private sealed record EvidenceTopology(
+        int PackageCount,
+        int PhysicalCoreCount,
+        int LogicalProcessorCount,
+        int ProcessorGroupCount,
+        int SmtCoreCount);
+
     private sealed record EvidenceEnvironment(
         string OperatingSystem,
         string OperatingSystemVersion,
         string OsArchitecture,
         string ProcessArchitecture,
         int ProcessAvailableProcessorCount,
-        string DotNetRuntimeVersion);
+        string DotNetRuntimeVersion,
+        EvidenceTopology? Topology);
 
     private sealed record ObservationEvidenceDocument(
         string Schema,
