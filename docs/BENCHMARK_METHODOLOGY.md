@@ -19,6 +19,7 @@ This document defines the minimum methodology for benchmark-backed recommendatio
 8. A primary improvement can still produce a trade-off verdict.
 9. GitHub-hosted CI is not a physical-hardware benchmark environment.
 10. The benchmark must not claim to measure a physical quantity it does not actually observe.
+11. Measurement-engine observer overhead is itself a validity concern; avoid introducing avoidable allocation, GC, logging or synchronous I/O pressure into the measured window.
 
 ## 2. Experiment structure
 
@@ -383,7 +384,11 @@ Physical ETW/hardware validation remains separate from synthetic golden data.
 
 ## 22. Benchmark performance vs benchmark correctness
 
-LatencyPilot's own parser/statistics performance should be measured in `perf/` only when profiling shows a meaningful need. Do not create a speculative performance-test subsystem merely because one may be useful later.
+LatencyPilot's own capture/parser/statistics performance is part of measurement validity because the observer can perturb the machine it is measuring. The capture path should avoid avoidable per-event heap allocation, synchronous file I/O and high-volume diagnostic logging, and should keep bounded intermediate materialization where exact evidence semantics permit it.
+
+Performance work must preserve the authoritative event meaning, attribution rules and statistical estimator. Do not trade exactness or silently change percentile semantics merely to reduce allocations.
+
+Measure LatencyPilot's own allocation/GC/CPU overhead in `perf/` only when profiling shows a meaningful need. Do not create a speculative performance-test subsystem merely because one may be useful later. Physical or controlled profiling evidence should guide deeper optimization, especially when value-type copies, pooling or streaming aggregation could introduce new trade-offs.
 
 CI timing on hosted VMs is not a substitute for real hardware experiments. Correctness tests may gate pull requests; small hosted-runner performance deltas should generally be tracked rather than treated as authoritative hardware regressions.
 
