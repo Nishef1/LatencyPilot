@@ -90,10 +90,7 @@ public static class BaselineQualityAnalyzer
         policy.Validate();
 
         var ordered = windows.OrderBy(static window => window.WindowNumber).ToArray();
-        if (ordered.Select(static window => window.WindowNumber).Distinct().Count() != ordered.Length)
-        {
-            throw new ArgumentException("Baseline window numbers must be unique.", nameof(windows));
-        }
+        ValidateWindowSequence(ordered, nameof(windows));
 
         var reasons = new List<string>();
         if (ordered.Length < policy.RequiredWindowCount)
@@ -143,6 +140,30 @@ public static class BaselineQualityAnalyzer
             dpc,
             isr,
             reasons);
+    }
+
+    private static void ValidateWindowSequence(
+        IReadOnlyList<BaselineWindowEvidence> windows,
+        string parameterName)
+    {
+        for (var index = 0; index < windows.Count; index++)
+        {
+            var expectedWindowNumber = index + 1;
+            var window = windows[index];
+            if (window.WindowNumber != expectedWindowNumber)
+            {
+                throw new ArgumentException(
+                    $"Baseline window numbers must form a contiguous sequence starting at 1. Expected window {expectedWindowNumber}, found {window.WindowNumber}.",
+                    parameterName);
+            }
+
+            if (index > 0 && window.StartedAtUtc <= windows[index - 1].StartedAtUtc)
+            {
+                throw new ArgumentException(
+                    $"Baseline window timestamps must increase with window number. Window {window.WindowNumber} did not start after window {windows[index - 1].WindowNumber}.",
+                    parameterName);
+            }
+        }
     }
 
     private static BaselineMetricQuality AnalyzeMetric(
