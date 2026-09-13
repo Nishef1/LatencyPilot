@@ -7,7 +7,9 @@ param(
 
     [string]$ExpectedSha256,
 
-    [switch]$RequireCleanCapture
+    [switch]$RequireCleanCapture,
+
+    [switch]$RequireValidBaseline
 )
 
 Set-StrictMode -Version Latest
@@ -279,6 +281,24 @@ elseif ($evidenceType -eq 'baseline') {
             Write-Host "Reasons:         $($reasons.Count)"
             $reasons | ForEach-Object { Write-Host "  - $_" }
         }
+
+        if ($RequireValidBaseline) {
+            if ($captures.Count -ne 5) {
+                throw "Baseline is not closure-ready: expected exactly 5 captures, found $($captures.Count)."
+            }
+            if ([string]$document.baselineMethodVersion -ne 'baseline-quality-v1') {
+                throw "Baseline is not closure-ready: unexpected method '$($document.baselineMethodVersion)'."
+            }
+            if (-not [bool]$quality.isValidForComparison -or [string]$quality.status -ne 'Valid') {
+                throw "Baseline is not closure-ready: quality status is '$($quality.status)' and IsValidForComparison is '$($quality.isValidForComparison)'."
+            }
+            if ([int]$quality.validCaptureWindowCount -ne 5 -or [int]$quality.totalWindowCount -ne 5) {
+                throw "Baseline is not closure-ready: valid/total capture counts are $($quality.validCaptureWindowCount)/$($quality.totalWindowCount)."
+            }
+        }
+    }
+    elseif ($RequireValidBaseline) {
+        throw 'Baseline is not closure-ready: quality evidence is missing.'
     }
 
     for ($index = 0; $index -lt $captures.Count; $index++) {
