@@ -97,6 +97,12 @@ public static class BaselineQualityAnalyzer
         {
             reasons.Add($"Only {ordered.Length} of {policy.RequiredWindowCount} required windows were captured.");
         }
+        else if (ordered.Length > policy.RequiredWindowCount)
+        {
+            reasons.Add(
+                $"Captured {ordered.Length} windows, but this method requires exactly {policy.RequiredWindowCount}. " +
+                "Extra windows must not silently change the versioned baseline interpretation.");
+        }
 
         var invalidCaptureWindows = ordered
             .Where(static window => !window.CaptureIntegrityValid)
@@ -127,7 +133,7 @@ public static class BaselineQualityAnalyzer
         reasons.AddRange(isr.Reasons.Select(static reason => $"ISR p99: {reason}"));
 
         var validCaptureWindowCount = ordered.Length - invalidCaptureWindows.Length;
-        var valid = ordered.Length >= policy.RequiredWindowCount &&
+        var valid = ordered.Length == policy.RequiredWindowCount &&
             invalidCaptureWindows.Length == 0 &&
             dpc.IsStable &&
             isr.IsStable;
