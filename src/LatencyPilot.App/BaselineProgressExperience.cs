@@ -13,6 +13,9 @@ public sealed partial class MainWindow
     private bool _baselineProgressActive;
     private bool _baselineProgressInternalUpdate;
     private double _baselineProgressPercent;
+    private int _baselineCompletedWindows;
+    private TimeSpan _baselineLastWindowCompletedAt;
+    private TimeSpan _baselineEstimatedTotalDuration;
 
     private void InitializeBaselineProgressExperience()
     {
@@ -35,7 +38,7 @@ public sealed partial class MainWindow
 
         BaselineProgressBar.RegisterPropertyChangedCallback(
             RangeBase.ValueProperty,
-            (_, _) => PreserveMonotonicBaselineProgress());
+            (_, _) => HandleBaselineProgressValueChanged());
     }
 
     private void HandleBaselineVerdictChanged()
@@ -51,7 +54,10 @@ public sealed partial class MainWindow
             return;
         }
 
-        var completedSequence = _baselineProgressStopwatch.Elapsed >= GetNominalBaselineDuration() - TimeSpan.FromSeconds(8);
+        var completedSequence = _baselineCompletedWindows >= BaselineWindowCount ||
+            BaselineStatusText.Text.Contains(
+                $"Window {BaselineWindowCount} of {BaselineWindowCount} complete",
+                StringComparison.OrdinalIgnoreCase);
         StopBaselineProgressExperience(completedSequence);
     }
 
@@ -59,6 +65,9 @@ public sealed partial class MainWindow
     {
         _baselineProgressStopwatch.Restart();
         _baselineProgressPercent = 0;
+        _baselineCompletedWindows = 0;
+        _baselineLastWindowCompletedAt = TimeSpan.Zero;
+        _baselineEstimatedTotalDuration = GetNominalBaselineDuration();
         _baselineProgressActive = true;
         SetBaselineProgressValue(0);
         UpdateBaselineProgressExperience();
@@ -85,11 +94,10 @@ public sealed partial class MainWindow
             return;
         }
 
-        var nominalDuration = GetNominalBaselineDuration();
         var elapsed = _baselineProgressStopwatch.Elapsed;
-        var fraction = nominalDuration.TotalMilliseconds <= 0
+        var fraction = _baselineEstimatedTotalDuration.TotalMilliseconds <= 0
             ? 0d
-            : elapsed.TotalMilliseconds / nominalDuration.TotalMilliseconds;
+            : elapsed.TotalMilliseconds / _baselineEstimatedTotalDuration.TotalMilliseconds;
         var percent = Math.Clamp(Math.Floor(fraction * 100d), 0d, 99d);
 
         if (percent > _baselineProgressPercent)
@@ -98,15 +106,14 @@ public sealed partial class MainWindow
             SetBaselineProgressValue(percent);
         }
 
-        var remaining = nominalDuration - elapsed;
+        var remaining = _baselineEstimatedTotalDuration - elapsed;
         if (remaining < TimeSpan.Zero)
         {
             remaining = TimeSpan.Zero;
         }
 
-        var phase = GetBaselineProgressPhase(elapsed);
         BaselineStatusText.Text =
-            $"{phase} · {_baselineProgressPercent:F0}% · {FormatApproximateRemainingTime(remaining)} remaining.";
+            $"{GetBaselineProgressPhase(elapsed)} · {_baselineProgressPercent:F0}% · {FormatApproximateRemainingTime(remaining)} remaining.";
     }
 
     private static TimeSpan GetNominalBaselineDuration() =>
@@ -114,34 +121,24 @@ public sealed partial class MainWindow
         TimeSpan.FromTicks(BaselineObservationDuration.Ticks * BaselineWindowCount) +
         TimeSpan.FromTicks(BaselineInterWindowDelay.Ticks * (BaselineWindowCount - 1));
 
-    private static string GetBaselineProgressPhase(TimeSpan elapsed)
+    private string GetBaselineProgressPhase(TimeSpan elapsed)
     {
-        if (elapsed < BaselinePreSequenceSettleDelay)
+        if (_baselineCompletedWindows == 0)
         {
-            return "Settling LatencyPilot/service";
+            return elapsed < BaselinePreSequenceSettleDelay
+                ? "Settling LatencyPilot/service"
+                : $"Capturing window 1 of {BaselineWindowCount}";
         }
 
-        var remaining = elapsed - BaselinePreSequenceSettleDelay;
-        for (var index = 1; index <= BaselineWindowCount; index++)
+        if (_baselineCompletedWindows >= BaselineWindowCount)
         {
-            if (remaining < BaselineObservationDuration)
-            {
-                return $"Capturing window {index} of {BaselineWindowCount}";
-            }
-
-            remaining -= BaselineObservationDuration;
-            if (index < BaselineWindowCount)
-            {
-                if (remaining < BaselineInterWindowDelay)
-                {
-                    return $"Window {index} complete · settling for window {index + 1}";
-                }
-
-                remaining -= BaselineInterWindowDelay;
-            }
+            return "Finalizing baseline quality";
         }
 
-        return "Finalizing baseline quality";
+        var sinceLastWindow = elapsed - _baselineLastWindowCompletedAt;
+        return sinceLastWindow < BaselineInterWindowDelay
+            ? $"Window {_baselineCompletedWindows} complete · settling for window {_baselineCompletedWindows + 1}"
+            : $"Capturing window {_baselineCompletedWindows + 1} of {BaselineWindowCount}";
     }
 
     private static string FormatApproximateRemainingTime(TimeSpan remaining)
@@ -162,19 +159,64 @@ public sealed partial class MainWindow
             : $"≈ {seconds} s";
     }
 
-    private void PreserveMonotonicBaselineProgress()
+    private void HandleBaselineProgressValueChanged()
     {
         if (!_baselineProgressActive || _baselineProgressInternalUpdate)
         {
             return;
         }
 
+        var externallyWrittenValue = BaselineProgressBar.Value;
+        var completedWindowOrdinal = (int)Math.Round(externallyWrittenValue);
+        if (completedWindowOrdinal >= 1 &&
+            completedWindowOrdinal <= BaselineWindowCount &&
+            Math.Abs(externallyWrittenValue - completedWindowOrdinal) < 0.001)
+        {
+            RecordCompletedBaselineWindow(completedWindowOrdinal);
+        }
+
         // The capture loop historically writes completed-window ordinals (1..5) into this bar.
-        // Keep those writes from making the new time-based 0..100 progress indicator jump backwards.
+        // Restore the time-based 0..100 value immediately so progress never jumps backwards.
         if (BaselineProgressBar.Value < _baselineProgressPercent)
         {
             SetBaselineProgressValue(_baselineProgressPercent);
         }
+    }
+
+    private void RecordCompletedBaselineWindow(int windowNumber)
+    {
+        if (windowNumber <= _baselineCompletedWindows)
+        {
+            return;
+        }
+
+        _baselineCompletedWindows = windowNumber;
+        _baselineLastWindowCompletedAt = _baselineProgressStopwatch.Elapsed;
+
+        var interWindowTime = TimeSpan.FromTicks(
+            BaselineInterWindowDelay.Ticks * Math.Max(0, windowNumber - 1));
+        var measuredCaptureTime = _baselineLastWindowCompletedAt -
+            BaselinePreSequenceSettleDelay -
+            interWindowTime;
+        if (measuredCaptureTime <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        var averageCaptureTicks = measuredCaptureTime.Ticks / windowNumber;
+        var projectedCaptureTime = TimeSpan.FromTicks(averageCaptureTicks * BaselineWindowCount);
+        var projectedTotal = BaselinePreSequenceSettleDelay +
+            projectedCaptureTime +
+            TimeSpan.FromTicks(BaselineInterWindowDelay.Ticks * (BaselineWindowCount - 1));
+
+        // Completed-window timing includes real Service/ETW overhead, so use it to improve ETA.
+        // Never project a total shorter than elapsed time or move the displayed percentage backwards.
+        if (projectedTotal > _baselineLastWindowCompletedAt)
+        {
+            _baselineEstimatedTotalDuration = projectedTotal;
+        }
+
+        UpdateBaselineProgressExperience();
     }
 
     private void SetBaselineProgressValue(double value)
