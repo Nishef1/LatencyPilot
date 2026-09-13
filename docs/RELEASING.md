@@ -3,7 +3,7 @@
 Status: **Owner-run release contract**  
 Last updated: 2026-09-13
 
-LatencyPilot intentionally keeps GitHub Actions **test-only**. GitHub-hosted runners do not build or publish production distributions.
+LatencyPilot keeps GitHub Actions **validation-only**. The hosted workflow runs the permanent critical suite and Release-compiles the Windows App/Service hosts, but it does not publish self-contained payloads, build production distributions or publish releases.
 
 Release packaging and publication are explicit owner actions from a clean, up-to-date `main` checkout using:
 
@@ -17,10 +17,10 @@ The script builds the Windows distributions locally, launch-smoke-tests the publ
 
 The repository separates two concerns:
 
-- GitHub Actions supplies reproducible automated correctness evidence for the permanent critical test suite.
-- The repository owner explicitly builds, smoke-validates and publishes release artifacts from the exact tested `main` revision.
+- GitHub Actions supplies reproducible automated correctness evidence for the permanent critical suite plus a Release compile gate for `LatencyPilot.App` and `LatencyPilot.Service`.
+- The repository owner explicitly publishes, smoke-validates, packages and releases artifacts from the exact validated `main` revision.
 
-This avoids an implicit cloud-build/release pipeline while preserving a hard requirement that the release commit itself has green CI evidence and that the actual WinUI payload can start on the owner Windows machine before publication.
+This avoids an implicit cloud publish/release pipeline while preserving a hard requirement that the release commit itself has green hosted validation evidence and that the actual published WinUI payload can start on the owner Windows machine before publication.
 
 ## Prerequisites
 
@@ -52,6 +52,8 @@ Historical note: `v0.0.1` was previously published and is therefore reserved, ev
 8. neither the release nor remote tag already exists;
 9. the self-contained WinUI publish contains a non-empty `LatencyPilot.pri`;
 10. the published `LatencyPilot.exe` opens the expected `LatencyPilot` main window and remains alive for the local startup-smoke interval without writing a startup-failure report.
+
+The matching `Tests` workflow run currently includes the eight permanent tests plus Release compile gates for the App and Service. It is still not publish/package/runtime evidence.
 
 These checks are release gates, not convenience warnings.
 
@@ -120,12 +122,12 @@ A Stage B validation record must refer to the exact package it tested. Record at
 - product version;
 - release revision when present;
 - Git commit from `BUILD_INFO.txt`;
-- Tests workflow run from `BUILD_INFO.txt`;
+- matching hosted Tests/compile workflow run from `BUILD_INFO.txt`;
 - App launch-smoke result from `BUILD_INFO.txt`;
 - setup/portable SHA-256;
 - physical-machine evidence required by `PHYSICAL_VALIDATION.md`.
 
-A green GitHub Actions test run plus a successful startup smoke still does not prove ETW correctness on the target PC or hardware-level validity. Conversely, a locally built release without green CI for the exact commit is not an approved LatencyPilot release candidate.
+A green hosted validation run plus a successful startup smoke still does not prove ETW correctness on the target PC or hardware-level validity. Conversely, a locally built release without green hosted validation for the exact commit is not an approved LatencyPilot release candidate.
 
 ## Failure discipline
 
