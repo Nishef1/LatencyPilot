@@ -71,6 +71,11 @@ internal static class ObservationServiceClient
 
         var capture = response.KernelLatencyCapture
             ?? throw new InvalidDataException("Observation service returned no kernel-latency payload.");
+        if (capture.RequestId != response.RequestId)
+        {
+            throw new InvalidDataException("Observation capture correlation ID did not match the response RequestId.");
+        }
+
         ValidateCapture(capture);
         return capture;
     }
@@ -198,26 +203,108 @@ internal static class ObservationServiceClient
 
     private static void ValidateCapture(KernelLatencyCaptureResponse capture)
     {
+        if (capture.RequestId == Guid.Empty)
+        {
+            throw new InvalidDataException("Observation service returned an empty capture RequestId.");
+        }
+
+        ValidateDistribution("DPC", capture.Dpc);
+        ValidateDistribution("ISR", capture.Isr);
         ValidateThresholdSummary("DPC", capture.Dpc, capture.DpcThresholds);
         ValidateThresholdSummary("ISR", capture.Isr, capture.IsrThresholds);
 
+        if (capture.Processors.Count == 0 && capture.Dpc.Count + capture.Isr.Count > 0)
+        {
+            throw new InvalidDataException("Observation service returned events without processor aggregates.");
+        }
+
+        if (capture.Modules.Count > ObservationProtocol.MaximumModuleContributors ||
+            capture.UnresolvedRoutines.Count > ObservationProtocol.MaximumUnresolvedRoutineContributors)
+        {
+            throw new InvalidDataException("Observation service exceeded bounded contributor-list limits.");
+        }
+
         foreach (var processor in capture.Processors)
         {
+            ValidateDistribution("processor DPC", processor.Dpc);
+            ValidateDistribution("processor ISR", processor.Isr);
             ValidateThresholdSummary("processor DPC", processor.Dpc, processor.DpcThresholds);
             ValidateThresholdSummary("processor ISR", processor.Isr, processor.IsrThresholds);
         }
 
         foreach (var module in capture.Modules)
         {
+            ValidateDistribution("module DPC", module.Dpc);
+            ValidateDistribution("module ISR", module.Isr);
             ValidateThresholdSummary("module DPC", module.Dpc, module.DpcThresholds);
             ValidateThresholdSummary("module ISR", module.Isr, module.IsrThresholds);
         }
 
         foreach (var routine in capture.UnresolvedRoutines)
         {
+            ValidateDistribution("unresolved DPC", routine.Dpc);
+            ValidateDistribution("unresolved ISR", routine.Isr);
             ValidateThresholdSummary("unresolved DPC", routine.Dpc, routine.DpcThresholds);
             ValidateThresholdSummary("unresolved ISR", routine.Isr, routine.IsrThresholds);
         }
+    }
+
+    private static void ValidateDistribution(string context, LatencyDistribution distribution)
+    {
+        if (distribution.Count < 0)
+        {
+            throw new InvalidDataException($"Observation service returned a negative {context} sample count.");
+        }
+
+        if (distribution.Count == 0)
+        {
+            if (distribution.P50Microseconds is not null ||
+                distribution.P95Microseconds is not null ||
+                distribution.P99Microseconds is not null ||
+                distribution.P999Microseconds is not null ||
+                distribution.MaximumMicroseconds is not null)
+            {
+                throw new InvalidDataException($"Observation service returned {context} percentile values without samples.");
+            }
+
+            return;
+        }
+
+        var p50 = RequireFiniteNonNegative(context, "p50", distribution.P50Microseconds);
+        var p95 = RequireFiniteNonNegative(context, "p95", distribution.P95Microseconds);
+        var p99 = RequireFiniteNonNegative(context, "p99", distribution.P99Microseconds);
+        var maximum = RequireFiniteNonNegative(context, "maximum", distribution.MaximumMicroseconds);
+
+        if (p50 > p95 || p95 > p99 || p99 > maximum)
+        {
+            throw new InvalidDataException($"Observation service returned non-monotonic {context} percentile evidence.");
+        }
+
+        if (distribution.Count < ObservationProtocol.MinimumSamplesForP999)
+        {
+            if (distribution.P999Microseconds is not null)
+            {
+                throw new InvalidDataException($"Observation service returned {context} p99.9 without enough samples.");
+            }
+        }
+        else
+        {
+            var p999 = RequireFiniteNonNegative(context, "p99.9", distribution.P999Microseconds);
+            if (p999 < p99 || p999 > maximum)
+            {
+                throw new InvalidDataException($"Observation service returned non-monotonic {context} p99.9 evidence.");
+            }
+        }
+    }
+
+    private static double RequireFiniteNonNegative(string context, string metric, double? value)
+    {
+        if (value is null || !double.IsFinite(value.Value) || value.Value < 0d)
+        {
+            throw new InvalidDataException($"Observation service returned invalid {context} {metric} evidence.");
+        }
+
+        return value.Value;
     }
 
     private static void ValidateThresholdSummary(
@@ -232,7 +319,9 @@ internal static class ObservationServiceClient
             thresholds.OverThreeMillisecondsCount < 0 ||
             thresholds.GuidanceExceedanceCount > distribution.Count ||
             thresholds.OverOneMillisecondCount > distribution.Count ||
-            thresholds.OverThreeMillisecondsCount > thresholds.OverOneMillisecondCount)
+            thresholds.OverThreeMillisecondsCount > thresholds.OverOneMillisecondCount ||
+            (thresholds.GuidanceThresholdMicroseconds < 1_000d &&
+             thresholds.GuidanceExceedanceCount < thresholds.OverOneMillisecondCount))
         {
             throw new InvalidDataException($"Observation service returned inconsistent {context} threshold evidence.");
         }
