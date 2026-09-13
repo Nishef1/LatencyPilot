@@ -27,11 +27,9 @@ public sealed partial class MainWindow
     private TextBlock? _oneMillisecondValueText;
     private TextBlock? _threeMillisecondValueText;
     private KernelLatencyCaptureResponse? _lastPremiumCapture;
-    private bool _premiumUiInitialized;
 
     private enum CaptureSeverity
     {
-        NoData,
         CaptureWarning,
         WithinGuidance,
         GuidanceExceeded,
@@ -41,13 +39,6 @@ public sealed partial class MainWindow
 
     private void InitializePremiumObservationUi()
     {
-        if (_premiumUiInitialized)
-        {
-            return;
-        }
-
-        _premiumUiInitialized = true;
-
         try
         {
             SystemBackdrop = new MicaBackdrop();
@@ -239,7 +230,6 @@ public sealed partial class MainWindow
         });
         root.Children.Add(chartCard);
 
-        root.Children.Add(BuildMeasurementContextCard());
         return card;
     }
 
@@ -292,80 +282,6 @@ public sealed partial class MainWindow
         Grid.SetRow(bar, 1);
         row.Children.Add(bar);
         return row;
-    }
-
-    private Border BuildMeasurementContextCard()
-    {
-        var card = new Border
-        {
-            Padding = new Thickness(14),
-            CornerRadius = new CornerRadius(13),
-            Background = ThemeBrush("AccentSoftBrush"),
-            BorderBrush = ThemeBrush("BorderBrush"),
-            BorderThickness = new Thickness(1),
-        };
-        var stack = new StackPanel { Spacing = 9 };
-        card.Child = stack;
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Measure the scenario you actually care about",
-            FontSize = 14,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = ThemeBrush("TextBrush"),
-        });
-
-        AddMeasurementMode(
-            stack,
-            "Real-world",
-            "Keep the apps or game that reproduce the issue open. Their activity is part of the evidence.");
-        AddMeasurementMode(
-            stack,
-            "Idle baseline",
-            "Close unnecessary apps when you want a controlled idle baseline with less background noise.");
-        AddMeasurementMode(
-            stack,
-            "Before / after",
-            "Use the same apps, workload and power state on both sides. Consistency matters more than closing everything.");
-
-        return card;
-    }
-
-    private void AddMeasurementMode(StackPanel host, string title, string body)
-    {
-        var mode = new Border
-        {
-            Padding = new Thickness(11),
-            CornerRadius = new CornerRadius(11),
-            Background = ThemeBrush("SurfaceBrush"),
-            BorderBrush = ThemeBrush("BorderBrush"),
-            BorderThickness = new Thickness(1),
-        };
-        var content = new Grid { ColumnSpacing = 12 };
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(116) });
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        content.Children.Add(new TextBlock
-        {
-            Text = title,
-            FontSize = 12,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = ThemeBrush("AccentBrush"),
-            VerticalAlignment = VerticalAlignment.Top,
-        });
-
-        var bodyText = new TextBlock
-        {
-            Text = body,
-            FontSize = 12,
-            Foreground = ThemeBrush("MutedTextBrush"),
-            TextWrapping = TextWrapping.Wrap,
-        };
-        Grid.SetColumn(bodyText, 1);
-        content.Children.Add(bodyText);
-
-        mode.Child = content;
-        host.Children.Add(mode);
     }
 
     private void RenderPremiumCapture(KernelLatencyCaptureResponse capture)
