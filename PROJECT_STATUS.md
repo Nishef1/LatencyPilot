@@ -17,6 +17,7 @@ Last updated: 2026-09-13
 - Permanent automated tests: **8 / hard maximum 10**
 - Current stage: **Phase 2 source implementation is substantially complete; Stage B physical validation, Stage C physical baseline closure and Stage D physical UX closure remain open**
 - Current owner instruction: **owner-local App/Service runtime and physical validation is resumed; hosted CI remains test-only**
+- Validation discipline: **freeze Phase 2 source once the current exact `main` revision has green deterministic Tests and owner-local compile/runtime evidence; make further source changes only for a concrete validation blocker**
 
 ## Current automated evidence
 
@@ -39,7 +40,13 @@ Rapid source commits may cancel superseded workflow runs through Actions concurr
 - The owner reports that the latest `0.0.2` WinUI version launched successfully on physical Windows 11. This is useful launch-smoke evidence, but it does **not** by itself close Stage B/C/D.
 - Clean owner-local App builds/publishes now emit `BUILD_INFO.txt` into the App output with the exact Git commit for evidence provenance.
 - A dirty working tree deliberately leaves the authoritative `commit=` field empty while recording `source_head`/`source_state`, so exported evidence cannot falsely claim to represent an exact clean revision.
-- `EvidenceExportService` already computes SHA-256 after saving JSON and surfaces the hash with the saved path; physical closure still requires checking the visible/exported evidence and independently confirming the hash.
+- `EvidenceExportService` computes SHA-256 after saving JSON and surfaces the hash with the saved path; `scripts/Verify-Evidence.ps1` independently checks envelope/provenance and can separately require clean capture integrity and a closure-ready baseline.
+- A physical **Real-world workload** observation from clean source revision `1ffaf4ab5ad5cffc8526097bf675c4efecbb5ee0` was exported as evidence-v7 with RequestId `fad7475c-3ea6-40e4-aae3-f94c048c4fac` and independently computed SHA-256 `8090962e42ff2ff974cfb32ca5ccf00b7c6dd77879eaf429652dffa246f170d9`.
+- That observation had clean capture integrity: zero ETW loss, zero invalid latency/image events, no event-limit hit and 6086/6086 module-attributed events.
+- Its aggregate result was DPC p99 `131.434 µs`, p99.9 `147.501 µs`, max `153.9 µs`, with 63/4499 (`1.400%`) DPC guidance exceedances; ISR p99 `65.414 µs`, p99.9 `76.356 µs`, max `81.5 µs`, with 972/1587 (`61.248%`) ISR guidance exceedances; no DPC/ISR exceeded the local 1 ms or 3 ms diagnostic buckets.
+- CPU 0 carried 2867/4499 (`63.725%`) DPC events and 1503/1587 (`94.707%`) ISR events. `nvlddmkm.sys` contributed 62/63 DPC guidance exceedances; `dxgkrnl.sys` contributed 972/972 ISR guidance exceedances. This repeats the broad graphics/CPU0 concentration seen in an earlier physical observation and is a **hypothesis-strengthening signal only**, not proof that GPU affinity/MSI should be changed.
+- The same exported observation exposed a presentation inconsistency: evidence still reported `Microsoft Windows 10.0.26200`. Source was subsequently corrected so UI and evidence use the same Windows product label, distinguishing Windows 11 workstation builds from Windows Server by actual version/product type rather than build number alone.
+- Because source changed after revision `1ffaf4ab...` to correct evidence labeling, validation tooling and explanatory UX, that observation proves the physical App → Service → ETW path for its exact source revision but cannot by itself close the newer validation candidate. The final frozen Phase 2 revision still needs owner-local build/run plus exact-revision evidence.
 
 ## Phase 0 — CLOSED
 
@@ -104,6 +111,7 @@ Contract: `docs/DIAGNOSTICS.md`.
 - App → IPC → Service correlation through `RequestId`;
 - protocol-v5 capture evidence preserves the same `RequestId`;
 - expected capture-unavailable/session-rejection paths retain structured failure provenance;
+- post-capture bounded summaries record aggregate/tail/integrity/concentration evidence after protocol validation;
 - raw per-event DPC/ISR logging remains prohibited from the measurement hot path.
 
 ## 2.1 Inventory and evidence provenance — SOURCE IMPLEMENTED, PHYSICAL VALIDATION OPEN
@@ -122,7 +130,8 @@ Implemented:
 - WinUI source contains a read-only device-evidence inspector that presents instance/service/driver metadata, stored MSI/affinity configuration and allocated IRQ resources as separate layers;
 - `MSISupported=1` is explicitly labeled as stored configuration only;
 - raw ConfigMgr IRQ flags are shown as raw evidence and are not misrepresented as authoritative line/MSI state;
-- representative selector invariants are folded into the existing Windows integration contract test, so the permanent test count remains eight.
+- representative selector invariants are folded into the existing Windows integration contract test, so the permanent test count remains eight;
+- Windows display-name capture is centralized so UI and evidence use the same product/build context, including workstation-vs-Server distinction.
 
 Still open:
 
@@ -163,13 +172,14 @@ Implemented:
 Interpretation rules:
 
 - `DPC >100 µs` and `ISR >25 µs` are Microsoft driver guidance;
+- exact guidance exceedance rates are surfaced as evidence rather than inventing a new severity threshold;
 - `>1 ms` and `>3 ms` are LatencyPilot local diagnostic tail buckets, not official Windows pass/fail or user-impact severity boundaries;
 - an integrity-warning capture cannot receive a healthy classification merely because threshold counts are low;
 - raw counts, p99/max, attribution and capture integrity remain authoritative; color/badges are supplemental.
 
 Still open:
 
-- physical current-Service capture/cleanup validation;
+- physical current-Service capture/cleanup validation on the frozen candidate revision;
 - active-session rejection validation with a second local session where practical;
 - attribution plausibility against an independent observer where practical;
 - observer-overhead profiling only if physical evidence shows a meaningful measurement risk.
@@ -189,17 +199,19 @@ Still open:
 
 The consolidated baseline test covers stable, extra-window, drifted, ETW-loss, gapped-window and backwards-wall-clock scenarios without increasing the permanent test count. A stable sixth window now correctly makes `baseline-quality-v1` `Inconclusive` because extra data must not silently change a versioned method.
 
-### Quiet repeated-measurement flow
+### Repeated-measurement flow
 
 The current WinUI source:
 
 - freezes the selected measurement scenario while capture is busy;
 - waits for a settle delay before the first capture;
+- uses `quiet` wording only for controlled-idle runs and `repeatable` wording for real-world/before-after runs;
 - avoids full observation/module/processor/health/list redraws between authoritative windows;
 - updates only lightweight progress/status text between windows;
 - renders detailed observation state after the fifth capture;
 - computes the baseline verdict from all five windows;
-- permits partial evidence export after a stopped sequence but never upgrades a partial sequence to `Valid` merely because it can be exported.
+- permits partial evidence export after a stopped sequence but never upgrades a partial sequence to `Valid` merely because it can be exported;
+- exposes a strict verifier gate that can require clean capture integrity plus a valid five-window `baseline-quality-v1` result before physical closure evidence is accepted.
 
 ### Low-overhead runtime context
 
@@ -217,8 +229,8 @@ Best-effort runtime context brackets each App capture request/response interval 
 
 Still open:
 
-- physical controlled-idle + real-world five-window evidence;
-- quiet-sequencing behavior on the real compositor/workload;
+- physical controlled-idle + real-world five-window evidence on the frozen exact revision;
+- low-observer-activity sequencing behavior on the real compositor/workload;
 - runtime CPU/active-plan/configured-mode plausibility on the physical machine;
 - thermal context only if an authoritative low-overhead source is identified and physical evidence demonstrates the need;
 - future optimizer integration must consume `IsValidForComparison` before a mutation/keep recommendation can be enabled.
@@ -235,6 +247,7 @@ Implemented in source:
 - CPU concentration and bounded module contributors;
 - exact-value tail-rate visualization using lightweight visual bars instead of misleading progress-control semantics;
 - explicit local-bucket wording for `>1 ms` / `>3 ms`;
+- exact DPC/ISR guidance-exceedance rates in the guidance-exceeded explanation, without treating those rates as a new user-impact pass/fail rule;
 - Real-world / Controlled idle / Before-after scenarios;
 - scenario-specific guidance and stale-evidence invalidation;
 - scenario-specific two-check preparation gate for the repeated baseline: real-world keeps issue-reproducing apps open, controlled idle closes unnecessary apps, and before/after requires reproducible workload/background conditions; the single five-second observation remains available without these confirmations;
@@ -257,7 +270,7 @@ Implemented in source:
 
 Still open:
 
-- physical JSON-vs-visible-evidence audit and independent confirmation that the displayed SHA-256 matches the saved JSON;
+- physical JSON-vs-visible-evidence audit and independent confirmation that the displayed SHA-256 matches the saved JSON on the frozen exact revision;
 - clean-main physical confirmation that exported `sourceRevisionId` matches the exact tested commit;
 - narrow-window/text-scaling sanity on physical WinUI;
 - keyboard focus/screen-reader sanity;
@@ -299,23 +312,23 @@ Required closure evidence includes:
 - accessibility/responsive sanity;
 - package/uninstall evidence only when validating a release candidate.
 
-Stage B cannot close from CI/VM evidence alone. Owner-local runtime validation has resumed. The reported successful launch closes only the basic launch-smoke question; the observation, evidence, cleanup, device and UX checks above remain open.
+Stage B cannot close from CI/VM evidence alone. The `1ffaf4ab...` Real-world observation is useful physical evidence and establishes a repeatable graphics/CPU0 investigation hypothesis, but source has since changed. It therefore does not close the exact-revision requirement for the final Phase 2 candidate. Controlled-idle evidence, final-revision evidence audit, cleanup/device/authorization and UX checks also remain open.
 
 ## Stage C — repeated baseline quality — SOURCE COMPLETE, PHYSICAL CLOSURE OPEN
 
-Physical validation is now active. Execute in this order on an exact clean `main` revision:
+Physical validation is active. Once the current source is frozen on an exact clean `main` revision, execute in this order:
 
-1. build/run the App + protected Service and confirm exported evidence carries the exact `sourceRevisionId`;
-2. run one **Controlled idle** five-second observation; export JSON and independently verify SHA-256;
-3. run one repeatable **Real-world workload** five-second observation; export separately;
-4. build the five-window **Controlled idle** baseline and retain all window/reason/runtime-context evidence;
-5. build the five-window **Real-world workload** baseline under a repeatable workload;
+1. build/run the App + protected Service and confirm exported evidence carries the exact frozen `sourceRevisionId`;
+2. run one **Controlled idle** five-second observation; export JSON and independently verify SHA-256 with `-RequireCleanCapture`;
+3. run one repeatable **Real-world workload** five-second observation on the same frozen revision; export separately and verify it strictly;
+4. build the five-window **Controlled idle** baseline and verify the export with `-RequireCleanCapture -RequireValidBaseline`;
+5. build the five-window **Real-world workload** baseline under a repeatable workload and apply the same strict verifier gate;
 6. exercise disconnect/service-stop/recovery/no-stale-ETW-session behavior and active-console authorization where practical;
 7. audit representative GPU/NIC/xHCI evidence and broad attribution plausibility;
 8. complete Stage D responsive/text-scaling/keyboard/screen-reader/state sanity on the same physical WinUI build;
 9. reconcile JSON vs visible evidence and remaining blockers, then close Phase 2 only if the exit gate is actually satisfied.
 
-Do not add speculative thermal/observer-overhead machinery unless these physical runs show a meaningful measurement-validity risk. Stage C closes only when the real App → Service → ETW path distinguishes trustworthy repeated evidence from unstable/incomplete evidence.
+Do not add speculative thermal/observer-overhead machinery unless these physical runs show a meaningful measurement-validity risk. Do not add affinity/MSI mutation merely because two single observations concentrated graphics interrupt work on CPU 0. Microsoft guidance still makes the repeated baseline and reversible experiment boundary necessary before any optimizer recommendation.
 
 ## Stage D — Phase 2 evidence UX — SOURCE IMPLEMENTED, PHYSICAL UX CLOSURE OPEN
 
