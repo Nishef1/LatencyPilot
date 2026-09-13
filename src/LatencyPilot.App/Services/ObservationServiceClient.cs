@@ -30,8 +30,22 @@ internal static class ObservationServiceClient
             throw new InvalidDataException("Observation service returned a capture payload for a status request.");
         }
 
-        return response.ServiceStatus
+        var status = response.ServiceStatus
             ?? throw new InvalidDataException("Observation service returned no status payload.");
+
+        if (!status.RunningAsWindowsService)
+        {
+            throw new InvalidOperationException(
+                "Observation host is reachable, but it is not running under the Windows Service Control Manager. Kernel capture remains disabled.");
+        }
+
+        if (!status.KernelCapturePrivilegeExpected)
+        {
+            throw new InvalidOperationException(
+                "Observation service is running, but its process identity does not have the expected kernel-trace authority. Kernel capture remains disabled.");
+        }
+
+        return status;
     }
 
     public static async Task<KernelLatencyCaptureResponse> CaptureKernelLatencyAsync(
