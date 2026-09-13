@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LatencyPilot.Benchmarking.Baselines;
@@ -10,7 +11,7 @@ namespace LatencyPilot.App.Services;
 
 internal static class EvidenceExportService
 {
-    private const string EvidenceSchema = "latencypilot-evidence-v2";
+    private const string EvidenceSchema = "latencypilot-evidence-v3";
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
@@ -23,6 +24,7 @@ internal static class EvidenceExportService
                 productVersion,
                 ProtocolVersion.Current,
                 DateTimeOffset.UtcNow,
+                CreateEnvironment(),
                 capture),
             JsonOptions);
 
@@ -62,11 +64,21 @@ internal static class EvidenceExportService
                 productVersion,
                 ProtocolVersion.Current,
                 DateTimeOffset.UtcNow,
+                CreateEnvironment(),
                 quality.MethodVersion,
                 captures,
                 windows,
                 quality),
             JsonOptions);
+
+    private static EvidenceEnvironment CreateEnvironment() =>
+        new(
+            RuntimeInformation.OSDescription,
+            System.Environment.OSVersion.VersionString,
+            RuntimeInformation.OSArchitecture.ToString(),
+            RuntimeInformation.ProcessArchitecture.ToString(),
+            System.Environment.ProcessorCount,
+            System.Environment.Version.ToString());
 
     private static async Task<string?> SaveAsync(
         nint windowHandle,
@@ -123,11 +135,20 @@ internal static class EvidenceExportService
             writer.WriteStringValue(string.Create(CultureInfo.InvariantCulture, $"0x{value:X16}"));
     }
 
+    private sealed record EvidenceEnvironment(
+        string OperatingSystem,
+        string OperatingSystemVersion,
+        string OsArchitecture,
+        string ProcessArchitecture,
+        int ProcessAvailableProcessorCount,
+        string DotNetRuntimeVersion);
+
     private sealed record ObservationEvidenceDocument(
         string Schema,
         string ProductVersion,
         int ProtocolVersion,
         DateTimeOffset ExportedAtUtc,
+        EvidenceEnvironment Environment,
         KernelLatencyCaptureResponse Capture);
 
     private sealed record BaselineEvidenceDocument(
@@ -135,6 +156,7 @@ internal static class EvidenceExportService
         string ProductVersion,
         int ProtocolVersion,
         DateTimeOffset ExportedAtUtc,
+        EvidenceEnvironment Environment,
         string BaselineMethodVersion,
         KernelLatencyCaptureResponse[] Captures,
         BaselineWindowEvidence[] Windows,
