@@ -1,7 +1,7 @@
 # LatencyPilot Product Roadmap
 
 Status: **Authoritative completion plan**  
-Last updated: 2026-09-12
+Last updated: 2026-09-13
 
 LatencyPilot is complete only when it can safely measure a Windows 11 system, identify latency pressure, run narrowly scoped experiments, quantify target and collateral effects, and let the user keep or revert changes with trustworthy recovery.
 
@@ -117,6 +117,7 @@ Proceed to Phase 2 in this order: authoritative inventory/resource evidence → 
 - [x] relevant driver provider/version/INF metadata;
 - [x] stored interrupt configuration inspection with availability/error provenance;
 - [x] allocated IRQ/resource assignment capture from Configuration Manager with partial/unavailable provenance;
+- [x] optional device-property/resource failures degrade to partial evidence instead of invalidating the entire inventory;
 - [ ] distinguish line/message interrupt evidence where Windows source data permits it;
 - [ ] physical Windows 11 validation of representative GPU/xHCI/NIC device inventory and allocated resources.
 
@@ -125,18 +126,24 @@ Stored registry configuration, allocated resource assignment and runtime behavio
 ### 2.2 ETW observation
 - [x] controlled privileged ETW observation host in `LatencyPilot.Service`;
 - [x] versioned typed local Named Pipe protocol for Phase 2 observation;
+- [x] fail-closed protocol framing rejects unknown JSON members and malformed/oversized frames;
+- [x] local observation pipe denies network identities and is limited to interactive local identities plus required service identities;
+- [x] abandoned clients cancel active capture work instead of leaving the single observation host occupied;
 - [x] no generic registry/shell/process execution command;
 - [x] controlled ETW session lifecycle;
 - [x] DPC collection;
 - [x] ISR collection;
 - [x] ETW processor-number attribution and per-processor aggregation;
-- [ ] authoritative module/driver attribution;
-- [x] p50/p95/p99/p99.9/max duration distributions;
+- [x] authoritative module/driver attribution;
+- [x] p50/p95/p99/p99.9/max duration distributions using one documented percentile estimator;
 - [x] capture cancellation/timeout/cleanup on failure;
 - [x] bounded aggregate IPC response rather than raw-event transfer;
+- [x] bounded structured App/Service diagnostics correlated by protocol `RequestId` without per-event ETW logging;
 - [ ] physical Windows 11 validation of Service → ETW → IPC behavior and cleanup.
 
 Native routine addresses must remain unresolved unless authoritative kernel image evidence maps them. Already-loaded images require the appropriate kernel image rundown/CAPTURE_STATE behavior rather than future ImageLoad events alone.
+
+The current Phase 2 observation ACL is not future mutation authorization. Phase 3 must add mutation-specific authorization before any privileged write command exists.
 
 ### 2.3 Baseline quality
 - [ ] repeated baseline windows;
@@ -291,7 +298,7 @@ Run the final 1.0 release audit against the complete product definition, every p
 
 ## Permanent-test rule
 
-Repository-wide permanent automated tests may **never exceed 10** unless the owner explicitly approves the exception and an ADR explains why remaining at 10 would be more harmful. Temporary implementation/debug tests may be created and removed before finalization.
+Repository-wide permanent automated tests may **never exceed 10** unless the owner explicitly approves the exception and an ADR explains why remaining at 10 would be more harmful. The current suite is intentionally consolidated to seven durable contract tests, leaving three slots for higher-blast-radius recovery/mutation risks in later phases. Temporary implementation/debug tests may be created and removed before finalization.
 
 ## Phase-closing rule
 
