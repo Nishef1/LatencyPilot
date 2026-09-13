@@ -187,20 +187,29 @@ public static class RuntimeMeasurementContextReader
     private static (Guid? ModeId, UserConfiguredPowerMode? Mode) TryCaptureUserConfiguredPowerMode(
         SystemPowerLineState lineState)
     {
-        var modeId = Guid.Empty;
-        var result = lineState switch
+        try
         {
-            SystemPowerLineState.Online => PowerProf.PowerGetUserConfiguredACPowerMode(out modeId),
-            SystemPowerLineState.Offline => PowerProf.PowerGetUserConfiguredDCPowerMode(out modeId),
-            _ => uint.MaxValue,
-        };
+            var modeId = Guid.Empty;
+            var result = lineState switch
+            {
+                SystemPowerLineState.Online => PowerProf.PowerGetUserConfiguredACPowerMode(out modeId),
+                SystemPowerLineState.Offline => PowerProf.PowerGetUserConfiguredDCPowerMode(out modeId),
+                _ => uint.MaxValue,
+            };
 
-        if (result != ErrorSuccess)
+            if (result != ErrorSuccess)
+            {
+                return (null, null);
+            }
+
+            return (modeId, MapUserConfiguredPowerMode(modeId));
+        }
+        catch (EntryPointNotFoundException)
         {
+            // This context is optional. Some Windows SKUs/builds may not export the
+            // Windows 11 user-configured power-mode APIs even though the older power APIs exist.
             return (null, null);
         }
-
-        return (modeId, MapUserConfiguredPowerMode(modeId));
     }
 
     private static UserConfiguredPowerMode MapUserConfiguredPowerMode(Guid modeId)
