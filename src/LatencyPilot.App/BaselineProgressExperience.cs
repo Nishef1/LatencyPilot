@@ -28,7 +28,7 @@ public sealed partial class MainWindow
             "Shows overall progress across the service settle period and all five 20-second baseline windows.");
 
         _baselineProgressTimer = DispatcherQueue.CreateTimer();
-        _baselineProgressTimer.Interval = TimeSpan.FromSeconds(1);
+        _baselineProgressTimer.Interval = TimeSpan.FromSeconds(5);
         _baselineProgressTimer.IsRepeating = true;
         _baselineProgressTimer.Tick += (_, _) => UpdateBaselineProgressExperience();
 
