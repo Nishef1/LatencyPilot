@@ -12,11 +12,11 @@ namespace LatencyPilot.App;
 public sealed partial class MainWindow
 {
     private readonly AccessibilitySettings _accessibilitySettings = new();
-    private Border? _latencyHealthCard;
-    private Border? _latencyHealthBadge;
-    private TextBlock? _latencyHealthBadgeText;
-    private TextBlock? _latencyHealthTitleText;
-    private TextBlock? _latencyHealthSummaryText;
+    private Border? _snapshotEvidenceCard;
+    private Border? _snapshotEvidenceBadge;
+    private TextBlock? _snapshotEvidenceBadgeText;
+    private TextBlock? _snapshotEvidenceTitleText;
+    private TextBlock? _snapshotEvidenceSummaryText;
     private TextBlock? _tailChartScaleText;
     private TailDataBar? _dpcGuidanceBar;
     private TailDataBar? _isrGuidanceBar;
@@ -28,13 +28,13 @@ public sealed partial class MainWindow
     private TextBlock? _threeMillisecondValueText;
     private KernelLatencyCaptureResponse? _lastPremiumCapture;
 
-    private enum CaptureSeverity
+    private enum SnapshotSignal
     {
         CaptureWarning,
-        WithinGuidance,
-        GuidanceExceeded,
-        PotentialImpact,
-        Severe,
+        NoReferenceExceedance,
+        ReferenceExceeded,
+        OneMillisecondBucket,
+        ThreeMillisecondBucket,
     }
 
     private sealed class TailDataBar
@@ -106,13 +106,13 @@ public sealed partial class MainWindow
             return;
         }
 
-        if (_latencyHealthCard is not null)
+        if (_snapshotEvidenceCard is not null)
         {
-            observationStack.Children.Remove(_latencyHealthCard);
+            observationStack.Children.Remove(_snapshotEvidenceCard);
         }
 
-        _latencyHealthCard = BuildLatencyHealthCard();
-        observationStack.Children.Insert(Math.Min(3, observationStack.Children.Count), _latencyHealthCard);
+        _snapshotEvidenceCard = BuildSnapshotEvidenceCard();
+        observationStack.Children.Insert(Math.Min(3, observationStack.Children.Count), _snapshotEvidenceCard);
 
         if (_lastPremiumCapture is null)
         {
@@ -127,7 +127,7 @@ public sealed partial class MainWindow
         ApplyBaselineVerdictAppearance();
     }
 
-    private Border BuildLatencyHealthCard()
+    private Border BuildSnapshotEvidenceCard()
     {
         var card = new Border
         {
@@ -148,55 +148,55 @@ public sealed partial class MainWindow
         var heading = new StackPanel { Spacing = 3 };
         heading.Children.Add(new TextBlock
         {
-            Text = "Latency health",
+            Text = "Snapshot evidence",
             FontSize = 18,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
         });
         heading.Children.Add(new TextBlock
         {
-            Text = "Plain-language context for the exact DPC/ISR evidence below.",
+            Text = "Diagnostic context for this exact DPC/ISR snapshot. Decision claims require the repeated baseline.",
             FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
         });
         header.Children.Add(heading);
 
-        _latencyHealthBadgeText = new TextBlock
+        _snapshotEvidenceBadgeText = new TextBlock
         {
             Text = "Not captured",
             FontSize = 12,
             FontWeight = FontWeights.SemiBold,
         };
-        _latencyHealthBadge = new Border
+        _snapshotEvidenceBadge = new Border
         {
             Padding = new Thickness(10, 5, 10, 5),
             CornerRadius = new CornerRadius(11),
             VerticalAlignment = VerticalAlignment.Center,
-            Child = _latencyHealthBadgeText,
+            Child = _snapshotEvidenceBadgeText,
         };
-        Grid.SetColumn(_latencyHealthBadge, 1);
-        header.Children.Add(_latencyHealthBadge);
+        Grid.SetColumn(_snapshotEvidenceBadge, 1);
+        header.Children.Add(_snapshotEvidenceBadge);
         root.Children.Add(header);
 
-        _latencyHealthTitleText = new TextBlock
+        _snapshotEvidenceTitleText = new TextBlock
         {
-            Text = "Capture an observation to classify the tail.",
+            Text = "Capture a quick snapshot to inspect the tail.",
             FontSize = 20,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
             TextWrapping = TextWrapping.Wrap,
         };
-        root.Children.Add(_latencyHealthTitleText);
+        root.Children.Add(_snapshotEvidenceTitleText);
 
-        _latencyHealthSummaryText = new TextBlock
+        _snapshotEvidenceSummaryText = new TextBlock
         {
-            Text = "Numbers remain authoritative; color and context labels are additional cues only.",
+            Text = "Exact measurements remain authoritative. A five-second snapshot is diagnostic evidence, not a stability or optimization verdict.",
             FontSize = 14,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
         };
-        root.Children.Add(_latencyHealthSummaryText);
+        root.Children.Add(_snapshotEvidenceSummaryText);
 
         var chartCard = new Border
         {
@@ -232,32 +232,32 @@ public sealed partial class MainWindow
 
         chartStack.Children.Add(CreateTailBarRow(
             "DPC > 100 µs",
-            "Driver-guidance exceedance rate within DPC events.",
+            "Microsoft driver-duration guidance reference within DPC events. It is not a LatencyPilot system-health pass/fail threshold.",
             "WarningBrush",
             out _dpcGuidanceBar,
             out _dpcGuidanceValueText));
         chartStack.Children.Add(CreateTailBarRow(
             "ISR > 25 µs",
-            "Driver-guidance exceedance rate within ISR events.",
+            "Microsoft driver-duration guidance reference within ISR events. It is not a LatencyPilot system-health pass/fail threshold.",
             "WarningBrush",
             out _isrGuidanceBar,
             out _isrGuidanceValueText));
         chartStack.Children.Add(CreateTailBarRow(
             "DPC/ISR > 1 ms",
-            "Local diagnostic bucket: millisecond-scale events as a share of all observed DPC and ISR events. This is not a Windows pass/fail threshold.",
+            "LatencyPilot local diagnostic bucket: millisecond-scale events as a share of all observed DPC and ISR events. This is not a Windows pass/fail threshold.",
             "ImpactBrush",
             out _oneMillisecondBar,
             out _oneMillisecondValueText));
         chartStack.Children.Add(CreateTailBarRow(
             "DPC/ISR > 3 ms",
-            "Local diagnostic bucket: events above 3 ms as a share of all observed DPC and ISR events. This is not a Windows pass/fail threshold.",
+            "LatencyPilot local diagnostic bucket: events above 3 ms as a share of all observed DPC and ISR events. This is not a Windows pass/fail threshold.",
             "DangerBrush",
             out _threeMillisecondBar,
             out _threeMillisecondValueText));
 
         chartStack.Children.Add(new TextBlock
         {
-            Text = "Bars are auto-scaled visual aids only. Exact count, denominator and percentage stay visible; 100 µs DPC / 25 µs ISR are Microsoft driver guidance, while 1 ms / 3 ms are LatencyPilot diagnostic buckets rather than Windows pass/fail thresholds.",
+            Text = "Bars are auto-scaled visual aids only. Exact count, denominator and percentage stay visible. Reference lines help form hypotheses; the repeated decision baseline determines stability.",
             FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
@@ -330,61 +330,61 @@ public sealed partial class MainWindow
     private void RenderPremiumCapture(KernelLatencyCaptureResponse capture)
     {
         _lastPremiumCapture = capture;
-        if (_latencyHealthBadge is null ||
-            _latencyHealthBadgeText is null ||
-            _latencyHealthTitleText is null ||
-            _latencyHealthSummaryText is null)
+        if (_snapshotEvidenceBadge is null ||
+            _snapshotEvidenceBadgeText is null ||
+            _snapshotEvidenceTitleText is null ||
+            _snapshotEvidenceSummaryText is null)
         {
             return;
         }
 
         var integrityIssue = GetCaptureIntegrityIssue(capture);
-        var severity = integrityIssue is null
-            ? GetCaptureSeverity(capture)
-            : CaptureSeverity.CaptureWarning;
-        ApplySeverityAppearance(severity);
+        var signal = integrityIssue is null
+            ? GetSnapshotSignal(capture)
+            : SnapshotSignal.CaptureWarning;
+        ApplySnapshotSignalAppearance(signal);
 
-        switch (severity)
+        switch (signal)
         {
-            case CaptureSeverity.CaptureWarning:
-                _latencyHealthBadgeText.Text = "Capture warning";
-                _latencyHealthTitleText.Text = "This window is incomplete evidence.";
-                _latencyHealthSummaryText.Text =
-                    $"{integrityIssue} Exact values remain visible for diagnosis, but do not interpret a green-looking metric or low tail count as a clean result until capture integrity is restored.";
+            case SnapshotSignal.CaptureWarning:
+                _snapshotEvidenceBadgeText.Text = "Capture warning";
+                _snapshotEvidenceTitleText.Text = "This snapshot is incomplete evidence.";
+                _snapshotEvidenceSummaryText.Text =
+                    $"{integrityIssue} Exact values remain visible for diagnosis, but do not interpret the tail or reference counts until capture integrity is restored.";
                 break;
-            case CaptureSeverity.WithinGuidance:
-                _latencyHealthBadgeText.Text = "Within guidance";
-                _latencyHealthTitleText.Text = "No guidance exceedance was observed in this window.";
-                _latencyHealthSummaryText.Text =
-                    "No DPC exceeded 100 µs and no ISR exceeded 25 µs. That is encouraging for this five-second capture, but a repeated baseline is still required before treating the system as consistently clean.";
+            case SnapshotSignal.NoReferenceExceedance:
+                _snapshotEvidenceBadgeText.Text = "Diagnostic only";
+                _snapshotEvidenceTitleText.Text = "No driver-reference exceedance was observed in this snapshot.";
+                _snapshotEvidenceSummaryText.Text =
+                    "No DPC exceeded 100 µs and no ISR exceeded 25 µs in this five-second window. That describes this snapshot only; it is not proof of stable latency or an optimized system. Use the repeated decision baseline for stability claims.";
                 break;
-            case CaptureSeverity.GuidanceExceeded:
+            case SnapshotSignal.ReferenceExceeded:
                 var dpcGuidanceRate = Rate(capture.DpcThresholds.GuidanceExceedanceCount, capture.Dpc.Count);
                 var isrGuidanceRate = Rate(capture.IsrThresholds.GuidanceExceedanceCount, capture.Isr.Count);
-                _latencyHealthBadgeText.Text = "Needs context";
-                _latencyHealthTitleText.Text = "Driver guidance was exceeded, without a millisecond-scale spike.";
-                _latencyHealthSummaryText.Text = string.Create(
+                _snapshotEvidenceBadgeText.Text = "Reference exceeded";
+                _snapshotEvidenceTitleText.Text = "Driver-duration reference lines were exceeded in this snapshot.";
+                _snapshotEvidenceSummaryText.Text = string.Create(
                     CultureInfo.InvariantCulture,
-                    $"Guidance exceedance rates in this window were DPC {dpcGuidanceRate:0.###}% and ISR {isrGuidanceRate:0.###}%. These are driver-duration guidance values, not user-impact pass/fail thresholds. Use module attribution and a repeated baseline to determine whether the same pattern persists under the workload you care about.");
+                    $"Reference exceedance rates were DPC {dpcGuidanceRate:0.###}% and ISR {isrGuidanceRate:0.###}%. These are Microsoft driver-duration guidance references, not user-impact pass/fail thresholds. Use module attribution, CPU concentration and a repeated decision baseline to test whether the pattern persists.");
                 break;
-            case CaptureSeverity.PotentialImpact:
-                _latencyHealthBadgeText.Text = "≥1 ms tail observed";
-                _latencyHealthTitleText.Text = "A millisecond-scale DPC/ISR event was observed.";
-                _latencyHealthSummaryText.Text =
-                    "At least one event exceeded 1 ms. LatencyPilot treats this as a local diagnostic bucket, not a Windows pass/fail threshold. Repeat the same workload and inspect the responsible modules before drawing a conclusion.";
+            case SnapshotSignal.OneMillisecondBucket:
+                _snapshotEvidenceBadgeText.Text = "≥1 ms bucket";
+                _snapshotEvidenceTitleText.Text = "A ≥1 ms local diagnostic-bucket event was observed.";
+                _snapshotEvidenceSummaryText.Text =
+                    "At least one DPC/ISR exceeded 1 ms in this snapshot. LatencyPilot retains this as a local tail bucket, not an official Windows impact boundary. Repeat the workload and inspect responsible modules before attributing an effect.";
                 break;
-            case CaptureSeverity.Severe:
-                _latencyHealthBadgeText.Text = "≥3 ms tail observed";
-                _latencyHealthTitleText.Text = "A long DPC/ISR tail event was observed.";
-                _latencyHealthSummaryText.Text =
-                    "At least one DPC/ISR exceeded 3 ms. This is a local diagnostic bucket rather than an official Windows severity boundary; repeat the workload, build a baseline and compare module-level max/tail evidence before attributing impact.";
+            case SnapshotSignal.ThreeMillisecondBucket:
+                _snapshotEvidenceBadgeText.Text = "≥3 ms bucket";
+                _snapshotEvidenceTitleText.Text = "A ≥3 ms local diagnostic-bucket event was observed.";
+                _snapshotEvidenceSummaryText.Text =
+                    "At least one DPC/ISR exceeded 3 ms in this snapshot. This is a local tail bucket rather than an official severity classification. Preserve attribution and confirm the pattern with repeated decision-grade measurement.";
                 break;
             default:
                 ClearPremiumCapture();
                 return;
         }
 
-        if (severity == CaptureSeverity.CaptureWarning)
+        if (signal == SnapshotSignal.CaptureWarning)
         {
             DpcP999Text.Foreground = ThemeBrush("WarningBrush");
             IsrP999Text.Foreground = ThemeBrush("WarningBrush");
@@ -393,10 +393,10 @@ public sealed partial class MainWindow
         {
             DpcP999Text.Foreground = capture.Dpc.P999Microseconds is null
                 ? ThemeBrush("MutedTextBrush")
-                : SeverityBrush(GetDistributionSeverity(capture.DpcThresholds));
+                : SnapshotSignalBrush(GetDistributionSignal(capture.DpcThresholds));
             IsrP999Text.Foreground = capture.Isr.P999Microseconds is null
                 ? ThemeBrush("MutedTextBrush")
-                : SeverityBrush(GetDistributionSeverity(capture.IsrThresholds));
+                : SnapshotSignalBrush(GetDistributionSignal(capture.IsrThresholds));
         }
 
         UpdateTailChart(capture);
@@ -459,84 +459,84 @@ public sealed partial class MainWindow
     private static double Rate(int count, int total) =>
         total <= 0 ? 0d : count * 100d / total;
 
-    private static CaptureSeverity GetCaptureSeverity(KernelLatencyCaptureResponse capture)
+    private static SnapshotSignal GetSnapshotSignal(KernelLatencyCaptureResponse capture)
     {
         if (capture.DpcThresholds.OverThreeMillisecondsCount > 0 ||
             capture.IsrThresholds.OverThreeMillisecondsCount > 0)
         {
-            return CaptureSeverity.Severe;
+            return SnapshotSignal.ThreeMillisecondBucket;
         }
 
         if (capture.DpcThresholds.OverOneMillisecondCount > 0 ||
             capture.IsrThresholds.OverOneMillisecondCount > 0)
         {
-            return CaptureSeverity.PotentialImpact;
+            return SnapshotSignal.OneMillisecondBucket;
         }
 
         if (capture.DpcThresholds.GuidanceExceedanceCount > 0 ||
             capture.IsrThresholds.GuidanceExceedanceCount > 0)
         {
-            return CaptureSeverity.GuidanceExceeded;
+            return SnapshotSignal.ReferenceExceeded;
         }
 
-        return CaptureSeverity.WithinGuidance;
+        return SnapshotSignal.NoReferenceExceedance;
     }
 
-    private static CaptureSeverity GetDistributionSeverity(LatencyThresholdSummary thresholds)
+    private static SnapshotSignal GetDistributionSignal(LatencyThresholdSummary thresholds)
     {
         if (thresholds.OverThreeMillisecondsCount > 0)
         {
-            return CaptureSeverity.Severe;
+            return SnapshotSignal.ThreeMillisecondBucket;
         }
 
         if (thresholds.OverOneMillisecondCount > 0)
         {
-            return CaptureSeverity.PotentialImpact;
+            return SnapshotSignal.OneMillisecondBucket;
         }
 
         return thresholds.GuidanceExceedanceCount > 0
-            ? CaptureSeverity.GuidanceExceeded
-            : CaptureSeverity.WithinGuidance;
+            ? SnapshotSignal.ReferenceExceeded
+            : SnapshotSignal.NoReferenceExceedance;
     }
 
-    private void ApplySeverityAppearance(CaptureSeverity severity)
+    private void ApplySnapshotSignalAppearance(SnapshotSignal signal)
     {
-        if (_latencyHealthBadge is null || _latencyHealthBadgeText is null)
+        if (_snapshotEvidenceBadge is null || _snapshotEvidenceBadgeText is null)
         {
             return;
         }
 
-        var foregroundKey = severity switch
+        var foregroundKey = signal switch
         {
-            CaptureSeverity.WithinGuidance => "SuccessBrush",
-            CaptureSeverity.CaptureWarning => "WarningBrush",
-            CaptureSeverity.GuidanceExceeded => "WarningBrush",
-            CaptureSeverity.PotentialImpact => "ImpactBrush",
-            CaptureSeverity.Severe => "DangerBrush",
+            SnapshotSignal.NoReferenceExceedance => "SuccessBrush",
+            SnapshotSignal.CaptureWarning => "WarningBrush",
+            SnapshotSignal.ReferenceExceeded => "WarningBrush",
+            SnapshotSignal.OneMillisecondBucket => "ImpactBrush",
+            SnapshotSignal.ThreeMillisecondBucket => "DangerBrush",
             _ => "MutedTextBrush",
         };
-        var backgroundKey = severity switch
+        var backgroundKey = signal switch
         {
-            CaptureSeverity.WithinGuidance => "SuccessSoftBrush",
-            CaptureSeverity.CaptureWarning => "WarningSoftBrush",
-            CaptureSeverity.GuidanceExceeded => "WarningSoftBrush",
-            CaptureSeverity.PotentialImpact => "ImpactSoftBrush",
-            CaptureSeverity.Severe => "DangerSoftBrush",
+            SnapshotSignal.NoReferenceExceedance => "SuccessSoftBrush",
+            SnapshotSignal.CaptureWarning => "WarningSoftBrush",
+            SnapshotSignal.ReferenceExceeded => "WarningSoftBrush",
+            SnapshotSignal.OneMillisecondBucket => "ImpactSoftBrush",
+            SnapshotSignal.ThreeMillisecondBucket => "DangerSoftBrush",
             _ => "SurfaceStrongBrush",
         };
 
-        _latencyHealthBadge.Background = ThemeBrush(backgroundKey);
-        _latencyHealthBadgeText.Foreground = ThemeBrush(foregroundKey);
+        _snapshotEvidenceBadge.Background = ThemeBrush(backgroundKey);
+        _snapshotEvidenceBadgeText.Foreground = ThemeBrush(foregroundKey);
     }
 
-    private Brush SeverityBrush(CaptureSeverity severity) =>
-        ThemeBrush(severity switch
+    private Brush SnapshotSignalBrush(SnapshotSignal signal) =>
+        ThemeBrush(signal switch
         {
-            CaptureSeverity.WithinGuidance => "SuccessBrush",
-            CaptureSeverity.CaptureWarning => "WarningBrush",
-            CaptureSeverity.GuidanceExceeded => "WarningBrush",
-            CaptureSeverity.PotentialImpact => "ImpactBrush",
-            CaptureSeverity.Severe => "DangerBrush",
+            SnapshotSignal.NoReferenceExceedance => "SuccessBrush",
+            SnapshotSignal.CaptureWarning => "WarningBrush",
+            SnapshotSignal.ReferenceExceeded => "WarningBrush",
+            SnapshotSignal.OneMillisecondBucket => "ImpactBrush",
+            SnapshotSignal.ThreeMillisecondBucket => "DangerBrush",
             _ => "TextBrush",
         });
 
@@ -584,20 +584,21 @@ public sealed partial class MainWindow
     private void ClearPremiumCapture()
     {
         _lastPremiumCapture = null;
-        if (_latencyHealthBadge is null ||
-            _latencyHealthBadgeText is null ||
-            _latencyHealthTitleText is null ||
-            _latencyHealthSummaryText is null)
+        if (_snapshotEvidenceBadge is null ||
+            _snapshotEvidenceBadgeText is null ||
+            _snapshotEvidenceTitleText is null ||
+            _snapshotEvidenceSummaryText is null)
         {
             return;
         }
 
-        _latencyHealthBadge.Background = ThemeBrush("SurfaceStrongBrush");
-        _latencyHealthBadgeText.Foreground = ThemeBrush("MutedTextBrush");
-        _latencyHealthBadgeText.Text = "Not captured";
-        _latencyHealthTitleText.Text = "Capture an observation to classify the tail.";
-        _latencyHealthSummaryText.Text =
-            "The app keeps exact p99/max values visible, shows p99.9 only when at least 1,000 samples support it, and adds bounded context labels plus a compact tail-rate view.";
+        _snapshotEvidenceBadge.Background = ThemeBrush("SurfaceStrongBrush");
+        _snapshotEvidenceBadgeText.Foreground = ThemeBrush("MutedTextBrush");
+        _snapshotEvidenceBadgeText.Text = "Not captured";
+        _snapshotEvidenceTitleText.Text = "Capture a quick snapshot to inspect the tail.";
+        _snapshotEvidenceSummaryText.Text = string.Create(
+            CultureInfo.InvariantCulture,
+            $"The app keeps exact p99/max values visible and exposes p99.9 only when at least {ObservationProtocol.MinimumSamplesForP999:N0} samples support it. Quick snapshots remain diagnostic only; use the repeated baseline for stability or optimization decisions.");
 
         DpcP999Text.Foreground = ThemeBrush("TextBrush");
         IsrP999Text.Foreground = ThemeBrush("TextBrush");
