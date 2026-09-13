@@ -17,16 +17,21 @@ internal enum MeasurementScenario
     BeforeAfter = 3,
 }
 
+internal sealed record MeasurementRuntimeWindow(
+    int WindowNumber,
+    RuntimeMeasurementContextInterval? Context);
+
 internal static class EvidenceExportService
 {
-    private const string EvidenceSchema = "latencypilot-evidence-v4";
+    private const string EvidenceSchema = "latencypilot-evidence-v5";
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
     public static string CreateObservationJson(
         string productVersion,
         MeasurementScenario measurementScenario,
-        KernelLatencyCaptureResponse capture) =>
+        KernelLatencyCaptureResponse capture,
+        RuntimeMeasurementContextInterval? runtimeContext) =>
         JsonSerializer.Serialize(
             new ObservationEvidenceDocument(
                 EvidenceSchema,
@@ -36,6 +41,7 @@ internal static class EvidenceExportService
                 DateTimeOffset.UtcNow,
                 CreateEnvironment(),
                 CreateMeasurementContext(measurementScenario),
+                runtimeContext,
                 capture),
             JsonOptions);
 
@@ -44,12 +50,14 @@ internal static class EvidenceExportService
         MeasurementScenario measurementScenario,
         IReadOnlyList<KernelLatencyCaptureResponse> captures,
         IReadOnlyList<BaselineWindowEvidence> windows,
+        IReadOnlyList<MeasurementRuntimeWindow> runtimeWindows,
         BaselineQualityResult quality) =>
         CreateBaselineJson(
             productVersion,
             measurementScenario,
             captures.ToArray(),
             windows.ToArray(),
+            runtimeWindows.ToArray(),
             quality);
 
     public static string GetMeasurementDisplayName(MeasurementScenario scenario) =>
@@ -111,6 +119,7 @@ internal static class EvidenceExportService
         MeasurementScenario measurementScenario,
         KernelLatencyCaptureResponse[] captures,
         BaselineWindowEvidence[] windows,
+        MeasurementRuntimeWindow[] runtimeWindows,
         BaselineQualityResult quality) =>
         JsonSerializer.Serialize(
             new BaselineEvidenceDocument(
@@ -124,6 +133,7 @@ internal static class EvidenceExportService
                 quality.MethodVersion,
                 captures,
                 windows,
+                runtimeWindows,
                 quality),
             JsonOptions);
 
@@ -272,6 +282,7 @@ internal static class EvidenceExportService
         DateTimeOffset ExportedAtUtc,
         EvidenceEnvironment Environment,
         EvidenceMeasurementContext MeasurementContext,
+        RuntimeMeasurementContextInterval? RuntimeContext,
         KernelLatencyCaptureResponse Capture);
 
     private sealed record BaselineEvidenceDocument(
@@ -285,5 +296,6 @@ internal static class EvidenceExportService
         string BaselineMethodVersion,
         KernelLatencyCaptureResponse[] Captures,
         BaselineWindowEvidence[] Windows,
+        MeasurementRuntimeWindow[] RuntimeWindows,
         BaselineQualityResult Quality);
 }
