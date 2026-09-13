@@ -97,11 +97,13 @@ Native C++ is not a baseline dependency. A native component requires profiling e
        Windows 11 / hardware
 
 Pure/shared layers:
-Core ← Benchmarking
-Core ← Protocol
+Benchmarking → Core
+Platform.Windows → Core
+Protocol (standalone typed IPC contract)
+Persistence (reserved, dependency-free Phase 2 boundary)
 ```
 
-Mutation remains disabled until Phase 3 safety infrastructure exists. The Service already exists in Phase 2 because privileged kernel ETW observation must not force the WinUI process to run elevated. The Persistence box is the accepted Phase 3 boundary; it is intentionally not wired into the Phase 2 Service dependency graph yet.
+Mutation remains disabled until Phase 3 safety infrastructure exists. The Service already exists in Phase 2 because privileged kernel ETW observation must not force the WinUI process to run elevated. The Persistence box is the accepted Phase 3 boundary; it is intentionally dependency-free and not wired into the Phase 2 Service graph yet.
 
 ## 5. Project responsibilities
 
@@ -112,7 +114,7 @@ Stable domain concepts and invariants only. No WinUI, ETW implementation details
 Percentiles, distributions, repeated-baseline quality, noise/drift analysis, comparisons, guardrails and verdicts. Keep deterministic and hardware-independent where possible.
 
 ### `LatencyPilot.Protocol`
-Versioned IPC commands/events/DTOs/errors only. Never generic privileged execution. Phase 2 commands are observation-only and explicitly allowlisted.
+Versioned IPC commands/events/DTOs/errors only. Never generic privileged execution. Phase 2 commands are observation-only and explicitly allowlisted. The project is intentionally standalone and must not acquire domain dependencies unless the wire contract actually requires them.
 
 ### `LatencyPilot.Platform.Windows`
 All raw Windows mechanisms: inventory, ETW, DPC/ISR interpretation, SetupAPI/CM, PCI/device topology, interrupt configuration/assignment, CPU topology, Raw Input, USB/xHCI, NDIS/RSS, PresentMon and narrow registry/device-policy adapters.
@@ -120,7 +122,7 @@ All raw Windows mechanisms: inventory, ETW, DPC/ISR interpretation, SetupAPI/CM,
 Raw P/Invoke and registry paths do not leave this project except for narrowly scoped Windows-host security/lifecycle calls that belong directly to the Service boundary (for example named-pipe client-session authorization).
 
 ### `LatencyPilot.Persistence`
-Reserved Phase 3 boundary for SQLite, migrations, snapshots, pending/closed journal records, benchmark history and recovery state. It remains intentionally empty in Phase 2 rather than carrying placeholder helpers with no active persistence contract.
+Reserved Phase 3 boundary for SQLite, migrations, snapshots, pending/closed journal records, benchmark history and recovery state. It remains intentionally empty and dependency-free in Phase 2 rather than carrying placeholder helpers or speculative references with no active persistence contract.
 
 ### `LatencyPilot.Service`
 The narrow privileged execution boundary. During Phase 2 it hosts only privileged read-only observation. During Phase 3 it may gain mutation authority only after durable journaling, validation, authorization, verification and recovery exist. It never becomes a generic scripting host.
@@ -133,17 +135,17 @@ The non-elevated WinUI 3 experience. It presents inventory, evidence, trade-offs
 ```text
 Core                 ← no project dependency
 Benchmarking         → Core
-Protocol             → Core
+Protocol             ← no project dependency
 Platform.Windows     → Core
-Persistence          → Core
+Persistence          ← no project dependency in Phase 2
 Service              → Core + Benchmarking + Protocol + Platform.Windows
-App                  → Core + Benchmarking + Protocol + Platform.Windows
+App                  → Benchmarking + Protocol + Platform.Windows
 CriticalTests        → only projects needed by the current critical scenarios
 ```
 
-The Service and App depend on `Benchmarking` only for shared deterministic evidence/statistics semantics. They must not duplicate layer-specific percentile, noise or drift interpretations. Persistence is not a Phase 2 Service dependency; add that edge only when Phase 3 durable journaling/recovery work actually begins.
+The Service and App depend on `Benchmarking` only for shared deterministic evidence/statistics semantics. They must not duplicate layer-specific percentile, noise or drift interpretations. `Protocol` stays independent because its wire DTOs/framing currently need no Core types. `Persistence` stays dependency-free until Phase 3 durable journaling/recovery introduces a demonstrated dependency. The App does not carry a redundant direct Core reference when its active features are already expressed through Benchmarking and Platform.Windows boundaries.
 
-No cyclic references. No speculative abstraction projects.
+No cyclic references. No speculative abstraction projects. Do not retain project references merely for possible future work.
 
 ## 7. UI and deployment contract
 
@@ -161,7 +163,7 @@ The release artifact publishes App and Service separately under one Windows x64 
 
 Installer deployments place App and Service under the protected Program Files tree. Portable distributions may place the normal-user App in a user-controlled extraction directory, but an elevated `Install-Service.ps1` copies the privileged Service payload to `%ProgramFiles%\LatencyPilot\Service` before LocalSystem registration. A LocalSystem service must not execute from an ordinary user-writable portable extraction path.
 
-The UI should use WinUI controls and Windows 11 interaction/accessibility conventions, but should not add a second UI toolkit or speculative MVVM/DI/navigation framework.
+The UI should use WinUI controls and Windows 11 interaction/accessibility conventions, but should not add a second UI toolkit or speculative MVVM/DI/navigation framework. Stable reusable visual trees should prefer XAML/UserControl composition over large imperative code-built trees when doing so reduces lifecycle and maintenance complexity without introducing a framework.
 
 ## 8. Observation semantics
 
