@@ -31,7 +31,7 @@ internal sealed record EvidenceSaveResult(
 
 internal static class EvidenceExportService
 {
-    private const string EvidenceSchema = "latencypilot-evidence-v6";
+    private const string EvidenceSchema = "latencypilot-evidence-v7";
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
@@ -58,7 +58,7 @@ internal static class EvidenceExportService
                 DateTimeOffset.UtcNow,
                 CreateEnvironment(),
                 CreateMeasurementContext(measurementScenario),
-                runtimeContext,
+                CreateRuntimeContextEvidence(runtimeContext),
                 capture),
             JsonOptions);
     }
@@ -155,8 +155,15 @@ internal static class EvidenceExportService
         KernelLatencyCaptureResponse[] captures,
         BaselineWindowEvidence[] windows,
         MeasurementRuntimeWindow[] runtimeWindows,
-        BaselineQualityResult quality) =>
-        JsonSerializer.Serialize(
+        BaselineQualityResult quality)
+    {
+        var evidenceRuntimeWindows = runtimeWindows
+            .Select(static window => new EvidenceRuntimeWindow(
+                window.WindowNumber,
+                CreateRuntimeContextEvidence(window.Context)))
+            .ToArray();
+
+        return JsonSerializer.Serialize(
             new BaselineEvidenceDocument(
                 EvidenceSchema,
                 productVersion,
@@ -168,9 +175,10 @@ internal static class EvidenceExportService
                 quality.MethodVersion,
                 captures,
                 windows,
-                runtimeWindows,
+                evidenceRuntimeWindows,
                 quality),
             JsonOptions);
+    }
 
     private static void ValidateMeasurementScenario(MeasurementScenario scenario)
     {
@@ -249,6 +257,27 @@ internal static class EvidenceExportService
             scenario,
             GetMeasurementDisplayName(scenario),
             GetMeasurementGuidance(scenario));
+
+    private static EvidenceRuntimeMeasurementContext? CreateRuntimeContextEvidence(
+        RuntimeMeasurementContextInterval? context) =>
+        context is null
+            ? null
+            : new EvidenceRuntimeMeasurementContext(
+                context.SystemCpuBusyPercent,
+                CreatePowerEvidence(context.StartPower),
+                CreatePowerEvidence(context.EndPower),
+                context.PowerContextChanged);
+
+    private static EvidenceSystemPowerSnapshot CreatePowerEvidence(SystemPowerSnapshot power) =>
+        new(
+            power.LineState,
+            power.BatteryPresent,
+            power.Charging,
+            power.BatteryPercent,
+            power.BatterySaverEnabled,
+            power.ActiveSchemeId,
+            power.UserConfiguredPowerModeId,
+            power.UserConfiguredPowerMode);
 
     private static EvidenceEnvironment CreateEnvironment()
     {
@@ -381,6 +410,26 @@ internal static class EvidenceExportService
         string DisplayName,
         string Guidance);
 
+    private sealed record EvidenceSystemPowerSnapshot(
+        SystemPowerLineState LineState,
+        bool? BatteryPresent,
+        bool? Charging,
+        int? BatteryPercent,
+        bool? BatterySaverEnabled,
+        Guid? ActiveSchemeId,
+        Guid? UserConfiguredPowerModeId,
+        UserConfiguredPowerMode? UserConfiguredPowerMode);
+
+    private sealed record EvidenceRuntimeMeasurementContext(
+        double? SystemCpuBusyPercent,
+        EvidenceSystemPowerSnapshot StartPower,
+        EvidenceSystemPowerSnapshot EndPower,
+        bool PowerContextChanged);
+
+    private sealed record EvidenceRuntimeWindow(
+        int WindowNumber,
+        EvidenceRuntimeMeasurementContext? Context);
+
     private sealed record ObservationEvidenceDocument(
         string Schema,
         string ProductVersion,
@@ -389,7 +438,7 @@ internal static class EvidenceExportService
         DateTimeOffset ExportedAtUtc,
         EvidenceEnvironment Environment,
         EvidenceMeasurementContext MeasurementContext,
-        RuntimeMeasurementContextInterval? RuntimeContext,
+        EvidenceRuntimeMeasurementContext? RuntimeContext,
         KernelLatencyCaptureResponse Capture);
 
     private sealed record BaselineEvidenceDocument(
@@ -403,6 +452,6 @@ internal static class EvidenceExportService
         string BaselineMethodVersion,
         KernelLatencyCaptureResponse[] Captures,
         BaselineWindowEvidence[] Windows,
-        MeasurementRuntimeWindow[] RuntimeWindows,
+        EvidenceRuntimeWindow[] RuntimeWindows,
         BaselineQualityResult Quality);
 }
