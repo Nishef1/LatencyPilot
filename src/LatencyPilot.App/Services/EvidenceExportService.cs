@@ -24,6 +24,11 @@ internal static class EvidenceExportService
 
     public static string CreateObservationJson(
         string productVersion,
+        KernelLatencyCaptureResponse capture) =>
+        CreateObservationJson(productVersion, MeasurementScenario.RealWorld, capture);
+
+    public static string CreateObservationJson(
+        string productVersion,
         MeasurementScenario measurementScenario,
         KernelLatencyCaptureResponse capture) =>
         JsonSerializer.Serialize(
@@ -37,6 +42,18 @@ internal static class EvidenceExportService
                 CreateMeasurementContext(measurementScenario),
                 capture),
             JsonOptions);
+
+    public static string CreateBaselineJson(
+        string productVersion,
+        IReadOnlyList<KernelLatencyCaptureResponse> captures,
+        IReadOnlyList<BaselineWindowEvidence> windows,
+        BaselineQualityResult quality) =>
+        CreateBaselineJson(
+            productVersion,
+            MeasurementScenario.RealWorld,
+            captures,
+            windows,
+            quality);
 
     public static string CreateBaselineJson(
         string productVersion,
