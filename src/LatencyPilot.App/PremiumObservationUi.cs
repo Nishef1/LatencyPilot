@@ -359,10 +359,13 @@ public sealed partial class MainWindow
                     "No DPC exceeded 100 µs and no ISR exceeded 25 µs. That is encouraging for this five-second capture, but a repeated baseline is still required before treating the system as consistently clean.";
                 break;
             case CaptureSeverity.GuidanceExceeded:
+                var dpcGuidanceRate = Rate(capture.DpcThresholds.GuidanceExceedanceCount, capture.Dpc.Count);
+                var isrGuidanceRate = Rate(capture.IsrThresholds.GuidanceExceedanceCount, capture.Isr.Count);
                 _latencyHealthBadgeText.Text = "Needs context";
                 _latencyHealthTitleText.Text = "Driver guidance was exceeded, without a millisecond-scale spike.";
-                _latencyHealthSummaryText.Text =
-                    "Short exceedances can occur without a user-visible problem. Use the module list, maximum durations and repeated baseline to see whether the same tail repeats under the workload you care about.";
+                _latencyHealthSummaryText.Text = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Guidance exceedance rates in this window were DPC {dpcGuidanceRate:0.###}% and ISR {isrGuidanceRate:0.###}%. These are driver-duration guidance values, not user-impact pass/fail thresholds. Use module attribution and a repeated baseline to determine whether the same pattern persists under the workload you care about.");
                 break;
             case CaptureSeverity.PotentialImpact:
                 _latencyHealthBadgeText.Text = "≥1 ms tail observed";
@@ -418,7 +421,7 @@ public sealed partial class MainWindow
         var dpcGuidanceRate = Rate(capture.DpcThresholds.GuidanceExceedanceCount, capture.Dpc.Count);
         var isrGuidanceRate = Rate(capture.IsrThresholds.GuidanceExceedanceCount, capture.Isr.Count);
         var overOneCount = capture.DpcThresholds.OverOneMillisecondCount + capture.IsrThresholds.OverOneMillisecondCount;
-        var overThreeCount = capture.DpcThresholds.OverThreeMillisecondsCount + capture.IsrThresholds.OverThreeMillisecondsCount;
+        var overThreeCount = capture.DpcThresholds.OverThreeMillisecondsCount + capture.IsrThresholds.OverThreeMillisecondCount;
         var overOneRate = Rate(overOneCount, totalEvents);
         var overThreeRate = Rate(overThreeCount, totalEvents);
 
