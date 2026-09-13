@@ -411,7 +411,7 @@ public sealed partial class MainWindow : Window
         FormatLargestValue(dpc.P999Microseconds, isr.P999Microseconds);
 
     private static string FormatLargestMaximum(LatencyDistribution dpc, LatencyDistribution isr) =>
-        FormatLargestValue(dpc.MaximumMicroseconds, dpc.MaximumMicroseconds is null ? isr.MaximumMicroseconds : isr.MaximumMicroseconds);
+        FormatLargestValue(dpc.MaximumMicroseconds, isr.MaximumMicroseconds);
 
     private static string FormatLargestValue(double? first, double? second)
     {
