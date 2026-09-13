@@ -13,7 +13,7 @@
     <Version>0.0.2</Version>
     <AssemblyVersion>0.0.2.0</AssemblyVersion>
     <FileVersion>0.0.2.0</FileVersion>
-    <IncludeSourceRevisionInInformationalVersion>true</IncludeSourceRevisionInInformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>LatencyPilot</Product>
     <RepositoryUrl>https://github.com/Nishef1/LatencyPilot</RepositoryUrl>
   </PropertyGroup>
