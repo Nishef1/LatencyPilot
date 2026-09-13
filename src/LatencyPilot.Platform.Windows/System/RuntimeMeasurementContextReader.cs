@@ -31,7 +31,10 @@ public sealed record RuntimeMeasurementContextInterval(
     SystemPowerSnapshot StartPower,
     SystemPowerSnapshot EndPower)
 {
-    public bool PowerContextChanged => StartPower != EndPower;
+    public bool PowerContextChanged =>
+        StartPower.LineState != EndPower.LineState ||
+        StartPower.Charging != EndPower.Charging ||
+        StartPower.BatterySaverEnabled != EndPower.BatterySaverEnabled;
 }
 
 public static class RuntimeMeasurementContextReader
