@@ -5,8 +5,7 @@ using System.Text.Json.Serialization;
 using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
-using Windows.Storage;
-using Windows.Storage.Pickers;
+using Microsoft.Windows.Storage.Pickers;
 
 namespace LatencyPilot.App.Services;
 
@@ -78,14 +77,33 @@ internal static class EvidenceExportService
             CultureInfo.InvariantCulture,
             $"LatencyPilot-{evidenceType}-{startedAtUtc.UtcDateTime:yyyyMMddTHHmmssfffZ}");
 
-    public static Task<string?> SaveAsync(
+    public static async Task<string?> SaveAsync(
         LatencyPilot.App.MainWindow owner,
         string json,
-        string suggestedFileName) =>
-        SaveAsync(
-            WinRT.Interop.WindowNative.GetWindowHandle(owner),
-            json,
-            suggestedFileName);
+        string suggestedFileName)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentException.ThrowIfNullOrWhiteSpace(json);
+        ArgumentException.ThrowIfNullOrWhiteSpace(suggestedFileName);
+
+        var picker = new FileSavePicker(owner.AppWindow.Id)
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+            SuggestedFileName = suggestedFileName,
+            DefaultFileExtension = ".json",
+            SettingsIdentifier = "EvidenceExport",
+        };
+        picker.FileTypeChoices.Add("JSON evidence", [".json"]);
+
+        var result = await picker.PickSaveFileAsync();
+        if (result is null || string.IsNullOrWhiteSpace(result.Path))
+        {
+            return null;
+        }
+
+        await File.WriteAllTextAsync(result.Path, json);
+        return result.Path;
+    }
 
     private static string CreateBaselineJson(
         string productVersion,
@@ -158,34 +176,6 @@ internal static class EvidenceExportService
         return candidate.Length is >= 7 and <= 40 && candidate.All(Uri.IsHexDigit)
             ? candidate
             : null;
-    }
-
-    private static async Task<string?> SaveAsync(
-        nint windowHandle,
-        string json,
-        string suggestedFileName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(json);
-        ArgumentException.ThrowIfNullOrWhiteSpace(suggestedFileName);
-
-        var picker = new FileSavePicker
-        {
-            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-            SuggestedFileName = suggestedFileName,
-            DefaultFileExtension = ".json",
-        };
-        picker.FileTypeChoices.Add("JSON evidence", [".json"]);
-
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, windowHandle);
-
-        var file = await picker.PickSaveFileAsync();
-        if (file is null)
-        {
-            return null;
-        }
-
-        await FileIO.WriteTextAsync(file, json);
-        return string.IsNullOrWhiteSpace(file.Path) ? file.Name : file.Path;
     }
 
     private static JsonSerializerOptions CreateJsonOptions()
