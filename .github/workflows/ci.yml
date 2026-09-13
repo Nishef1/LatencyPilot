@@ -17,6 +17,7 @@ on:
       - 'NuGet.Config'
       - '.editorconfig'
       - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
   pull_request:
     branches: [main]
     paths:
@@ -33,6 +34,7 @@ on:
       - 'NuGet.Config'
       - '.editorconfig'
       - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:
