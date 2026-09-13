@@ -478,7 +478,7 @@ public sealed partial class MainWindow
             $"Scenario: {EvidenceExportService.GetMeasurementDisplayName(scenario)}. {EvidenceExportService.GetMeasurementGuidance(scenario)} ";
 
         ObservationQualityText.Text = integrityIssue is null
-            ? $"{prefix}Quick snapshot integrity looks clean. {FormatCaptureInterpretation(capture)} This remains diagnostic evidence; use the repeated baseline for stability claims."
+            ? $"{prefix}Quick snapshot integrity looks clean. This remains diagnostic evidence; use the repeated baseline for stability claims."
             : $"{prefix}Treat this quick snapshot as incomplete evidence. Tail/reference interpretation is withheld because capture integrity is not clean. Exact values remain visible for diagnosis.";
     }
 
