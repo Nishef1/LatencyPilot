@@ -17,6 +17,10 @@ internal sealed class ObservationHost : BackgroundService
 {
     private static readonly TimeSpan PipeIoTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan CaptureCompletionMargin = TimeSpan.FromSeconds(5);
+    private const double DpcGuidanceThresholdMicroseconds = 100d;
+    private const double IsrGuidanceThresholdMicroseconds = 25d;
+    private const double OneMillisecondMicroseconds = 1_000d;
+    private const double ThreeMillisecondsMicroseconds = 3_000d;
 
     private static readonly Action<ILogger, Exception?> KernelLatencyCaptureFailed =
         LoggerMessage.Define(
@@ -368,12 +372,11 @@ internal sealed class ObservationHost : BackgroundService
 
     private static KernelLatencyCaptureResponse Summarize(KernelLatencyCaptureResult result)
     {
-        var dpc = CreateDistribution(result.Events
-            .Where(static item => item.Kind == KernelLatencyEventKind.Dpc)
-            .Select(static item => item.DurationMicroseconds));
-        var isr = CreateDistribution(result.Events
-            .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
-            .Select(static item => item.DurationMicroseconds));
+        var dpcDurations = new List<double>();
+        var isrDurations = new List<double>();
+        SplitDurations(result.Events, dpcDurations, isrDurations, out _);
+        var dpc = CreateLatencySummary(dpcDurations, DpcGuidanceThresholdMicroseconds);
+        var isr = CreateLatencySummary(isrDurations, IsrGuidanceThresholdMicroseconds);
 
         var processors = result.Events
             .GroupBy(static item => item.ProcessorNumber)
@@ -409,8 +412,10 @@ internal sealed class ObservationHost : BackgroundService
             result.UnresolvedModuleEventCount,
             allModules.Length > ObservationProtocol.MaximumModuleContributors,
             allUnresolvedRoutines.Length > ObservationProtocol.MaximumUnresolvedRoutineContributors,
-            dpc,
-            isr,
+            dpc.Distribution,
+            isr.Distribution,
+            dpc.Thresholds,
+            isr.Thresholds,
             processors,
             allModules.Take(ObservationProtocol.MaximumModuleContributors).ToArray(),
             allUnresolvedRoutines.Take(ObservationProtocol.MaximumUnresolvedRoutineContributors).ToArray());
@@ -423,11 +428,15 @@ internal sealed class ObservationHost : BackgroundService
         var dpcDurations = new List<double>();
         var isrDurations = new List<double>();
         SplitDurations(events, dpcDurations, isrDurations, out _);
+        var dpc = CreateLatencySummary(dpcDurations, DpcGuidanceThresholdMicroseconds);
+        var isr = CreateLatencySummary(isrDurations, IsrGuidanceThresholdMicroseconds);
 
         return new ProcessorLatencyDistribution(
             processorNumber,
-            CreateDistribution(dpcDurations),
-            CreateDistribution(isrDurations));
+            dpc.Distribution,
+            isr.Distribution,
+            dpc.Thresholds,
+            isr.Thresholds);
     }
 
     private static ModuleLatencyDistribution CreateModuleDistribution(
@@ -437,6 +446,8 @@ internal sealed class ObservationHost : BackgroundService
         var dpcDurations = new List<double>();
         var isrDurations = new List<double>();
         SplitDurations(events, dpcDurations, isrDurations, out var totalDurationMicroseconds);
+        var dpc = CreateLatencySummary(dpcDurations, DpcGuidanceThresholdMicroseconds);
+        var isr = CreateLatencySummary(isrDurations, IsrGuidanceThresholdMicroseconds);
 
         var moduleName = Path.GetFileName(path);
         if (string.IsNullOrWhiteSpace(moduleName))
@@ -448,8 +459,10 @@ internal sealed class ObservationHost : BackgroundService
             moduleName,
             path,
             totalDurationMicroseconds,
-            CreateDistribution(dpcDurations),
-            CreateDistribution(isrDurations));
+            dpc.Distribution,
+            isr.Distribution,
+            dpc.Thresholds,
+            isr.Thresholds);
     }
 
     private static UnresolvedRoutineLatencyDistribution CreateUnresolvedRoutineDistribution(
@@ -459,12 +472,16 @@ internal sealed class ObservationHost : BackgroundService
         var dpcDurations = new List<double>();
         var isrDurations = new List<double>();
         SplitDurations(events, dpcDurations, isrDurations, out var totalDurationMicroseconds);
+        var dpc = CreateLatencySummary(dpcDurations, DpcGuidanceThresholdMicroseconds);
+        var isr = CreateLatencySummary(isrDurations, IsrGuidanceThresholdMicroseconds);
 
         return new UnresolvedRoutineLatencyDistribution(
             routineAddress,
             totalDurationMicroseconds,
-            CreateDistribution(dpcDurations),
-            CreateDistribution(isrDurations));
+            dpc.Distribution,
+            isr.Distribution,
+            dpc.Thresholds,
+            isr.Thresholds);
     }
 
     private static void SplitDurations(
@@ -489,9 +506,49 @@ internal sealed class ObservationHost : BackgroundService
         }
     }
 
-    private static LatencyDistribution CreateDistribution(IEnumerable<double> durations)
+    private static (LatencyDistribution Distribution, LatencyThresholdSummary Thresholds) CreateLatencySummary(
+        List<double> durations,
+        double guidanceThresholdMicroseconds)
     {
-        var sorted = durations as List<double> ?? durations.ToList();
+        var thresholds = CreateThresholdSummary(durations, guidanceThresholdMicroseconds);
+        return (CreateDistribution(durations), thresholds);
+    }
+
+    private static LatencyThresholdSummary CreateThresholdSummary(
+        List<double> durations,
+        double guidanceThresholdMicroseconds)
+    {
+        var guidanceExceedanceCount = 0;
+        var overOneMillisecondCount = 0;
+        var overThreeMillisecondsCount = 0;
+
+        foreach (var duration in durations)
+        {
+            if (duration > guidanceThresholdMicroseconds)
+            {
+                guidanceExceedanceCount++;
+            }
+
+            if (duration > OneMillisecondMicroseconds)
+            {
+                overOneMillisecondCount++;
+            }
+
+            if (duration > ThreeMillisecondsMicroseconds)
+            {
+                overThreeMillisecondsCount++;
+            }
+        }
+
+        return new LatencyThresholdSummary(
+            guidanceThresholdMicroseconds,
+            guidanceExceedanceCount,
+            overOneMillisecondCount,
+            overThreeMillisecondsCount);
+    }
+
+    private static LatencyDistribution CreateDistribution(List<double> sorted)
+    {
         if (sorted.Count == 0)
         {
             return new LatencyDistribution(0, null, null, null, null, null);
