@@ -36,6 +36,8 @@ public sealed partial class MainWindow : Window
         BaselineProgressBar.Maximum = BaselineWindowCount;
         ObservationQualityText.Text = MeasurementContextGuidance;
         InitializePremiumObservationUi();
+        InitializeMeasurementExperience();
+        InitializeObservationExperienceHardening();
     }
 
     private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
@@ -119,116 +121,11 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void CaptureObservationButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!await EnsureObservationServiceReadyAsync())
-        {
-            return;
-        }
+    private async void CaptureObservationButton_Click(object sender, RoutedEventArgs e) =>
+        await CaptureObservationAsync();
 
-        ClearExportEvidence("Capture in progress. Evidence export becomes available after completion.");
-        SetObservationControlsBusy(true);
-        KernelCaptureStatusText.Text = "Capturing DPC/ISR activity for 5 seconds…";
-        ObservationQualityText.Text =
-            "Capture in progress. Keep the apps/workload you are trying to diagnose open; they are part of the measurement context. No interpretation is made until capture completes.";
-
-        try
-        {
-            var capture = await ObservationServiceClient.CaptureKernelLatencyAsync(
-                ObservationDuration,
-                ObservationMaximumEvents);
-
-            RenderCapture(capture);
-            TryPrepareObservationEvidence(capture);
-        }
-        catch (Exception exception)
-        {
-            HandleCaptureFailure(exception, "Kernel observation");
-        }
-        finally
-        {
-            SetObservationControlsBusy(false);
-        }
-    }
-
-    private async void CaptureBaselineButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!await EnsureObservationServiceReadyAsync())
-        {
-            return;
-        }
-
-        ClearExportEvidence("Baseline capture in progress. Export is prepared only after the capture sequence stops or completes.");
-        SetObservationControlsBusy(true);
-        BaselineProgressBar.Value = 0;
-        BaselineVerdictText.Text = "Capturing";
-        BaselineStatusText.Text = $"Preparing {BaselineWindowCount} repeated five-second windows…";
-        BaselineMetricsText.Text = "Noise and drift will be computed after all required windows complete.";
-        BaselineReasonsText.Text =
-            "Keep the test context consistent across all five windows. For an idle baseline, close unnecessary apps; for a real-world baseline, keep the same workload active. No window is silently discarded.";
-        BaselineWindowsList.ItemsSource = null;
-
-        var windows = new List<BaselineWindowEvidence>(BaselineWindowCount);
-        var captures = new List<KernelLatencyCaptureResponse>(BaselineWindowCount);
-
-        try
-        {
-            for (var index = 1; index <= BaselineWindowCount; index++)
-            {
-                BaselineStatusText.Text = $"Capturing baseline window {index} of {BaselineWindowCount}…";
-                var capture = await ObservationServiceClient.CaptureKernelLatencyAsync(
-                    ObservationDuration,
-                    ObservationMaximumEvents);
-
-                captures.Add(capture);
-                RenderCapture(capture);
-                var integrityIssue = GetCaptureIntegrityIssue(capture);
-                windows.Add(new BaselineWindowEvidence(
-                    index,
-                    capture.StartedAtUtc,
-                    integrityIssue is null,
-                    integrityIssue,
-                    capture.Dpc.Count,
-                    capture.Dpc.P99Microseconds,
-                    capture.Isr.Count,
-                    capture.Isr.P99Microseconds));
-
-                BaselineProgressBar.Value = index;
-                BaselineWindowsList.ItemsSource = CreateBaselineWindowRows(windows);
-
-                if (index < BaselineWindowCount)
-                {
-                    await Task.Delay(BaselineInterWindowDelay);
-                }
-            }
-
-            var quality = BaselineQualityAnalyzer.Analyze(windows, BaselinePolicy);
-            RenderBaselineQuality(quality);
-            TryPrepareBaselineEvidence(captures, windows, quality, isPartial: false);
-        }
-        catch (Exception exception)
-        {
-            HandleCaptureFailure(exception, "Repeated baseline capture");
-            BaselineVerdictText.Text = "Inconclusive";
-            BaselineStatusText.Text = $"Baseline capture stopped after {windows.Count} of {BaselineWindowCount} windows.";
-
-            if (windows.Count > 0)
-            {
-                var partialQuality = BaselineQualityAnalyzer.Analyze(windows, BaselinePolicy);
-                RenderBaselineQuality(partialQuality, preserveStatusText: true);
-                TryPrepareBaselineEvidence(captures, windows, partialQuality, isPartial: true);
-            }
-            else
-            {
-                BaselineMetricsText.Text = "No baseline metric evidence was produced.";
-                BaselineReasonsText.Text = "The repeated capture must complete before a baseline can be used for comparison.";
-            }
-        }
-        finally
-        {
-            SetObservationControlsBusy(false);
-        }
-    }
+    private async void CaptureBaselineButton_Click(object sender, RoutedEventArgs e) =>
+        await CaptureBaselineAsync();
 
     private async void ExportEvidenceButton_Click(object sender, RoutedEventArgs e)
     {
@@ -425,45 +322,6 @@ public sealed partial class MainWindow : Window
         return issues.Count == 0 ? null : string.Join(" ", issues);
     }
 
-    private void TryPrepareObservationEvidence(KernelLatencyCaptureResponse capture)
-    {
-        try
-        {
-            SetExportEvidence(
-                EvidenceExportService.CreateObservationJson(GetProductVersion(), capture),
-                EvidenceExportService.CreateSuggestedFileName("observation", capture.StartedAtUtc),
-                "Full bounded observation aggregates are ready for JSON export.");
-        }
-        catch (Exception exception)
-        {
-            Logger.Error(exception, "Observation evidence preparation failed.");
-            ClearExportEvidence("Observation completed, but evidence export preparation failed. See the diagnostics log for details.");
-        }
-    }
-
-    private void TryPrepareBaselineEvidence(
-        List<KernelLatencyCaptureResponse> captures,
-        IReadOnlyList<BaselineWindowEvidence> windows,
-        BaselineQualityResult quality,
-        bool isPartial)
-    {
-        try
-        {
-            var evidenceType = isPartial ? "baseline-partial" : "baseline";
-            SetExportEvidence(
-                EvidenceExportService.CreateBaselineJson(GetProductVersion(), captures, windows, quality),
-                EvidenceExportService.CreateSuggestedFileName(evidenceType, captures[0].StartedAtUtc),
-                isPartial
-                    ? "Partial baseline aggregates and quality reasons are ready for JSON export."
-                    : "Full baseline aggregates, windows and quality reasons are ready for JSON export.");
-        }
-        catch (Exception exception)
-        {
-            Logger.Error(exception, "Baseline evidence preparation failed.");
-            ClearExportEvidence("Baseline result remains available, but evidence export preparation failed. See the diagnostics log for details.");
-        }
-    }
-
     private void SetExportEvidence(string json, string suggestedFileName, string status)
     {
         _latestEvidenceJson = json;
@@ -550,7 +408,7 @@ public sealed partial class MainWindow : Window
         FormatLargestValue(processor.Dpc.P99Microseconds, processor.Isr.P99Microseconds);
 
     private static string FormatLargestP999(LatencyDistribution dpc, LatencyDistribution isr) =>
-        FormatLargestValue(dpc.P999Microseconds, isr.P999Microseconds);
+        FormatLargestValue(dpc.P999Microseconds, dpc.P999Microseconds is null ? isr.P999Microseconds : isr.P999Microseconds);
 
     private static string FormatLargestMaximum(LatencyDistribution dpc, LatencyDistribution isr) =>
         FormatLargestValue(dpc.MaximumMicroseconds, isr.MaximumMicroseconds);
