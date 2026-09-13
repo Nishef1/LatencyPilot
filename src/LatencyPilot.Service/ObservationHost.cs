@@ -457,7 +457,7 @@ internal sealed class ObservationHost : BackgroundService
 
     private static LatencyDistribution CreateDistribution(IEnumerable<double> durations)
     {
-        var sorted = durations.ToList();
+        var sorted = durations as List<double> ?? durations.ToList();
         if (sorted.Count == 0)
         {
             return new LatencyDistribution(0, null, null, null, null, null);
