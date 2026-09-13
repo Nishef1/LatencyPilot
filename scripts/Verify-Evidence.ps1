@@ -12,7 +12,7 @@ param(
     [switch]$RequireValidBaseline
 )
 
-Set-StrictMode -Version Latest
+Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
 $ExpectedSchema = 'latencypilot-evidence-v8'
@@ -25,13 +25,21 @@ $MinimumBaselineRequestedMilliseconds = 20_000
 $MinimumBaselineDurationRatio = 0.95
 $MinimumBaselineEventsPerMetricWindow = 1_000
 $MinimumSamplesForP999 = 10_000
+$MaximumRelativeNoiseFloor = 0.30
+$MaximumRelativeDrift = 0.20
+$ExtremeWindowRelativeDeviation = 0.50
+$NumericTolerance = 0.001
 
-function Get-PropertyValue {
+function Get-RequiredPropertyValue {
     param(
         [Parameter(Mandatory)]$Object,
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string]$Context
     )
+
+    if ($null -eq $Object) {
+        throw "$Context is null while reading required property '$Name'."
+    }
 
     $property = $Object.PSObject.Properties[$Name]
     if ($null -eq $property) {
@@ -39,6 +47,92 @@ function Get-PropertyValue {
     }
 
     return $property.Value
+}
+
+function Get-OptionalPropertyValue {
+    param(
+        $Object,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    if ($null -eq $Object) {
+        return $null
+    }
+
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $null
+    }
+
+    return $property.Value
+}
+
+function Test-FiniteNumber {
+    param($Value)
+
+    if ($null -eq $Value) {
+        return $false
+    }
+
+    try {
+        $number = [double]$Value
+    }
+    catch {
+        return $false
+    }
+
+    return -not [double]::IsNaN($number) -and -not [double]::IsInfinity($number)
+}
+
+function Test-FinitePositive {
+    param($Value)
+
+    return (Test-FiniteNumber $Value) -and [double]$Value -gt 0
+}
+
+function Test-FiniteNonNegative {
+    param($Value)
+
+    return (Test-FiniteNumber $Value) -and [double]$Value -ge 0
+}
+
+function Assert-NearlyEqual {
+    param(
+        $Expected,
+        $Actual,
+        [Parameter(Mandatory)][string]$Context,
+        [double]$Tolerance = $NumericTolerance
+    )
+
+    if ($null -eq $Expected -and $null -eq $Actual) {
+        return
+    }
+
+    if ($null -eq $Expected -or $null -eq $Actual) {
+        throw "$Context mismatch: expected '$Expected', actual '$Actual'."
+    }
+
+    if (-not (Test-FiniteNumber $Expected) -or -not (Test-FiniteNumber $Actual)) {
+        throw "$Context contains a non-finite value."
+    }
+
+    if ([Math]::Abs([double]$Expected - [double]$Actual) -gt $Tolerance) {
+        throw "$Context mismatch: expected '$Expected', actual '$Actual'."
+    }
+}
+
+function Format-Value {
+    param($Value, [string]$Suffix = '')
+
+    if ($null -eq $Value) {
+        return '—'
+    }
+
+    if (Test-FiniteNumber $Value) {
+        return ('{0:N3}{1}' -f [double]$Value, $Suffix)
+    }
+
+    return "$Value$Suffix"
 }
 
 function Get-Percent {
@@ -51,188 +145,358 @@ function Get-Percent {
     return [Math]::Round(($Numerator * 100.0) / $Denominator, 3)
 }
 
-function Format-Value {
-    param($Value, [string]$Suffix = '')
+function Get-Percentile {
+    param(
+        [Parameter(Mandatory)][double[]]$SortedValues,
+        [Parameter(Mandatory)][double]$Percentile
+    )
 
-    if ($null -eq $Value) {
-        return '—'
+    if ($SortedValues.Count -eq 0) {
+        throw 'Percentile calculation requires at least one value.'
     }
 
-    if ($Value -is [double] -or $Value -is [float] -or $Value -is [decimal]) {
-        return ('{0:N3}{1}' -f [double]$Value, $Suffix)
+    if ($Percentile -lt 0 -or $Percentile -gt 1) {
+        throw "Percentile '$Percentile' is outside [0,1]."
     }
 
-    return "$Value$Suffix"
+    $position = ($SortedValues.Count - 1) * $Percentile
+    $lower = [int][Math]::Floor($position)
+    $upper = [int][Math]::Ceiling($position)
+    if ($lower -eq $upper) {
+        return [double]$SortedValues[$lower]
+    }
+
+    $fraction = $position - $lower
+    return [double]$SortedValues[$lower] +
+        (([double]$SortedValues[$upper] - [double]$SortedValues[$lower]) * $fraction)
 }
 
-function Test-FinitePositive {
-    param([double]$Value)
+function Assert-Distribution {
+    param(
+        [Parameter(Mandatory)]$Distribution,
+        [Parameter(Mandatory)][string]$Context
+    )
 
-    return -not [double]::IsNaN($Value) -and
-        -not [double]::IsInfinity($Value) -and
-        $Value -gt 0
+    $count = [int](Get-RequiredPropertyValue $Distribution 'count' $Context)
+    if ($count -lt 0) {
+        throw "$Context has a negative sample count."
+    }
+
+    $p50 = Get-OptionalPropertyValue $Distribution 'p50Microseconds'
+    $p95 = Get-OptionalPropertyValue $Distribution 'p95Microseconds'
+    $p99 = Get-OptionalPropertyValue $Distribution 'p99Microseconds'
+    $p999 = Get-OptionalPropertyValue $Distribution 'p999Microseconds'
+    $maximum = Get-OptionalPropertyValue $Distribution 'maximumMicroseconds'
+
+    if ($count -eq 0) {
+        foreach ($entry in @(
+            @{ Name = 'p50'; Value = $p50 },
+            @{ Name = 'p95'; Value = $p95 },
+            @{ Name = 'p99'; Value = $p99 },
+            @{ Name = 'p99.9'; Value = $p999 },
+            @{ Name = 'maximum'; Value = $maximum })) {
+            if ($null -ne $entry.Value) {
+                throw "$Context exposes $($entry.Name) without samples."
+            }
+        }
+        return
+    }
+
+    foreach ($entry in @(
+        @{ Name = 'p50'; Value = $p50 },
+        @{ Name = 'p95'; Value = $p95 },
+        @{ Name = 'p99'; Value = $p99 },
+        @{ Name = 'maximum'; Value = $maximum })) {
+        if (-not (Test-FiniteNonNegative $entry.Value)) {
+            throw "$Context has invalid $($entry.Name) evidence."
+        }
+    }
+
+    if ([double]$p50 -gt [double]$p95 -or
+        [double]$p95 -gt [double]$p99 -or
+        [double]$p99 -gt [double]$maximum) {
+        throw "$Context has non-monotonic percentile evidence."
+    }
+
+    if ($count -lt $MinimumSamplesForP999) {
+        if ($null -ne $p999) {
+            throw "$Context exposes p99.9 from only $count samples; protocol v6 requires at least $MinimumSamplesForP999."
+        }
+    }
+    else {
+        if (-not (Test-FiniteNonNegative $p999)) {
+            throw "$Context omits or invalidates p99.9 despite $count samples."
+        }
+
+        if ([double]$p999 -lt [double]$p99 -or [double]$p999 -gt [double]$maximum) {
+            throw "$Context has non-monotonic p99.9 evidence."
+        }
+    }
 }
 
-function Get-CaptureIntegrityIssues {
-    param($Capture)
+function Assert-ThresholdSummary {
+    param(
+        [Parameter(Mandatory)]$Thresholds,
+        [Parameter(Mandatory)]$Distribution,
+        [Parameter(Mandatory)][string]$Context,
+        [double]$ExpectedGuidanceThreshold = 0
+    )
 
-    $issues = [System.Collections.Generic.List[string]]::new()
+    $count = [int](Get-RequiredPropertyValue $Distribution 'count' "$Context distribution")
+    $guidanceThreshold = Get-RequiredPropertyValue $Thresholds 'guidanceThresholdMicroseconds' $Context
+    $guidanceCount = [int](Get-RequiredPropertyValue $Thresholds 'guidanceExceedanceCount' $Context)
+    $overOneMillisecond = [int](Get-RequiredPropertyValue $Thresholds 'overOneMillisecondCount' $Context)
+    $overThreeMilliseconds = [int](Get-RequiredPropertyValue $Thresholds 'overThreeMillisecondsCount' $Context)
 
-    if ([int]$Capture.eventsLost -lt 0) {
-        $issues.Add('ETW loss count is unavailable')
-    }
-    elseif ([int]$Capture.eventsLost -gt 0) {
-        $issues.Add("ETW events lost: $($Capture.eventsLost)")
-    }
-
-    if ([int]$Capture.invalidEventCount -ne 0) {
-        $issues.Add("invalid latency events: $($Capture.invalidEventCount)")
-    }
-
-    if ([int]$Capture.invalidImageEventCount -ne 0) {
-        $issues.Add("invalid image events: $($Capture.invalidImageEventCount)")
+    if (-not (Test-FinitePositive $guidanceThreshold)) {
+        throw "$Context has an invalid guidance threshold."
     }
 
-    if ([bool]$Capture.eventLimitReached) {
-        $issues.Add('capture event limit reached')
+    if ($ExpectedGuidanceThreshold -gt 0 -and
+        [Math]::Abs([double]$guidanceThreshold - $ExpectedGuidanceThreshold) -gt $NumericTolerance) {
+        throw "$Context guidance threshold '$guidanceThreshold' does not match expected '$ExpectedGuidanceThreshold'."
     }
 
-    return @($issues)
-}
-
-function Assert-P999Adequacy {
-    param($Distribution, [string]$Context)
-
-    $count = [int]$Distribution.count
-    $p999Property = $Distribution.PSObject.Properties['p999Microseconds']
-    $p999 = if ($null -eq $p999Property) { $null } else { $p999Property.Value }
-
-    if ($count -lt $MinimumSamplesForP999 -and $null -ne $p999) {
-        throw "$Context exposes p99.9 from only $count samples; protocol v6 requires at least $MinimumSamplesForP999."
+    if ($guidanceCount -lt 0 -or $overOneMillisecond -lt 0 -or $overThreeMilliseconds -lt 0 -or
+        $guidanceCount -gt $count -or $overOneMillisecond -gt $count -or $overThreeMilliseconds -gt $overOneMillisecond) {
+        throw "$Context has inconsistent threshold counts."
     }
 
-    if ($count -ge $MinimumSamplesForP999 -and $null -eq $p999) {
-        throw "$Context omits p99.9 despite $count samples; protocol v6 expects it at $MinimumSamplesForP999 or more samples."
+    if ([double]$guidanceThreshold -lt 1_000 -and $guidanceCount -lt $overOneMillisecond) {
+        throw "$Context reports fewer guidance exceedances than >1 ms events."
     }
 }
 
 function Assert-CaptureShape {
-    param($Capture, [string]$Context)
+    param(
+        [Parameter(Mandatory)]$Capture,
+        [Parameter(Mandatory)][string]$Context
+    )
 
-    if ([string]::IsNullOrWhiteSpace([string]$Capture.requestId)) {
-        throw "$Context has an empty RequestId."
+    $requestIdText = [string](Get-RequiredPropertyValue $Capture 'requestId' $Context)
+    $parsedRequestId = [Guid]::Empty
+    if (-not [Guid]::TryParse($requestIdText, [ref]$parsedRequestId) -or $parsedRequestId -eq [Guid]::Empty) {
+        throw "$Context has an invalid or empty RequestId."
     }
 
-    if ([int]$Capture.requestedDurationMilliseconds -lt 100) {
-        throw "$Context has an invalid requested duration."
+    $requestedDuration = [int](Get-RequiredPropertyValue $Capture 'requestedDurationMilliseconds' $Context)
+    $actualDuration = Get-RequiredPropertyValue $Capture 'actualDurationMilliseconds' $Context
+    if ($requestedDuration -lt 100 -or -not (Test-FinitePositive $actualDuration)) {
+        throw "$Context has invalid requested/actual duration evidence."
     }
 
-    $actualDuration = [double]$Capture.actualDurationMilliseconds
-    if (-not (Test-FinitePositive $actualDuration)) {
-        throw "$Context has an invalid actual duration."
+    $eventsLost = [int](Get-RequiredPropertyValue $Capture 'eventsLost' $Context)
+    $invalidEventCount = [int](Get-RequiredPropertyValue $Capture 'invalidEventCount' $Context)
+    $invalidImageEventCount = [int](Get-RequiredPropertyValue $Capture 'invalidImageEventCount' $Context)
+    $resolvedModuleEventCount = [int](Get-RequiredPropertyValue $Capture 'resolvedModuleEventCount' $Context)
+    $unresolvedModuleEventCount = [int](Get-RequiredPropertyValue $Capture 'unresolvedModuleEventCount' $Context)
+    if ($eventsLost -lt -1 -or $invalidEventCount -lt 0 -or $invalidImageEventCount -lt 0 -or
+        $resolvedModuleEventCount -lt 0 -or $unresolvedModuleEventCount -lt 0) {
+        throw "$Context has impossible integrity/attribution counters."
     }
 
-    Assert-P999Adequacy $Capture.dpc "$Context DPC"
-    Assert-P999Adequacy $Capture.isr "$Context ISR"
+    $dpc = Get-RequiredPropertyValue $Capture 'dpc' $Context
+    $isr = Get-RequiredPropertyValue $Capture 'isr' $Context
+    $dpcThresholds = Get-RequiredPropertyValue $Capture 'dpcThresholds' $Context
+    $isrThresholds = Get-RequiredPropertyValue $Capture 'isrThresholds' $Context
+    Assert-Distribution $dpc "$Context DPC"
+    Assert-Distribution $isr "$Context ISR"
+    Assert-ThresholdSummary $dpcThresholds $dpc "$Context DPC thresholds" 100
+    Assert-ThresholdSummary $isrThresholds $isr "$Context ISR thresholds" 25
+
+    $processors = @((Get-RequiredPropertyValue $Capture 'processors' $Context))
+    $processorDpcCount = 0
+    $processorIsrCount = 0
+    foreach ($processor in $processors) {
+        $processorDpc = Get-RequiredPropertyValue $processor 'dpc' "$Context processor"
+        $processorIsr = Get-RequiredPropertyValue $processor 'isr' "$Context processor"
+        Assert-Distribution $processorDpc "$Context processor DPC"
+        Assert-Distribution $processorIsr "$Context processor ISR"
+        Assert-ThresholdSummary (Get-RequiredPropertyValue $processor 'dpcThresholds' "$Context processor") $processorDpc "$Context processor DPC thresholds" 100
+        Assert-ThresholdSummary (Get-RequiredPropertyValue $processor 'isrThresholds' "$Context processor") $processorIsr "$Context processor ISR thresholds" 25
+        $processorDpcCount += [int](Get-RequiredPropertyValue $processorDpc 'count' "$Context processor DPC")
+        $processorIsrCount += [int](Get-RequiredPropertyValue $processorIsr 'count' "$Context processor ISR")
+    }
+
+    if ($processorDpcCount -ne [int](Get-RequiredPropertyValue $dpc 'count' "$Context DPC") -or
+        $processorIsrCount -ne [int](Get-RequiredPropertyValue $isr 'count' "$Context ISR")) {
+        throw "$Context processor aggregates do not reconcile with top-level DPC/ISR counts."
+    }
+
+    foreach ($module in @((Get-RequiredPropertyValue $Capture 'modules' $Context))) {
+        $moduleDpc = Get-RequiredPropertyValue $module 'dpc' "$Context module"
+        $moduleIsr = Get-RequiredPropertyValue $module 'isr' "$Context module"
+        Assert-Distribution $moduleDpc "$Context module DPC"
+        Assert-Distribution $moduleIsr "$Context module ISR"
+        Assert-ThresholdSummary (Get-RequiredPropertyValue $module 'dpcThresholds' "$Context module") $moduleDpc "$Context module DPC thresholds" 100
+        Assert-ThresholdSummary (Get-RequiredPropertyValue $module 'isrThresholds' "$Context module") $moduleIsr "$Context module ISR thresholds" 25
+    }
+
+    foreach ($routine in @((Get-RequiredPropertyValue $Capture 'unresolvedRoutines' $Context))) {
+        $routineDpc = Get-RequiredPropertyValue $routine 'dpc' "$Context unresolved routine"
+        $routineIsr = Get-RequiredPropertyValue $routine 'isr' "$Context unresolved routine"
+        Assert-Distribution $routineDpc "$Context unresolved DPC"
+        Assert-Distribution $routineIsr "$Context unresolved ISR"
+        Assert-ThresholdSummary (Get-RequiredPropertyValue $routine 'dpcThresholds' "$Context unresolved routine") $routineDpc "$Context unresolved DPC thresholds" 100
+        Assert-ThresholdSummary (Get-RequiredPropertyValue $routine 'isrThresholds' "$Context unresolved routine") $routineIsr "$Context unresolved ISR thresholds" 25
+    }
+
+    return $requestIdText
+}
+
+function Get-CaptureIntegrityIssues {
+    param([Parameter(Mandatory)]$Capture)
+
+    $issues = [System.Collections.Generic.List[string]]::new()
+    $eventsLost = [int](Get-RequiredPropertyValue $Capture 'eventsLost' 'Capture')
+    $invalidEventCount = [int](Get-RequiredPropertyValue $Capture 'invalidEventCount' 'Capture')
+    $invalidImageEventCount = [int](Get-RequiredPropertyValue $Capture 'invalidImageEventCount' 'Capture')
+    $eventLimitReached = [bool](Get-RequiredPropertyValue $Capture 'eventLimitReached' 'Capture')
+
+    if ($eventsLost -lt 0) { $issues.Add('ETW loss count is unavailable') }
+    elseif ($eventsLost -gt 0) { $issues.Add("ETW events lost: $eventsLost") }
+    if ($invalidEventCount -ne 0) { $issues.Add("invalid latency events: $invalidEventCount") }
+    if ($invalidImageEventCount -ne 0) { $issues.Add("invalid image events: $invalidImageEventCount") }
+    if ($eventLimitReached) { $issues.Add('capture event limit reached') }
+
+    return @($issues)
+}
+
+function Assert-BaselineMetricQuality {
+    param(
+        [Parameter(Mandatory)][double[]]$Values,
+        [Parameter(Mandatory)]$SerializedQuality,
+        [Parameter(Mandatory)][string]$Context
+    )
+
+    if ($Values.Count -ne $RequiredBaselineWindows) {
+        throw "$Context needs exactly $RequiredBaselineWindows values for closure."
+    }
+
+    $sorted = @($Values | Sort-Object)
+    $median = Get-Percentile $sorted 0.50
+    $p10 = Get-Percentile $sorted 0.10
+    $p90 = Get-Percentile $sorted 0.90
+    if ($median -le 0) {
+        throw "$Context median is not positive."
+    }
+
+    $relativeNoise = ($p90 - $p10) / [Math]::Abs($median)
+    $early = @([double]$Values[0], [double]$Values[1] | Sort-Object)
+    $late = @([double]$Values[3], [double]$Values[4] | Sort-Object)
+    $earlyMedian = Get-Percentile $early 0.50
+    $lateMedian = Get-Percentile $late 0.50
+    $relativeDrift = [Math]::Abs($lateMedian - $earlyMedian) / [Math]::Abs($median)
+    $extremeWindows = @()
+    for ($index = 0; $index -lt $Values.Count; $index++) {
+        if ([Math]::Abs([double]$Values[$index] - $median) / [Math]::Abs($median) -gt $ExtremeWindowRelativeDeviation) {
+            $extremeWindows += ($index + 1)
+        }
+    }
+
+    if ($relativeNoise -gt $MaximumRelativeNoiseFloor) {
+        throw "$Context P10-P90 relative spread is $relativeNoise, above $MaximumRelativeNoiseFloor."
+    }
+    if ($relativeDrift -gt $MaximumRelativeDrift) {
+        throw "$Context early/late relative drift is $relativeDrift, above $MaximumRelativeDrift."
+    }
+    if ($extremeWindows.Count -ne 0) {
+        throw "$Context has >50% extreme deviation in window(s) $($extremeWindows -join ', ')."
+    }
+
+    if ([int](Get-RequiredPropertyValue $SerializedQuality 'eligibleWindowCount' $Context) -ne $RequiredBaselineWindows) {
+        throw "$Context serialized eligible-window count is not $RequiredBaselineWindows."
+    }
+
+    Assert-NearlyEqual $median (Get-OptionalPropertyValue $SerializedQuality 'medianMicroseconds') "$Context median"
+    Assert-NearlyEqual $p10 (Get-OptionalPropertyValue $SerializedQuality 'p10Microseconds') "$Context p10"
+    Assert-NearlyEqual $p90 (Get-OptionalPropertyValue $SerializedQuality 'p90Microseconds') "$Context p90"
+    Assert-NearlyEqual $relativeNoise (Get-OptionalPropertyValue $SerializedQuality 'relativeNoiseFloor') "$Context relative noise"
+    Assert-NearlyEqual $relativeDrift (Get-OptionalPropertyValue $SerializedQuality 'relativeDrift') "$Context relative drift"
+
+    $serializedExtremeWindows = @((Get-RequiredPropertyValue $SerializedQuality 'extremeWindowNumbers' $Context))
+    if ($serializedExtremeWindows.Count -ne 0) {
+        throw "$Context serialized quality unexpectedly reports extreme windows."
+    }
+
+    $serializedReasons = @((Get-RequiredPropertyValue $SerializedQuality 'reasons' $Context))
+    if ($serializedReasons.Count -ne 0) {
+        throw "$Context serialized quality unexpectedly reports failure reasons."
+    }
 }
 
 function Write-CaptureSummary {
     param($Capture, [string]$Prefix = '')
 
-    $dpcRate = Get-Percent ([int]$Capture.dpcThresholds.guidanceExceedanceCount) ([int]$Capture.dpc.count)
-    $isrRate = Get-Percent ([int]$Capture.isrThresholds.guidanceExceedanceCount) ([int]$Capture.isr.count)
-    $attributedTotal = [int]$Capture.resolvedModuleEventCount + [int]$Capture.unresolvedModuleEventCount
-    $coverage = Get-Percent ([int]$Capture.resolvedModuleEventCount) $attributedTotal
+    $dpc = Get-RequiredPropertyValue $Capture 'dpc' 'Capture'
+    $isr = Get-RequiredPropertyValue $Capture 'isr' 'Capture'
+    $dpcThresholds = Get-RequiredPropertyValue $Capture 'dpcThresholds' 'Capture'
+    $isrThresholds = Get-RequiredPropertyValue $Capture 'isrThresholds' 'Capture'
+    $dpcCount = [int](Get-RequiredPropertyValue $dpc 'count' 'DPC')
+    $isrCount = [int](Get-RequiredPropertyValue $isr 'count' 'ISR')
+    $dpcGuidanceCount = [int](Get-RequiredPropertyValue $dpcThresholds 'guidanceExceedanceCount' 'DPC thresholds')
+    $isrGuidanceCount = [int](Get-RequiredPropertyValue $isrThresholds 'guidanceExceedanceCount' 'ISR thresholds')
 
-    $topDpcProcessor = @($Capture.processors | Sort-Object { [int]$_.dpc.count } -Descending | Select-Object -First 1)
-    $topIsrProcessor = @($Capture.processors | Sort-Object { [int]$_.isr.count } -Descending | Select-Object -First 1)
-    $topDpcModule = @(
-        $Capture.modules |
-            Where-Object { [int]$_.dpcThresholds.guidanceExceedanceCount -gt 0 } |
-            Sort-Object { [int]$_.dpcThresholds.guidanceExceedanceCount } -Descending |
-            Select-Object -First 1
-    )
-    $topIsrModule = @(
-        $Capture.modules |
-            Where-Object { [int]$_.isrThresholds.guidanceExceedanceCount -gt 0 } |
-            Sort-Object { [int]$_.isrThresholds.guidanceExceedanceCount } -Descending |
-            Select-Object -First 1
-    )
+    Write-Host "${Prefix}RequestId:   $(Get-RequiredPropertyValue $Capture 'requestId' 'Capture')"
+    Write-Host "${Prefix}Duration:    requested=$(Get-RequiredPropertyValue $Capture 'requestedDurationMilliseconds' 'Capture') ms, actual=$(Format-Value (Get-RequiredPropertyValue $Capture 'actualDurationMilliseconds' 'Capture') ' ms')"
+    Write-Host "${Prefix}Integrity:   lost=$(Get-RequiredPropertyValue $Capture 'eventsLost' 'Capture'), invalid=$(Get-RequiredPropertyValue $Capture 'invalidEventCount' 'Capture'), invalid-images=$(Get-RequiredPropertyValue $Capture 'invalidImageEventCount' 'Capture'), event-limit=$(Get-RequiredPropertyValue $Capture 'eventLimitReached' 'Capture')"
+    Write-Host "${Prefix}DPC:         count=$dpcCount, p99=$(Format-Value (Get-OptionalPropertyValue $dpc 'p99Microseconds') ' us'), p99.9=$(Format-Value (Get-OptionalPropertyValue $dpc 'p999Microseconds') ' us'), max=$(Format-Value (Get-OptionalPropertyValue $dpc 'maximumMicroseconds') ' us'), >100 us=$dpcGuidanceCount ($(Format-Value (Get-Percent $dpcGuidanceCount $dpcCount) '%'))"
+    Write-Host "${Prefix}ISR:         count=$isrCount, p99=$(Format-Value (Get-OptionalPropertyValue $isr 'p99Microseconds') ' us'), p99.9=$(Format-Value (Get-OptionalPropertyValue $isr 'p999Microseconds') ' us'), max=$(Format-Value (Get-OptionalPropertyValue $isr 'maximumMicroseconds') ' us'), >25 us=$isrGuidanceCount ($(Format-Value (Get-Percent $isrGuidanceCount $isrCount) '%'))"
+}
 
-    Write-Host "${Prefix}RequestId:       $($Capture.requestId)"
-    Write-Host "${Prefix}Duration:        requested=$($Capture.requestedDurationMilliseconds) ms, actual=$(Format-Value $Capture.actualDurationMilliseconds ' ms')"
-    Write-Host "${Prefix}Integrity:       lost=$($Capture.eventsLost), invalid=$($Capture.invalidEventCount), invalid-images=$($Capture.invalidImageEventCount), event-limit=$($Capture.eventLimitReached)"
-    Write-Host "${Prefix}DPC:             count=$($Capture.dpc.count), p99=$(Format-Value $Capture.dpc.p99Microseconds ' us'), p99.9=$(Format-Value $Capture.dpc.p999Microseconds ' us'), max=$(Format-Value $Capture.dpc.maximumMicroseconds ' us'), >100 us=$($Capture.dpcThresholds.guidanceExceedanceCount) ($(Format-Value $dpcRate '%'))"
-    Write-Host "${Prefix}ISR:             count=$($Capture.isr.count), p99=$(Format-Value $Capture.isr.p99Microseconds ' us'), p99.9=$(Format-Value $Capture.isr.p999Microseconds ' us'), max=$(Format-Value $Capture.isr.maximumMicroseconds ' us'), >25 us=$($Capture.isrThresholds.guidanceExceedanceCount) ($(Format-Value $isrRate '%'))"
-    Write-Host "${Prefix}Long tail:       >1 ms DPC/ISR=$($Capture.dpcThresholds.overOneMillisecondCount)/$($Capture.isrThresholds.overOneMillisecondCount), >3 ms=$($Capture.dpcThresholds.overThreeMillisecondsCount)/$($Capture.isrThresholds.overThreeMillisecondsCount)"
-    Write-Host "${Prefix}Attribution:     $(Format-Value $coverage '%') coverage; resolved=$($Capture.resolvedModuleEventCount), unresolved=$($Capture.unresolvedModuleEventCount)"
-
-    if ($topDpcProcessor.Count -ne 0) {
-        $share = Get-Percent ([int]$topDpcProcessor[0].dpc.count) ([int]$Capture.dpc.count)
-        Write-Host "${Prefix}Top DPC CPU:     CPU $($topDpcProcessor[0].processorNumber) · $(Format-Value $share '%')"
-    }
-
-    if ($topIsrProcessor.Count -ne 0) {
-        $share = Get-Percent ([int]$topIsrProcessor[0].isr.count) ([int]$Capture.isr.count)
-        Write-Host "${Prefix}Top ISR CPU:     CPU $($topIsrProcessor[0].processorNumber) · $(Format-Value $share '%')"
-    }
-
-    if ($topDpcModule.Count -ne 0) {
-        Write-Host "${Prefix}Top >100 us DPC: $($topDpcModule[0].moduleName) · $($topDpcModule[0].dpcThresholds.guidanceExceedanceCount) event(s)"
-    }
-
-    if ($topIsrModule.Count -ne 0) {
-        Write-Host "${Prefix}Top >25 us ISR:  $($topIsrModule[0].moduleName) · $($topIsrModule[0].isrThresholds.guidanceExceedanceCount) event(s)"
-    }
+if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "Evidence file was not found: $Path"
 }
 
 $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
-if (-not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
-    throw "Evidence file was not found: $resolvedPath"
-}
-
 $document = Get-Content -LiteralPath $resolvedPath -Raw | ConvertFrom-Json
-if ([string](Get-PropertyValue $document 'schema' 'Evidence') -ne $ExpectedSchema) {
-    throw "Unexpected evidence schema '$($document.schema)'. Expected '$ExpectedSchema'."
-}
 
-if ([int](Get-PropertyValue $document 'protocolVersion' 'Evidence') -ne $ExpectedProtocol) {
-    throw "Unexpected protocol version '$($document.protocolVersion)'. Expected '$ExpectedProtocol'."
+$schema = [string](Get-RequiredPropertyValue $document 'schema' 'Evidence')
+$protocol = [int](Get-RequiredPropertyValue $document 'protocolVersion' 'Evidence')
+$purpose = [string](Get-RequiredPropertyValue $document 'purpose' 'Evidence')
+$sourceRevision = [string](Get-RequiredPropertyValue $document 'sourceRevisionId' 'Evidence')
+if ($schema -ne $ExpectedSchema) {
+    throw "Unexpected evidence schema '$schema'. Expected '$ExpectedSchema'."
 }
-
-$purpose = [string](Get-PropertyValue $document 'purpose' 'Evidence')
-$sourceRevision = [string](Get-PropertyValue $document 'sourceRevisionId' 'Evidence')
-if ([string]::IsNullOrWhiteSpace($sourceRevision) -or $sourceRevision -notmatch '^[0-9a-fA-F]{7,40}$') {
-    throw 'Evidence does not carry an exact clean sourceRevisionId. Rebuild from a clean working tree before using this artifact for closure.'
+if ($protocol -ne $ExpectedProtocol) {
+    throw "Unexpected protocol version '$protocol'. Expected '$ExpectedProtocol'."
+}
+if ($sourceRevision -notmatch '^[0-9a-fA-F]{40}$') {
+    throw 'Evidence does not carry the full 40-hex clean sourceRevisionId required for closure-grade provenance.'
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-if ([string]::IsNullOrWhiteSpace($ExpectedCommit) -and
-    (Get-Command git -ErrorAction SilentlyContinue) -and
-    (Test-Path -LiteralPath (Join-Path $repoRoot '.git'))) {
+$strictClosure = $RequireCleanCapture -or $RequireValidBaseline
+if ([string]::IsNullOrWhiteSpace($ExpectedCommit) -and (Get-Command git -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath (Join-Path $repoRoot '.git'))) {
     $workingTree = @(& git -C $repoRoot status --porcelain --untracked-files=normal)
     if ($LASTEXITCODE -ne 0) {
         throw 'Unable to inspect the Git working tree.'
     }
 
-    if ($workingTree.Count -ne 0) {
-        throw 'The repository working tree is dirty. Supply -ExpectedCommit explicitly or return to the exact clean revision used for this evidence.'
+    if ($workingTree.Count -eq 0) {
+        $ExpectedCommit = (& git -C $repoRoot rev-parse HEAD | Select-Object -First 1).Trim()
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to resolve the current Git HEAD.'
+        }
     }
-
-    $ExpectedCommit = (& git -C $repoRoot rev-parse HEAD | Select-Object -First 1).Trim()
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Unable to resolve the current Git HEAD.'
+    elseif ($strictClosure) {
+        throw 'The repository working tree is dirty. Supply the exact full -ExpectedCommit used for this evidence or return to the clean source revision.'
     }
 }
 
+if ($strictClosure -and [string]::IsNullOrWhiteSpace($ExpectedCommit)) {
+    throw 'Strict closure verification requires -ExpectedCommit or a clean Git checkout from which the exact HEAD can be resolved.'
+}
+
 if (-not [string]::IsNullOrWhiteSpace($ExpectedCommit)) {
+    $ExpectedCommit = $ExpectedCommit.Trim()
     if ($ExpectedCommit -notmatch '^[0-9a-fA-F]{7,40}$') {
         throw "Expected commit '$ExpectedCommit' is not a valid Git revision id."
     }
-
-    $matches = $sourceRevision.StartsWith($ExpectedCommit, [StringComparison]::OrdinalIgnoreCase) -or
-        $ExpectedCommit.StartsWith($sourceRevision, [StringComparison]::OrdinalIgnoreCase)
-    if (-not $matches) {
+    if ($strictClosure -and $ExpectedCommit.Length -ne 40) {
+        throw 'Strict closure verification requires the full 40-hex -ExpectedCommit.'
+    }
+    if (-not $sourceRevision.StartsWith($ExpectedCommit, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Evidence source revision '$sourceRevision' does not match expected commit '$ExpectedCommit'."
     }
 }
@@ -241,7 +505,6 @@ $captureProperty = $document.PSObject.Properties['capture']
 $capturesProperty = $document.PSObject.Properties['captures']
 $captures = @()
 $evidenceType = 'unknown'
-
 if ($null -ne $captureProperty -and $null -ne $captureProperty.Value) {
     $captures = @($captureProperty.Value)
     $evidenceType = 'observation'
@@ -250,66 +513,74 @@ elseif ($null -ne $capturesProperty -and $null -ne $capturesProperty.Value) {
     $captures = @($capturesProperty.Value)
     $evidenceType = 'baseline'
 }
-
 if ($captures.Count -eq 0) {
     throw 'Evidence contains neither an observation capture nor a baseline capture sequence.'
 }
-
 if ($evidenceType -eq 'observation' -and $purpose -ne $QuickSnapshotPurpose) {
     throw "Observation purpose '$purpose' is invalid; expected '$QuickSnapshotPurpose'."
 }
-
 if ($evidenceType -eq 'baseline' -and $purpose -ne $DecisionBaselinePurpose) {
     throw "Baseline purpose '$purpose' is invalid; expected '$DecisionBaselinePurpose'."
 }
-
 if ($RequireValidBaseline -and $evidenceType -ne 'baseline') {
     throw '-RequireValidBaseline can only be used with repeated decision-baseline evidence.'
 }
 
 $requestIds = @()
+$integrityIssues = @()
 for ($index = 0; $index -lt $captures.Count; $index++) {
-    Assert-CaptureShape $captures[$index] "capture $($index + 1)"
-    $requestIds += [string]$captures[$index].requestId
+    $requestId = Assert-CaptureShape $captures[$index] "capture $($index + 1)"
+    $requestIds += $requestId
+    foreach ($issue in @(Get-CaptureIntegrityIssues $captures[$index])) {
+        $integrityIssues += "capture $($index + 1): $issue"
+    }
 }
-
-if (@($requestIds | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -ne 0) {
-    throw 'Evidence is missing one or more capture RequestId values.'
-}
-
 if (@($requestIds | Group-Object | Where-Object Count -gt 1).Count -ne 0) {
     throw 'Evidence contains duplicate capture RequestId values.'
 }
 
 $windows = @()
 $runtimeWindows = @()
+$quality = $null
 if ($evidenceType -eq 'baseline') {
-    $windows = @((Get-PropertyValue $document 'windows' 'Baseline evidence'))
-    $runtimeWindows = @((Get-PropertyValue $document 'runtimeWindows' 'Baseline evidence'))
-
+    $windows = @((Get-RequiredPropertyValue $document 'windows' 'Baseline evidence'))
+    $runtimeWindows = @((Get-RequiredPropertyValue $document 'runtimeWindows' 'Baseline evidence'))
+    $quality = Get-RequiredPropertyValue $document 'quality' 'Baseline evidence'
+    $baselineMethod = [string](Get-RequiredPropertyValue $document 'baselineMethodVersion' 'Baseline evidence')
+    if ($baselineMethod -ne $ExpectedBaselineMethod) {
+        throw "Baseline method '$baselineMethod' is not '$ExpectedBaselineMethod'."
+    }
     if ($captures.Count -ne $windows.Count -or $captures.Count -ne $runtimeWindows.Count) {
         throw "Baseline evidence is misaligned: captures=$($captures.Count), windows=$($windows.Count), runtimeWindows=$($runtimeWindows.Count)."
     }
 
     for ($index = 0; $index -lt $captures.Count; $index++) {
         $expectedWindowNumber = $index + 1
-        $window = $windows[$index]
         $capture = $captures[$index]
+        $window = $windows[$index]
         $runtimeWindow = $runtimeWindows[$index]
-
-        if ([int]$window.windowNumber -ne $expectedWindowNumber -or
-            [int]$runtimeWindow.windowNumber -ne $expectedWindowNumber) {
+        if ([int](Get-RequiredPropertyValue $window 'windowNumber' "window $expectedWindowNumber") -ne $expectedWindowNumber -or
+            [int](Get-RequiredPropertyValue $runtimeWindow 'windowNumber' "runtime window $expectedWindowNumber") -ne $expectedWindowNumber) {
             throw "Baseline sequence mismatch at position $expectedWindowNumber."
         }
-
-        if ([string]$capture.startedAtUtc -ne [string]$window.startedAtUtc) {
+        if ([string](Get-RequiredPropertyValue $capture 'startedAtUtc' "capture $expectedWindowNumber") -ne
+            [string](Get-RequiredPropertyValue $window 'startedAtUtc' "window $expectedWindowNumber")) {
             throw "Baseline timestamp mismatch in window $expectedWindowNumber."
         }
-
-        if ([int]$capture.requestedDurationMilliseconds -ne [int]$window.requestedDurationMilliseconds -or
-            [Math]::Abs([double]$capture.actualDurationMilliseconds - [double]$window.actualDurationMilliseconds) -gt 0.001) {
-            throw "Baseline duration alignment mismatch in window $expectedWindowNumber."
+        if ([int](Get-RequiredPropertyValue $capture 'requestedDurationMilliseconds' "capture $expectedWindowNumber") -ne
+            [int](Get-RequiredPropertyValue $window 'requestedDurationMilliseconds' "window $expectedWindowNumber")) {
+            throw "Baseline requested-duration mismatch in window $expectedWindowNumber."
         }
+        Assert-NearlyEqual (Get-RequiredPropertyValue $capture 'actualDurationMilliseconds' "capture $expectedWindowNumber") (Get-RequiredPropertyValue $window 'actualDurationMilliseconds' "window $expectedWindowNumber") "Baseline actual-duration window $expectedWindowNumber"
+
+        $captureDpc = Get-RequiredPropertyValue $capture 'dpc' "capture $expectedWindowNumber"
+        $captureIsr = Get-RequiredPropertyValue $capture 'isr' "capture $expectedWindowNumber"
+        if ([int](Get-RequiredPropertyValue $window 'dpcEventCount' "window $expectedWindowNumber") -ne [int](Get-RequiredPropertyValue $captureDpc 'count' "capture $expectedWindowNumber DPC") -or
+            [int](Get-RequiredPropertyValue $window 'isrEventCount' "window $expectedWindowNumber") -ne [int](Get-RequiredPropertyValue $captureIsr 'count' "capture $expectedWindowNumber ISR")) {
+            throw "Baseline event-count mismatch in window $expectedWindowNumber."
+        }
+        Assert-NearlyEqual (Get-OptionalPropertyValue $captureDpc 'p99Microseconds') (Get-OptionalPropertyValue $window 'dpcP99Microseconds') "Baseline DPC p99 window $expectedWindowNumber"
+        Assert-NearlyEqual (Get-OptionalPropertyValue $captureIsr 'p99Microseconds') (Get-OptionalPropertyValue $window 'isrP99Microseconds') "Baseline ISR p99 window $expectedWindowNumber"
     }
 }
 
@@ -319,32 +590,79 @@ if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256)) {
     if ($normalizedExpectedSha256 -notmatch '^[0-9a-f]{64}$') {
         throw "Expected SHA-256 '$ExpectedSha256' must be exactly 64 hexadecimal characters."
     }
-
     if ($sha256 -ne $normalizedExpectedSha256) {
         throw "Evidence SHA-256 '$sha256' does not match expected '$normalizedExpectedSha256'."
     }
 }
 
-$measurementContextProperty = $document.PSObject.Properties['measurementContext']
-$scenario = 'unknown'
-if ($null -ne $measurementContextProperty -and $null -ne $measurementContextProperty.Value) {
-    $scenario = [string]$measurementContextProperty.Value.displayName
+if ($integrityIssues.Count -ne 0 -and ($RequireCleanCapture -or $RequireValidBaseline)) {
+    throw "Evidence capture integrity is not clean: $($integrityIssues -join '; ')."
 }
 
-$integrityIssues = @()
-for ($index = 0; $index -lt $captures.Count; $index++) {
-    foreach ($issue in @(Get-CaptureIntegrityIssues $captures[$index])) {
-        $integrityIssues += "capture $($index + 1): $issue"
+if ($RequireValidBaseline) {
+    if ($captures.Count -ne $RequiredBaselineWindows -or $windows.Count -ne $RequiredBaselineWindows -or $runtimeWindows.Count -ne $RequiredBaselineWindows) {
+        throw "Baseline is not closure-ready: exactly $RequiredBaselineWindows aligned windows are required."
+    }
+
+    $dpcP99Values = @()
+    $isrP99Values = @()
+    for ($index = 0; $index -lt $windows.Count; $index++) {
+        $window = $windows[$index]
+        $requested = [int](Get-RequiredPropertyValue $window 'requestedDurationMilliseconds' "window $($index + 1)")
+        $actual = [double](Get-RequiredPropertyValue $window 'actualDurationMilliseconds' "window $($index + 1)")
+        $dpcCount = [int](Get-RequiredPropertyValue $window 'dpcEventCount' "window $($index + 1)")
+        $isrCount = [int](Get-RequiredPropertyValue $window 'isrEventCount' "window $($index + 1)")
+        $dpcP99 = Get-OptionalPropertyValue $window 'dpcP99Microseconds'
+        $isrP99 = Get-OptionalPropertyValue $window 'isrP99Microseconds'
+        $captureIntegrityValid = [bool](Get-RequiredPropertyValue $window 'captureIntegrityValid' "window $($index + 1)")
+
+        if (-not $captureIntegrityValid) {
+            throw "Baseline window $($index + 1) is marked capture-integrity invalid."
+        }
+        if ($requested -lt $MinimumBaselineRequestedMilliseconds -or $actual -lt ($requested * $MinimumBaselineDurationRatio)) {
+            throw "Baseline window $($index + 1) does not satisfy duration requirements."
+        }
+        if ($dpcCount -lt $MinimumBaselineEventsPerMetricWindow -or $isrCount -lt $MinimumBaselineEventsPerMetricWindow) {
+            throw "Baseline window $($index + 1) is undersampled: DPC=$dpcCount, ISR=$isrCount."
+        }
+        if (-not (Test-FinitePositive $dpcP99) -or -not (Test-FinitePositive $isrP99)) {
+            throw "Baseline window $($index + 1) lacks finite positive DPC/ISR p99 evidence."
+        }
+        $dpcP99Values += [double]$dpcP99
+        $isrP99Values += [double]$isrP99
+    }
+
+    if ([string](Get-RequiredPropertyValue $quality 'status' 'Baseline quality') -ne 'Valid' -or
+        -not [bool](Get-RequiredPropertyValue $quality 'isValidForComparison' 'Baseline quality') -or
+        [int](Get-RequiredPropertyValue $quality 'validCaptureWindowCount' 'Baseline quality') -ne $RequiredBaselineWindows -or
+        [int](Get-RequiredPropertyValue $quality 'totalWindowCount' 'Baseline quality') -ne $RequiredBaselineWindows) {
+        throw 'Serialized baseline quality is not closure-ready Valid/5-of-5 evidence.'
+    }
+
+    Assert-BaselineMetricQuality $dpcP99Values (Get-RequiredPropertyValue $quality 'dpcP99' 'Baseline quality') 'DPC p99 quality'
+    Assert-BaselineMetricQuality $isrP99Values (Get-RequiredPropertyValue $quality 'isrP99' 'Baseline quality') 'ISR p99 quality'
+    $qualityReasons = @((Get-RequiredPropertyValue $quality 'reasons' 'Baseline quality'))
+    if ($qualityReasons.Count -ne 0) {
+        throw 'Serialized Valid baseline unexpectedly contains quality failure reasons.'
     }
 }
 
-Write-Host 'Evidence envelope/provenance verification passed.' -ForegroundColor Green
+$measurementContext = Get-OptionalPropertyValue $document 'measurementContext'
+$scenario = 'unknown'
+if ($null -ne $measurementContext) {
+    $displayName = Get-OptionalPropertyValue $measurementContext 'displayName'
+    if (-not [string]::IsNullOrWhiteSpace([string]$displayName)) {
+        $scenario = [string]$displayName
+    }
+}
+
+Write-Host 'Evidence verification passed.' -ForegroundColor Green
 Write-Host "Path:            $resolvedPath"
 Write-Host "Type:            $evidenceType"
 Write-Host "Purpose:         $purpose"
-Write-Host "Schema:          $($document.schema)"
-Write-Host "Protocol:        $($document.protocolVersion)"
-Write-Host "Product version: $($document.productVersion)"
+Write-Host "Schema:          $schema"
+Write-Host "Protocol:        $protocol"
+Write-Host "Product version: $(Get-RequiredPropertyValue $document 'productVersion' 'Evidence')"
 Write-Host "Scenario:        $scenario"
 Write-Host "Source revision: $sourceRevision"
 Write-Host "Capture IDs:     $($requestIds.Count) unique"
@@ -356,90 +674,35 @@ if ($integrityIssues.Count -eq 0) {
 else {
     Write-Host "Measurement integrity: WARNING ($($integrityIssues.Count) issue(s))" -ForegroundColor Yellow
     $integrityIssues | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
-
-    if ($RequireCleanCapture -or $RequireValidBaseline) {
-        throw 'Evidence envelope is valid, but capture integrity is not clean.'
-    }
 }
 
 if ($evidenceType -eq 'observation') {
     Write-Host ''
     Write-Host 'Quick diagnostic snapshot summary'
     Write-CaptureSummary $captures[0]
-    Write-Host 'Decision status:   diagnostic only; do not use a single snapshot as a benchmark verdict.' -ForegroundColor Yellow
+    Write-Host 'Decision status: diagnostic only; a single snapshot is not a benchmark verdict.' -ForegroundColor Yellow
 
-    $runtimeProperty = $document.PSObject.Properties['runtimeContext']
-    if ($null -ne $runtimeProperty -and $null -ne $runtimeProperty.Value) {
-        $runtime = $runtimeProperty.Value
-        Write-Host "Runtime context:   CPU busy=$(Format-Value $runtime.systemCpuBusyPercent '%'), power=$($runtime.startPower.lineState), configured-mode=$($runtime.startPower.userConfiguredPowerMode), changed=$($runtime.powerContextChanged)"
+    $runtime = Get-OptionalPropertyValue $document 'runtimeContext'
+    if ($null -ne $runtime) {
+        $cpuBusy = Get-OptionalPropertyValue $runtime 'systemCpuBusyPercent'
+        $powerChanged = Get-OptionalPropertyValue $runtime 'powerContextChanged'
+        Write-Host "Runtime context: CPU busy=$(Format-Value $cpuBusy '%'), power-context-changed=$(Format-Value $powerChanged)"
     }
 }
 else {
-    $quality = Get-PropertyValue $document 'quality' 'Baseline evidence'
-
     Write-Host ''
     Write-Host 'Repeated decision-baseline summary'
     Write-Host "Windows:         $($captures.Count)"
-    Write-Host "Method:          $($document.baselineMethodVersion)"
-    Write-Host "Status:          $($quality.status)"
-    Write-Host "Valid compare:   $($quality.isValidForComparison)"
-    Write-Host "Valid captures:  $($quality.validCaptureWindowCount)/$($quality.totalWindowCount)"
-    Write-Host "DPC p99 quality: median=$(Format-Value $quality.dpcP99.medianMicroseconds ' us'), noise=$(Format-Value $quality.dpcP99.relativeNoiseFloor), drift=$(Format-Value $quality.dpcP99.relativeDrift)"
-    Write-Host "ISR p99 quality: median=$(Format-Value $quality.isrP99.medianMicroseconds ' us'), noise=$(Format-Value $quality.isrP99.relativeNoiseFloor), drift=$(Format-Value $quality.isrP99.relativeDrift)"
+    Write-Host "Method:          $(Get-RequiredPropertyValue $document 'baselineMethodVersion' 'Baseline evidence')"
+    Write-Host "Status:          $(Get-RequiredPropertyValue $quality 'status' 'Baseline quality')"
+    Write-Host "Valid compare:   $(Get-RequiredPropertyValue $quality 'isValidForComparison' 'Baseline quality')"
 
-    for ($index = 0; $index -lt $captures.Count; $index++) {
-        $window = $windows[$index]
-        Write-Host ''
-        Write-Host "Window $($index + 1): requested=$($window.requestedDurationMilliseconds) ms, actual=$(Format-Value $window.actualDurationMilliseconds ' ms'), DPC=$($window.dpcEventCount), ISR=$($window.isrEventCount)"
-        Write-CaptureSummary $captures[$index] '  '
-    }
-
-    $reasons = @($quality.reasons)
-    if ($reasons.Count -eq 0) {
-        Write-Host 'Reasons:         none'
-    }
-    else {
-        Write-Host "Reasons:         $($reasons.Count)"
-        $reasons | ForEach-Object { Write-Host "  - $_" }
-    }
+    $dpcQuality = Get-RequiredPropertyValue $quality 'dpcP99' 'Baseline quality'
+    $isrQuality = Get-RequiredPropertyValue $quality 'isrP99' 'Baseline quality'
+    Write-Host "DPC p99 quality: median=$(Format-Value (Get-OptionalPropertyValue $dpcQuality 'medianMicroseconds') ' us'), noise=$(Format-Value (Get-OptionalPropertyValue $dpcQuality 'relativeNoiseFloor')), drift=$(Format-Value (Get-OptionalPropertyValue $dpcQuality 'relativeDrift'))"
+    Write-Host "ISR p99 quality: median=$(Format-Value (Get-OptionalPropertyValue $isrQuality 'medianMicroseconds') ' us'), noise=$(Format-Value (Get-OptionalPropertyValue $isrQuality 'relativeNoiseFloor')), drift=$(Format-Value (Get-OptionalPropertyValue $isrQuality 'relativeDrift'))"
 
     if ($RequireValidBaseline) {
-        if ($captures.Count -ne $RequiredBaselineWindows -or $windows.Count -ne $RequiredBaselineWindows) {
-            throw "Baseline is not closure-ready: expected exactly $RequiredBaselineWindows windows, found captures=$($captures.Count), windows=$($windows.Count)."
-        }
-
-        if ([string]$document.baselineMethodVersion -ne $ExpectedBaselineMethod) {
-            throw "Baseline is not closure-ready: method '$($document.baselineMethodVersion)' is not '$ExpectedBaselineMethod'."
-        }
-
-        if (-not [bool]$quality.isValidForComparison -or [string]$quality.status -ne 'Valid') {
-            throw "Baseline is not closure-ready: quality status is '$($quality.status)' and IsValidForComparison is '$($quality.isValidForComparison)'."
-        }
-
-        if ([int]$quality.validCaptureWindowCount -ne $RequiredBaselineWindows -or
-            [int]$quality.totalWindowCount -ne $RequiredBaselineWindows) {
-            throw "Baseline is not closure-ready: valid/total counts are $($quality.validCaptureWindowCount)/$($quality.totalWindowCount)."
-        }
-
-        for ($index = 0; $index -lt $windows.Count; $index++) {
-            $window = $windows[$index]
-            $requested = [int]$window.requestedDurationMilliseconds
-            $actual = [double]$window.actualDurationMilliseconds
-
-            if ($requested -lt $MinimumBaselineRequestedMilliseconds) {
-                throw "Baseline window $($index + 1) requested only $requested ms; at least $MinimumBaselineRequestedMilliseconds ms is required."
-            }
-
-            if ($actual -lt ($requested * $MinimumBaselineDurationRatio)) {
-                throw "Baseline window $($index + 1) completed only $actual ms of $requested ms; at least $([Math]::Round($MinimumBaselineDurationRatio * 100))% is required."
-            }
-
-            if ([int]$window.dpcEventCount -lt $MinimumBaselineEventsPerMetricWindow -or
-                [int]$window.isrEventCount -lt $MinimumBaselineEventsPerMetricWindow) {
-                throw "Baseline window $($index + 1) is undersampled: DPC=$($window.dpcEventCount), ISR=$($window.isrEventCount); each requires at least $MinimumBaselineEventsPerMetricWindow events."
-            }
-        }
-
         Write-Host 'Decision-baseline closure gate: PASS' -ForegroundColor Green
     }
 }
