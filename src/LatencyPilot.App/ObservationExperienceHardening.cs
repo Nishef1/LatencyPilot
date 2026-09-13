@@ -1,6 +1,4 @@
 using LatencyPilot.App.Services;
-using Microsoft.UI.Xaml.Automation;
-using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 
 namespace LatencyPilot.App;
@@ -17,11 +15,6 @@ public sealed partial class MainWindow
 
     private void ApplyObservationExperienceHardening()
     {
-        HideDecorativeTailBarsFromControlView(_dpcGuidanceBar);
-        HideDecorativeTailBarsFromControlView(_isrGuidanceBar);
-        HideDecorativeTailBarsFromControlView(_oneMillisecondBar);
-        HideDecorativeTailBarsFromControlView(_threeMillisecondBar);
-
         if (_measurementScenarioComboBox is not null)
         {
             // Theme/high-contrast rebuilds can replace the ComboBox while a capture is active.
@@ -30,24 +23,14 @@ public sealed partial class MainWindow
         }
     }
 
-    private static void HideDecorativeTailBarsFromControlView(ProgressBar? bar)
-    {
-        if (bar is null)
-        {
-            return;
-        }
-
-        // Exact counts/percentages remain visible as TextBlocks. The ProgressBar is only a data-bar visual,
-        // so remove it from the control view to avoid announcing it as operation progress.
-        AutomationProperties.SetAccessibilityView(bar, AccessibilityView.Raw);
-    }
-
     private void MeasurementScenarioSelection_InvalidatesPreviousEvidence(
         object sender,
         SelectionChangedEventArgs e)
     {
         if (_latestEvidenceJson is null && BaselineWindowsList.ItemsSource is null)
         {
+            ResetRuntimeContextSummary(
+                "Runtime context will appear after capture: average system CPU busy time, power source and Battery Saver state.");
             return;
         }
 
@@ -62,5 +45,7 @@ public sealed partial class MainWindow
         BaselineWindowsList.ItemsSource = null;
         KernelCaptureStatusText.Text = "Measurement scenario changed. Capture again to produce context-matched evidence.";
         ObservationQualityText.Text = EvidenceExportService.GetMeasurementGuidance(SelectedMeasurementScenario);
+        ResetRuntimeContextSummary(
+            "Measurement scenario changed. Capture again to collect context-matched CPU and power evidence.");
     }
 }
