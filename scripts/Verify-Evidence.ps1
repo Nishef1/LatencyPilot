@@ -54,26 +54,32 @@ if (-not [string]::IsNullOrWhiteSpace($ExpectedCommit)) {
     }
 }
 
+$captureProperty = $document.PSObject.Properties['capture']
+$capturesProperty = $document.PSObject.Properties['captures']
 $requestIds = @()
-if ($null -ne $document.capture) {
-    $requestIds = @([string]$document.capture.requestId)
+$evidenceType = 'unknown'
+
+if ($null -ne $captureProperty -and $null -ne $captureProperty.Value) {
+    $requestIds = @([string]$captureProperty.Value.requestId)
+    $evidenceType = 'observation'
 }
-elseif ($null -ne $document.captures) {
-    $requestIds = @($document.captures | ForEach-Object { [string]$_.requestId })
+elif ($null -ne $capturesProperty -and $null -ne $capturesProperty.Value) {
+    $requestIds = @($capturesProperty.Value | ForEach-Object { [string]$_.requestId })
+    $evidenceType = 'baseline'
 }
 
-if ($requestIds.Count -eq 0 -or $requestIds | Where-Object { [string]::IsNullOrWhiteSpace($_) }) {
+$missingRequestIds = @($requestIds | Where-Object { [string]::IsNullOrWhiteSpace($_) })
+if ($requestIds.Count -eq 0 -or $missingRequestIds.Count -ne 0) {
     throw 'Evidence is missing one or more capture RequestId values.'
 }
 
-$duplicateRequestIds = $requestIds | Group-Object | Where-Object Count -gt 1
-if ($duplicateRequestIds) {
+$duplicateRequestIds = @($requestIds | Group-Object | Where-Object Count -gt 1)
+if ($duplicateRequestIds.Count -ne 0) {
     throw 'Evidence contains duplicate capture RequestId values.'
 }
 
 $sha256 = (Get-FileHash -LiteralPath $resolvedPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $scenario = if ($null -ne $document.measurementContext) { [string]$document.measurementContext.displayName } else { 'unknown' }
-$evidenceType = if ($null -ne $document.capture) { 'observation' } elseif ($null -ne $document.captures) { 'baseline' } else { 'unknown' }
 
 Write-Host 'LatencyPilot evidence verification passed.' -ForegroundColor Green
 Write-Host "Path:            $resolvedPath"
