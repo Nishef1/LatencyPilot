@@ -1,5 +1,6 @@
 using LatencyPilot.App.Services;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 
 namespace LatencyPilot.App;
