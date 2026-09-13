@@ -78,7 +78,7 @@ Proceed to Phase 1: buildable solution → comparison-domain invariants → read
 - [x] solution/shared build settings;
 - [x] Core, Benchmarking, Protocol, Platform.Windows, Persistence, Service and App projects;
 - [x] one focused permanent-test project;
-- [x] historical Windows Release CI at Phase 1 closure. Current owner policy is test-only GitHub Actions plus owner-local Windows builds.
+- [x] historical Windows Release CI at Phase 1 closure. Current hosted validation runs the critical suite plus Release compile gates for App/Service; publish/package/release remains owner-local.
 
 ### 1.2 Domain/comparison foundation
 - [x] experiment lifecycle and legal transitions;
@@ -127,7 +127,7 @@ Stored registry configuration, allocated resource assignment and runtime behavio
 - [x] controlled privileged ETW observation host in `LatencyPilot.Service`;
 - [x] versioned typed local Named Pipe protocol for Phase 2 observation;
 - [x] fail-closed protocol framing rejects unknown JSON members and malformed/oversized frames;
-- [x] local observation pipe denies network identities and is limited to interactive local identities plus required service identities;
+- [x] local observation pipe denies network identities, narrows its ACL to interactive/service identities and fail-closes unless the connected client session matches the active console session;
 - [x] abandoned clients cancel active capture work instead of leaving the single observation host occupied;
 - [x] no generic registry/shell/process execution command;
 - [x] controlled ETW session lifecycle;
@@ -135,19 +135,22 @@ Stored registry configuration, allocated resource assignment and runtime behavio
 - [x] ISR collection;
 - [x] ETW processor-number attribution and per-processor aggregation;
 - [x] authoritative module/driver attribution;
-- [x] p50/p95/p99/p99.9/max duration distributions using one documented percentile estimator;
+- [x] p50/p95/p99/max duration distributions using one documented percentile estimator;
+- [x] p99.9 exposed only when the corresponding distribution has at least 1,000 samples;
 - [x] capture cancellation/timeout/cleanup on failure;
 - [x] bounded aggregate IPC response rather than raw-event transfer;
-- [x] bounded structured App/Service diagnostics correlated by protocol `RequestId` without per-event ETW logging;
-- [ ] physical Windows 11 validation of current Service → ETW → IPC behavior and cleanup.
+- [x] protocol-v5 capture evidence preserves `RequestId` for direct log/evidence correlation;
+- [x] bounded structured App/Service diagnostics, including expected capture-unavailable and session-rejection provenance, without per-event ETW logging;
+- [ ] physical Windows 11 validation of current Service → ETW → IPC behavior, active-session authorization and cleanup.
 
 Native routine addresses must remain unresolved unless authoritative kernel image evidence maps them. Already-loaded images require the appropriate kernel image rundown/CAPTURE_STATE behavior rather than future ImageLoad events alone.
 
-The current Phase 2 observation ACL is not future mutation authorization. Phase 3 must add mutation-specific authorization before any privileged write command exists.
+The current Phase 2 observation ACL/session rule is not future mutation authorization. Phase 3 must add mutation-specific authorization before any privileged write command exists. RDP/multi-session observation is not implied by the current active-console rule.
 
 ### 2.3 Baseline quality
-- [ ] repeated baseline windows in the WinUI flow — source implemented; owner-local Windows compile/run evidence pending;
+- [ ] repeated baseline windows in the WinUI flow — source implemented and hosted Release compile passes; owner-local runtime/physical evidence pending;
 - [x] stable repeated-window policy/minimum valid windows in deterministic `baseline-quality-v1`;
+- [x] contiguous window-number sequence is authoritative; UTC timestamps remain provenance rather than a monotonic-order requirement;
 - [x] empirical window-level p99 noise-floor calculation;
 - [x] early/late inter-window drift detection;
 - [x] invalid/extreme-window handling with explicit reasons and no silent deletion;
@@ -159,15 +162,18 @@ Current `baseline-quality-v1` requires five windows, at least 20 events per metr
 ### 2.4 UX
 - [x] observation-service health/safety status;
 - [x] short read-only DPC/ISR observation action;
-- [x] DPC/ISR counts and p99/p99.9 summary;
+- [x] DPC/ISR counts and p99 summary plus sample-gated p99.9;
 - [x] ETW loss/invalid/event-limit status;
+- [x] integrity-warning capture cannot be presented as healthy merely because threshold counts are low;
+- [x] documented 100 µs DPC / 25 µs ISR driver-guidance rows are separated from local 1 ms / 3 ms diagnostic buckets;
 - [x] short capture is labeled observation rather than trustworthy baseline;
 - [x] per-CPU latency/interrupt concentration view;
 - [x] bounded top DPC/ISR contributors after module attribution exists;
-- [ ] raw/auditable metric inspection;
-- [ ] repeated-baseline quality verdict/reasons UI — source implemented; owner-local WinUI compile/run evidence pending;
-- [ ] clearly label configuration vs assigned resource vs runtime evidence;
-- [ ] responsive/keyboard/accessibility sanity pass for Phase 2 evidence surfaces.
+- [x] manual JSON evidence export source preserves bounded aggregate evidence, correlation ID and bounded environment provenance;
+- [ ] evidence-export/runtime behavior validation on physical WinUI;
+- [ ] repeated-baseline quality verdict/reasons UI — source implemented and hosted compile passes; owner-local runtime evidence pending;
+- [ ] validate configuration vs assigned resource vs runtime evidence labels on physical UI;
+- [ ] finish narrow-window/text-scaling/focus/screen-reader sanity pass on physical WinUI.
 
 ### Exit gate
 A user can run a repeatable **read-only** baseline on a real Windows 11 PC and identify CPU/module latency concentration without LatencyPilot changing system configuration.
@@ -298,13 +304,3 @@ Proceed to Phase 7 productization: installer/service lifecycle, signing/provenan
 Run the final 1.0 release audit against the complete product definition, every phase exit gate, active recovery state, documentation, licensing, signing/provenance and representative physical-hardware evidence. Only then tag 1.0.
 
 ---
-
-## Permanent-test rule
-
-Repository-wide permanent automated tests may **never exceed 10** unless the owner explicitly approves the exception and an ADR explains why remaining at 10 would be more harmful. The current suite is intentionally consolidated to **eight** durable contract tests, leaving two slots for higher-blast-radius recovery/mutation risks in later phases. Temporary implementation/debug tests may be created and removed before finalization.
-
-## Phase-closing rule
-
-A checkbox is complete only when code/artifact exists on `main` and the required evidence exists. Deterministic correctness may use the test-only GitHub Actions workflow. Build/package-dependent work requires owner-local Windows build/package evidence. Hardware-dependent work requires physical Windows 11 evidence. “Implemented but unverified” remains incomplete. Before closing a subsection, perform the mandatory step-back review defined in `AGENTS.md`.
-
-After every meaningful stage, reports must include the exact next stage and the stage after that; `PROJECT_STATUS.md` is the authoritative detailed execution ladder.
