@@ -57,7 +57,8 @@ try {
             Invoke-DotNet run --project $projectPath --configuration Debug --no-restore
         }
         "watch" {
-            Write-Host "Starting the CLI Hot Reload loop. Visual Studio F5 remains the recommended path for WinUI XAML Hot Reload."
+            Write-Host "Starting the App-only CLI Hot Reload loop. Use .\live.ps1 for the protected Service + App + live-log workflow."
+            Write-Host "Visual Studio F5 remains the recommended path for the full WinUI XAML Hot Reload and Live Visual Tree experience."
             Invoke-DotNet watch --project $projectPath --non-interactive run --configuration Debug --no-restore
         }
     }
