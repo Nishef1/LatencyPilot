@@ -22,11 +22,11 @@
                     <SolidColorBrush x:Key="AccentSoftBrush" Color="#FFEEF0FF" />
                     <SolidColorBrush x:Key="SuccessBrush" Color="#FF087A5A" />
                     <SolidColorBrush x:Key="SuccessSoftBrush" Color="#FFE6F8F1" />
-                    <SolidColorBrush x:Key="WarningBrush" Color="#FFB06400" />
+                    <SolidColorBrush x:Key="WarningBrush" Color="#FF8A4B00" />
                     <SolidColorBrush x:Key="WarningSoftBrush" Color="#FFFFF4D8" />
-                    <SolidColorBrush x:Key="ImpactBrush" Color="#FFD95512" />
+                    <SolidColorBrush x:Key="ImpactBrush" Color="#FF9A3D00" />
                     <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FFFFEBDD" />
-                    <SolidColorBrush x:Key="DangerBrush" Color="#FFD92D20" />
+                    <SolidColorBrush x:Key="DangerBrush" Color="#FFB42318" />
                     <SolidColorBrush x:Key="DangerSoftBrush" Color="#FFFEEBE9" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
@@ -49,6 +49,27 @@
                     <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FF3A2318" />
                     <SolidColorBrush x:Key="DangerBrush" Color="#FFFF746B" />
                     <SolidColorBrush x:Key="DangerSoftBrush" Color="#FF3A1C1C" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                    <SolidColorBrush x:Key="CanvasBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="SurfaceAltBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="SurfaceStrongBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="PremiumSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="TextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="MutedTextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="BorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="ChartTrackBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="AccentBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="AccentSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="SuccessBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="SuccessSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="WarningBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="WarningSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="ImpactBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="ImpactSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="DangerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="DangerSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
