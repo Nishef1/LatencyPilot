@@ -29,7 +29,7 @@ internal static class AppLogging
                 .Enrich.WithProperty("ProcessId", Environment.ProcessId)
                 .WriteTo.Async(
                     sink => sink.File(
-                        new CompactJsonFormatter(),
+                        new RenderedCompactJsonFormatter(),
                         Path.Combine(logDirectory, "latencypilot-app-.json"),
                         rollingInterval: RollingInterval.Day,
                         fileSizeLimitBytes: 32 * 1024 * 1024,
