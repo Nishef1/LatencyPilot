@@ -13,6 +13,9 @@ namespace LatencyPilot.App;
 
 public sealed partial class MainWindow
 {
+    private static readonly TimeSpan BaselineObservationDuration = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan BaselineWarmupDelay = TimeSpan.FromSeconds(5);
+
     private ComboBox? _measurementScenarioComboBox;
     private TextBlock? _measurementScenarioGuidanceText;
     private TextBlock? _measurementRuntimeContextText;
@@ -24,6 +27,15 @@ public sealed partial class MainWindow
 
     private void InitializeMeasurementExperience()
     {
+        CaptureObservationButton.Content = "Quick snapshot · 5 s";
+        ToolTipService.SetToolTip(
+            CaptureObservationButton,
+            "Capture a five-second diagnostic snapshot for attribution and integrity checks (Ctrl+O). It is not a benchmark verdict.");
+        CaptureBaselineButton.Content = "Build baseline · ~2 min";
+        ToolTipService.SetToolTip(
+            CaptureBaselineButton,
+            "Warm up for five seconds, then capture five repeated 20-second windows for baseline stability (Ctrl+B).");
+
         RebuildMeasurementScenarioCard();
         RootGrid.ActualThemeChanged += (_, _) => RebuildMeasurementScenarioCard();
         TryRegisterHighContrastChanged(RebuildMeasurementScenarioCard);
@@ -177,11 +189,11 @@ public sealed partial class MainWindow
         }
 
         var scenario = SelectedMeasurementScenario;
-        ClearExportEvidence("Capture in progress. Evidence export becomes available after completion.");
+        ClearExportEvidence("Quick snapshot in progress. Evidence export becomes available after completion.");
         SetMeasurementBusy(true);
-        KernelCaptureStatusText.Text = "Capturing DPC/ISR activity for 5 seconds…";
+        KernelCaptureStatusText.Text = "Capturing a five-second DPC/ISR diagnostic snapshot…";
         ObservationQualityText.Text =
-            $"{EvidenceExportService.GetMeasurementDisplayName(scenario)}: {EvidenceExportService.GetMeasurementGuidance(scenario)} No interpretation is made until capture completes.";
+            $"{EvidenceExportService.GetMeasurementDisplayName(scenario)}: {EvidenceExportService.GetMeasurementGuidance(scenario)} This quick snapshot is for integrity, attribution and concentration context; it is not a benchmark verdict.";
 
         try
         {
@@ -224,7 +236,8 @@ public sealed partial class MainWindow
         SetMeasurementBusy(true);
         BaselineProgressBar.Value = 0;
         BaselineVerdictText.Text = "Capturing";
-        BaselineStatusText.Text = $"Preparing {BaselineWindowCount} {baselineWindowDescription} five-second windows. The UI will settle before the first capture.";
+        BaselineStatusText.Text =
+            $"Warming up for {BaselineWarmupDelay.TotalSeconds:F0} seconds, then capturing {BaselineWindowCount} {baselineWindowDescription} 20-second windows.";
         BaselineMetricsText.Text = "Noise and drift will be computed after all required windows complete.";
         BaselineReasonsText.Text =
             $"Scenario: {EvidenceExportService.GetMeasurementDisplayName(scenario)}. {EvidenceExportService.GetMeasurementGuidance(scenario)} Detailed lists and charts are intentionally not redrawn between windows.";
@@ -237,13 +250,13 @@ public sealed partial class MainWindow
 
         try
         {
-            await Task.Delay(BaselineInterWindowDelay);
+            await Task.Delay(BaselineWarmupDelay);
 
             for (var index = 1; index <= BaselineWindowCount; index++)
             {
                 var runtimeStart = TryCaptureRuntimeContext();
                 var capture = await ObservationServiceClient.CaptureKernelLatencyAsync(
-                    ObservationDuration,
+                    BaselineObservationDuration,
                     ObservationMaximumEvents);
                 var runtimeEnd = TryCaptureRuntimeContext();
 
@@ -256,6 +269,8 @@ public sealed partial class MainWindow
                 windows.Add(new BaselineWindowEvidence(
                     index,
                     capture.StartedAtUtc,
+                    capture.RequestedDurationMilliseconds,
+                    capture.ActualDurationMilliseconds,
                     integrityIssue is null,
                     integrityIssue,
                     capture.Dpc.Count,
@@ -265,7 +280,7 @@ public sealed partial class MainWindow
 
                 BaselineProgressBar.Value = index;
                 BaselineStatusText.Text = index < BaselineWindowCount
-                    ? $"Window {index} of {BaselineWindowCount} complete. Settling before the next measurement window…"
+                    ? $"Window {index} of {BaselineWindowCount} complete. Settling before the next 20-second measurement window…"
                     : $"Window {index} of {BaselineWindowCount} complete. Computing baseline quality…";
 
                 if (index < BaselineWindowCount)
@@ -281,9 +296,9 @@ public sealed partial class MainWindow
             ApplyP999Adequacy(finalCapture);
             UpdateRuntimeContextSummary(runtimeWindows);
             KernelCaptureStatusText.Text =
-                "Repeated baseline complete. The observation cards show only the final window snapshot; the baseline verdict below uses all five windows.";
+                "Repeated baseline complete. The observation cards show only the final 20-second window; the baseline verdict below uses all five windows.";
             ObservationQualityText.Text =
-                $"Scenario: {EvidenceExportService.GetMeasurementDisplayName(scenario)}. {EvidenceExportService.GetMeasurementGuidance(scenario)} Full charts and contributor lists were withheld between windows to reduce observer activity.";
+                $"Scenario: {EvidenceExportService.GetMeasurementDisplayName(scenario)}. {EvidenceExportService.GetMeasurementGuidance(scenario)} The five 20-second windows, rather than the final snapshot alone, are authoritative for baseline stability.";
 
             var quality = BaselineQualityAnalyzer.Analyze(windows, BaselinePolicy);
             RenderBaselineQuality(quality);
@@ -364,7 +379,7 @@ public sealed partial class MainWindow
             .ToArray();
         if (contexts.Length == 0)
         {
-            ResetRuntimeContextSummary("Runtime CPU/power context was unavailable for the baseline windows. Baseline quality still depends on capture integrity, sample adequacy, noise and drift.");
+            ResetRuntimeContextSummary("Runtime CPU/power context was unavailable for the baseline windows. Baseline quality still depends on capture integrity, sample adequacy, duration, noise and drift.");
             return;
         }
 
@@ -463,8 +478,8 @@ public sealed partial class MainWindow
             $"Scenario: {EvidenceExportService.GetMeasurementDisplayName(scenario)}. {EvidenceExportService.GetMeasurementGuidance(scenario)} ";
 
         ObservationQualityText.Text = integrityIssue is null
-            ? $"{prefix}Capture integrity looks clean. {FormatCaptureInterpretation(capture)}"
-            : $"{prefix}Treat this observation as incomplete evidence. Tail/guidance classification is withheld because capture integrity is not clean. Exact values remain visible for diagnosis.";
+            ? $"{prefix}Quick snapshot integrity looks clean. {FormatCaptureInterpretation(capture)} This remains diagnostic evidence; use the repeated baseline for stability claims."
+            : $"{prefix}Treat this quick snapshot as incomplete evidence. Tail/guidance classification is withheld because capture integrity is not clean. Exact values remain visible for diagnosis.";
     }
 
     private void ApplyP999Adequacy(KernelLatencyCaptureResponse capture)
@@ -490,12 +505,14 @@ public sealed partial class MainWindow
                 target,
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"p99.9 is shown because at least {ObservationProtocol.MinimumSamplesForP999:N0} {label} samples were observed."));
+                    $"p99.9 is shown because at least {ObservationProtocol.MinimumSamplesForP999:N0} {label} samples were observed. This is an adequacy floor, not a confidence guarantee."));
             return;
         }
 
-        target.Text = "Need ≥1k";
-        target.FontSize = 20;
+        target.Text = string.Create(
+            CultureInfo.InvariantCulture,
+            $"Need ≥{ObservationProtocol.MinimumSamplesForP999:N0}");
+        target.FontSize = 18;
         var explanation = string.Create(
             CultureInfo.InvariantCulture,
             $"p99.9 is withheld: {distribution.Count:N0} {label} samples were observed; at least {ObservationProtocol.MinimumSamplesForP999:N0} are required. p99 and max remain available.");
@@ -513,7 +530,7 @@ public sealed partial class MainWindow
             SetExportEvidence(
                 EvidenceExportService.CreateObservationJson(GetProductVersion(), scenario, capture, runtimeContext),
                 EvidenceExportService.CreateSuggestedFileName("observation", capture.StartedAtUtc),
-                $"Observation evidence is ready for JSON export with scenario '{EvidenceExportService.GetMeasurementDisplayName(scenario)}' and best-effort runtime context.");
+                $"Quick-observation evidence is ready for JSON export with scenario '{EvidenceExportService.GetMeasurementDisplayName(scenario)}' and best-effort runtime context.");
         }
         catch (Exception exception)
         {
