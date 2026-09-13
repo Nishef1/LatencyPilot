@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using LatencyPilot.Protocol;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -72,8 +73,7 @@ public sealed partial class MainWindow
 
         RebuildPremiumObservationCard();
         RootGrid.ActualThemeChanged += (_, _) => RebuildPremiumObservationCard();
-        _accessibilitySettings.HighContrastChanged += (_, _) =>
-            DispatcherQueue.TryEnqueue(RebuildPremiumObservationCard);
+        TryRegisterHighContrastChanged(RebuildPremiumObservationCard);
 
         ServiceStatusBadgeText.RegisterPropertyChangedCallback(
             TextBlock.TextProperty,
@@ -84,6 +84,19 @@ public sealed partial class MainWindow
 
         ApplyServiceStatusAppearance();
         ApplyBaselineVerdictAppearance();
+    }
+
+    private void TryRegisterHighContrastChanged(Action callback)
+    {
+        try
+        {
+            _accessibilitySettings.HighContrastChanged += (_, _) =>
+                DispatcherQueue.TryEnqueue(() => callback());
+        }
+        catch (COMException exception)
+        {
+            Logger.Warning(exception, "High contrast change notifications are unavailable; continuing with the current theme.");
+        }
     }
 
     private void RebuildPremiumObservationCard()

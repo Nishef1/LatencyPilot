@@ -26,8 +26,7 @@ public sealed partial class MainWindow
     {
         RebuildMeasurementScenarioCard();
         RootGrid.ActualThemeChanged += (_, _) => RebuildMeasurementScenarioCard();
-        _accessibilitySettings.HighContrastChanged += (_, _) =>
-            DispatcherQueue.TryEnqueue(RebuildMeasurementScenarioCard);
+        TryRegisterHighContrastChanged(RebuildMeasurementScenarioCard);
     }
 
     private MeasurementScenario SelectedMeasurementScenario =>
