@@ -14,23 +14,10 @@ public sealed partial class MainWindow
     private ComboBox? _measurementScenarioComboBox;
     private TextBlock? _measurementScenarioGuidanceText;
     private Border? _measurementScenarioCard;
-    private bool _measurementExperienceInitialized;
     private bool _measurementBusy;
 
-    internal void InitializeMeasurementExperience()
+    private void InitializeMeasurementExperience()
     {
-        if (_measurementExperienceInitialized)
-        {
-            return;
-        }
-
-        _measurementExperienceInitialized = true;
-
-        CaptureObservationButton.Click -= CaptureObservationButton_Click;
-        CaptureBaselineButton.Click -= CaptureBaselineButton_Click;
-        CaptureObservationButton.Click += CaptureObservationWithScenarioButton_Click;
-        CaptureBaselineButton.Click += CaptureBaselineQuietButton_Click;
-
         RebuildMeasurementScenarioCard();
         RootGrid.ActualThemeChanged += (_, _) => RebuildMeasurementScenarioCard();
         _accessibilitySettings.HighContrastChanged += (_, _) =>
@@ -151,7 +138,7 @@ public sealed partial class MainWindow
         _measurementScenarioGuidanceText.Text = EvidenceExportService.GetMeasurementGuidance(scenario);
     }
 
-    private async void CaptureObservationWithScenarioButton_Click(object sender, RoutedEventArgs e)
+    private async Task CaptureObservationAsync()
     {
         if (!await EnsureObservationServiceReadyAsync())
         {
@@ -186,7 +173,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private async void CaptureBaselineQuietButton_Click(object sender, RoutedEventArgs e)
+    private async Task CaptureBaselineAsync()
     {
         if (!await EnsureObservationServiceReadyAsync())
         {
@@ -358,7 +345,7 @@ public sealed partial class MainWindow
     }
 
     private void PrepareBaselineEvidenceForScenario(
-        List<KernelLatencyCaptureResponse> captures,
+        IReadOnlyList<KernelLatencyCaptureResponse> captures,
         IReadOnlyList<BaselineWindowEvidence> windows,
         BaselineQualityResult quality,
         bool isPartial,
