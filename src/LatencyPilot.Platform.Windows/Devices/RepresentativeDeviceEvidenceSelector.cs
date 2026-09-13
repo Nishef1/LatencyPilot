@@ -25,33 +25,27 @@ public static class RepresentativeDeviceEvidenceSelector
     private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
     private static readonly Guid NetworkDeviceClass = new("4D36E972-E325-11CE-BFC1-08002BE10318");
 
-    public static IReadOnlyList<RepresentativeDeviceEvidence> Select(
-        DeviceInventorySnapshot inventory,
-        int maximumPerKind = 3)
+    public static IReadOnlyList<RepresentativeDeviceEvidence> Select(DeviceInventorySnapshot inventory)
     {
         ArgumentNullException.ThrowIfNull(inventory);
-        if (maximumPerKind < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maximumPerKind));
-        }
 
         var selected = new List<RepresentativeDeviceEvidence>();
         AddKind(
             selected,
             inventory.Devices.Where(static device => device.ClassGuid == DisplayDeviceClass),
             RepresentativeDeviceKind.DisplayAdapter,
-            maximumPerKind);
+            maximum: 2);
         AddKind(
             selected,
             inventory.Devices.Where(static device => device.ClassGuid == NetworkDeviceClass),
             RepresentativeDeviceKind.NetworkAdapter,
-            maximumPerKind);
+            maximum: 3);
         AddKind(
             selected,
             inventory.Devices.Where(static device =>
                 string.Equals(device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase)),
             RepresentativeDeviceKind.XhciController,
-            maximumPerKind);
+            maximum: 3);
         return selected;
     }
 
