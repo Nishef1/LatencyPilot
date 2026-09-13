@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
@@ -10,6 +11,7 @@ using LatencyPilot.Protocol;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32.SafeHandles;
 
 namespace LatencyPilot.Service;
 
@@ -21,6 +23,7 @@ internal sealed class ObservationHost : BackgroundService
     private const double IsrGuidanceThresholdMicroseconds = 25d;
     private const double OneMillisecondMicroseconds = 1_000d;
     private const double ThreeMillisecondsMicroseconds = 3_000d;
+    private const uint NoActiveConsoleSession = 0xFFFFFFFF;
 
     private static readonly Action<ILogger, Exception?> KernelLatencyCaptureFailed =
         LoggerMessage.Define(
@@ -52,6 +55,18 @@ internal sealed class ObservationHost : BackgroundService
             new EventId(1005, nameof(PipeRequestRejected)),
             "Observation pipe request was rejected before execution: {Reason}.");
 
+    private static readonly Action<ILogger, Guid, string, int, Exception?> KernelLatencyCaptureUnavailable =
+        LoggerMessage.Define<Guid, string, int>(
+            LogLevel.Warning,
+            new EventId(1006, nameof(KernelLatencyCaptureUnavailable)),
+            "Kernel latency capture {RequestId} was unavailable because of {FailureKind} (native error {NativeErrorCode}).");
+
+    private static readonly Action<ILogger, uint, uint, int, Exception?> PipeClientSessionRejected =
+        LoggerMessage.Define<uint, uint, int>(
+            LogLevel.Warning,
+            new EventId(1007, nameof(PipeClientSessionRejected)),
+            "Observation pipe client session {ClientSessionId} was rejected; active console session is {ActiveConsoleSessionId}. Native error: {NativeErrorCode}.");
+
     private readonly ILogger<ObservationHost> logger;
 
     public ObservationHost(ILogger<ObservationHost> logger)
@@ -68,6 +83,11 @@ internal sealed class ObservationHost : BackgroundService
             try
             {
                 await server.WaitForConnectionAsync(stoppingToken).ConfigureAwait(false);
+                if (!IsAuthorizedClientSession(server))
+                {
+                    continue;
+                }
+
                 await HandleClientAsync(server, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -125,6 +145,35 @@ internal sealed class ObservationHost : BackgroundService
             new SecurityIdentifier(sidType, null),
             PipeAccessRights.FullControl,
             AccessControlType.Allow));
+
+    private bool IsAuthorizedClientSession(NamedPipeServerStream server)
+    {
+        var activeConsoleSessionId = WTSGetActiveConsoleSessionId();
+        if (!GetNamedPipeClientSessionId(server.SafePipeHandle, out var clientSessionId))
+        {
+            var nativeError = Marshal.GetLastPInvokeError();
+            PipeClientSessionRejected(
+                logger,
+                NoActiveConsoleSession,
+                activeConsoleSessionId,
+                nativeError,
+                null);
+            return false;
+        }
+
+        if (activeConsoleSessionId == NoActiveConsoleSession || clientSessionId != activeConsoleSessionId)
+        {
+            PipeClientSessionRejected(
+                logger,
+                clientSessionId,
+                activeConsoleSessionId,
+                0,
+                null);
+            return false;
+        }
+
+        return true;
+    }
 
     private async Task HandleClientAsync(
         NamedPipeServerStream server,
@@ -345,22 +394,25 @@ internal sealed class ObservationHost : BackgroundService
 
             return Ok(
                 request.RequestId,
-                kernelLatencyCapture: Summarize(result));
+                kernelLatencyCapture: Summarize(request.RequestId, result));
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             return CaptureUnavailable(request.RequestId);
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException exception)
         {
+            KernelLatencyCaptureUnavailable(logger, request.RequestId, nameof(UnauthorizedAccessException), 0, exception);
             return CaptureUnavailable(request.RequestId);
         }
-        catch (Win32Exception)
+        catch (Win32Exception exception)
         {
+            KernelLatencyCaptureUnavailable(logger, request.RequestId, nameof(Win32Exception), exception.NativeErrorCode, exception);
             return CaptureUnavailable(request.RequestId);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException exception)
         {
+            KernelLatencyCaptureUnavailable(logger, request.RequestId, nameof(InvalidOperationException), 0, exception);
             return CaptureUnavailable(request.RequestId);
         }
         catch (Exception exception)
@@ -370,7 +422,7 @@ internal sealed class ObservationHost : BackgroundService
         }
     }
 
-    private static KernelLatencyCaptureResponse Summarize(KernelLatencyCaptureResult result)
+    private static KernelLatencyCaptureResponse Summarize(Guid requestId, KernelLatencyCaptureResult result)
     {
         var dpcDurations = new List<double>();
         var isrDurations = new List<double>();
@@ -401,6 +453,7 @@ internal sealed class ObservationHost : BackgroundService
             .ToArray();
 
         return new KernelLatencyCaptureResponse(
+            requestId,
             result.StartedAtUtc,
             checked((int)result.RequestedDuration.TotalMilliseconds),
             result.ActualDuration.TotalMilliseconds,
@@ -555,13 +608,16 @@ internal sealed class ObservationHost : BackgroundService
         }
 
         sorted.Sort();
+        var p999 = sorted.Count >= ObservationProtocol.MinimumSamplesForP999
+            ? Percentiles.CalculateSorted(sorted, 0.999)
+            : null;
 
         return new LatencyDistribution(
             sorted.Count,
             Percentiles.CalculateSorted(sorted, 0.50),
             Percentiles.CalculateSorted(sorted, 0.95),
             Percentiles.CalculateSorted(sorted, 0.99),
-            Percentiles.CalculateSorted(sorted, 0.999),
+            p999,
             sorted[^1]);
     }
 
@@ -596,4 +652,13 @@ internal sealed class ObservationHost : BackgroundService
             message,
             null,
             null);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetNamedPipeClientSessionId(
+        SafePipeHandle pipe,
+        out uint clientSessionId);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint WTSGetActiveConsoleSessionId();
 }
