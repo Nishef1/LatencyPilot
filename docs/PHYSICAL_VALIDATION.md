@@ -162,7 +162,7 @@ Both DPC p99 and ISR p99 must satisfy:
 
 ```text
 P10-P90 relative spread <= 30%
-early/late typo does not exist in the contract; early/late relative drift <= 20%
+early/late relative drift <= 20%
 no >50% extreme-window deviation
 ```
 
