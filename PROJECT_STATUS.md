@@ -13,9 +13,9 @@ Last updated: 2026-09-13
 - Current desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
 - Privileged boundary: **read-only Windows Service; mutation commands do not exist**
 - Observation protocol: **v5**
-- Evidence schema: **latencypilot-evidence-v4**
+- Evidence schema: **latencypilot-evidence-v5**
 - Permanent automated tests: **8 / hard maximum 10**
-- Current stage: **Stage B physical validation open; Stage C source implemented but physical/runtime closure open; Stage D evidence UX partially implemented**
+- Current stage: **Stage B physical validation open; Stage C source implemented but physical/runtime closure open; Stage D evidence UX implemented in source but physical UX closure open**
 
 ## Current automated evidence
 
@@ -66,7 +66,8 @@ Phase 1 established the solution, deterministic comparison/domain foundation, fo
 - RDP/multi-session observation is not implied by the current Phase 2 rule;
 - disconnect/protocol activity cancels active capture work;
 - deadlines remain bounded;
-- current observation authorization is explicitly not future mutation authorization.
+- current observation authorization is explicitly not future mutation authorization;
+- the App now requires the status response to prove the host is the installed Windows Service with expected kernel-capture privilege context before enabling capture; an arbitrary IPC responder is not treated as healthy.
 
 ### Structured diagnostics
 
@@ -183,14 +184,27 @@ The current WinUI source deliberately reduces observer activity during the five-
 - the baseline verdict still uses all five windows, not merely the final displayed observation;
 - partial baseline evidence remains exportable after a stopped sequence but cannot become valid merely because it was exported.
 
-This is source-level observer-noise hardening, not proof that UI overhead is negligible. Physical profiling/validation remains authoritative.
+### Low-overhead runtime context
+
+Best-effort runtime context is sampled immediately before and after each capture, outside the authoritative ETW window:
+
+- system CPU busy percentage is derived from `GetSystemTimes` cumulative idle/kernel/user deltas;
+- AC/DC source, battery state and Battery Saver are captured through `GetSystemPowerStatus`;
+- active power-plan GUID/friendly name are captured through `PowerGetActiveScheme` / `PowerReadFriendlyName`;
+- power-plan/source/Battery-Saver changes during a capture or across a baseline sequence are surfaced to the user;
+- runtime context is exported with observation/baseline evidence;
+- failure to collect optional context does **not** invalidate otherwise clean DPC/ISR evidence and is not silently converted into a zero value;
+- this context is provenance, not a new baseline pass/fail gate.
+
+This is source-level observer-noise/context hardening, not proof that UI overhead is negligible. Physical profiling/validation remains authoritative.
 
 Still open:
 
 - owner-local/physical five-window execution through the real Service;
 - physical idle + controlled-load quality evidence;
 - verify that quiet sequencing behaves correctly with the real compositor/workloads;
-- authoritative low-overhead background-load and thermal/power warnings only if defensible signals are chosen;
+- verify system-CPU/power-plan context against the physical machine during idle and real-world scenarios;
+- add thermal context only if a defensible authoritative low-overhead source is identified and physical evidence shows it is needed;
 - future optimizer integration must require `IsValidForComparison` before any mutation/keep recommendation can be enabled.
 
 ## 2.4 Evidence UX — IMPLEMENTED IN SOURCE, PHYSICAL VALIDATION OPEN
@@ -204,19 +218,20 @@ Implemented in source:
 - capture-integrity warning state;
 - CPU concentration and bounded module contributors;
 - latency-health badge plus exact-value tail-rate visualization;
+- tail-rate bars are lightweight `Grid`/`Border` visuals rather than `ProgressBar` controls, so they do not expose misleading operation-progress semantics to assistive technology;
 - `>1 ms` / `>3 ms` wording explicitly marked as local diagnostic buckets rather than Windows severity thresholds;
 - explicit selectable measurement scenarios: **Real-world workload**, **Controlled idle**, **Before / after comparison**;
 - scenario-specific guidance tells the user when apps should stay open or be closed;
 - scenario changes invalidate stale visible/export evidence so an old capture cannot be presented under a new context;
+- scenario card shows best-effort average system CPU busy time, power source, active power plan and Battery Saver context after capture;
 - repeated baseline progress/verdict/reasons UI;
 - explicit configuration vs assigned-resource vs runtime-evidence wording;
 - keyboard accelerators (`Ctrl+R`, `Ctrl+O`, `Ctrl+B`, `Ctrl+E`);
 - accessibility/high-contrast resources and automation metadata;
-- decorative tail bars are removed from the accessibility control view while exact count/denominator/percentage text remains available;
 - adaptive narrow/wide workspace source;
 - manual JSON evidence export;
-- evidence schema `latencypilot-evidence-v4`;
-- observation/baseline export contains bounded capture aggregates, `RequestId`, protocol/product version, measurement scenario/context and bounded non-personal environment provenance;
+- evidence schema `latencypilot-evidence-v5`;
+- observation/baseline export contains bounded capture aggregates, `RequestId`, protocol/product version, selected scenario, runtime CPU/power context and bounded non-personal environment provenance;
 - source revision is recorded from build/assembly source-revision metadata when available;
 - unresolved `ulong` routine addresses serialize as hexadecimal strings;
 - export serialization/file I/O stays outside authoritative baseline capture windows.
@@ -227,7 +242,7 @@ Still open:
 - verify JSON content against visible observation/baseline and retain SHA-256;
 - narrow-window/text-scaling sanity on physical WinUI;
 - keyboard focus/screen-reader sanity;
-- physical evidence that capture-warning, sample-insufficient p99.9 and scenario-change invalidation present correctly;
+- physical evidence that capture-warning, sample-insufficient p99.9, runtime-context and scenario-change invalidation present correctly;
 - remove or simplify any duplicate explanatory surfaces only after the physical UI pass shows they are redundant.
 
 ## Permanent critical suite — 8 / 10
@@ -275,18 +290,18 @@ Next ordered work:
 3. execute a five-window **Real-world workload** baseline under one repeatable workload;
 4. preserve complete/partial exported JSON and SHA-256 hashes;
 5. confirm Valid/Inconclusive reasons match capture integrity/noise/drift reality;
-6. inspect whether the App itself measurably perturbs the baseline before adding any deeper observer-overhead machinery;
-7. decide from physical evidence whether additional background/thermal/power context is required before closure.
+6. verify runtime system-CPU/power-plan context matches the physical test state and stays stable where expected;
+7. inspect whether the App itself measurably perturbs the baseline before adding any deeper observer-overhead machinery.
 
 Stage C closes only when the real App → Service → ETW path distinguishes a trustworthy repeated baseline from an unstable/incomplete run.
 
-## Stage D — Phase 2 evidence UX completion — PARTIAL
+## Stage D — Phase 2 evidence UX completion — SOURCE IMPLEMENTED, PHYSICAL UX CLOSURE OPEN
 
 After current owner-local/physical evidence:
 
 1. finish any responsive/text-scaling corrections exposed by real WinUI rendering;
-2. finish keyboard focus/screen-reader corrections;
-3. verify the scenario selector, health interpretation and evidence export are understandable without hiding raw numbers;
+2. finish keyboard focus/screen-reader corrections exposed by physical testing;
+3. verify the scenario selector, health interpretation, runtime context and evidence export are understandable without hiding raw numbers;
 4. verify evidence export usability/auditability against the visible UI;
 5. perform the Phase 2 UX/claim step-back review.
 
