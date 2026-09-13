@@ -11,6 +11,14 @@ public enum SystemPowerLineState
     Unknown = 255,
 }
 
+public enum UserConfiguredPowerMode
+{
+    BestPowerEfficiency = 1,
+    Balanced = 2,
+    BestPerformance = 3,
+    Unknown = 255,
+}
+
 public sealed record SystemLoadSnapshot(
     ulong IdleTime100Nanoseconds,
     ulong KernelTime100Nanoseconds,
@@ -23,7 +31,9 @@ public sealed record SystemPowerSnapshot(
     int? BatteryPercent,
     bool? BatterySaverEnabled,
     Guid? ActiveSchemeId,
-    string? ActiveSchemeName);
+    string? ActiveSchemeName,
+    Guid? UserConfiguredPowerModeId,
+    UserConfiguredPowerMode? UserConfiguredPowerMode);
 
 public sealed record RuntimeMeasurementContextSnapshot(
     SystemLoadSnapshot SystemLoad,
@@ -38,11 +48,16 @@ public sealed record RuntimeMeasurementContextInterval(
         StartPower.LineState != EndPower.LineState ||
         StartPower.Charging != EndPower.Charging ||
         StartPower.BatterySaverEnabled != EndPower.BatterySaverEnabled ||
-        StartPower.ActiveSchemeId != EndPower.ActiveSchemeId;
+        StartPower.ActiveSchemeId != EndPower.ActiveSchemeId ||
+        StartPower.UserConfiguredPowerModeId != EndPower.UserConfiguredPowerModeId;
 }
 
 public static class RuntimeMeasurementContextReader
 {
+    private static readonly Guid BestEfficiencyPowerModeId = new("961cc777-2547-4f9d-8174-7d86181b8a7a");
+    private static readonly Guid BalancedPowerModeId = Guid.Empty;
+    private static readonly Guid BestPerformancePowerModeId = new("ded574b5-45a0-4f42-8737-46345c09c238");
+
     private const byte UnknownByte = byte.MaxValue;
     private const byte BatteryChargingFlag = 0x08;
     private const byte NoSystemBatteryFlag = 0x80;
@@ -135,6 +150,7 @@ public static class RuntimeMeasurementContextReader
             _ => null,
         };
         var (activeSchemeId, activeSchemeName) = TryCaptureActivePowerScheme();
+        var (configuredModeId, configuredMode) = TryCaptureUserConfiguredPowerMode(lineState);
 
         return new SystemPowerSnapshot(
             lineState,
@@ -143,7 +159,9 @@ public static class RuntimeMeasurementContextReader
             batteryPercent,
             batterySaverEnabled,
             activeSchemeId,
-            activeSchemeName);
+            activeSchemeName,
+            configuredModeId,
+            configuredMode);
     }
 
     private static (Guid? SchemeId, string? SchemeName) TryCaptureActivePowerScheme()
@@ -163,6 +181,42 @@ public static class RuntimeMeasurementContextReader
         {
             _ = LocalFree(activePolicyGuid);
         }
+    }
+
+    private static (Guid? ModeId, UserConfiguredPowerMode? Mode) TryCaptureUserConfiguredPowerMode(
+        SystemPowerLineState lineState)
+    {
+        Guid modeId;
+        var result = lineState switch
+        {
+            SystemPowerLineState.Online => PowerGetUserConfiguredACPowerMode(out modeId),
+            SystemPowerLineState.Offline => PowerGetUserConfiguredDCPowerMode(out modeId),
+            _ => uint.MaxValue,
+        };
+
+        if (result != ErrorSuccess)
+        {
+            return (null, null);
+        }
+
+        return (modeId, MapUserConfiguredPowerMode(modeId));
+    }
+
+    private static UserConfiguredPowerMode MapUserConfiguredPowerMode(Guid modeId)
+    {
+        if (modeId == BestEfficiencyPowerModeId)
+        {
+            return UserConfiguredPowerMode.BestPowerEfficiency;
+        }
+
+        if (modeId == BalancedPowerModeId)
+        {
+            return UserConfiguredPowerMode.Balanced;
+        }
+
+        return modeId == BestPerformancePowerModeId
+            ? UserConfiguredPowerMode.BestPerformance
+            : UserConfiguredPowerMode.Unknown;
     }
 
     private static string? TryReadPowerSchemeFriendlyName(Guid schemeId)
@@ -224,6 +278,12 @@ public static class RuntimeMeasurementContextReader
         IntPtr powerSettingGuid,
         [Out] byte[]? buffer,
         ref uint bufferSize);
+
+    [DllImport("powrprof.dll")]
+    private static extern uint PowerGetUserConfiguredACPowerMode(out Guid powerModeGuid);
+
+    [DllImport("powrprof.dll")]
+    private static extern uint PowerGetUserConfiguredDCPowerMode(out Guid powerModeGuid);
 
     [DllImport("kernel32.dll")]
     private static extern IntPtr LocalFree(IntPtr memory);
