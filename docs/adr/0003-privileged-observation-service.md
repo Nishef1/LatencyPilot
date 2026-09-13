@@ -45,25 +45,24 @@ That would persistently broaden the user's ability to control ETW sessions syste
 - Windows Service hosting uses the supported .NET hosting integration.
 - IPC remains local and command-specific; no generic shell/registry/process primitive is permitted.
 - Phase 2 protocol commands are observation-only and explicitly allowlisted.
-- request/response frames are bounded and unknown JSON members fail closed;
-- the Named Pipe denies network identities and its ACL admits interactive local identities plus the required Windows service identities rather than all authenticated users;
-- after connection, Phase 2 resolves the named-pipe client's Windows session and fail-closes unless it matches the active console session; inability to resolve that client session is also a rejection;
-- active-console authorization deliberately narrows the current Phase 2 supported path and does not imply RDP/multi-session support;
-- the Phase 2 pipe ACL/session rule is **not** sufficient authorization for future mutation; Phase 3 must add mutation-specific authorization/allowlisting;
-- a client disconnect, unexpected extra client data, operation deadline, service stop or capture failure must cancel/stop the active observation rather than leave a detached privileged ETW capture running;
-- ETW sessions must use collision-resistant LatencyPilot-owned names and must be stopped/cleaned on cancellation, client disconnect, service stop or capture failure;
-- a stale LatencyPilot session must be detected and handled explicitly rather than silently attaching to an unrelated session;
-- raw kernel addresses are diagnostic evidence; module attribution must be derived from authoritative image/module mapping rather than guessed names;
-- successful protocol-v5 capture evidence preserves the request correlation ID so exported evidence can be tied back to App/Service diagnostics;
-- expected capture-start/unavailable paths retain bounded structured failure kind/native-error provenance rather than losing the root cause;
-- App/Service operational diagnostics are structured and bounded; raw per-event ETW logging is prohibited in the capture hot path;
-- a LocalSystem service binary must execute from a protected machine-wide location. Portable registration copies the Service payload to `%ProgramFiles%\LatencyPilot\Service` before registration instead of executing SYSTEM code from a normal user-writable extraction directory.
+- Request/response frames are bounded and unknown JSON members fail closed.
+- The Named Pipe denies network identities and its ACL admits interactive local identities plus the required Windows service identities rather than all authenticated users.
+- After connection, Phase 2 resolves the named-pipe client's Windows session and fail-closes unless it matches the active console session; inability to resolve that client session is also a rejection.
+- Active-console authorization deliberately narrows the current Phase 2 supported path and does not imply RDP/multi-session support.
+- The Phase 2 pipe ACL/session rule is **not** sufficient authorization for future mutation; Phase 3 must add mutation-specific authorization/allowlisting.
+- A client disconnect, unexpected extra client data, operation deadline, Service stop or capture failure must cancel/stop the active observation rather than leave a detached privileged ETW capture running.
+- ETW sessions use collision-resistant LatencyPilot-owned names and must be stopped/cleaned on cancellation, client disconnect, Service stop or capture failure.
+- Raw kernel addresses are diagnostic evidence; module attribution is derived from authoritative image/module mapping rather than guessed names.
+- The current protocol-v6 capture response preserves the request correlation ID so evidence-v8 can be tied back to App/Service diagnostics. RequestId correlation was introduced in an earlier protocol revision and remains part of the current contract.
+- Expected capture-start/unavailable paths retain bounded structured failure kind/native-error provenance rather than losing the root cause.
+- App/Service operational diagnostics are structured and bounded; raw per-event ETW logging is prohibited in the capture hot path.
+- A LocalSystem Service binary must execute from a protected machine-wide location. Portable registration copies the Service payload to `%ProgramFiles%\LatencyPilot\Service` before registration instead of executing SYSTEM code from a normal user-writable extraction directory.
 
 ## Testing impact
 
 This architecture change does not increase the repository's permanent-test cap.
 
-The critical suite was consolidated on 2026-09-13 so high-blast-radius behavior is covered with fewer, broader contract tests rather than one test method per historical branch. The suite currently uses eight permanent test methods, including protocol framing/correlation fail-closed behavior, baseline validity scenarios and an explicit observation-only command-surface bound. The remaining capacity is not “reserved” for a specific feature; later parser/recovery/mutation risks may replace or merge lower-value tests while the repository remains at or below 10.
+The critical suite was consolidated on 2026-09-13 so high-blast-radius behavior is covered with fewer, broader contract tests rather than one test method per historical branch. The suite currently uses eight permanent test methods, including protocol framing/correlation fail-closed behavior, baseline validity scenarios and an explicit observation-only command-surface bound. The remaining capacity is not reserved for a specific feature; later parser/recovery/mutation risks may replace or merge lower-value tests while the repository remains at or below 10.
 
 Implementation-specific Service/ETW probes may be temporary and removed after validation. Physical Windows ETW and active-session authorization validation remain separate from the permanent automated-test count.
 
@@ -73,17 +72,17 @@ Implementation-specific Service/ETW probes may be temporary and removed after va
 
 - Keeps WinUI non-elevated.
 - Creates the privilege boundary before kernel ETW is implemented incorrectly in the UI process.
-- The service introduced for observation is reused for later mutation instead of creating duplicate privileged mechanisms.
+- Reuses the observation Service for later mutation instead of creating duplicate privileged mechanisms.
 - Current observation IPC is narrower than a machine-wide authenticated-user surface, is restricted to the active console session, and abandoned clients no longer intentionally own a full capture window.
-- Portable distribution no longer turns its extraction directory into the executable location for a LocalSystem binary.
+- Portable distribution does not turn its extraction directory into the executable location for a LocalSystem binary.
 
 ### Costs
 
 - Service lifecycle/IPC work moves earlier in the roadmap.
-- Phase 2 packaging and clean-machine validation must account for the service executable even though mutation is disabled.
+- Phase 2 packaging and clean-machine validation must account for the Service executable even though mutation is disabled.
 - Portable kernel observation requires an elevated install/remove step for the protected Service copy.
-- RDP/multi-session observation is not automatically supported by the current active-console authorization rule and requires a deliberate future design if needed.
+- RDP/multi-session observation is not automatically supported by the current active-console authorization rule and requires deliberate future design if needed.
 
 ## Phase boundary change
 
-Phase 2 now owns the privileged observation host and read-only IPC needed for ETW. Phase 3 no longer owns creation of the service itself; it owns **mutation authority**, durable journal/recovery, mutation-specific authorization and rollback.
+Phase 2 owns the privileged observation host and read-only IPC needed for ETW. Phase 3 no longer owns creation of the Service itself; it owns **mutation authority**, durable journal/recovery, mutation-specific authorization and rollback.
