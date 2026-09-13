@@ -77,6 +77,7 @@ internal static class ObservationServiceClient
         }
 
         ValidateCapture(capture);
+        LogCaptureSummary(capture);
         return capture;
     }
 
@@ -200,6 +201,82 @@ internal static class ObservationServiceClient
             throw new InvalidDataException("Observation service returned an inconsistent success response.");
         }
     }
+
+    private static void LogCaptureSummary(KernelLatencyCaptureResponse capture)
+    {
+        var attributedEventCount = capture.ResolvedModuleEventCount + capture.UnresolvedModuleEventCount;
+        var attributionCoveragePercent = Percentage(capture.ResolvedModuleEventCount, attributedEventCount);
+        var topDpcProcessor = capture.Processors
+            .OrderByDescending(static processor => processor.Dpc.Count)
+            .ThenBy(static processor => processor.ProcessorNumber)
+            .FirstOrDefault();
+        var topIsrProcessor = capture.Processors
+            .OrderByDescending(static processor => processor.Isr.Count)
+            .ThenBy(static processor => processor.ProcessorNumber)
+            .FirstOrDefault();
+        var topDpcGuidanceModule = capture.Modules
+            .Where(static module => module.DpcThresholds.GuidanceExceedanceCount > 0)
+            .OrderByDescending(static module => module.DpcThresholds.GuidanceExceedanceCount)
+            .ThenByDescending(static module => module.Dpc.P99Microseconds ?? 0d)
+            .ThenBy(static module => module.ModuleName, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+        var topIsrGuidanceModule = capture.Modules
+            .Where(static module => module.IsrThresholds.GuidanceExceedanceCount > 0)
+            .OrderByDescending(static module => module.IsrThresholds.GuidanceExceedanceCount)
+            .ThenByDescending(static module => module.Isr.P99Microseconds ?? 0d)
+            .ThenBy(static module => module.ModuleName, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+
+        Logger.Information(
+            "Capture {RequestId} aggregate: lifecycle {ActualDurationMilliseconds} ms; DPC {DpcCount} events, p99 {DpcP99Microseconds} us, p99.9 {DpcP999Microseconds} us, max {DpcMaximumMicroseconds} us, >100 us {DpcGuidanceExceedanceCount} ({DpcGuidanceExceedanceRatePercent}%); ISR {IsrCount} events, p99 {IsrP99Microseconds} us, p99.9 {IsrP999Microseconds} us, max {IsrMaximumMicroseconds} us, >25 us {IsrGuidanceExceedanceCount} ({IsrGuidanceExceedanceRatePercent}%); >1 ms DPC/ISR {DpcOverOneMillisecondCount}/{IsrOverOneMillisecondCount}; >3 ms {DpcOverThreeMillisecondsCount}/{IsrOverThreeMillisecondsCount}; ETW lost {EventsLost}; invalid latency/image {InvalidEventCount}/{InvalidImageEventCount}; event limit {EventLimitReached}.",
+            capture.RequestId,
+            Math.Round(capture.ActualDurationMilliseconds, 3),
+            capture.Dpc.Count,
+            RoundMicroseconds(capture.Dpc.P99Microseconds),
+            RoundMicroseconds(capture.Dpc.P999Microseconds),
+            RoundMicroseconds(capture.Dpc.MaximumMicroseconds),
+            capture.DpcThresholds.GuidanceExceedanceCount,
+            Percentage(capture.DpcThresholds.GuidanceExceedanceCount, capture.Dpc.Count),
+            capture.Isr.Count,
+            RoundMicroseconds(capture.Isr.P99Microseconds),
+            RoundMicroseconds(capture.Isr.P999Microseconds),
+            RoundMicroseconds(capture.Isr.MaximumMicroseconds),
+            capture.IsrThresholds.GuidanceExceedanceCount,
+            Percentage(capture.IsrThresholds.GuidanceExceedanceCount, capture.Isr.Count),
+            capture.DpcThresholds.OverOneMillisecondCount,
+            capture.IsrThresholds.OverOneMillisecondCount,
+            capture.DpcThresholds.OverThreeMillisecondsCount,
+            capture.IsrThresholds.OverThreeMillisecondsCount,
+            capture.EventsLost,
+            capture.InvalidEventCount,
+            capture.InvalidImageEventCount,
+            capture.EventLimitReached);
+
+        Logger.Information(
+            "Capture {RequestId} attribution: {AttributionCoveragePercent}% module coverage ({ResolvedModuleEventCount} resolved, {UnresolvedModuleEventCount} unresolved); top DPC CPU {TopDpcProcessorNumber} handled {TopDpcProcessorSharePercent}% of DPC events; top ISR CPU {TopIsrProcessorNumber} handled {TopIsrProcessorSharePercent}% of ISR events; leading >100 us DPC module {TopDpcGuidanceModule} ({TopDpcGuidanceExceedances}); leading >25 us ISR module {TopIsrGuidanceModule} ({TopIsrGuidanceExceedances}).",
+            capture.RequestId,
+            attributionCoveragePercent,
+            capture.ResolvedModuleEventCount,
+            capture.UnresolvedModuleEventCount,
+            topDpcProcessor?.ProcessorNumber,
+            Percentage(topDpcProcessor?.Dpc.Count ?? 0, capture.Dpc.Count),
+            topIsrProcessor?.ProcessorNumber,
+            Percentage(topIsrProcessor?.Isr.Count ?? 0, capture.Isr.Count),
+            topDpcGuidanceModule?.ModuleName,
+            topDpcGuidanceModule?.DpcThresholds.GuidanceExceedanceCount ?? 0,
+            topIsrGuidanceModule?.ModuleName,
+            topIsrGuidanceModule?.IsrThresholds.GuidanceExceedanceCount ?? 0);
+    }
+
+    private static double? Percentage(int numerator, int denominator) =>
+        denominator <= 0
+            ? null
+            : Math.Round(numerator * 100d / denominator, 3);
+
+    private static double? RoundMicroseconds(double? value) =>
+        value is null
+            ? null
+            : Math.Round(value.Value, 3);
 
     private static void ValidateCapture(KernelLatencyCaptureResponse capture)
     {
