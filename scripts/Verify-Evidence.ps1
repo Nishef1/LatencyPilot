@@ -63,7 +63,7 @@ if ($null -ne $captureProperty -and $null -ne $captureProperty.Value) {
     $requestIds = @([string]$captureProperty.Value.requestId)
     $evidenceType = 'observation'
 }
-elif ($null -ne $capturesProperty -and $null -ne $capturesProperty.Value) {
+elseif ($null -ne $capturesProperty -and $null -ne $capturesProperty.Value) {
     $requestIds = @($capturesProperty.Value | ForEach-Object { [string]$_.requestId })
     $evidenceType = 'baseline'
 }
