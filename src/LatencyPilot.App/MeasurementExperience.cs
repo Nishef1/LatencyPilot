@@ -18,8 +18,9 @@ public sealed partial class MainWindow
     private TextBlock? _measurementRuntimeContextText;
     private Border? _measurementScenarioCard;
     private bool _measurementBusy;
+    private bool _runtimeContextWarning;
     private string _lastRuntimeContextSummary =
-        "Runtime context will appear after capture: average system CPU busy time, power source, active power plan and Battery Saver state.";
+        "Runtime context will appear after capture: average system CPU busy time, power source, active power plan, configured Windows power mode and Battery Saver state.";
 
     private void InitializeMeasurementExperience()
     {
@@ -121,7 +122,7 @@ public sealed partial class MainWindow
             Text = _lastRuntimeContextSummary,
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
-            Foreground = ThemeBrush("MutedTextBrush"),
+            Foreground = ThemeBrush(_runtimeContextWarning ? "WarningBrush" : "MutedTextBrush"),
         };
         AutomationProperties.SetName(_measurementRuntimeContextText, "Runtime measurement context");
         root.Children.Add(_measurementRuntimeContextText);
@@ -139,7 +140,7 @@ public sealed partial class MainWindow
         if (_latestEvidenceJson is null && BaselineWindowsList.ItemsSource is null)
         {
             ResetRuntimeContextSummary(
-                "Runtime context will appear after capture: average system CPU busy time, power source, active power plan and Battery Saver state.");
+                "Runtime context will appear after capture: average system CPU busy time, power source, active power plan, configured Windows power mode and Battery Saver state.");
             return;
         }
 
@@ -348,7 +349,9 @@ public sealed partial class MainWindow
             ? $" Power state changed during capture: {power} → {FormatPowerContext(context.EndPower)}."
             : $" Power context stayed stable: {power}.";
 
-        ResetRuntimeContextSummary($"Runtime context: {cpu}.{change}");
+        ResetRuntimeContextSummary(
+            $"Runtime context: {cpu}.{change}",
+            warning: context.PowerContextChanged);
     }
 
     private void UpdateRuntimeContextSummary(List<MeasurementRuntimeWindow> runtimeWindows)
@@ -382,15 +385,18 @@ public sealed partial class MainWindow
             : $"power context stayed stable ({FormatPowerContext(firstPower)})";
 
         ResetRuntimeContextSummary(
-            $"Runtime context: {contexts.Length}/{runtimeWindows.Count} window(s) sampled; {cpuSummary}; {powerSummary}.");
+            $"Runtime context: {contexts.Length}/{runtimeWindows.Count} window(s) sampled; {cpuSummary}; {powerSummary}.",
+            warning: powerChanged);
     }
 
-    private void ResetRuntimeContextSummary(string message)
+    private void ResetRuntimeContextSummary(string message, bool warning = false)
     {
         _lastRuntimeContextSummary = message;
+        _runtimeContextWarning = warning;
         if (_measurementRuntimeContextText is not null)
         {
             _measurementRuntimeContextText.Text = message;
+            _measurementRuntimeContextText.Foreground = ThemeBrush(warning ? "WarningBrush" : "MutedTextBrush");
         }
     }
 
@@ -398,7 +404,8 @@ public sealed partial class MainWindow
         first.LineState == second.LineState &&
         first.Charging == second.Charging &&
         first.BatterySaverEnabled == second.BatterySaverEnabled &&
-        first.ActiveSchemeId == second.ActiveSchemeId;
+        first.ActiveSchemeId == second.ActiveSchemeId &&
+        first.UserConfiguredPowerModeId == second.UserConfiguredPowerModeId;
 
     private static string FormatPowerContext(SystemPowerSnapshot power)
     {
@@ -413,6 +420,15 @@ public sealed partial class MainWindow
             : power.ActiveSchemeId is not null
                 ? ", active power plan detected"
                 : ", power plan unavailable";
+        var mode = power.UserConfiguredPowerMode switch
+        {
+            UserConfiguredPowerMode.BestPowerEfficiency => ", configured mode Best power efficiency",
+            UserConfiguredPowerMode.Balanced => ", configured mode Balanced",
+            UserConfiguredPowerMode.BestPerformance => ", configured mode Best performance",
+            UserConfiguredPowerMode.Unknown => ", configured mode unknown",
+            null => ", configured mode unavailable",
+            _ => ", configured mode unknown",
+        };
         var battery = power.BatteryPresent == true && power.BatteryPercent is not null
             ? string.Create(CultureInfo.InvariantCulture, $", battery {power.BatteryPercent.Value}%")
             : string.Empty;
@@ -423,7 +439,7 @@ public sealed partial class MainWindow
             null => ", Battery Saver unknown",
         };
 
-        return source + scheme + battery + saver;
+        return source + scheme + mode + battery + saver;
     }
 
     private void SetMeasurementBusy(bool busy)
