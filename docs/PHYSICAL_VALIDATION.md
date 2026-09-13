@@ -32,7 +32,9 @@ Motherboard/firmware:
 GPU + driver:
 Primary NIC + driver:
 Primary xHCI/USB controller + driver:
-Power source/profile notes:
+Power source:
+Active power plan:
+Battery Saver state:
 Other monitoring/overlay tools running:
 ```
 
@@ -61,6 +63,8 @@ sc.exe qc LatencyPilot.Observation
 
 Expected state: `Running`; the configured binary path must use the protected Program Files Service location.
 
+The App must not enable kernel capture merely because something answered the Named Pipe. The status response must prove that the observation host is the installed Windows Service and that the expected kernel-capture privilege context is present while mutation remains disabled.
+
 ## 2. Start the App without elevation
 
 Launch LatencyPilot as a normal user in the active local console session. Confirm:
@@ -85,7 +89,7 @@ If a failure occurs, preserve the visible message plus matching App/Service stru
 
 ## 3. Measurement-scenario semantics
 
-Before each observation or repeated baseline, select the scenario that actually describes the run:
+Before each observation or repeated baseline, select the scenario that actually describes the run.
 
 ### Controlled idle
 
@@ -99,7 +103,7 @@ Use when diagnosing gaming, browser/video, audio, Discord or another workload. K
 
 Use for a future controlled A/B comparison. Keep apps, workload, power state and background activity consistent on both sides. Consistency matters more than closing everything.
 
-The selected scenario is evidence provenance. Changing the selector after an existing result must invalidate the stale visible/export evidence rather than relabeling an old capture under a new context.
+The selected scenario is evidence provenance. Changing the selector after an existing result must invalidate stale visible/export evidence rather than relabeling an old capture under a new context.
 
 ## 4. Controlled-idle observation
 
@@ -127,11 +131,18 @@ ETW events lost:
 Invalid latency events:
 Invalid image events:
 Event limit reached:
+Runtime system CPU busy %:
+Runtime power source:
+Runtime active power plan:
+Runtime Battery Saver state:
+Runtime power context changed during capture? :
 ```
 
 `p99.9` must be visibly withheld when the corresponding distribution contains fewer than 1,000 samples. The UI should explain that more samples are required while leaving p99/max available.
 
 `DPC >100 µs` and `ISR >25 µs` are driver-guidance context. `>1 ms` and `>3 ms` are LatencyPilot local diagnostic buckets only; they are not Windows pass/fail/user-impact severity boundaries.
+
+The runtime CPU/power values are **measurement provenance**, not a new pass/fail gate. They are sampled immediately before and after the authoritative ETW capture. A missing optional runtime-context sample must be shown/exported as unavailable rather than converted into a zero value, and it must not invalidate otherwise clean DPC/ISR evidence.
 
 A non-zero unresolved count is not automatically a failure. Unknown routine addresses remain unknown rather than being guessed.
 
@@ -141,13 +152,14 @@ Export the JSON and record its SHA-256:
 Get-FileHash .\LatencyPilot-observation-*.json -Algorithm SHA256
 ```
 
-The export should use `latencypilot-evidence-v4` and include at least:
+The export should use `latencypilot-evidence-v5` and include at least:
 
 - product/protocol version;
 - source revision when build metadata provides it;
 - export timestamp;
 - selected measurement scenario/context;
 - bounded non-personal environment/topology context;
+- best-effort runtime context (system CPU busy delta plus power source/Battery Saver/active power-plan state before and after capture);
 - capture `RequestId`;
 - full bounded processor/module/unresolved-routine aggregates;
 - capture-integrity metadata.
@@ -159,6 +171,8 @@ Unresolved 64-bit routine addresses must remain hexadecimal strings in JSON.
 Select **Real-world workload**. Run one repeatable workload that exercises a representative path, such as a GPU workload, controlled network transfer, known USB activity or the actual application/game that reproduces the problem.
 
 Keep that workload active during the five-second observation. Record the same fields as section 4 plus the exact workload and relevant application state.
+
+The visible runtime-context line should reflect the expected higher background/system load and the actual power source/plan in use. If the plan/source/Battery Saver state changes during the capture, preserve that fact with the evidence rather than treating the run as equivalent to one with stable power context.
 
 Export separately and record its SHA-256. Do not overwrite the controlled-idle evidence artifact.
 
@@ -175,6 +189,7 @@ The current quiet baseline flow intentionally minimizes UI activity between auth
 - it waits for a settle interval before the first capture;
 - it does not redraw the full health card, module list, CPU list, tail chart or per-window list between capture windows;
 - between windows it updates only lightweight progress/status text;
+- runtime CPU/power snapshots are taken immediately around each capture without rendering full context between windows;
 - the full observation cards are rendered only after the fifth capture is complete;
 - the final observation cards show the final window snapshot, while the baseline verdict uses all five windows.
 
@@ -194,6 +209,9 @@ Window 5 integrity / DPC count+p99 / ISR count+p99:
 DPC median / spread / drift:
 ISR median / spread / drift:
 Extreme windows reported:
+Runtime CPU busy average/range across sampled windows:
+Runtime power source/plan/Battery Saver summary:
+Did power context change during any window or across the sequence? :
 Overall verdict (Valid/Inconclusive):
 Reasons shown:
 ```
@@ -203,6 +221,8 @@ Window numbers `1..N` are the authoritative in-process order. `StartedAtUtc` is 
 For `baseline-quality-v1`, a clean five-window run can still be `Inconclusive` because of insufficient samples, >30% relative P10-P90 noise, >20% early/late drift, or >50% extreme-window deviation. Do not discard inconvenient windows.
 
 Any non-zero ETW loss, invalid latency/image event or event-limit hit makes the affected window ineligible. A lossy/incomplete capture must not receive a healthy interpretation simply because measured values look low.
+
+Runtime CPU/power context is not part of the `baseline-quality-v1` validity formula. It exists so a human/future comparison layer can identify obviously mismatched test conditions without silently changing the versioned baseline methodology.
 
 ### 6.2 Real-world repeated baseline
 
@@ -217,6 +237,7 @@ After complete or partial baseline termination, export JSON and record SHA-256. 
 - selected scenario/context;
 - every completed bounded aggregate capture and `RequestId`;
 - derived window evidence;
+- best-effort per-window runtime CPU/power context;
 - environment/topology provenance;
 - `baseline-quality-v1` identity;
 - metric quality;
@@ -278,9 +299,9 @@ On physical WinUI, check at least:
 - narrow and wide window widths;
 - Windows text scaling at representative enlarged settings;
 - keyboard-only access and logical focus order;
-- screen-reader/UI Automation reading of status, scenario selector, exact metric values and baseline verdict.
+- screen-reader/UI Automation reading of status, scenario selector, exact metric values, runtime-context summary and baseline verdict.
 
-The tail-rate bars are visual aids only. Screen readers should rely on the exact count/denominator/percentage text rather than announce those bars as operation progress.
+The tail-rate bars are visual `Grid`/`Border` data bars, not progress controls. Screen readers should rely on the exact count/denominator/percentage text rather than receive misleading operation-progress semantics.
 
 Color must never be the only state cue; text labels such as capture warning, valid/inconclusive and scenario names must remain understandable without color.
 
@@ -317,7 +338,7 @@ Stage B requires:
 - Controlled-idle observation + JSON/SHA-256/RequestId;
 - Real-world workload observation + JSON/SHA-256/RequestId;
 - p99.9 adequacy behavior where naturally observable;
-- scenario provenance in exported evidence;
+- scenario provenance and runtime CPU/power-plan context in exported evidence;
 - attribution plausibility comparison;
 - cleanup/disconnect/failure-path result;
 - representative inventory/resource evidence;
@@ -327,6 +348,6 @@ Stage B requires:
 - uninstall/removal result when applicable;
 - all unresolved blockers.
 
-For Stage C closure, additionally preserve both controlled-idle and one repeatable real-world repeated-baseline result, including all window evidence, verdict/reasons, exported JSON and hashes.
+For Stage C closure, additionally preserve both controlled-idle and one repeatable real-world repeated-baseline result, including all window evidence, runtime-context windows, verdict/reasons, exported JSON and hashes.
 
 Do not close Stage B or Stage C from VM/CI evidence alone.
