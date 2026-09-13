@@ -7,7 +7,7 @@ Last updated: 2026-09-13
 ## Overall
 
 - Product completion: **Phases 0–1 closed; Phase 2 in progress**
-- Current product version: **0.0.1 pre-alpha**
+- Current product version: **0.0.2 pre-alpha**
 - Current execution stage: **Stage C baseline-quality implementation is underway; Stage B physical validation remains open**
 - Current mutation capability: **None by design**
 - Supported target: **Windows 11 x64**
@@ -17,7 +17,8 @@ Last updated: 2026-09-13
 - GitHub Actions policy: **Tests only**. Hosted Actions must not build/publish App, Service, Setup, portable distributions or releases.
 - Stage C deterministic test evidence: **Tests run `34744320630` succeeded** on commit `2070bbb6b55465e71d569a12930a298318259a2d` with the eight-test suite.
 - App/WinUI Stage C source is **implemented but not closed** because owner-local Windows compile/run evidence is still required.
-- Current published prerelease remains historical `v0.0.1`; it predates the latest observation hardening and Stage C source, so it is not evidence for current `main`.
+- `v0.0.1` was historically published but was removed during a failed cloud replacement attempt; it remains a permanently reserved historical version and must not be reused.
+- The latest prerelease currently present on GitHub Releases is **`v0.0.0`**. The next publishable candidate from current source is **`v0.0.2`**, after exact-commit green Tests plus owner-local build/package validation.
 
 ## Phase 0 — CLOSED
 
@@ -100,9 +101,14 @@ Current automation contract:
 - normal UI development uses Debug + Visual Studio Hot Reload or `dev.ps1`;
 - `scripts/Publish-Release.ps1` is the explicit owner-run local Windows release path;
 - the local publisher requires a clean/up-to-date `main` and green Tests evidence for the exact commit before local build/package/publication;
+- published semantic versions are immutable; the publisher has no delete/replace mode and refuses an existing release/tag;
+- release creation uses GitHub CLI `gh release create --target <exact-commit>` so a missing tag is created at the exact tested commit without a separate tag push;
+- prereleases are explicitly published with `--latest=false`;
 - `docs/RELEASING.md` documents the owner-run flow.
 
 This separation is intentional: test CI supplies automated correctness evidence; build/package evidence belongs to the owner's Windows machine.
+
+Historical release incident: cloud release run `34743717696` successfully completed restore/build/tests/App publish/PRI/GUI smoke/Service publish/Setup/portable/artifact upload, then removed the previous `v0.0.1` prerelease/tag and failed to push the replacement tag because the GitHub App token lacked workflow-update permission. Cloud release publication was subsequently removed. `v0.0.1` remains reserved rather than being reused.
 
 ## Phase 2 — IN PROGRESS
 
@@ -355,11 +361,13 @@ No mutation work may jump ahead of Stage C/D or the Phase 3 safety substrate.
 ## Release discipline
 
 - product versions are exactly `MAJOR.MINOR.PATCH`;
-- current source version is `0.0.1` in `Directory.Build.props`;
+- current source version is `0.0.2` in `Directory.Build.props`;
 - `RELEASE_VERSION` is an explicit local release request and must equal the source version;
+- `v0.0.1` is historically published/reserved and must never be reused even though the release/tag is currently absent;
 - GitHub Actions is test-only and runs the permanent critical suite;
 - App/Service Release build, WinUI publish/PRI validation, Setup and portable creation are owner-local Windows responsibilities;
 - `scripts/Publish-Release.ps1` is the explicit owner-run publisher and requires green Tests evidence for the exact `main` commit;
+- the publisher refuses existing tags/releases, does not replace/delete published versions, and creates a missing tag through `gh release create --target <exact-commit>`;
 - `docs/RELEASING.md` is the publication contract;
 - daily development uses Debug + Visual Studio Hot Reload or `dev.ps1`;
 - published distributions contain version/build metadata and SHA-256 companions;
