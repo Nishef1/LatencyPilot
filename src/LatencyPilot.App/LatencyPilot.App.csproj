@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../LatencyPilot.Core/LatencyPilot.Core.csproj" />
+    <ProjectReference Include="../LatencyPilot.Benchmarking/LatencyPilot.Benchmarking.csproj" />
     <ProjectReference Include="../LatencyPilot.Protocol/LatencyPilot.Protocol.csproj" />
     <ProjectReference Include="../LatencyPilot.Platform.Windows/LatencyPilot.Platform.Windows.csproj" />
   </ItemGroup>
