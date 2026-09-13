@@ -35,6 +35,7 @@ public sealed partial class MainWindow : Window
         VersionText.Text = $"v{GetProductVersion()}";
         BaselineProgressBar.Maximum = BaselineWindowCount;
         ObservationQualityText.Text = MeasurementContextGuidance;
+        InitializePremiumObservationUi();
     }
 
     private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
@@ -343,6 +344,8 @@ public sealed partial class MainWindow : Window
             KernelCaptureStatusText.Text = $"Observation completed with quality warning: {integrityIssue}";
             ObservationQualityText.Text = $"Treat this observation as incomplete evidence. {FormatCaptureInterpretation(capture)} {MeasurementContextGuidance}";
         }
+
+        RenderPremiumCapture(capture);
     }
 
     private void RenderBaselineQuality(BaselineQualityResult quality, bool preserveStatusText = false)
@@ -531,6 +534,7 @@ public sealed partial class MainWindow : Window
         TopModulesList.ItemsSource = null;
         TopProcessorsList.ItemsSource = null;
         ObservationQualityText.Text = MeasurementContextGuidance;
+        ClearPremiumCapture();
     }
 
     private static string GetProductVersion()
