@@ -10,7 +10,9 @@ public enum BaselineQualityStatus
 
 public sealed record BaselineQualityPolicy(
     int RequiredWindowCount = 5,
-    int MinimumEventsPerMetricWindow = 20,
+    int MinimumRequestedWindowDurationMilliseconds = 20_000,
+    double MinimumActualToRequestedDurationRatio = 0.95,
+    int MinimumEventsPerMetricWindow = 1_000,
     double MaximumRelativeNoiseFloor = 0.30,
     double MaximumRelativeDrift = 0.20,
     double ExtremeWindowRelativeDeviation = 0.50)
@@ -22,7 +24,19 @@ public sealed record BaselineQualityPolicy(
             throw new ArgumentOutOfRangeException(nameof(RequiredWindowCount));
         }
 
-        if (MinimumEventsPerMetricWindow < 1)
+        if (MinimumRequestedWindowDurationMilliseconds < 1_000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MinimumRequestedWindowDurationMilliseconds));
+        }
+
+        if (!double.IsFinite(MinimumActualToRequestedDurationRatio) ||
+            MinimumActualToRequestedDurationRatio <= 0d ||
+            MinimumActualToRequestedDurationRatio > 1d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MinimumActualToRequestedDurationRatio));
+        }
+
+        if (MinimumEventsPerMetricWindow < 100)
         {
             throw new ArgumentOutOfRangeException(nameof(MinimumEventsPerMetricWindow));
         }
@@ -44,6 +58,8 @@ public sealed record BaselineQualityPolicy(
 public sealed record BaselineWindowEvidence(
     int WindowNumber,
     DateTimeOffset StartedAtUtc,
+    int RequestedDurationMilliseconds,
+    double ActualDurationMilliseconds,
     bool CaptureIntegrityValid,
     string? CaptureIntegrityIssue,
     int DpcEventCount,
@@ -79,21 +95,21 @@ public sealed record BaselineQualityResult(
 
 public static class BaselineQualityAnalyzer
 {
-    public const string MethodVersion = "baseline-quality-v1";
+    public const string MethodVersion = "baseline-quality-v2";
 
-    private static readonly BaselineQualityPolicy Version1Policy = new();
+    private static readonly BaselineQualityPolicy Version2Policy = new();
 
     public static BaselineQualityResult Analyze(
         IReadOnlyList<BaselineWindowEvidence> windows,
         BaselineQualityPolicy? policy = null)
     {
         ArgumentNullException.ThrowIfNull(windows);
-        policy ??= Version1Policy;
+        policy ??= Version2Policy;
         policy.Validate();
-        if (policy != Version1Policy)
+        if (policy != Version2Policy)
         {
             throw new ArgumentException(
-                $"{MethodVersion} has a fixed policy identity. Changing window/sample/noise/drift thresholds requires a new baseline method version.",
+                $"{MethodVersion} has a fixed policy identity. Changing duration/sample/noise/drift thresholds requires a new baseline method version.",
                 nameof(policy));
         }
 
@@ -124,6 +140,18 @@ public static class BaselineQualityAnalyzer
                     : window.CaptureIntegrityIssue));
         }
 
+        var inadequateDurationWindows = ordered
+            .Where(window => !IsDurationAdequate(window, policy))
+            .ToArray();
+        foreach (var window in inadequateDurationWindows)
+        {
+            var minimumActual = window.RequestedDurationMilliseconds * policy.MinimumActualToRequestedDurationRatio;
+            reasons.Add(
+                $"Window {window.WindowNumber} has inadequate duration: requested {window.RequestedDurationMilliseconds} ms, " +
+                $"actual {window.ActualDurationMilliseconds:F1} ms. {MethodVersion} requires a request of at least " +
+                $"{policy.MinimumRequestedWindowDurationMilliseconds} ms and at least {policy.MinimumActualToRequestedDurationRatio:P0} of the requested interval to complete (minimum {minimumActual:F1} ms for this request)." );
+        }
+
         var dpc = AnalyzeMetric(
             "DPC p99",
             ordered,
@@ -143,6 +171,7 @@ public static class BaselineQualityAnalyzer
         var validCaptureWindowCount = ordered.Length - invalidCaptureWindows.Length;
         var valid = ordered.Length == policy.RequiredWindowCount &&
             invalidCaptureWindows.Length == 0 &&
+            inadequateDurationWindows.Length == 0 &&
             dpc.IsStable &&
             isr.IsStable;
 
@@ -173,6 +202,21 @@ public static class BaselineQualityAnalyzer
         }
     }
 
+    private static bool IsDurationAdequate(
+        BaselineWindowEvidence window,
+        BaselineQualityPolicy policy)
+    {
+        if (window.RequestedDurationMilliseconds < policy.MinimumRequestedWindowDurationMilliseconds ||
+            !double.IsFinite(window.ActualDurationMilliseconds) ||
+            window.ActualDurationMilliseconds <= 0d)
+        {
+            return false;
+        }
+
+        return window.ActualDurationMilliseconds >=
+            window.RequestedDurationMilliseconds * policy.MinimumActualToRequestedDurationRatio;
+    }
+
     private static BaselineMetricQuality AnalyzeMetric(
         string metricName,
         IReadOnlyList<BaselineWindowEvidence> windows,
@@ -186,7 +230,7 @@ public static class BaselineQualityAnalyzer
 
         foreach (var window in windows)
         {
-            if (!window.CaptureIntegrityValid)
+            if (!window.CaptureIntegrityValid || !IsDurationAdequate(window, policy))
             {
                 continue;
             }
@@ -209,13 +253,13 @@ public static class BaselineQualityAnalyzer
         {
             reasons.Add(
                 $"insufficient event evidence in window(s) {string.Join(", ", insufficientWindowNumbers)} " +
-                $"(minimum {policy.MinimumEventsPerMetricWindow} events per window).");
+                $"(minimum {policy.MinimumEventsPerMetricWindow:N0} events per window for p99 stability screening)." );
         }
 
         if (eligible.Count < policy.RequiredWindowCount)
         {
             reasons.Add(
-                $"only {eligible.Count} of {policy.RequiredWindowCount} required windows have analyzable metric evidence.");
+                $"only {eligible.Count} of {policy.RequiredWindowCount} required windows have analyzable metric evidence." );
         }
 
         if (eligible.Count == 0)
@@ -256,7 +300,7 @@ public static class BaselineQualityAnalyzer
         if (relativeNoiseFloor > policy.MaximumRelativeNoiseFloor)
         {
             reasons.Add(
-                $"P10-P90 spread is {relativeNoiseFloor:P1}, above the {policy.MaximumRelativeNoiseFloor:P0} quality limit.");
+                $"P10-P90 spread is {relativeNoiseFloor:P1}, above the {policy.MaximumRelativeNoiseFloor:P0} quality limit." );
         }
 
         var splitCount = eligible.Count / 2;
@@ -279,7 +323,7 @@ public static class BaselineQualityAnalyzer
             if (relativeDrift > policy.MaximumRelativeDrift)
             {
                 reasons.Add(
-                    $"early/late median drift is {relativeDrift:P1}, above the {policy.MaximumRelativeDrift:P0} quality limit.");
+                    $"early/late median drift is {relativeDrift:P1}, above the {policy.MaximumRelativeDrift:P0} quality limit." );
             }
         }
 
@@ -291,7 +335,7 @@ public static class BaselineQualityAnalyzer
         {
             reasons.Add(
                 $"extreme window deviation exceeded {policy.ExtremeWindowRelativeDeviation:P0} in window(s) " +
-                string.Join(", ", extremeWindowNumbers) + ". No window was discarded.");
+                string.Join(", ", extremeWindowNumbers) + ". No window was discarded." );
         }
 
         return new BaselineMetricQuality(
