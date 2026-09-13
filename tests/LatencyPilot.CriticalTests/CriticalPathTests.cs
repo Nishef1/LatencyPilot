@@ -84,21 +84,19 @@ public sealed class CriticalPathTests
 
         var gapped = stable
             .Select(window => window.WindowNumber >= 3
-                ? window with
-                {
-                    WindowNumber = window.WindowNumber + 1,
-                    StartedAtUtc = window.StartedAtUtc.AddSeconds(1),
-                }
+                ? window with { WindowNumber = window.WindowNumber + 1 }
                 : window)
             .ToArray();
         Assert.ThrowsExactly<ArgumentException>(() => BaselineQualityAnalyzer.Analyze(gapped));
 
-        var nonChronological = stable.ToArray();
-        nonChronological[3] = nonChronological[3] with
+        var wallClockAdjusted = stable.ToArray();
+        wallClockAdjusted[3] = wallClockAdjusted[3] with
         {
-            StartedAtUtc = nonChronological[2].StartedAtUtc,
+            StartedAtUtc = wallClockAdjusted[2].StartedAtUtc.AddMinutes(-1),
         };
-        Assert.ThrowsExactly<ArgumentException>(() => BaselineQualityAnalyzer.Analyze(nonChronological));
+        var adjustedResult = BaselineQualityAnalyzer.Analyze(wallClockAdjusted);
+        Assert.AreEqual(BaselineQualityStatus.Valid, adjustedResult.Status);
+        Assert.IsTrue(adjustedResult.IsValidForComparison);
     }
 
     [TestMethod]
@@ -139,6 +137,45 @@ public sealed class CriticalPathTests
             roundTrip.Position = 0;
             var decoded = await PipeMessageFraming.ReadAsync<ObservationRequest>(roundTrip, ObservationProtocol.MaximumRequestBytes);
             Assert.AreEqual(request, decoded);
+        }
+
+        var captureRequestId = Guid.NewGuid();
+        var emptyDistribution = new LatencyDistribution(0, null, null, null, null, null);
+        var capture = new KernelLatencyCaptureResponse(
+            captureRequestId,
+            DateTimeOffset.UnixEpoch,
+            5_000,
+            5_000d,
+            0,
+            0,
+            0,
+            false,
+            0,
+            0,
+            false,
+            false,
+            emptyDistribution,
+            emptyDistribution,
+            new LatencyThresholdSummary(100d, 0, 0, 0),
+            new LatencyThresholdSummary(25d, 0, 0, 0),
+            [],
+            [],
+            []);
+        var response = new ObservationResponse(
+            ProtocolVersion.Current,
+            captureRequestId,
+            ObservationResponseStatus.Ok,
+            ObservationErrorCode.None,
+            null,
+            null,
+            capture);
+        using (var responseRoundTrip = new MemoryStream())
+        {
+            await PipeMessageFraming.WriteAsync(responseRoundTrip, response, ObservationProtocol.MaximumResponseBytes);
+            responseRoundTrip.Position = 0;
+            var decoded = await PipeMessageFraming.ReadAsync<ObservationResponse>(responseRoundTrip, ObservationProtocol.MaximumResponseBytes);
+            Assert.AreEqual(captureRequestId, decoded.KernelLatencyCapture?.RequestId);
+            Assert.IsNull(decoded.KernelLatencyCapture?.Dpc.P999Microseconds);
         }
 
         var json = $$"""
