@@ -244,7 +244,7 @@ public sealed partial class MainWindow
     private static string FormatStoredInterruptEvidence(RepresentativeDeviceEvidence item)
     {
         var configuration = item.Device.InterruptConfiguration;
-        if (configuration.ReadStatus != LatencyPilot.Core.Devices.InterruptConfigurationReadStatus.Available)
+        if (!item.StoredInterruptConfigurationAvailable)
         {
             var native = configuration.NativeErrorCode is null
                 ? string.Empty
@@ -273,7 +273,7 @@ public sealed partial class MainWindow
     private static string FormatAllocatedInterruptEvidence(RepresentativeDeviceEvidence item)
     {
         var resources = item.Device.InterruptResources;
-        if (resources.ReadStatus != LatencyPilot.Core.Devices.InterruptResourceReadStatus.Available)
+        if (!item.AllocatedInterruptResourcesAvailable)
         {
             var native = resources.NativeStatusCode is null
                 ? string.Empty
