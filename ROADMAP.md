@@ -65,7 +65,7 @@ No later phase may be used to bypass an earlier phase exit gate. Shared infrastr
 A contributor can determine product intent, non-goals, architecture, contribution rules and completion criteria without chat history.
 
 ### After Phase 0 closes
-Proceed to Phase 1: buildable solution → comparison-domain invariants → read-only desktop vertical slice → CI/package evidence.
+Proceed to Phase 1: buildable solution → comparison-domain invariants → read-only desktop vertical slice → validation/package evidence.
 
 ---
 
@@ -78,7 +78,7 @@ Proceed to Phase 1: buildable solution → comparison-domain invariants → read
 - [x] solution/shared build settings;
 - [x] Core, Benchmarking, Protocol, Platform.Windows, Persistence, Service and App projects;
 - [x] one focused permanent-test project;
-- [x] Windows Release CI.
+- [x] historical Windows Release CI at Phase 1 closure. Current owner policy is test-only GitHub Actions plus owner-local Windows builds.
 
 ### 1.2 Domain/comparison foundation
 - [x] experiment lifecycle and legal transitions;
@@ -99,7 +99,7 @@ Proceed to Phase 1: buildable solution → comparison-domain invariants → read
 Phase 1 originally closed with a WPF artifact. ADR 0002 later superseded the UI-framework choice with WinUI 3; historical Phase 1 evidence remains historical rather than being rewritten.
 
 ### Exit gate
-Release build + permanent tests + self-contained x64 artifact succeed, with no device mutation.
+Historical Phase 1 evidence showed a successful release build + permanent tests + self-contained x64 artifact, with no device mutation.
 
 ### After Phase 1 closes
 Proceed to Phase 2 in this order: authoritative inventory/resource evidence → privileged read-only ETW observation → module/CPU attribution → physical validation → repeated baseline/noise/drift → evidence UX.
@@ -139,20 +139,22 @@ Stored registry configuration, allocated resource assignment and runtime behavio
 - [x] capture cancellation/timeout/cleanup on failure;
 - [x] bounded aggregate IPC response rather than raw-event transfer;
 - [x] bounded structured App/Service diagnostics correlated by protocol `RequestId` without per-event ETW logging;
-- [ ] physical Windows 11 validation of Service → ETW → IPC behavior and cleanup.
+- [ ] physical Windows 11 validation of current Service → ETW → IPC behavior and cleanup.
 
 Native routine addresses must remain unresolved unless authoritative kernel image evidence maps them. Already-loaded images require the appropriate kernel image rundown/CAPTURE_STATE behavior rather than future ImageLoad events alone.
 
 The current Phase 2 observation ACL is not future mutation authorization. Phase 3 must add mutation-specific authorization before any privileged write command exists.
 
 ### 2.3 Baseline quality
-- [ ] repeated baseline windows;
-- [ ] stable repeated-window protocol/minimum valid windows;
-- [ ] measured noise floor;
-- [ ] drift detection;
-- [ ] invalid/outlier-window handling with explicit reasons;
+- [ ] repeated baseline windows in the WinUI flow — source implemented; owner-local Windows compile/run evidence pending;
+- [x] stable repeated-window policy/minimum valid windows in deterministic `baseline-quality-v1`;
+- [x] empirical window-level p99 noise-floor calculation;
+- [x] early/late inter-window drift detection;
+- [x] invalid/extreme-window handling with explicit reasons and no silent deletion;
 - [ ] background/thermal quality warning where observable and reliable;
-- [ ] invalid/inconclusive baseline cannot unlock optimization.
+- [ ] invalid/inconclusive baseline cannot unlock a future optimizer — quality gate exists, optimizer integration does not yet exist.
+
+Current `baseline-quality-v1` requires five windows, at least 20 events per metric/window, clean capture integrity, <=30% relative P10-P90 spread, <=20% early/late drift and no >50% extreme-window deviation. These are versioned conservative policy values, not statistical-significance claims.
 
 ### 2.4 UX
 - [x] observation-service health/safety status;
@@ -163,8 +165,9 @@ The current Phase 2 observation ACL is not future mutation authorization. Phase 
 - [x] per-CPU latency/interrupt concentration view;
 - [x] bounded top DPC/ISR contributors after module attribution exists;
 - [ ] raw/auditable metric inspection;
-- [ ] baseline quality verdict/reason;
-- [ ] clearly label configuration vs assigned resource vs runtime evidence.
+- [ ] repeated-baseline quality verdict/reasons UI — source implemented; owner-local WinUI compile/run evidence pending;
+- [ ] clearly label configuration vs assigned resource vs runtime evidence;
+- [ ] responsive/keyboard/accessibility sanity pass for Phase 2 evidence surfaces.
 
 ### Exit gate
 A user can run a repeatable **read-only** baseline on a real Windows 11 PC and identify CPU/module latency concentration without LatencyPilot changing system configuration.
@@ -298,10 +301,10 @@ Run the final 1.0 release audit against the complete product definition, every p
 
 ## Permanent-test rule
 
-Repository-wide permanent automated tests may **never exceed 10** unless the owner explicitly approves the exception and an ADR explains why remaining at 10 would be more harmful. The current suite is intentionally consolidated to seven durable contract tests, leaving three slots for higher-blast-radius recovery/mutation risks in later phases. Temporary implementation/debug tests may be created and removed before finalization.
+Repository-wide permanent automated tests may **never exceed 10** unless the owner explicitly approves the exception and an ADR explains why remaining at 10 would be more harmful. The current suite is intentionally consolidated to **eight** durable contract tests, leaving two slots for higher-blast-radius recovery/mutation risks in later phases. Temporary implementation/debug tests may be created and removed before finalization.
 
 ## Phase-closing rule
 
-A checkbox is complete only when code/artifact exists on `main` and the required evidence exists. Build-dependent work requires green CI. Hardware-dependent work requires physical Windows 11 evidence. “Implemented but unverified” remains incomplete. Before closing a subsection, perform the mandatory step-back review defined in `AGENTS.md`.
+A checkbox is complete only when code/artifact exists on `main` and the required evidence exists. Deterministic correctness may use the test-only GitHub Actions workflow. Build/package-dependent work requires owner-local Windows build/package evidence. Hardware-dependent work requires physical Windows 11 evidence. “Implemented but unverified” remains incomplete. Before closing a subsection, perform the mandatory step-back review defined in `AGENTS.md`.
 
 After every meaningful stage, reports must include the exact next stage and the stage after that; `PROJECT_STATUS.md` is the authoritative detailed execution ladder.
