@@ -301,12 +301,13 @@ internal static class EvidenceExportService
             // failure must not invalidate an otherwise completed observation.
         }
 
+        var system = SystemInventoryReader.Capture();
         return new EvidenceEnvironment(
-            RuntimeInformation.OSDescription,
+            system.OperatingSystem,
             System.Environment.OSVersion.VersionString,
-            RuntimeInformation.OSArchitecture.ToString(),
-            RuntimeInformation.ProcessArchitecture.ToString(),
-            System.Environment.ProcessorCount,
+            system.OsArchitecture,
+            system.ProcessArchitecture,
+            system.ProcessAvailableProcessorCount,
             System.Environment.Version.ToString(),
             topology);
     }
