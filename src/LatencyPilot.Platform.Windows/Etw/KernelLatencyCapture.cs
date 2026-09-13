@@ -163,20 +163,22 @@ public static class KernelLatencyCapture
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var attributedEvents = events
-            .Select(item => item with
+        for (var index = 0; index < events.Count; index++)
+        {
+            var item = events[index];
+            events[index] = item with
             {
                 ModulePath = imageTracker.ResolvePath(
                     item.RoutineAddress,
                     item.TimeStampRelativeMilliseconds),
-            })
-            .ToArray();
+            };
+        }
 
         return new KernelLatencyCaptureResult(
             startedAtUtc,
             options.Duration,
             stopwatch.Elapsed,
-            attributedEvents,
+            events.AsReadOnly(),
             eventsLost,
             invalidEventCount,
             imageTracker.InvalidEventCount,
