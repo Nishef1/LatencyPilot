@@ -29,11 +29,17 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           foreach ($path in @('scripts/Verify-Evidence.ps1', 'scripts/Temporary-Verify-Evidence-Smoke.ps1')) {
+            $resolved = (Resolve-Path $path).Path
             $tokens = $null
             $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null
+            [System.Management.Automation.Language.Parser]::ParseFile($resolved, [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -ne 0) {
-              $errors | ForEach-Object { Write-Error $_.Message }
+              foreach ($parseError in $errors) {
+                $line = $parseError.Extent.StartLineNumber
+                $column = $parseError.Extent.StartColumnNumber
+                $text = $parseError.Extent.Text
+                Write-Host "PARSE ERROR $resolved`:$line`:$column :: $($parseError.Message) :: '$text'"
+              }
               throw "PowerShell parse failed for $path."
             }
           }
