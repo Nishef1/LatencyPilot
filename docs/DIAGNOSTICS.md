@@ -35,7 +35,7 @@ That fallback file is not the primary diagnostics stream.
 
 Current sinks use:
 
-- compact JSON events;
+- rendered Compact Log Event Format (CLEF) JSON events so a human-readable `@m` message is available without reimplementing message-template rendering;
 - daily rolling plus a 32 MiB per-file size limit;
 - at most 10 retained files per process;
 - asynchronous bounded buffering;
@@ -44,6 +44,20 @@ Current sinks use:
 - `Component` and `ProcessId` context.
 
 Failure to initialize file logging must not prevent the App or Service from starting. Diagnostics are evidence about the product; they are not a prerequisite for the product to run.
+
+## Live development diagnostics
+
+`live.ps1` keeps the WinUI App non-elevated, installs/runs the privileged observation host through the Windows Service Control Manager, and streams the existing App and Service CLEF files into the same terminal with `[APP]` and `[SERVICE]` prefixes.
+
+This is deliberately a presentation layer over the authoritative structured files rather than a second logging pipeline. The live viewer uses PowerShell file-following only; it does not add synchronous console sinks to the App or Service and does not emit per-event ETW diagnostics.
+
+```powershell
+.\live.ps1
+```
+
+Use `-NoLogs` when terminal streaming is not wanted. Live terminal output is a development aid, not benchmark evidence and not a replacement for the persisted structured logs.
+
+The App must not be launched from an elevated terminal. When the development Service needs to be refreshed, `live.ps1` requests elevation only for `scripts/Install-Service.ps1`, which copies the built Service payload to the protected `%ProgramFiles%\LatencyPilot\Service` path and registers/starts it as LocalSystem. This preserves the normal-user WinUI boundary while retaining the privilege required for kernel ETW observation.
 
 ## Correlation and event identity
 
