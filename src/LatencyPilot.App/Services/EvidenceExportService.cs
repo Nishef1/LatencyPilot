@@ -10,35 +10,68 @@ using Windows.Storage.Pickers;
 
 namespace LatencyPilot.App.Services;
 
+internal enum MeasurementScenario
+{
+    RealWorld = 1,
+    IdleBaseline = 2,
+    BeforeAfter = 3,
+}
+
 internal static class EvidenceExportService
 {
-    private const string EvidenceSchema = "latencypilot-evidence-v3";
+    private const string EvidenceSchema = "latencypilot-evidence-v4";
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
     public static string CreateObservationJson(
         string productVersion,
+        MeasurementScenario measurementScenario,
         KernelLatencyCaptureResponse capture) =>
         JsonSerializer.Serialize(
             new ObservationEvidenceDocument(
                 EvidenceSchema,
                 productVersion,
+                TryExtractSourceRevisionId(productVersion),
                 ProtocolVersion.Current,
                 DateTimeOffset.UtcNow,
                 CreateEnvironment(),
+                CreateMeasurementContext(measurementScenario),
                 capture),
             JsonOptions);
 
     public static string CreateBaselineJson(
         string productVersion,
+        MeasurementScenario measurementScenario,
         IReadOnlyList<KernelLatencyCaptureResponse> captures,
         IReadOnlyList<BaselineWindowEvidence> windows,
         BaselineQualityResult quality) =>
         CreateBaselineJson(
             productVersion,
+            measurementScenario,
             captures.ToArray(),
             windows.ToArray(),
             quality);
+
+    public static string GetMeasurementDisplayName(MeasurementScenario scenario) =>
+        scenario switch
+        {
+            MeasurementScenario.RealWorld => "Real-world workload",
+            MeasurementScenario.IdleBaseline => "Controlled idle",
+            MeasurementScenario.BeforeAfter => "Before / after comparison",
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown measurement scenario."),
+        };
+
+    public static string GetMeasurementGuidance(MeasurementScenario scenario) =>
+        scenario switch
+        {
+            MeasurementScenario.RealWorld =>
+                "Keep the apps or game that reproduce the issue open; their activity is part of the evidence.",
+            MeasurementScenario.IdleBaseline =>
+                "Close unnecessary apps and avoid starting unrelated work while the controlled idle measurement runs.",
+            MeasurementScenario.BeforeAfter =>
+                "Use the same apps, workload, power state and background activity on both sides of the comparison.",
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown measurement scenario."),
+        };
 
     public static string CreateSuggestedFileName(string evidenceType, DateTimeOffset startedAtUtc) =>
         string.Create(
@@ -56,6 +89,7 @@ internal static class EvidenceExportService
 
     private static string CreateBaselineJson(
         string productVersion,
+        MeasurementScenario measurementScenario,
         KernelLatencyCaptureResponse[] captures,
         BaselineWindowEvidence[] windows,
         BaselineQualityResult quality) =>
@@ -63,14 +97,22 @@ internal static class EvidenceExportService
             new BaselineEvidenceDocument(
                 EvidenceSchema,
                 productVersion,
+                TryExtractSourceRevisionId(productVersion),
                 ProtocolVersion.Current,
                 DateTimeOffset.UtcNow,
                 CreateEnvironment(),
+                CreateMeasurementContext(measurementScenario),
                 quality.MethodVersion,
                 captures,
                 windows,
                 quality),
             JsonOptions);
+
+    private static EvidenceMeasurementContext CreateMeasurementContext(MeasurementScenario scenario) =>
+        new(
+            scenario,
+            GetMeasurementDisplayName(scenario),
+            GetMeasurementGuidance(scenario));
 
     private static EvidenceEnvironment CreateEnvironment()
     {
@@ -102,6 +144,20 @@ internal static class EvidenceExportService
             System.Environment.ProcessorCount,
             System.Environment.Version.ToString(),
             topology);
+    }
+
+    private static string? TryExtractSourceRevisionId(string productVersion)
+    {
+        var separator = productVersion.LastIndexOf('+');
+        if (separator < 0 || separator == productVersion.Length - 1)
+        {
+            return null;
+        }
+
+        var candidate = productVersion[(separator + 1)..];
+        return candidate.Length is >= 7 and <= 40 && candidate.All(Uri.IsHexDigit)
+            ? candidate
+            : null;
     }
 
     private static async Task<string?> SaveAsync(
@@ -175,20 +231,29 @@ internal static class EvidenceExportService
         string DotNetRuntimeVersion,
         EvidenceTopology? Topology);
 
+    private sealed record EvidenceMeasurementContext(
+        MeasurementScenario Scenario,
+        string DisplayName,
+        string Guidance);
+
     private sealed record ObservationEvidenceDocument(
         string Schema,
         string ProductVersion,
+        string? SourceRevisionId,
         int ProtocolVersion,
         DateTimeOffset ExportedAtUtc,
         EvidenceEnvironment Environment,
+        EvidenceMeasurementContext MeasurementContext,
         KernelLatencyCaptureResponse Capture);
 
     private sealed record BaselineEvidenceDocument(
         string Schema,
         string ProductVersion,
+        string? SourceRevisionId,
         int ProtocolVersion,
         DateTimeOffset ExportedAtUtc,
         EvidenceEnvironment Environment,
+        EvidenceMeasurementContext MeasurementContext,
         string BaselineMethodVersion,
         KernelLatencyCaptureResponse[] Captures,
         BaselineWindowEvidence[] Windows,
