@@ -26,7 +26,7 @@ Windows exposes powerful interrupt, CPU-topology, ETW, USB, networking and sched
 
 1. **No tweak without evidence.**
 2. **One variable at a time before combination testing.**
-3. **Tail latency matters.** p95/p99/p99.9/max and variability matter more than averages alone.
+3. **Tail latency matters.** p95/p99/p99.9/max and variability matter more than averages alone, but extreme percentiles are shown only when sample counts support them.
 4. **Measure collateral effects.** A local win may still be a system-wide trade-off.
 5. **Know the noise floor.** Small deltas inside baseline variability are not improvements.
 6. **Rollback first.** Snapshot, journal, verification, recovery and revert are part of the feature.
@@ -41,15 +41,17 @@ Windows exposes powerful interrupt, CPU-topology, ETW, USB, networking and sched
 - Phase 2 — read-only observation engine: **in progress**
 - Stage A — authoritative DPC/ISR module attribution: **closed historically**
 - Stage B — physical Windows 11 validation: **open**
-- Stage C — repeated baseline quality engine: **implemented in source, owner-local WinUI validation pending**
+- Stage C — repeated baseline quality engine: **implemented in source; CI compile passes, owner-local runtime/physical validation pending**
 - System mutation capability: **none by design**
 - Permanent tests: **8 / hard maximum 10**
 
-Phase 2 contains CPU topology, PnP stable identities, driver metadata, stored interrupt configuration, allocated IRQ/resource inspection, a privileged read-only Windows Service, typed local Named Pipe IPC, DPC/ISR ETW observation with per-processor aggregation, p50/p95/p99/p99.9/max summaries, authoritative routine-address attribution against kernel image ranges, and the first repeated-baseline quality engine. Already-loaded images are recovered through kernel image rundown at session stop. Ambiguous or missing mappings remain explicitly unresolved instead of being guessed.
+Phase 2 contains CPU topology, PnP stable identities, driver metadata, stored interrupt configuration, allocated IRQ/resource inspection, a privileged read-only Windows Service, typed local Named Pipe IPC, DPC/ISR ETW observation with per-processor aggregation, p50/p95/p99/max summaries and sample-gated p99.9, authoritative routine-address attribution against kernel image ranges, and the first repeated-baseline quality engine. Already-loaded images are recovered through kernel image rundown at session stop. Ambiguous or missing mappings remain explicitly unresolved instead of being guessed.
 
-The observation boundary is fail-closed and bounded: unknown protocol fields are rejected, network identities are denied, the Phase 2 pipe surface is limited to interactive local identities plus required service identities, and abandoned clients cancel active capture work. App/Service failures are recorded in bounded structured local logs correlated by protocol `RequestId`.
+The observation boundary is fail-closed and bounded: unknown protocol fields are rejected, network identities are denied, the pipe ACL is limited to local interactive/service identities, and the Service additionally rejects a connected client unless its Windows session matches the active console session. Abandoned clients cancel active capture work. This active-console rule deliberately narrows current Phase 2 support and does not imply RDP/multi-session support or future mutation authorization.
 
-The Stage C source adds a five-window `Build baseline` flow and deterministic `baseline-quality-v1` interpretation in `LatencyPilot.Benchmarking`. It checks capture integrity, minimum metric evidence, inter-window noise, drift and extreme windows; a lossy/noisy/drifted baseline is `Inconclusive` rather than silently accepted. The WinUI source still requires owner-local Windows compile/run evidence before that UI work is considered closed.
+Protocol v5 carries the capture `RequestId` into bounded evidence, so exported JSON can correlate directly with App/Service structured logs. Expected privileged capture failures preserve bounded failure-kind/native-error diagnostics rather than collapsing every failure into an opaque unavailable state.
+
+The Stage C source adds a five-window `Build baseline` flow and deterministic `baseline-quality-v1` interpretation in `LatencyPilot.Benchmarking`. It checks capture integrity, minimum metric evidence, inter-window noise, drift and extreme windows; a lossy/noisy/drifted baseline is `Inconclusive` rather than silently accepted. Window number is the authoritative sequence; UTC timestamps are provenance rather than a monotonic-order requirement. Hosted CI now compiles the WinUI App and Service, but owner-local runtime/publish/physical evidence is still required before Stage C is closed.
 
 See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the live execution ladder, [`docs/PHYSICAL_VALIDATION.md`](docs/PHYSICAL_VALIDATION.md) for Stage B, [`docs/BENCHMARK_METHODOLOGY.md`](docs/BENCHMARK_METHODOLOGY.md) for baseline/statistics semantics, and [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) for local logging/correlation rules.
 
@@ -64,7 +66,7 @@ The retired `v0.0.1` publication produced two Windows 11 x64 distributions from 
 - `LatencyPilot-0.0.1-win-x64-setup.exe` — installer for the app and read-only observation service.
 - `LatencyPilot-0.0.1-win-x64-portable.zip` — extractable portable bundle with app, service payload, runtime dependencies, service scripts, validation/diagnostics guides and build metadata.
 
-Those historical binaries are not evidence for current source. The next publishable candidate is `v0.0.2`, built locally by the repository owner from the exact tested `main` revision after owner-local build/package validation.
+Those historical binaries are not evidence for current source. The next publishable candidate is `v0.0.2`, built locally by the repository owner from the exact tested `main` revision after owner-local publish/package validation.
 
 The App runs as a normal, non-elevated user. Kernel ETW observation remains behind the privileged Windows Service. In the portable bundle, `Install-Service.ps1` copies the Service payload into `%ProgramFiles%\LatencyPilot\Service` before LocalSystem registration; the privileged binary is therefore not executed from an ordinary user-writable extraction folder. `Uninstall-Service.ps1` removes the registration and protected Service copy. See [`docs/PORTABLE.md`](docs/PORTABLE.md).
 
@@ -78,7 +80,7 @@ Current baseline:
 - **Windows UI/runtime:** Windows App SDK 2.4 Stable
 - **Distribution:** unpackaged, self-contained Windows 11 x64; installer EXE plus portable ZIP
 - **Privileged boundary:** narrow Windows Service used for Phase 2 read-only kernel ETW observation; Phase 3 later extends it only after recovery/journaling safety exists
-- **IPC:** typed/versioned local Named Pipes
+- **IPC:** typed/versioned local Named Pipes; current observation protocol v5
 - **Tracing:** ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`
 - **Graphics telemetry:** PresentMon where applicable
 - **Windows integration:** SetupAPI, Configuration Manager, CPU topology/CPU Sets, Raw Input and documented device-policy APIs
@@ -86,7 +88,7 @@ Current baseline:
 - **Diagnostics:** `Microsoft.Extensions.Logging` Service abstraction plus bounded Serilog compact-JSON rolling files
 - **Tests:** MSTest + Microsoft.Testing.Platform, hard maximum 10 permanent automated tests
 
-The desktop application remains non-elevated. Privileged observation and all future privileged mutation cross the narrow Service boundary. Mutation-specific commands are not present in Phase 2, and the current observation ACL is not considered sufficient future mutation authorization.
+The desktop application remains non-elevated. Privileged observation and all future privileged mutation cross the narrow Service boundary. Mutation-specific commands are not present in Phase 2, and the current observation ACL/session restriction is not considered sufficient future mutation authorization.
 
 See [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN.md), [`AGENTS.md`](AGENTS.md) and [`docs/adr/`](docs/adr/).
 
@@ -112,7 +114,7 @@ Depending on subsystem, evidence may include:
 
 - DPC/ISR duration distributions and per-CPU load;
 - driver/module attribution;
-- p50 / p95 / p99 / p99.9 / max;
+- p50 / p95 / p99 / p99.9 / max where sample counts support the statistic;
 - sample count and dispersion;
 - baseline noise/drift;
 - frame-time and PresentMon metrics;
@@ -120,7 +122,9 @@ Depending on subsystem, evidence may include:
 - USB ETW or NDIS/RSS evidence;
 - audio/stability guardrails where measurable.
 
-All current percentile reporting uses the same documented linear interpolation estimator from `LatencyPilot.Benchmarking.Statistics.Percentiles`; the Service and baseline engine do not define a second percentile rule.
+All current percentile calculation uses the same documented linear interpolation estimator from `LatencyPilot.Benchmarking.Statistics.Percentiles`; the Service and baseline engine do not define a second percentile rule. Phase 2 observation exposes p99.9 only when that distribution contains at least 1,000 samples; below that threshold it remains unavailable rather than over-emphasizing an under-supported extreme percentile.
+
+DPC `>100 µs` and ISR `>25 µs` are presented as Microsoft driver guidance. The `>1 ms` and `>3 ms` rows are LatencyPilot diagnostic tail buckets, not official Windows pass/fail or user-impact severity boundaries.
 
 `baseline-quality-v1` currently requires five sequential windows, at least 20 events per DPC/ISR metric per clean window, <=30% relative P10-P90 spread, <=20% early/late drift and no >50% extreme-window deviation. These are conservative versioned quality-policy thresholds, not statistical-significance claims.
 
@@ -152,7 +156,7 @@ docs/
 
 ## Testing policy
 
-The permanent automated suite is intentionally small and has a **hard repository-wide maximum of 10 tests**. The current suite uses eight broader permanent test methods covering state-machine safety, benchmark verdict semantics, repeated-baseline quality, invalid metrics, canonical percentiles, fail-closed protocol framing, the read-only protocol surface and a real Windows inventory/topology invariant.
+The permanent automated suite is intentionally small and has a **hard repository-wide maximum of 10 tests**. The current suite uses eight broader permanent test methods covering state-machine safety, benchmark verdict semantics, repeated-baseline quality, invalid metrics, canonical percentiles, fail-closed protocol framing/correlation, the read-only protocol surface and a real Windows inventory/topology invariant.
 
 Test count is not a quality goal. When a newer parser/recovery/mutation risk has greater blast radius, merge or remove a lower-value permanent test and reuse that slot. Scenario matrices should be consolidated inside a durable contract test when practical. Temporary implementation/debug tests may be created and deleted before finalization.
 
@@ -174,19 +178,21 @@ Service logs:
 %PROGRAMDATA%\LatencyPilot\Logs\Service\latencypilot-service-*.json
 ```
 
-They use compact JSON, bounded rolling/retention and async file writes. The protocol `RequestId` connects App-side request entries to Service-side capture entries. LatencyPilot does not log one event per raw DPC/ISR sample because diagnostic I/O must not become part of the latency measurement workload. See [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md).
+They use compact JSON, bounded rolling/retention and async file writes. The protocol `RequestId` connects App-side request entries, Service-side capture entries and protocol-v5 exported capture evidence. LatencyPilot does not log one event per raw DPC/ISR sample because diagnostic I/O must not become part of the latency measurement workload. See [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md).
 
 ## Building and automation
 
 The .NET SDK is pinned in `global.json`.
 
-GitHub Actions is intentionally **test-only**. It runs:
+GitHub Actions is a **validation-only** workflow. On each `main` revision and pull request it runs the permanent critical suite and then Release-compiles both Windows hosts:
 
 ```powershell
 dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+dotnet build src/LatencyPilot.Service/LatencyPilot.Service.csproj --configuration Release
+dotnet build src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release
 ```
 
-Hosted Actions does not publish the App/Service, build Setup/portable distributions, run production release packaging or publish GitHub releases.
+Hosted Actions does **not** publish the App/Service, run the published-App launch smoke, build Setup/portable distributions, run production release packaging or publish GitHub releases. Publish/package/runtime evidence remains owner-local.
 
 ### Fast local development
 
@@ -208,7 +214,13 @@ Visual Studio is the recommended inner loop for UI work:
 .\dev.ps1 -ForceRestore
 ```
 
-The script keeps the normal NuGet global package cache and uses `--no-restore` after a valid restore state exists.
+For the combined App + protected Service + structured-log development loop:
+
+```powershell
+.\live.ps1
+```
+
+`live.ps1` does **not** pull remote code by default. `-AutoPull` is an explicit opt-in because a shared/Service update can lead to rebuilding and reinstalling the privileged LocalSystem Service. The script keeps the WinUI App non-elevated and requests UAC only for the protected Service install/update.
 
 ### Owner-local release build
 
@@ -218,7 +230,7 @@ Release/package creation is an explicit owner action from a clean, current `main
 .\scripts\Publish-Release.ps1
 ```
 
-That script performs the Release build, App/Service publish, PRI validation, Setup/portable creation, checksums and GitHub prerelease publication locally. See [`docs/RELEASING.md`](docs/RELEASING.md).
+That script performs the Release build, App/Service publish, PRI validation, published-App launch smoke, Setup/portable creation, checksums and GitHub prerelease publication locally. See [`docs/RELEASING.md`](docs/RELEASING.md).
 
 For manual local build/debug without publishing:
 
