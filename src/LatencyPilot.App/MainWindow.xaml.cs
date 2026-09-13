@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using LatencyPilot.App.Services;
 using LatencyPilot.App.ViewModels;
+using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
@@ -13,6 +14,12 @@ namespace LatencyPilot.App;
 public sealed partial class MainWindow : Window
 {
     private static readonly Serilog.ILogger Logger = Log.ForContext<MainWindow>();
+    private static readonly TimeSpan ObservationDuration = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan BaselineInterWindowDelay = TimeSpan.FromMilliseconds(750);
+    private static readonly BaselineQualityPolicy BaselinePolicy = new();
+    private const int ObservationMaximumEvents = 200_000;
+    private const int BaselineWindowCount = 5;
+
     private bool _observationServiceReady;
     private bool _initialLoadStarted;
 
@@ -21,6 +28,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         Title = "LatencyPilot";
         VersionText.Text = $"v{GetProductVersion()}";
+        BaselineProgressBar.Maximum = BaselineWindowCount;
     }
 
     private async void RootGrid_Loaded(object sender, RoutedEventArgs e)
@@ -47,6 +55,7 @@ public sealed partial class MainWindow : Window
     private async Task RefreshObservationServiceStatusAsync()
     {
         CaptureObservationButton.IsEnabled = false;
+        CaptureBaselineButton.IsEnabled = false;
         RefreshServiceButton.IsEnabled = false;
         ServiceStatusBadgeText.Text = "Checking service";
         ServiceStatusText.Text = "Checking the local observation service…";
@@ -68,6 +77,7 @@ public sealed partial class MainWindow : Window
 
             _observationServiceReady = true;
             CaptureObservationButton.IsEnabled = true;
+            CaptureBaselineButton.IsEnabled = true;
             ServiceStatusBadgeText.Text = "Service connected";
             ServiceStatusText.Text = "Connected to the privileged read-only observation service. Mutation remains disabled.";
         }
@@ -104,65 +114,122 @@ public sealed partial class MainWindow : Window
 
     private async void CaptureObservationButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_observationServiceReady)
+        if (!await EnsureObservationServiceReadyAsync())
         {
-            await RefreshObservationServiceStatusAsync();
-            if (!_observationServiceReady)
-            {
-                return;
-            }
+            return;
         }
 
-        CaptureObservationButton.IsEnabled = false;
-        RefreshServiceButton.IsEnabled = false;
+        SetObservationControlsBusy(true);
         KernelCaptureStatusText.Text = "Capturing DPC/ISR activity for 5 seconds…";
         ObservationQualityText.Text = "Capture in progress. No interpretation is made until the observation completes.";
 
         try
         {
             var capture = await ObservationServiceClient.CaptureKernelLatencyAsync(
-                TimeSpan.FromSeconds(5),
-                maximumEvents: 200_000);
+                ObservationDuration,
+                ObservationMaximumEvents);
 
             RenderCapture(capture);
         }
-        catch (TimeoutException exception)
-        {
-            Logger.Warning(exception, "Kernel observation timed out.");
-            ClearCaptureMetrics();
-            SetServiceUnavailable("Observation service is not running or did not respond in time.");
-            KernelCaptureStatusText.Text = "Kernel observation did not start or exceeded its deadline.";
-        }
-        catch (IOException exception)
-        {
-            Logger.Warning(exception, "Kernel observation pipe connection failed.");
-            ClearCaptureMetrics();
-            SetServiceUnavailable("Observation service connection failed.");
-            KernelCaptureStatusText.Text = "Kernel observation did not complete.";
-        }
-        catch (InvalidDataException exception)
-        {
-            Logger.Error(exception, "Kernel observation returned an invalid protocol response.");
-            ClearCaptureMetrics();
-            KernelCaptureStatusText.Text = "Observation service returned an invalid protocol response.";
-        }
-        catch (InvalidOperationException exception)
-        {
-            Logger.Warning(exception, "Kernel observation request was rejected.");
-            ClearCaptureMetrics();
-            KernelCaptureStatusText.Text = exception.Message;
-        }
         catch (Exception exception)
         {
-            Logger.Error(exception, "Unexpected kernel observation failure.");
-            ClearCaptureMetrics();
-            KernelCaptureStatusText.Text = "Unexpected observation error. See the diagnostics log for details.";
+            HandleCaptureFailure(exception, "Kernel observation");
         }
         finally
         {
-            CaptureObservationButton.IsEnabled = _observationServiceReady;
-            RefreshServiceButton.IsEnabled = true;
+            SetObservationControlsBusy(false);
         }
+    }
+
+    private async void CaptureBaselineButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!await EnsureObservationServiceReadyAsync())
+        {
+            return;
+        }
+
+        SetObservationControlsBusy(true);
+        BaselineProgressBar.Value = 0;
+        BaselineVerdictText.Text = "Capturing";
+        BaselineStatusText.Text = $"Preparing {BaselineWindowCount} repeated five-second windows…";
+        BaselineMetricsText.Text = "Noise and drift will be computed after all required windows complete.";
+        BaselineReasonsText.Text = "No window is silently discarded from the quality gate.";
+        BaselineWindowsList.ItemsSource = null;
+
+        var windows = new List<BaselineWindowEvidence>(BaselineWindowCount);
+
+        try
+        {
+            for (var index = 1; index <= BaselineWindowCount; index++)
+            {
+                BaselineStatusText.Text = $"Capturing baseline window {index} of {BaselineWindowCount}…";
+                var capture = await ObservationServiceClient.CaptureKernelLatencyAsync(
+                    ObservationDuration,
+                    ObservationMaximumEvents);
+
+                RenderCapture(capture);
+                var integrityIssue = GetCaptureIntegrityIssue(capture);
+                windows.Add(new BaselineWindowEvidence(
+                    index,
+                    capture.StartedAtUtc,
+                    integrityIssue is null,
+                    integrityIssue,
+                    capture.Dpc.Count,
+                    capture.Dpc.P99Microseconds,
+                    capture.Isr.Count,
+                    capture.Isr.P99Microseconds));
+
+                BaselineProgressBar.Value = index;
+                BaselineWindowsList.ItemsSource = CreateBaselineWindowRows(windows);
+
+                if (index < BaselineWindowCount)
+                {
+                    await Task.Delay(BaselineInterWindowDelay);
+                }
+            }
+
+            var quality = BaselineQualityAnalyzer.Analyze(windows, BaselinePolicy);
+            RenderBaselineQuality(quality);
+        }
+        catch (Exception exception)
+        {
+            HandleCaptureFailure(exception, "Repeated baseline capture");
+            BaselineVerdictText.Text = "Inconclusive";
+            BaselineStatusText.Text = $"Baseline capture stopped after {windows.Count} of {BaselineWindowCount} windows.";
+
+            if (windows.Count > 0)
+            {
+                var partialQuality = BaselineQualityAnalyzer.Analyze(windows, BaselinePolicy);
+                RenderBaselineQuality(partialQuality, preserveStatusText: true);
+            }
+            else
+            {
+                BaselineMetricsText.Text = "No baseline metric evidence was produced.";
+                BaselineReasonsText.Text = "The repeated capture must complete before a baseline can be used for comparison.";
+            }
+        }
+        finally
+        {
+            SetObservationControlsBusy(false);
+        }
+    }
+
+    private async Task<bool> EnsureObservationServiceReadyAsync()
+    {
+        if (_observationServiceReady)
+        {
+            return true;
+        }
+
+        await RefreshObservationServiceStatusAsync();
+        return _observationServiceReady;
+    }
+
+    private void SetObservationControlsBusy(bool busy)
+    {
+        CaptureObservationButton.IsEnabled = !busy && _observationServiceReady;
+        CaptureBaselineButton.IsEnabled = !busy && _observationServiceReady;
+        RefreshServiceButton.IsEnabled = !busy;
     }
 
     private void RenderCapture(KernelLatencyCaptureResponse capture)
@@ -213,27 +280,131 @@ public sealed partial class MainWindow : Window
                 $"p99 {FormatLargestP99(processor)}"))
             .ToArray();
 
-        var etwLossCountKnown = capture.EventsLost >= 0;
-        var cleanCapture = etwLossCountKnown &&
-            capture.InvalidEventCount == 0 &&
-            capture.InvalidImageEventCount == 0 &&
-            !capture.EventLimitReached;
+        var integrityIssue = GetCaptureIntegrityIssue(capture);
+        if (integrityIssue is null)
+        {
+            KernelCaptureStatusText.Text = $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected.";
+            ObservationQualityText.Text = "Capture integrity looks clean. This is still a single observation, not a validated baseline.";
+        }
+        else
+        {
+            KernelCaptureStatusText.Text = $"Observation completed with quality warning: {integrityIssue}";
+            ObservationQualityText.Text = "Treat this observation as incomplete evidence. It cannot qualify as a clean baseline window.";
+        }
+    }
 
-        KernelCaptureStatusText.Text = cleanCapture
-            ? $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected."
-            : !etwLossCountKnown
-                ? $"Observation completed with quality warning: ETW loss count unavailable, invalidLatency={capture.InvalidEventCount}, invalidImages={capture.InvalidImageEventCount}, limitReached={capture.EventLimitReached}."
-                : $"Observation completed with quality warnings: lost={capture.EventsLost}, invalidLatency={capture.InvalidEventCount}, invalidImages={capture.InvalidImageEventCount}, limitReached={capture.EventLimitReached}.";
+    private void RenderBaselineQuality(BaselineQualityResult quality, bool preserveStatusText = false)
+    {
+        BaselineVerdictText.Text = quality.IsValidForComparison ? "Valid" : "Inconclusive";
+        if (!preserveStatusText)
+        {
+            BaselineStatusText.Text = quality.IsValidForComparison
+                ? $"{quality.ValidCaptureWindowCount}/{quality.TotalWindowCount} clean windows passed {quality.MethodVersion}."
+                : $"Baseline quality gate failed under {quality.MethodVersion}.";
+        }
 
-        ObservationQualityText.Text = cleanCapture
-            ? "Capture integrity looks clean. This is still a single observation, not a validated baseline."
-            : "Treat this observation as incomplete evidence. Stage C will reject noisy or incomplete windows when building a baseline.";
+        BaselineMetricsText.Text =
+            $"{FormatBaselineMetric(quality.DpcP99)}\n{FormatBaselineMetric(quality.IsrP99)}";
+        BaselineReasonsText.Text = quality.Reasons.Count == 0
+            ? "Noise, drift, sample adequacy and capture integrity are inside the current quality limits. This baseline may be used by later comparison stages."
+            : string.Join(" ", quality.Reasons);
+    }
+
+    private static string FormatBaselineMetric(BaselineMetricQuality metric)
+    {
+        if (metric.MedianMicroseconds is null)
+        {
+            return $"{metric.MetricName}: unavailable across {metric.EligibleWindowCount} analyzable window(s).";
+        }
+
+        var noise = metric.RelativeNoiseFloor is null
+            ? "—"
+            : metric.RelativeNoiseFloor.Value.ToString("P1", CultureInfo.InvariantCulture);
+        var drift = metric.RelativeDrift is null
+            ? "—"
+            : metric.RelativeDrift.Value.ToString("P1", CultureInfo.InvariantCulture);
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{metric.MetricName}: median {metric.MedianMicroseconds:F1} µs · P10-P90 spread {noise} · drift {drift} · {metric.EligibleWindowCount} windows");
+    }
+
+    private static BaselineWindowRow[] CreateBaselineWindowRows(IEnumerable<BaselineWindowEvidence> windows) =>
+        windows
+            .Select(window => new BaselineWindowRow(
+                $"Window {window.WindowNumber}",
+                window.CaptureIntegrityValid ? "clean capture" : window.CaptureIntegrityIssue ?? "capture warning",
+                $"DPC {window.DpcEventCount:N0} · p99 {FormatMicroseconds(window.DpcP99Microseconds)}",
+                $"ISR {window.IsrEventCount:N0} · p99 {FormatMicroseconds(window.IsrP99Microseconds)}"))
+            .ToArray();
+
+    private static string? GetCaptureIntegrityIssue(KernelLatencyCaptureResponse capture)
+    {
+        var issues = new List<string>();
+
+        if (capture.EventsLost < 0)
+        {
+            issues.Add("ETW loss count is unavailable.");
+        }
+        else if (capture.EventsLost > 0)
+        {
+            issues.Add($"ETW lost {capture.EventsLost:N0} event(s).");
+        }
+
+        if (capture.InvalidEventCount > 0)
+        {
+            issues.Add($"{capture.InvalidEventCount:N0} latency event(s) were invalid.");
+        }
+
+        if (capture.InvalidImageEventCount > 0)
+        {
+            issues.Add($"{capture.InvalidImageEventCount:N0} image event(s) were invalid.");
+        }
+
+        if (capture.EventLimitReached)
+        {
+            issues.Add("The event safety limit was reached.");
+        }
+
+        return issues.Count == 0 ? null : string.Join(" ", issues);
+    }
+
+    private void HandleCaptureFailure(Exception exception, string operationName)
+    {
+        ClearCaptureMetrics();
+
+        switch (exception)
+        {
+            case TimeoutException:
+                Logger.Warning(exception, "{OperationName} timed out.", operationName);
+                SetServiceUnavailable("Observation service is not running or did not respond in time.");
+                KernelCaptureStatusText.Text = $"{operationName} did not start or exceeded its deadline.";
+                break;
+            case IOException:
+                Logger.Warning(exception, "{OperationName} pipe connection failed.", operationName);
+                SetServiceUnavailable("Observation service connection failed.");
+                KernelCaptureStatusText.Text = $"{operationName} did not complete.";
+                break;
+            case InvalidDataException:
+                Logger.Error(exception, "{OperationName} returned an invalid protocol response.", operationName);
+                KernelCaptureStatusText.Text = "Observation service returned an invalid protocol response.";
+                break;
+            case InvalidOperationException:
+                Logger.Warning(exception, "{OperationName} request was rejected.", operationName);
+                KernelCaptureStatusText.Text = exception.Message;
+                break;
+            default:
+                Logger.Error(exception, "Unexpected {OperationName} failure.", operationName);
+                KernelCaptureStatusText.Text = "Unexpected observation error. See the diagnostics log for details.";
+                break;
+        }
     }
 
     private void SetServiceUnavailable(string message)
     {
         _observationServiceReady = false;
         CaptureObservationButton.IsEnabled = false;
+        CaptureBaselineButton.IsEnabled = false;
         ServiceStatusBadgeText.Text = "Service unavailable";
         ServiceStatusText.Text = message;
     }
