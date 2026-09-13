@@ -16,32 +16,32 @@ p99.9 display floor:   10,000 samples per distribution
 Permanent tests:       8 / 10
 ```
 
-## 1. Preconditions and boundary
+## 1. Preconditions and privilege boundary
 
-Use one exact clean `main` revision on physical Windows 11 x64. That same revision must have a completed green hosted **Tests** run. Hosted CI is test-only; App/Service compile and runtime evidence must come from the owner-local Windows machine.
+Use one exact clean `main` revision on physical Windows 11 x64. The same revision must have a completed green hosted **Tests** run. Hosted CI is test-only; App/Service compile and runtime evidence must come from the owner-local Windows machine.
 
-Run from a normal terminal:
+From a normal terminal:
 
 ```powershell
 .\run.ps1
 ```
 
-Verify the privileged Service separately from elevated PowerShell:
+Verify the Service separately from elevated PowerShell:
 
 ```powershell
 Get-Service LatencyPilot.Observation
 sc.exe qc LatencyPilot.Observation
 ```
 
-Expected Service payload:
+Expected privileged payload:
 
 ```text
 %ProgramFiles%\LatencyPilot\Service\LatencyPilot.Service.exe
 ```
 
-The App must remain non-elevated. UAC is only for protected Service install/update/removal. The protocol status response must prove the peer is the installed Windows Service with expected kernel-capture privilege and `MutationAvailable=false`. The header must show the exact clean source revision, not `dirty` or revision-unavailable provenance.
+The App remains non-elevated. UAC is only for protected Service install/update/removal. The protocol status response must prove the peer is the installed Windows Service with expected kernel-capture privilege and `MutationAvailable=false`. The header must show the exact clean source revision, not `dirty` or revision-unavailable provenance.
 
-Record the source revision, Tests run, Windows build, CPU/topology, GPU/driver, primary NIC/driver, primary xHCI/driver, power context, workload/scene and other overlays/monitoring tools.
+Record source revision, Tests run, local build result, Windows build, CPU/topology, GPU/driver, primary NIC/driver, primary xHCI/driver, power context, workload/scene and other monitoring/overlay tools.
 
 ## 2. UX and scenario sanity
 
@@ -54,7 +54,7 @@ Ctrl+B  repeated decision baseline
 Ctrl+E  export latest completed evidence
 ```
 
-`Ctrl+E` must be unavailable without completed evidence and while measurement is active. Every successful protocol-v6 capture must carry a unique `RequestId` that correlates App logs, Service logs and evidence-v8.
+`Ctrl+E` must be unavailable without completed evidence and while measurement is active. Every successful protocol-v6 capture must carry a unique `RequestId` correlating App logs, Service logs and evidence-v8.
 
 Scenario semantics:
 
@@ -119,7 +119,7 @@ workload already warmed/repeatable when applicable
 20 s window 5
 ```
 
-The initial five seconds are **not workload warm-up**. Heavy module/CPU/tail redraw and evidence file I/O must stay outside authoritative windows; lightweight progress text is acceptable.
+The initial five seconds are **not workload warm-up**. Heavy module/CPU/tail redraw and evidence file I/O stay outside authoritative windows; lightweight progress text is acceptable.
 
 Every window must satisfy:
 
@@ -137,7 +137,7 @@ Both DPC p99 and ISR p99 must satisfy:
 
 ```text
 P10-P90 relative spread <= 30%
-early/late relative drift <= 20%
+relative drift between early and late windows <= 20%
 no >50% extreme-window deviation
 ```
 
@@ -168,7 +168,7 @@ protocol:              6
 captures/windows:      exactly 5 aligned entries
 ```
 
-A partial, short, lossy, undersampled, noisy or drifted baseline can remain diagnostic evidence but cannot pass the closure gate.
+A partial, short, lossy, undersampled, noisy or drifted baseline remains diagnostic evidence but cannot pass the closure gate.
 
 ## 5. Plausibility and device evidence
 
