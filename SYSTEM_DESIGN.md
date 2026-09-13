@@ -37,11 +37,11 @@ Initial supported target:
 
 - Windows 11;
 - x64;
-- interactive desktop user;
+- active local interactive desktop session;
 - local machine only;
 - self-contained .NET + Windows App SDK release.
 
-ARM64 is not a 1.0 commitment until every required dependency and hardware-validation path is demonstrated.
+The current Phase 2 privileged observation pipe authorizes only the active console session after the connection is accepted. RDP/multi-session behavior is not an implied supported path and must be deliberately validated/designed before being broadened. ARM64 is not a 1.0 commitment until every required dependency and hardware-validation path is demonstrated.
 
 ## 3. Frozen technology baseline
 
@@ -117,7 +117,7 @@ Versioned IPC commands/events/DTOs/errors only. Never generic privileged executi
 ### `LatencyPilot.Platform.Windows`
 All raw Windows mechanisms: inventory, ETW, DPC/ISR interpretation, SetupAPI/CM, PCI/device topology, interrupt configuration/assignment, CPU topology, Raw Input, USB/xHCI, NDIS/RSS, PresentMon and narrow registry/device-policy adapters.
 
-Raw P/Invoke and registry paths do not leave this project.
+Raw P/Invoke and registry paths do not leave this project except for narrowly scoped Windows-host security/lifecycle calls that belong directly to the Service boundary (for example named-pipe client-session authorization).
 
 ### `LatencyPilot.Persistence`
 SQLite, migrations, snapshots, pending/closed journal records, benchmark history and recovery state.
@@ -179,6 +179,8 @@ Partial device metadata is representable. A device without a readable hardware k
 
 A single short ETW capture is an **observation**, not a trustworthy baseline. Baseline terminology requires repeated windows plus explicit capture-integrity, sample-adequacy, noise and drift handling.
 
+Microsoft driver guidance thresholds (currently 100 µs DPC and 25 µs ISR) may be labeled as guidance. Additional `>1 ms` / `>3 ms` counts are local diagnostic tail buckets only and must not be represented as official Windows pass/fail or user-impact severity boundaries.
+
 ## 9. Experiment lifecycle
 
 The initial state machine is deliberately small:
@@ -206,11 +208,12 @@ position = (sampleCount - 1) * percentile
 
 between the surrounding samples. Service observation summaries, baseline quality and benchmark comparisons must use this same estimator; introducing a second nearest-rank or layer-specific percentile implementation is prohibited unless the methodology is intentionally versioned and documented.
 
-Phase 2 observation supports DPC/ISR count and duration distributions including p50/p95/p99/p99.9/max.
+Phase 2 observation supports DPC/ISR count and duration distributions including p50/p95/p99/max. p99.9 is exposed only when the individual distribution has at least 1,000 samples; otherwise it is explicitly absent rather than presenting a mathematically available but under-supported extreme percentile as strong evidence.
 
 `baseline-quality-v1` adds the first conservative repeated-baseline gate:
 
 - exactly five sequential five-second windows are requested by the current App flow;
+- authoritative ordering is the contiguous `WindowNumber` sequence, while UTC timestamps are provenance and are not treated as a monotonic clock;
 - a metric window requires at least 20 DPC/ISR events and a finite positive p99 value;
 - any unavailable or non-zero ETW loss count, invalid latency/image event, or event-limit hit makes that capture window invalid;
 - per-metric normal variability is summarized as `(P90 - P10) / |median|` across eligible window-level p99 values;
@@ -245,7 +248,7 @@ Raw event sets are not transferred wholesale through IPC. The privileged Service
 
 ## 12. IPC and privilege contract
 
-Phase 2 IPC is local, typed, versioned and observation-only. The current surface contains only explicit supported operations such as service status and kernel-latency observation.
+Phase 2 protocol v5 IPC is local, typed, versioned and observation-only. The current surface contains only explicit supported operations such as service status and kernel-latency observation.
 
 - no arbitrary command name;
 - no arbitrary shell/process execution;
@@ -255,10 +258,12 @@ Phase 2 IPC is local, typed, versioned and observation-only. The current surface
 - bounded client/server I/O deadlines;
 - an active capture is cancelled when its client disconnects or violates the one-request connection contract;
 - remote/network identities are denied by the pipe security boundary;
-- Phase 2 pipe access is limited to interactive local identities plus the required Windows service identities rather than all authenticated users;
+- the pipe ACL admits local interactive identities plus required service identities, then the Service fail-closes unless the connected client session matches the active console session;
+- failure to resolve client session identity is a rejection, not a fallback to broad access;
+- each successful capture carries the same `RequestId` as its enclosing response so exported evidence can correlate directly to App/Service diagnostics;
 - protocol/version mismatch fails closed.
 
-The current Phase 2 pipe ACL is **not** mutation authorization. Phase 3 mutation must extend this contract with narrower mutation-specific authorization/allowlisting rather than reusing or weakening the observation surface.
+The current active-console rule deliberately narrows Phase 2 local observation. It does not establish RDP/multi-session support. The current Phase 2 ACL/session check is **not** mutation authorization. Phase 3 mutation must extend this contract with narrower mutation-specific authorization/allowlisting rather than reusing or weakening the observation surface.
 
 ## 13. Mutation interface contract
 
@@ -299,7 +304,9 @@ Prefer a small portfolio of:
 - one or a few Windows integration invariants that exercise real read-only APIs;
 - data/scenario matrices consolidated inside a durable high-value test rather than one permanent test per branch.
 
-The repeated-baseline quality gate is a high-blast-radius safety contract because accepting a noisy/lossy baseline would invalidate all later optimization decisions; one consolidated permanent scenario test protects stable, drifted and capture-loss cases.
+The repeated-baseline quality gate is a high-blast-radius safety contract because accepting a noisy/lossy baseline would invalidate all later optimization decisions; one consolidated permanent scenario test protects stable, drifted, capture-loss, sequence-gap and wall-clock-adjustment cases.
+
+The protocol/framing contract also carries v5 correlation and p99.9-adequacy round-trip scenarios inside its existing test method rather than consuming another permanent slot.
 
 If a later parser/recovery/mutation risk is more important, replace/merge a lower-value test. More than 10 permanent tests requires explicit owner approval plus ADR justification that remaining at 10 is more harmful.
 
@@ -307,40 +314,41 @@ Hardware validation and release checklists are separate and do not count toward 
 
 ## 16. Diagnostics contract
 
-Operational logging is local, structured and bounded. App and Service write separate compact-JSON rolling files and correlate request/capture activity through the protocol `RequestId`. Logging is asynchronous so file I/O does not run in the ETW callback path.
+Operational logging is local, structured and bounded. App and Service write separate compact-JSON rolling files and correlate request/capture activity through the protocol `RequestId`. Protocol v5 preserves that ID in capture evidence too. Expected kernel-capture unavailability and rejected client-session access must retain bounded structured failure provenance. Logging is asynchronous so file I/O does not run in the ETW callback path.
 
 Do not emit one log event per raw DPC/ISR event, dump arbitrary registry/environment state, or treat operational logs as benchmark persistence. Logging failure must not prevent App/Service startup. See `docs/DIAGNOSTICS.md` for paths, retention, event IDs and privacy rules.
 
 ## 17. Release and CI contract
 
-GitHub Actions is intentionally **test-only**:
+GitHub Actions remains a validation-only workflow rather than a publication pipeline:
 
 ```text
 checkout
 → pinned .NET SDK
 → NuGet cache
 → dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+→ Release compile LatencyPilot.Service
+→ Release compile LatencyPilot.App
 ```
 
-Hosted CI does not build/publish the WinUI App, publish the Service, perform GUI smoke, build Setup/portable distributions, upload production binaries or publish releases. The Tests workflow runs for every `main` revision so an owner-local release can require green automated correctness evidence for the exact commit.
+Hosted CI does **not** publish the WinUI App/Service, perform GUI launch smoke, build Setup/portable distributions, upload production binaries or publish releases. The compile gate exists to catch Windows-host/XAML/analyzer regressions on every `main` revision and pull request; it is not release-package evidence.
 
-Owner-local Windows validation owns build/package evidence:
+Owner-local Windows validation owns publish/package/runtime evidence:
 
 ```text
 local Debug/F5 or dev.ps1 for normal iteration
-→ owner-local Release build when needed
 → owner-local self-contained App/Service publish
-→ owner-local PRI/package validation
+→ owner-local PRI and App launch-smoke validation
 → owner-local Setup + portable creation/publication
 ```
 
 The explicit owner-run publication flow is documented in `docs/RELEASING.md` and implemented by `scripts/Publish-Release.ps1`. Warnings remain errors; fix root causes instead of broad suppression.
 
-Test CI proves selected deterministic/integration invariants only. Local Windows build/package evidence proves buildability/distribution for the tested revision. Neither alone proves hardware latency improvement or closes physical-hardware validation items.
+Hosted test/compile CI proves selected deterministic/integration invariants and buildability only. Owner-local Windows publish/package evidence proves the releasable distribution for the tested revision. Neither alone proves hardware latency improvement or closes physical-hardware validation items.
 
 ## 18. Hardware-validation contract
 
-Optimization claims and hardware-dependent observation gates require physical Windows 11 evidence with enough system/app/hardware context to interpret the result. GitHub-hosted Windows Server runners supply test evidence only and cannot close build/package or hardware-dependent performance claims under the current owner policy.
+Optimization claims and hardware-dependent observation gates require physical Windows 11 evidence with enough system/app/hardware context to interpret the result. GitHub-hosted Windows runners supply correctness/buildability evidence only and cannot close publish/package/runtime or physical-hardware performance claims.
 
 ## 19. Mandatory step-back review
 
