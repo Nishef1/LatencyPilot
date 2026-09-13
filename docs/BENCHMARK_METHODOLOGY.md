@@ -1,6 +1,6 @@
 # Benchmark Methodology
 
-Status: **V0.2 benchmark contract**  
+Status: **V0.3 benchmark contract**  
 Last updated: 2026-09-13
 
 LatencyPilot exists to distinguish measurable improvement from placebo, noise, drift, or a trade-off hidden by a single headline number.
@@ -107,6 +107,59 @@ Inconclusive
 
 rather than `Improved`.
 
+### 5.1 `baseline-quality-v1`
+
+The first implemented repeated-baseline quality gate is deliberately conservative and versioned separately from the later A/B experiment verdict model.
+
+Current App capture protocol:
+
+```text
+5 sequential windows
+× 5 seconds each
++ 750 ms spacing between completed windows
+```
+
+For each window, the current quality gate records DPC p99 and ISR p99 together with event counts and capture-integrity provenance.
+
+A window is not clean when any of the following is true:
+
+- ETW loss count is unavailable;
+- ETW reports one or more lost events;
+- one or more latency events are invalid;
+- one or more image-attribution events are invalid;
+- the configured event safety limit is reached.
+
+A metric value is analyzable for a window only when:
+
+- the window itself is capture-integrity clean;
+- at least 20 events exist for that metric family in the window;
+- p99 exists, is finite, and is positive.
+
+For eligible window-level p99 values:
+
+```text
+median = P50(values)
+relative noise floor = (P90(values) - P10(values)) / abs(median)
+```
+
+The baseline is inconclusive when the relative noise floor is greater than 30%.
+
+Drift is estimated by comparing the median of the early half of eligible windows with the median of the late half:
+
+```text
+relative drift = abs(lateMedian - earlyMedian) / abs(overallMedian)
+```
+
+The baseline is inconclusive when relative drift is greater than 20%.
+
+Any eligible window whose metric value is more than 50% away from the overall median is explicitly reported as an extreme window. It is **not silently removed**; its presence makes that metric quality inconclusive under this method.
+
+The overall repeated baseline is `Valid` only when all required windows exist, every capture is clean, and both DPC p99 and ISR p99 pass sample-adequacy, noise, drift and extreme-window checks. Otherwise the quality result is `Inconclusive` with explicit reasons.
+
+These 20-event/30%-noise/20%-drift/50%-extreme thresholds are quality-gate policy values, not confidence intervals and not claims of statistical significance. They may be revised only by versioning/documenting the interpretation so historical evidence remains understandable.
+
+Background-load and thermal/power warnings remain separate open work until LatencyPilot has authoritative, sufficiently low-overhead evidence for those signals. Absence of those warnings must not be represented as proof that background/thermal state was stable.
+
 ## 6. Metrics
 
 Metrics are categorized as:
@@ -160,7 +213,7 @@ upper = ceil(position)
 value = samples[lower] + (samples[upper] - samples[lower]) * (position - lower)
 ```
 
-When `lower == upper`, that sample is returned directly. This is the **linear-n-minus-one-v1** interpretation for current results. Service observation summaries and benchmark comparisons must call this same implementation rather than defining local nearest-rank variants.
+When `lower == upper`, that sample is returned directly. This is the **linear-n-minus-one-v1** interpretation for current results. Service observation summaries, repeated-baseline quality and benchmark comparisons must call this same implementation rather than defining local nearest-rank variants.
 
 If this estimator changes later, the method/version must change with it so historical results remain interpretable.
 
@@ -364,7 +417,9 @@ High-value statistical scenarios should be consolidated into data/scenario matri
 - baseline drift;
 - primary improvement plus guardrail regression.
 
-Not all of these must occupy independent permanent slots at the same time. When Stage C introduces a more important noise/drift invariant, merge or retire a lower-value scenario/test rather than violating the cap. Temporary investigative tests may be used during implementation and deleted before finalization.
+The Stage C repeated-baseline gate intentionally uses one permanent scenario test to cover stable, drifted and capture-integrity-failed baselines rather than consuming multiple permanent slots.
+
+Not all scenarios must occupy independent permanent slots at the same time. When a later recovery/mutation risk is more important, merge or retire a lower-value scenario/test rather than violating the cap. Temporary investigative tests may be used during implementation and deleted before finalization.
 
 ## 21. Golden telemetry fixtures
 
@@ -390,7 +445,7 @@ Performance work must preserve the authoritative event meaning, attribution rule
 
 Measure LatencyPilot's own allocation/GC/CPU overhead in `perf/` only when profiling shows a meaningful need. Do not create a speculative performance-test subsystem merely because one may be useful later. Physical or controlled profiling evidence should guide deeper optimization, especially when value-type copies, pooling or streaming aggregation could introduce new trade-offs.
 
-CI timing on hosted VMs is not a substitute for real hardware experiments. Correctness tests may gate pull requests; small hosted-runner performance deltas should generally be tracked rather than treated as authoritative hardware regressions.
+GitHub Actions timing is not a benchmark signal. Under the current owner policy hosted Actions runs the permanent correctness suite only; build/package and performance evidence are owner-local or physical as appropriate.
 
 ## 23. User-facing presentation
 
