@@ -13,7 +13,7 @@ Last updated: 2026-09-13
 - Current desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
 - Privileged boundary: **read-only Windows Service; mutation commands do not exist**
 - Observation protocol: **v5**
-- Evidence schema: **latencypilot-evidence-v5**
+- Evidence schema: **latencypilot-evidence-v6**
 - Permanent automated tests: **8 / hard maximum 10**
 - Current stage: **Stage B physical validation open; Stage C source implemented but physical/runtime closure open; Stage D evidence UX implemented in source but physical UX closure open**
 
@@ -67,7 +67,7 @@ Phase 1 established the solution, deterministic comparison/domain foundation, fo
 - disconnect/protocol activity cancels active capture work;
 - deadlines remain bounded;
 - current observation authorization is explicitly not future mutation authorization;
-- the App now requires the status response to prove the host is the installed Windows Service with expected kernel-capture privilege context before enabling capture; an arbitrary IPC responder is not treated as healthy.
+- the App requires the status response to prove the host is the installed Windows Service with expected kernel-capture privilege context before enabling capture; an arbitrary IPC responder is not treated as healthy.
 
 ### Structured diagnostics
 
@@ -77,7 +77,7 @@ Contract: `docs/DIAGNOSTICS.md`.
 - Service logs under `%PROGRAMDATA%\LatencyPilot\Logs\Service`;
 - bounded rolling/retention;
 - async non-blocking file sinks;
-- `live.ps1` can stream the structured App/Service logs with component prefixes during development;
+- `live.ps1` can stream structured App/Service logs with component prefixes during development;
 - App → IPC → Service correlation through `RequestId`;
 - protocol-v5 capture evidence preserves the same `RequestId`;
 - expected capture-unavailable paths retain structured failure provenance;
@@ -186,24 +186,26 @@ The current WinUI source deliberately reduces observer activity during the five-
 
 ### Low-overhead runtime context
 
-Best-effort runtime context is sampled immediately before and after each capture, outside the authoritative ETW window:
+Best-effort runtime context brackets each App capture request/response interval and is recorded as provenance rather than a new validity gate:
 
 - system CPU busy percentage is derived from `GetSystemTimes` cumulative idle/kernel/user deltas;
 - AC/DC source, battery state and Battery Saver are captured through `GetSystemPowerStatus`;
 - active power-plan GUID/friendly name are captured through `PowerGetActiveScheme` / `PowerReadFriendlyName`;
-- power-plan/source/Battery-Saver changes during a capture or across a baseline sequence are surfaced to the user;
+- Windows 11 user-configured AC/DC power mode is captured through `PowerGetUserConfiguredACPowerMode` / `PowerGetUserConfiguredDCPowerMode`;
+- configured power mode is explicitly treated as the user's configured **Best power efficiency / Balanced / Best performance** preference, not proof of the effective runtime power-management state;
+- plan/source/configured-mode/Battery-Saver changes during a capture or across a baseline sequence are surfaced to the user with text plus warning color;
 - runtime context is exported with observation/baseline evidence;
 - failure to collect optional context does **not** invalidate otherwise clean DPC/ISR evidence and is not silently converted into a zero value;
-- this context is provenance, not a new baseline pass/fail gate.
+- runtime context does not silently alter `baseline-quality-v1`.
 
 This is source-level observer-noise/context hardening, not proof that UI overhead is negligible. Physical profiling/validation remains authoritative.
 
 Still open:
 
 - owner-local/physical five-window execution through the real Service;
-- physical idle + controlled-load quality evidence;
+- physical controlled-idle + real-world quality evidence;
 - verify that quiet sequencing behaves correctly with the real compositor/workloads;
-- verify system-CPU/power-plan context against the physical machine during idle and real-world scenarios;
+- verify system CPU, active power plan and configured power mode against the physical machine;
 - add thermal context only if a defensible authoritative low-overhead source is identified and physical evidence shows it is needed;
 - future optimizer integration must require `IsValidForComparison` before any mutation/keep recommendation can be enabled.
 
@@ -219,18 +221,19 @@ Implemented in source:
 - CPU concentration and bounded module contributors;
 - latency-health badge plus exact-value tail-rate visualization;
 - tail-rate bars are lightweight `Grid`/`Border` visuals rather than `ProgressBar` controls, so they do not expose misleading operation-progress semantics to assistive technology;
-- `>1 ms` / `>3 ms` wording explicitly marked as local diagnostic buckets rather than Windows severity thresholds;
+- `>1 ms` / `>3 ms` wording explicitly marks those rows as local diagnostic buckets rather than Windows severity thresholds;
 - explicit selectable measurement scenarios: **Real-world workload**, **Controlled idle**, **Before / after comparison**;
 - scenario-specific guidance tells the user when apps should stay open or be closed;
 - scenario changes invalidate stale visible/export evidence so an old capture cannot be presented under a new context;
-- scenario card shows best-effort average system CPU busy time, power source, active power plan and Battery Saver context after capture;
+- scenario card shows best-effort system CPU busy time, power source, active power plan, configured Windows power mode and Battery Saver after capture;
+- power-context changes are surfaced with text as well as warning color;
 - repeated baseline progress/verdict/reasons UI;
 - explicit configuration vs assigned-resource vs runtime-evidence wording;
 - keyboard accelerators (`Ctrl+R`, `Ctrl+O`, `Ctrl+B`, `Ctrl+E`);
 - accessibility/high-contrast resources and automation metadata;
 - adaptive narrow/wide workspace source;
 - manual JSON evidence export;
-- evidence schema `latencypilot-evidence-v5`;
+- evidence schema `latencypilot-evidence-v6`;
 - observation/baseline export contains bounded capture aggregates, `RequestId`, protocol/product version, selected scenario, runtime CPU/power context and bounded non-personal environment provenance;
 - source revision is recorded from build/assembly source-revision metadata when available;
 - unresolved `ulong` routine addresses serialize as hexadecimal strings;
@@ -243,7 +246,7 @@ Still open:
 - narrow-window/text-scaling sanity on physical WinUI;
 - keyboard focus/screen-reader sanity;
 - physical evidence that capture-warning, sample-insufficient p99.9, runtime-context and scenario-change invalidation present correctly;
-- remove or simplify any duplicate explanatory surfaces only after the physical UI pass shows they are redundant.
+- remove or simplify duplicate explanatory surfaces only after the physical UI pass shows they are redundant.
 
 ## Permanent critical suite — 8 / 10
 
@@ -270,13 +273,14 @@ Required closure evidence includes:
 - owner-local App/Service build on Windows 11;
 - owner-local published-App launch smoke when release validation is performed;
 - protected Service path and LocalSystem/SCM behavior;
-- idle + controlled-load observations;
+- controlled-idle + real-world observations;
 - exported evidence JSON + SHA-256 + RequestId correlation;
 - active-console authorization behavior;
 - cleanup/recovery/no-stale-ETW-session behavior;
 - module/processor plausibility;
 - representative inventory/resource evidence;
 - explicit zero-mutation evidence;
+- accessibility/responsive sanity;
 - uninstall/service-removal evidence where packaging is being validated.
 
 Stage B cannot close from CI/VM evidence alone.
@@ -288,10 +292,10 @@ Next ordered work:
 1. owner-local compile/run current `main`;
 2. execute a five-window **Controlled idle** baseline with the quiet baseline flow;
 3. execute a five-window **Real-world workload** baseline under one repeatable workload;
-4. preserve complete/partial exported JSON and SHA-256 hashes;
+4. preserve complete/partial `latencypilot-evidence-v6` JSON and SHA-256 hashes;
 5. confirm Valid/Inconclusive reasons match capture integrity/noise/drift reality;
-6. verify runtime system-CPU/power-plan context matches the physical test state and stays stable where expected;
-7. inspect whether the App itself measurably perturbs the baseline before adding any deeper observer-overhead machinery.
+6. verify runtime system-CPU/active-plan/configured-mode context matches the physical test state and stays stable where expected;
+7. inspect whether the App itself measurably perturbs the baseline before adding deeper observer-overhead machinery.
 
 Stage C closes only when the real App → Service → ETW path distinguishes a trustworthy repeated baseline from an unstable/incomplete run.
 
@@ -301,7 +305,7 @@ After current owner-local/physical evidence:
 
 1. finish any responsive/text-scaling corrections exposed by real WinUI rendering;
 2. finish keyboard focus/screen-reader corrections exposed by physical testing;
-3. verify the scenario selector, health interpretation, runtime context and evidence export are understandable without hiding raw numbers;
+3. verify scenario selector, health interpretation, runtime context and evidence export are understandable without hiding raw numbers;
 4. verify evidence export usability/auditability against the visible UI;
 5. perform the Phase 2 UX/claim step-back review.
 
