@@ -39,6 +39,68 @@ function Resolve-InnoSetupCompiler {
     return $command.Source
 }
 
+function Assert-PublishedAppStarts {
+    param(
+        [Parameter(Mandatory)]
+        [string]$AppOutput
+    )
+
+    $app = Join-Path $AppOutput 'LatencyPilot.exe'
+    if (-not (Test-Path -LiteralPath $app -PathType Leaf)) {
+        throw "Published App executable was not found: $app"
+    }
+
+    $startupLog = Join-Path $env:LOCALAPPDATA 'LatencyPilot\startup-error.log'
+    Remove-Item -LiteralPath $startupLog -Force -ErrorAction SilentlyContinue
+
+    $process = Start-Process -FilePath $app -WorkingDirectory $AppOutput -PassThru
+    $mainWindowFound = $false
+
+    try {
+        for ($attempt = 0; $attempt -lt 30; $attempt++) {
+            Start-Sleep -Milliseconds 500
+            $process.Refresh()
+
+            if (Test-Path -LiteralPath $startupLog -PathType Leaf) {
+                $details = Get-Content -LiteralPath $startupLog -Raw -ErrorAction SilentlyContinue
+                throw "LatencyPilot reported a startup failure.`n$details"
+            }
+
+            if ($process.HasExited) {
+                throw "LatencyPilot exited before showing its main window. Exit code: $($process.ExitCode)."
+            }
+
+            if ($process.MainWindowHandle -ne 0 -and $process.MainWindowTitle -eq 'LatencyPilot') {
+                $mainWindowFound = $true
+                break
+            }
+        }
+
+        if (-not $mainWindowFound) {
+            $process.Refresh()
+            throw "LatencyPilot did not expose the expected main window within 15 seconds. Observed title: '$($process.MainWindowTitle)'."
+        }
+
+        Start-Sleep -Seconds 3
+        $process.Refresh()
+        if ($process.HasExited) {
+            throw "LatencyPilot exited shortly after opening its main window. Exit code: $($process.ExitCode)."
+        }
+        if ($process.MainWindowTitle -ne 'LatencyPilot') {
+            throw "LatencyPilot main window was replaced by an unexpected window: '$($process.MainWindowTitle)'."
+        }
+        if (Test-Path -LiteralPath $startupLog -PathType Leaf) {
+            $details = Get-Content -LiteralPath $startupLog -Raw -ErrorAction SilentlyContinue
+            throw "LatencyPilot wrote a startup failure after opening.`n$details"
+        }
+    }
+    finally {
+        if ($null -ne $process -and -not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location $repoRoot
 try {
@@ -153,6 +215,8 @@ try {
         throw 'LatencyPilot.pri is missing or empty in the WinUI publish output.'
     }
 
+    Assert-PublishedAppStarts -AppOutput $appOutput
+
     Invoke-Native -FilePath 'dotnet' -ArgumentList @(
         'publish', 'src/LatencyPilot.Service/LatencyPilot.Service.csproj',
         '--configuration', 'Release',
@@ -180,6 +244,7 @@ try {
         "tests_workflow_run=$($greenTestRun.databaseId)"
         'build_mode=owner-local'
         'deployment=self-contained-offline'
+        'app_launch_smoke=passed'
     ) | Set-Content -LiteralPath (Join-Path $payloadRoot 'BUILD_INFO.txt')
 
     $env:LATENCYPILOT_VERSION = $Version
