@@ -72,15 +72,26 @@ public sealed partial class MainWindow : Window
         try
         {
             var status = await ObservationServiceClient.GetStatusAsync();
-            if (!status.PrivilegedObservationHostImplemented || status.MutationAvailable)
+            if (!status.PrivilegedObservationHostImplemented ||
+                status.MutationAvailable ||
+                !status.RunningAsWindowsService ||
+                !status.KernelCapturePrivilegeExpected)
             {
                 Logger.Warning(
-                    "Observation service contract mismatch. HostImplemented={HostImplemented}, MutationAvailable={MutationAvailable}.",
+                    "Observation service readiness mismatch. HostImplemented={HostImplemented}, MutationAvailable={MutationAvailable}, RunningAsWindowsService={RunningAsWindowsService}, KernelCapturePrivilegeExpected={KernelCapturePrivilegeExpected}.",
                     status.PrivilegedObservationHostImplemented,
-                    status.MutationAvailable);
+                    status.MutationAvailable,
+                    status.RunningAsWindowsService,
+                    status.KernelCapturePrivilegeExpected);
                 _observationServiceReady = false;
-                ServiceStatusBadgeText.Text = "Contract mismatch";
-                ServiceStatusText.Text = "Service contract mismatch. Read-only kernel capture is disabled.";
+                ServiceStatusBadgeText.Text = "Service not ready";
+                ServiceStatusText.Text = status.MutationAvailable
+                    ? "Service contract mismatch: mutation must remain disabled during Phase 2."
+                    : !status.RunningAsWindowsService
+                        ? "The observation host answered IPC but is not running as the installed Windows Service. Kernel capture remains disabled."
+                        : !status.KernelCapturePrivilegeExpected
+                            ? "The Windows Service is running without the expected kernel-capture privilege context. Capture remains disabled."
+                            : "Service contract mismatch. Read-only kernel capture is disabled.";
                 return;
             }
 
@@ -88,7 +99,7 @@ public sealed partial class MainWindow : Window
             CaptureObservationButton.IsEnabled = true;
             CaptureBaselineButton.IsEnabled = true;
             ServiceStatusBadgeText.Text = "Service connected";
-            ServiceStatusText.Text = "Connected to the privileged read-only observation service. Mutation remains disabled.";
+            ServiceStatusText.Text = "Connected to the installed privileged read-only Windows Service. Kernel capture is available; mutation remains disabled.";
         }
         catch (TimeoutException exception)
         {
@@ -320,6 +331,45 @@ public sealed partial class MainWindow : Window
         }
 
         return issues.Count == 0 ? null : string.Join(" ", issues);
+    }
+
+    private void TryPrepareObservationEvidence(KernelLatencyCaptureResponse capture)
+    {
+        try
+        {
+            SetExportEvidence(
+                EvidenceExportService.CreateObservationJson(GetProductVersion(), capture),
+                EvidenceExportService.CreateSuggestedFileName("observation", capture.StartedAtUtc),
+                "Full bounded observation aggregates are ready for JSON export.");
+        }
+        catch (Exception exception)
+        {
+            Logger.Error(exception, "Observation evidence preparation failed.");
+            ClearExportEvidence("Observation completed, but evidence export preparation failed. See the diagnostics log for details.");
+        }
+    }
+
+    private void TryPrepareBaselineEvidence(
+        IReadOnlyList<KernelLatencyCaptureResponse> captures,
+        IReadOnlyList<BaselineWindowEvidence> windows,
+        BaselineQualityResult quality,
+        bool isPartial)
+    {
+        try
+        {
+            var evidenceType = isPartial ? "baseline-partial" : "baseline";
+            SetExportEvidence(
+                EvidenceExportService.CreateBaselineJson(GetProductVersion(), captures, windows, quality),
+                EvidenceExportService.CreateSuggestedFileName(evidenceType, captures[0].StartedAtUtc),
+                isPartial
+                    ? "Partial baseline aggregates and quality reasons are ready for JSON export."
+                    : "Full baseline aggregates, windows and quality reasons are ready for JSON export.");
+        }
+        catch (Exception exception)
+        {
+            Logger.Error(exception, "Baseline evidence preparation failed.");
+            ClearExportEvidence("Baseline result remains available, but evidence export preparation failed. See the diagnostics log for details.");
+        }
     }
 
     private void SetExportEvidence(string json, string suggestedFileName, string status)
