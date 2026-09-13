@@ -7,8 +7,6 @@ namespace LatencyPilot.App;
 
 public sealed partial class MainWindow
 {
-    private ComboBox? _hardenedScenarioComboBox;
-
     private void InitializeObservationExperienceHardening()
     {
         ApplyObservationExperienceHardening();
@@ -23,20 +21,6 @@ public sealed partial class MainWindow
         HideDecorativeTailBarsFromControlView(_isrGuidanceBar);
         HideDecorativeTailBarsFromControlView(_oneMillisecondBar);
         HideDecorativeTailBarsFromControlView(_threeMillisecondBar);
-
-        if (!ReferenceEquals(_hardenedScenarioComboBox, _measurementScenarioComboBox))
-        {
-            if (_hardenedScenarioComboBox is not null)
-            {
-                _hardenedScenarioComboBox.SelectionChanged -= MeasurementScenarioSelection_InvalidatesPreviousEvidence;
-            }
-
-            _hardenedScenarioComboBox = _measurementScenarioComboBox;
-            if (_hardenedScenarioComboBox is not null)
-            {
-                _hardenedScenarioComboBox.SelectionChanged += MeasurementScenarioSelection_InvalidatesPreviousEvidence;
-            }
-        }
 
         if (_measurementScenarioComboBox is not null)
         {
