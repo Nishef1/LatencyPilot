@@ -197,8 +197,7 @@ internal sealed class ObservationHost : BackgroundService
         }
 
         using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        operationCancellation.CancelAfter(
-            TimeSpan.FromMilliseconds(ObservationProtocol.MaximumCaptureDurationMilliseconds) + CaptureCompletionMargin);
+        operationCancellation.CancelAfter(GetOperationTimeout(request));
 
         using var disconnectMonitorCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var disconnectMonitor = MonitorClientDisconnectAsync(
@@ -250,6 +249,18 @@ internal sealed class ObservationHost : BackgroundService
         {
             // Client stopped reading. Drop the connection and accept the next request.
         }
+    }
+
+    private static TimeSpan GetOperationTimeout(ObservationRequest request)
+    {
+        if (request.Command == ObservationCommand.CaptureKernelLatency &&
+            request.KernelLatencyCapture is { } capture &&
+            capture.DurationMilliseconds is >= 100 and <= ObservationProtocol.MaximumCaptureDurationMilliseconds)
+        {
+            return TimeSpan.FromMilliseconds(capture.DurationMilliseconds) + CaptureCompletionMargin;
+        }
+
+        return PipeIoTimeout;
     }
 
     private static async Task<bool> MonitorClientDisconnectAsync(
