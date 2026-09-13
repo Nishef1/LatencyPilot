@@ -94,6 +94,24 @@ public sealed class CriticalPathTests
         Assert.IsFalse(lostResult.IsValidForComparison);
         Assert.IsTrue(lostResult.Reasons.Any(static reason => reason.Contains("ETW lost", StringComparison.Ordinal)));
 
+        var tooShort = stable.ToArray();
+        tooShort[0] = tooShort[0] with
+        {
+            RequestedDurationMilliseconds = 5_000,
+            ActualDurationMilliseconds = 5_000d,
+        };
+        var tooShortResult = BaselineQualityAnalyzer.Analyze(tooShort);
+        Assert.AreEqual(BaselineQualityStatus.Inconclusive, tooShortResult.Status);
+        Assert.IsTrue(tooShortResult.Reasons.Any(static reason =>
+            reason.Contains("inadequate duration", StringComparison.OrdinalIgnoreCase)));
+
+        var undersampled = stable.ToArray();
+        undersampled[1] = undersampled[1] with { DpcEventCount = 999 };
+        var undersampledResult = BaselineQualityAnalyzer.Analyze(undersampled);
+        Assert.AreEqual(BaselineQualityStatus.Inconclusive, undersampledResult.Status);
+        Assert.IsTrue(undersampledResult.Reasons.Any(static reason =>
+            reason.Contains("insufficient event evidence", StringComparison.OrdinalIgnoreCase)));
+
         var gapped = stable
             .Select(window => window.WindowNumber >= 3
                 ? window with { WindowNumber = window.WindowNumber + 1 }
@@ -102,9 +120,12 @@ public sealed class CriticalPathTests
         Assert.ThrowsExactly<ArgumentException>(() => BaselineQualityAnalyzer.Analyze(gapped));
 
         var wallClockAdjusted = stable.ToArray();
-        wallClockAdjusted[3] = wallClockAdjusted[3] with
+        wallClockAdjusted[3] = wallClockAdjusted[2] with
         {
+            WindowNumber = 4,
             StartedAtUtc = wallClockAdjusted[2].StartedAtUtc.AddMinutes(-1),
+            DpcP99Microseconds = 101.0,
+            IsrP99Microseconds = 50.5,
         };
         var adjustedResult = BaselineQualityAnalyzer.Analyze(wallClockAdjusted);
         Assert.AreEqual(BaselineQualityStatus.Valid, adjustedResult.Status);
@@ -272,7 +293,17 @@ public sealed class CriticalPathTests
     }
 
     private static BaselineWindowEvidence Window(int number, double dpcP99, double isrP99) =>
-        new(number, DateTimeOffset.UnixEpoch.AddSeconds(number), true, null, 200, dpcP99, 120, isrP99);
+        new(
+            number,
+            DateTimeOffset.UnixEpoch.AddSeconds(number),
+            20_000,
+            20_000d,
+            true,
+            null,
+            2_000,
+            dpcP99,
+            2_000,
+            isrP99);
 
     private static void AssertVerdict(
         string scenario,
