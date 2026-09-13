@@ -51,12 +51,14 @@ LatencyPilot follows these baseline rules:
 3. Phase 2 service authority is read-only; mutation commands do not exist and `MutationAvailable` remains false.
 4. The service exposes typed, versioned, allow-listed IPC commands rather than arbitrary execution primitives.
 5. Protocol framing is bounded and fails closed on incompatible/unknown fields.
-6. Network identities are denied at the Named Pipe boundary; the observation surface is limited to interactive local identities plus required service identities rather than all authenticated users.
-7. A disconnected/abandoned client must not leave its privileged capture intentionally running for the full requested window.
-8. The LocalSystem service executable is installed under a protected Program Files path; the portable package does not register SYSTEM execution directly from an ordinary user-writable extraction folder.
-9. App and Service diagnostics are local, structured and bounded; raw per-event ETW logging and unnecessary sensitive-data collection are prohibited by default.
-10. A failed verification or unavailable source is not manufactured into success/evidence.
-11. Security features must not be disabled merely to chase benchmark gains.
+6. Network identities are denied at the Named Pipe boundary. The ACL admits local interactive identities plus required service identities, then the Service resolves the connected client's Windows session and rejects it unless it matches the active console session. Failure to resolve client session identity also fails closed.
+7. The current active-console rule is a deliberate Phase 2 restriction, not a claim of RDP/multi-session support and not future mutation authorization.
+8. A disconnected/abandoned client must not leave its privileged capture intentionally running for the full requested window.
+9. The LocalSystem service executable is installed under a protected Program Files path; the portable package does not register SYSTEM execution directly from an ordinary user-writable extraction folder.
+10. App and Service diagnostics are local, structured and bounded; raw per-event ETW logging and unnecessary sensitive-data collection are prohibited by default.
+11. Expected privileged capture failures preserve bounded structured failure provenance instead of silently collapsing every ETW/start failure into an undiagnosable result.
+12. A failed verification or unavailable source is not manufactured into success/evidence.
+13. Security features must not be disabled merely to chase benchmark gains.
 
 ## Required before mutation ships
 
@@ -69,13 +71,13 @@ Phase 3 mutation is not authorized by the current Phase 2 observation boundary. 
 - verified revert/rollback behavior;
 - explicit recovery-required states when final machine state cannot be proven.
 
-The current Phase 2 Named Pipe ACL must not be treated as sufficient mutation authorization.
+The current Phase 2 Named Pipe ACL/session authorization must not be treated as sufficient mutation authorization.
 
 ## Diagnostics and disclosure data
 
 Primary local diagnostics are documented in `docs/DIAGNOSTICS.md`. When attaching logs to a report, review and sanitize them for machine/user-specific information that is not necessary to reproduce the issue.
 
-A future exported diagnostic bundle must apply explicit redaction before data leaves the local machine.
+Current evidence JSON is local-only and contains bounded measurement aggregates, protocol correlation and a small non-personal environment summary. Any future support/export bundle that sends data off-machine must define explicit redaction and user consent before collection leaves the local machine.
 
 ## Out of scope for security rewards
 
