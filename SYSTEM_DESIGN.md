@@ -101,7 +101,7 @@ Core ← Benchmarking
 Core ← Protocol
 ```
 
-Mutation remains disabled until Phase 3 safety infrastructure exists. The Service already exists in Phase 2 because privileged kernel ETW observation must not force the WinUI process to run elevated.
+Mutation remains disabled until Phase 3 safety infrastructure exists. The Service already exists in Phase 2 because privileged kernel ETW observation must not force the WinUI process to run elevated. The Persistence box is the accepted Phase 3 boundary; it is intentionally not wired into the Phase 2 Service dependency graph yet.
 
 ## 5. Project responsibilities
 
@@ -120,7 +120,7 @@ All raw Windows mechanisms: inventory, ETW, DPC/ISR interpretation, SetupAPI/CM,
 Raw P/Invoke and registry paths do not leave this project except for narrowly scoped Windows-host security/lifecycle calls that belong directly to the Service boundary (for example named-pipe client-session authorization).
 
 ### `LatencyPilot.Persistence`
-SQLite, migrations, snapshots, pending/closed journal records, benchmark history and recovery state.
+Reserved Phase 3 boundary for SQLite, migrations, snapshots, pending/closed journal records, benchmark history and recovery state. It remains intentionally empty in Phase 2 rather than carrying placeholder helpers with no active persistence contract.
 
 ### `LatencyPilot.Service`
 The narrow privileged execution boundary. During Phase 2 it hosts only privileged read-only observation. During Phase 3 it may gain mutation authority only after durable journaling, validation, authorization, verification and recovery exist. It never becomes a generic scripting host.
@@ -136,12 +136,12 @@ Benchmarking         → Core
 Protocol             → Core
 Platform.Windows     → Core
 Persistence          → Core
-Service              → Core + Benchmarking + Protocol + Platform.Windows + Persistence
+Service              → Core + Benchmarking + Protocol + Platform.Windows
 App                  → Core + Benchmarking + Protocol + Platform.Windows
 CriticalTests        → only projects needed by the current critical scenarios
 ```
 
-The Service and App depend on `Benchmarking` only for shared deterministic evidence/statistics semantics. They must not duplicate layer-specific percentile, noise or drift interpretations.
+The Service and App depend on `Benchmarking` only for shared deterministic evidence/statistics semantics. They must not duplicate layer-specific percentile, noise or drift interpretations. Persistence is not a Phase 2 Service dependency; add that edge only when Phase 3 durable journaling/recovery work actually begins.
 
 No cyclic references. No speculative abstraction projects.
 
@@ -320,23 +320,22 @@ Do not emit one log event per raw DPC/ISR event, dump arbitrary registry/environ
 
 ## 17. Release and CI contract
 
-GitHub Actions remains a validation-only workflow rather than a publication pipeline:
+GitHub Actions is intentionally a deterministic **test-only** gate:
 
 ```text
 checkout
 → pinned .NET SDK
 → NuGet cache
 → dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-→ Release compile LatencyPilot.Service
-→ Release compile LatencyPilot.App
 ```
 
-Hosted CI does **not** publish the WinUI App/Service, perform GUI launch smoke, build Setup/portable distributions, upload production binaries or publish releases. The compile gate exists to catch Windows-host/XAML/analyzer regressions on every `main` revision and pull request; it is not release-package evidence.
+Hosted CI does **not** build or publish the WinUI App/Service, perform GUI launch smoke, build Setup/portable distributions, upload production binaries or publish releases. App/Service compile evidence belongs to the owner-local Windows path, matching the repository policy in `AGENTS.md`.
 
-Owner-local Windows validation owns publish/package/runtime evidence:
+Owner-local Windows validation owns build/publish/package/runtime evidence:
 
 ```text
 local Debug/F5 or dev.ps1 for normal iteration
+→ owner-local App/Service build
 → owner-local self-contained App/Service publish
 → owner-local PRI and App launch-smoke validation
 → owner-local Setup + portable creation/publication
@@ -344,11 +343,11 @@ local Debug/F5 or dev.ps1 for normal iteration
 
 The explicit owner-run publication flow is documented in `docs/RELEASING.md` and implemented by `scripts/Publish-Release.ps1`. Warnings remain errors; fix root causes instead of broad suppression.
 
-Hosted test/compile CI proves selected deterministic/integration invariants and buildability only. Owner-local Windows publish/package evidence proves the releasable distribution for the tested revision. Neither alone proves hardware latency improvement or closes physical-hardware validation items.
+Hosted Tests evidence proves only the selected deterministic/integration contracts exercised by that suite. Owner-local Windows build/publish/package evidence proves buildability and the releasable distribution for the tested revision. Neither alone proves hardware latency improvement or closes physical-hardware validation items.
 
 ## 18. Hardware-validation contract
 
-Optimization claims and hardware-dependent observation gates require physical Windows 11 evidence with enough system/app/hardware context to interpret the result. GitHub-hosted Windows runners supply correctness/buildability evidence only and cannot close publish/package/runtime or physical-hardware performance claims.
+Optimization claims and hardware-dependent observation gates require physical Windows 11 evidence with enough system/app/hardware context to interpret the result. GitHub-hosted Windows runners supply only the repository's selected automated-test evidence and cannot close App/Service build, publish/package/runtime, or physical-hardware performance claims.
 
 ## 19. Mandatory step-back review
 
