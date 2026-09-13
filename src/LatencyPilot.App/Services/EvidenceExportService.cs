@@ -31,8 +31,17 @@ internal static class EvidenceExportService
         string productVersion,
         MeasurementScenario measurementScenario,
         KernelLatencyCaptureResponse capture,
-        RuntimeMeasurementContextInterval? runtimeContext) =>
-        JsonSerializer.Serialize(
+        RuntimeMeasurementContextInterval? runtimeContext)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(productVersion);
+        ArgumentNullException.ThrowIfNull(capture);
+        ValidateMeasurementScenario(measurementScenario);
+        if (capture.RequestId == Guid.Empty)
+        {
+            throw new InvalidDataException("Observation evidence cannot be exported with an empty capture RequestId.");
+        }
+
+        return JsonSerializer.Serialize(
             new ObservationEvidenceDocument(
                 EvidenceSchema,
                 productVersion,
@@ -44,6 +53,7 @@ internal static class EvidenceExportService
                 runtimeContext,
                 capture),
             JsonOptions);
+    }
 
     public static string CreateBaselineJson(
         string productVersion,
@@ -51,14 +61,28 @@ internal static class EvidenceExportService
         IReadOnlyList<KernelLatencyCaptureResponse> captures,
         IReadOnlyList<BaselineWindowEvidence> windows,
         IReadOnlyList<MeasurementRuntimeWindow> runtimeWindows,
-        BaselineQualityResult quality) =>
-        CreateBaselineJson(
+        BaselineQualityResult quality)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(productVersion);
+        ArgumentNullException.ThrowIfNull(captures);
+        ArgumentNullException.ThrowIfNull(windows);
+        ArgumentNullException.ThrowIfNull(runtimeWindows);
+        ArgumentNullException.ThrowIfNull(quality);
+        ValidateMeasurementScenario(measurementScenario);
+
+        var captureArray = captures.ToArray();
+        var windowArray = windows.ToArray();
+        var runtimeWindowArray = runtimeWindows.ToArray();
+        ValidateBaselineEvidenceAlignment(captureArray, windowArray, runtimeWindowArray, quality);
+
+        return CreateBaselineJson(
             productVersion,
             measurementScenario,
-            captures.ToArray(),
-            windows.ToArray(),
-            runtimeWindows.ToArray(),
+            captureArray,
+            windowArray,
+            runtimeWindowArray,
             quality);
+    }
 
     public static string GetMeasurementDisplayName(MeasurementScenario scenario) =>
         scenario switch
@@ -136,6 +160,78 @@ internal static class EvidenceExportService
                 runtimeWindows,
                 quality),
             JsonOptions);
+
+    private static void ValidateMeasurementScenario(MeasurementScenario scenario)
+    {
+        if (scenario is not MeasurementScenario.RealWorld and
+            not MeasurementScenario.IdleBaseline and
+            not MeasurementScenario.BeforeAfter)
+        {
+            throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown measurement scenario.");
+        }
+    }
+
+    private static void ValidateBaselineEvidenceAlignment(
+        KernelLatencyCaptureResponse[] captures,
+        BaselineWindowEvidence[] windows,
+        MeasurementRuntimeWindow[] runtimeWindows,
+        BaselineQualityResult quality)
+    {
+        if (captures.Length == 0)
+        {
+            throw new InvalidDataException("Baseline evidence requires at least one completed capture.");
+        }
+
+        if (captures.Length != windows.Length || captures.Length != runtimeWindows.Length)
+        {
+            throw new InvalidDataException(
+                $"Baseline evidence is misaligned: captures={captures.Length}, windows={windows.Length}, runtimeWindows={runtimeWindows.Length}.");
+        }
+
+        if (!string.Equals(quality.MethodVersion, BaselineQualityAnalyzer.MethodVersion, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"Baseline evidence method mismatch: quality reports '{quality.MethodVersion}', expected '{BaselineQualityAnalyzer.MethodVersion}'.");
+        }
+
+        if (quality.TotalWindowCount != windows.Length)
+        {
+            throw new InvalidDataException(
+                $"Baseline quality reports {quality.TotalWindowCount} window(s), but {windows.Length} window evidence record(s) are present.");
+        }
+
+        if (quality.ValidCaptureWindowCount < 0 || quality.ValidCaptureWindowCount > windows.Length)
+        {
+            throw new InvalidDataException("Baseline quality reports an impossible valid-capture window count.");
+        }
+
+        var requestIds = new HashSet<Guid>();
+        for (var index = 0; index < captures.Length; index++)
+        {
+            var expectedWindowNumber = index + 1;
+            var capture = captures[index];
+            var window = windows[index];
+            var runtimeWindow = runtimeWindows[index];
+
+            if (window.WindowNumber != expectedWindowNumber || runtimeWindow.WindowNumber != expectedWindowNumber)
+            {
+                throw new InvalidDataException(
+                    $"Baseline evidence sequence mismatch at position {expectedWindowNumber}: window={window.WindowNumber}, runtimeWindow={runtimeWindow.WindowNumber}.");
+            }
+
+            if (capture.StartedAtUtc != window.StartedAtUtc)
+            {
+                throw new InvalidDataException(
+                    $"Baseline evidence timestamp mismatch in window {expectedWindowNumber}.");
+            }
+
+            if (capture.RequestId == Guid.Empty || !requestIds.Add(capture.RequestId))
+            {
+                throw new InvalidDataException(
+                    $"Baseline evidence window {expectedWindowNumber} has an empty or duplicate capture RequestId.");
+            }
+        }
+    }
 
     private static EvidenceMeasurementContext CreateMeasurementContext(MeasurementScenario scenario) =>
         new(
