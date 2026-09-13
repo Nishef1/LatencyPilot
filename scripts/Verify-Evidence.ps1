@@ -134,7 +134,7 @@ function Format-Value {
     }
 
     if ($Value -is [byte] -or $Value -is [sbyte] -or
-        $Value -is [short] -or $Value -is [ushort] -or
+        $Value -is [System.Int16] -or $Value -is [System.UInt16] -or
         $Value -is [int] -or $Value -is [uint] -or
         $Value -is [long] -or $Value -is [ulong] -or
         $Value -is [float] -or $Value -is [double] -or $Value -is [decimal]) {
