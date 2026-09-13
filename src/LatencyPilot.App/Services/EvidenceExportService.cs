@@ -23,7 +23,7 @@ internal sealed record MeasurementRuntimeWindow(
 
 internal static class EvidenceExportService
 {
-    private const string EvidenceSchema = "latencypilot-evidence-v5";
+    private const string EvidenceSchema = "latencypilot-evidence-v6";
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
