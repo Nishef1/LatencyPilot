@@ -154,7 +154,13 @@ Export the JSON and record its SHA-256:
 
 ```powershell
 Get-FileHash .\LatencyPilot-observation-*.json -Algorithm SHA256
+.\scripts\Verify-Evidence.ps1 .\LatencyPilot-observation-*.json `
+  -ExpectedCommit <exact-clean-source-revision> `
+  -ExpectedSha256 <64-hex-digest> `
+  -RequireCleanCapture
 ```
+
+The verifier separates envelope/provenance validity from measurement integrity. `-RequireCleanCapture` fails if the capture has ETW loss, invalid latency/image events or reaches the event limit.
 
 The export should use `latencypilot-evidence-v7` and include at least:
 
@@ -190,7 +196,7 @@ A single observation remains an observation, not a baseline and not proof of an 
 
 Select **Controlled idle**, return the machine to the intended idle condition and let it settle. Press **Build baseline**.
 
-The current quiet baseline flow intentionally minimizes UI activity between authoritative windows:
+The current repeated-baseline flow intentionally minimizes UI activity between authoritative windows:
 
 - it waits for a settle interval before the first capture;
 - it does not redraw the full health card, module list, CPU list, tail chart or per-window list between capture windows;
@@ -199,7 +205,7 @@ The current quiet baseline flow intentionally minimizes UI activity between auth
 - the full observation cards are rendered only after the fifth capture is complete;
 - the final observation cards show the final window snapshot, while the baseline verdict uses all five windows.
 
-If detailed contributor lists/charts visibly redraw between windows, treat that as a regression in the quiet-measurement contract.
+If detailed contributor lists/charts visibly redraw between windows, treat that as a regression in the low-observer-activity measurement contract.
 
 Record:
 
@@ -252,6 +258,18 @@ After complete or partial baseline termination, export JSON and record SHA-256. 
 As with observation evidence, user-defined power-plan friendly names must remain local UI context and must not be persisted in evidence-v7 JSON.
 
 Export serialization/file I/O must occur only after the capture sequence stops or completes; it must not add file I/O between authoritative windows.
+
+For a baseline intended to close Stage C, verify it with both strict switches:
+
+```powershell
+.\scripts\Verify-Evidence.ps1 .\LatencyPilot-baseline-*.json `
+  -ExpectedCommit <exact-clean-source-revision> `
+  -ExpectedSha256 <64-hex-digest> `
+  -RequireCleanCapture `
+  -RequireValidBaseline
+```
+
+`-RequireValidBaseline` requires `baseline-quality-v1`, exactly five aligned captures, `Status=Valid`, `IsValidForComparison=true`, and five of five valid capture windows. Partial or unstable baselines remain legitimate diagnostic evidence but cannot pass this closure-ready gate.
 
 ## 7. External plausibility comparison
 
