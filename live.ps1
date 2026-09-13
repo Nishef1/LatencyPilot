@@ -105,7 +105,7 @@ function Test-RequiresServiceUpdate {
     param([string[]]$Paths)
 
     foreach ($path in $Paths) {
-        if ($path -match '^src/LatencyPilot\.(Service|Core|Benchmarking|Protocol|Platform\.Windows|Persistence)/' -or
+        if ($path -match '^src/LatencyPilot\.(Service|Core|Benchmarking|Protocol|Platform\.Windows)/' -or
             $path -in @('global.json', 'Directory.Build.props', 'Directory.Build.targets')) {
             return $true
         }
