@@ -16,7 +16,7 @@ Last updated: 2026-09-13
 - Evidence schema: **latencypilot-evidence-v7**
 - Permanent automated tests: **8 / hard maximum 10**
 - Current stage: **Phase 2 source implementation is substantially complete; Stage B physical validation, Stage C physical baseline closure and Stage D physical UX closure remain open**
-- Current owner instruction for this implementation loop: **do not run App/Service builds; hosted CI remains test-only**
+- Current owner instruction: **owner-local App/Service runtime and physical validation is resumed; hosted CI remains test-only**
 
 ## Current automated evidence
 
@@ -27,12 +27,19 @@ Hosted Actions do **not** build or publish the WinUI App, build or publish the S
 Therefore:
 
 - deterministic contract correctness may use the hosted Tests workflow as evidence;
-- App/Service compile evidence is not supplied by hosted CI;
-- package/launch-smoke evidence belongs to the owner-local release path when that validation is intentionally resumed;
+- App/Service compile/runtime evidence comes from the owner-local Windows machine;
+- package/launch-smoke evidence belongs to the owner-local release path;
 - hardware behavior and latency claims require physical Windows 11 evidence;
-- this implementation loop must continue source work/checklist hardening without substituting a hidden build step for the test-only CI contract.
+- hosted CI must not be expanded into hidden App/Service/release builds merely because owner-local runtime validation has resumed.
 
 Rapid source commits may cancel superseded workflow runs through Actions concurrency. Final deterministic claims must use a completed Tests run for the exact revision being claimed.
+
+## Current owner-local runtime evidence
+
+- The owner reports that the latest `0.0.2` WinUI version launched successfully on physical Windows 11. This is useful launch-smoke evidence, but it does **not** by itself close Stage B/C/D.
+- Clean owner-local App builds/publishes now emit `BUILD_INFO.txt` into the App output with the exact Git commit for evidence provenance.
+- A dirty working tree deliberately leaves the authoritative `commit=` field empty while recording `source_head`/`source_state`, so exported evidence cannot falsely claim to represent an exact clean revision.
+- `EvidenceExportService` already computes SHA-256 after saving JSON and surfaces the hash with the saved path; physical closure still requires checking the visible/exported evidence and independently confirming the hash.
 
 ## Phase 0 — CLOSED
 
@@ -241,14 +248,17 @@ Implemented in source:
 - manual JSON evidence export;
 - evidence schema `latencypilot-evidence-v7`;
 - evidence-v7 excludes user-defined power-plan friendly names while preserving active-scheme GUID/configured-mode provenance;
-- baseline export now fail-closes on capture/window/runtime-window count mismatch, non-contiguous evidence ordering, timestamp mismatch, empty/duplicate capture `RequestId`, quality-window mismatch or baseline-method mismatch;
-- source revision is recorded from release/assembly metadata when available;
+- baseline export fail-closes on capture/window/runtime-window count mismatch, non-contiguous evidence ordering, timestamp mismatch, empty/duplicate capture `RequestId`, quality-window mismatch or baseline-method mismatch;
+- clean owner-local source builds/publishes emit exact Git revision provenance into `BUILD_INFO.txt`; dirty working trees intentionally do not populate the authoritative evidence `commit=` field;
+- source revision is recorded from `BUILD_INFO.txt`/assembly metadata when available;
+- JSON export computes SHA-256 after save and returns the saved path plus digest to the UI;
 - unresolved `ulong` routine addresses serialize as hexadecimal strings;
 - export serialization/file I/O stays outside authoritative baseline capture windows.
 
 Still open:
 
-- physical JSON-vs-visible-evidence audit and SHA-256 retention;
+- physical JSON-vs-visible-evidence audit and independent confirmation that the displayed SHA-256 matches the saved JSON;
+- clean-main physical confirmation that exported `sourceRevisionId` matches the exact tested commit;
 - narrow-window/text-scaling sanity on physical WinUI;
 - keyboard focus/screen-reader sanity;
 - physical evidence that warning/sample-insufficient/runtime-context/scenario invalidation/readiness-gate states present correctly;
@@ -274,9 +284,10 @@ Two slots remain intentionally unreserved for later higher-blast-radius parser/r
 
 Runbook: `docs/PHYSICAL_VALIDATION.md`.
 
-Required closure evidence eventually includes:
+Required closure evidence includes:
 
-- exact source revision + completed green Tests run for deterministic contracts;
+- exact clean source revision + completed green Tests run for deterministic contracts;
+- owner-local App/Service build + launch evidence;
 - real Windows Service/ETW behavior;
 - controlled-idle + real-world observations;
 - evidence JSON + SHA-256 + RequestId correlation;
@@ -286,25 +297,29 @@ Required closure evidence eventually includes:
 - representative GPU/NIC/xHCI inventory/resource evidence through the read-only inspector;
 - explicit zero-mutation evidence;
 - accessibility/responsive sanity;
-- package/uninstall evidence only when release/package validation is intentionally resumed.
+- package/uninstall evidence only when validating a release candidate.
 
-Stage B cannot close from CI/VM evidence alone. Per the current owner instruction, this implementation loop does not run App/Service builds as a substitute for that later physical validation.
+Stage B cannot close from CI/VM evidence alone. Owner-local runtime validation has resumed. The reported successful launch closes only the basic launch-smoke question; the observation, evidence, cleanup, device and UX checks above remain open.
 
 ## Stage C — repeated baseline quality — SOURCE COMPLETE, PHYSICAL CLOSURE OPEN
 
-Current implementation-loop work is source-only:
+Physical validation is now active. Execute in this order on an exact clean `main` revision:
 
-1. continue Phase 2 contract/architecture/checklist step-back review;
-2. close remaining source-only inconsistencies without inventing physical evidence;
-3. use the hosted **Tests** workflow only for deterministic contracts;
-4. keep physical controlled-idle and real-world baseline execution deferred until the owner explicitly resumes runtime validation;
-5. do not add speculative thermal/observer-overhead machinery without physical evidence.
+1. build/run the App + protected Service and confirm exported evidence carries the exact `sourceRevisionId`;
+2. run one **Controlled idle** five-second observation; export JSON and independently verify SHA-256;
+3. run one repeatable **Real-world workload** five-second observation; export separately;
+4. build the five-window **Controlled idle** baseline and retain all window/reason/runtime-context evidence;
+5. build the five-window **Real-world workload** baseline under a repeatable workload;
+6. exercise disconnect/service-stop/recovery/no-stale-ETW-session behavior and active-console authorization where practical;
+7. audit representative GPU/NIC/xHCI evidence and broad attribution plausibility;
+8. complete Stage D responsive/text-scaling/keyboard/screen-reader/state sanity on the same physical WinUI build;
+9. reconcile JSON vs visible evidence and remaining blockers, then close Phase 2 only if the exit gate is actually satisfied.
 
-When physical validation is resumed, Stage C requires controlled-idle and repeatable real-world five-window evidence, exported v7 JSON/hashes and plausible runtime context. Stage C closes only when the real App → Service → ETW path distinguishes trustworthy repeated evidence from unstable/incomplete evidence.
+Do not add speculative thermal/observer-overhead machinery unless these physical runs show a meaningful measurement-validity risk. Stage C closes only when the real App → Service → ETW path distinguishes trustworthy repeated evidence from unstable/incomplete evidence.
 
 ## Stage D — Phase 2 evidence UX — SOURCE IMPLEMENTED, PHYSICAL UX CLOSURE OPEN
 
-Current source work may still simplify or correct semantics/accessibility where code review identifies a concrete issue. Physical closure later verifies responsive/text-scaling, keyboard/screen-reader behavior, device-evidence usability and JSON auditability.
+Current source work may still simplify or correct semantics/accessibility where code review or the resumed physical pass identifies a concrete issue. Physical closure verifies responsive/text-scaling, keyboard/screen-reader behavior, device-evidence usability, warning/sample-insufficient/readiness states and JSON auditability.
 
 ## After Phase 2
 
@@ -314,9 +329,25 @@ Phase 3 remains blocked until Stage B/C/D closure evidence exists. When Phase 3 
 2. add mutation-specific authorization/allowlisting;
 3. implement Detect → Snapshot → Validate → Journal → Apply → Verify;
 4. implement interruption/reboot recovery and forced-failure rollback;
-5. only then implement the first supported GPU interrupt-affinity/MSI experiment.
+5. only then implement the first supported GPU interrupt-affinity/MSI experiment;
+6. integrate PresentMon guardrails for the GPU experiment where the workload supports them;
+7. expose exact original/candidate state, raw before/after metrics and Keep/Revert rather than a synthetic score.
 
 No mutation work may bypass Phase 2 closure.
+
+## Later execution direction
+
+After the first safe GPU experiment closes Phase 3:
+
+```text
+Phase 4: HID → hub/port → xHCI mapping + Raw Input/USB ETW + reversible xHCI experiment
+→ Phase 5: NIC/RSS inventory + controlled local-network benchmark + reversible RSS/affinity experiment
+→ Phase 6: bounded cross-subsystem optimizer/profiles + trade-off/Pareto handling + Restore Baseline
+→ Phase 7: installer/signing/upgrade/uninstall/recovery/productization
+→ 1.0
+```
+
+This preserves the original product goal: **Measure → Experiment → Verify → Compare → Keep or Revert**, not a collection of opaque Windows tweaks.
 
 ## Release discipline
 
