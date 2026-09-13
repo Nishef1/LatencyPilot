@@ -24,9 +24,11 @@ Explain how this supports measurement, attribution, safety, rollback, diagnostic
 - [ ] `SYSTEM_DESIGN.md` updated
 - [ ] ADR added/updated
 
-Affected boundaries:
+Affected current boundaries:
 
-<!-- Core / Benchmarking / Protocol / Platform.Windows / Persistence / Service / App -->
+<!-- Core / Benchmarking / Protocol / Platform.Windows / Service / App / CriticalTests -->
+
+If this introduces the Phase 3 persistence boundary, explain the concrete SQLite schema/journal/recovery contract; do not add an empty placeholder project.
 
 ## Evidence
 
@@ -39,7 +41,7 @@ For performance/latency claims, include benchmark evidence or explain why the PR
 If this PR changes system state, confirm all applicable items:
 
 - [ ] Applicability is detected explicitly
-- [ ] Original state is snapshotted before mutation
+- [ ] Original state is durably journaled before mutation
 - [ ] Candidate is validated
 - [ ] Apply is narrowly scoped
 - [ ] Applied state is independently verified
@@ -47,7 +49,9 @@ If this PR changes system state, confirm all applicable items:
 - [ ] Interrupted-run/reboot recovery is covered
 - [ ] Target metrics are defined
 - [ ] Guardrail metrics are defined
-- [ ] Failure-path tests are included
+- [ ] Mutation-specific authorization is defined
+
+Permanent-test coverage must protect the highest-blast-radius safety contract while respecting the repository-wide maximum of 10. Prefer extending/replacing an existing durable test instead of adding one test per failure path.
 
 If not applicable, explain why:
 
@@ -60,14 +64,14 @@ If benchmark logic changes:
 - [ ] Sample adequacy is checked
 - [ ] Drift/invalid experiment behavior is covered
 - [ ] A composite score does not hide raw trade-offs
-- [ ] Synthetic/golden tests were updated intentionally
+- [ ] Any permanent-test change respects the hard cap
 
 ## Testing
 
-List tests added/updated and what they prove.
+Permanent automated tests currently have a hard repository-wide maximum of 10. Describe the existing test updated/replaced, any justified new permanent slot, or why no permanent-test change is needed. Temporary investigative tests should not remain unless promoted to a justified permanent contract.
 
 ```text
-Tests:
+Tests / contract evidence:
 ```
 
 Hardware validation, if applicable:
@@ -76,18 +80,20 @@ Hardware validation, if applicable:
 Hardware / Windows build / driver / workload:
 ```
 
+Hosted GitHub Actions is intentionally test-only; do not present it as App/Service build, package, GUI-smoke, release, or hardware-performance evidence.
+
 ## Security / privilege impact
 
 - [ ] No new privileged capability
 - [ ] Privileged change remains behind typed service IPC
 - [ ] No arbitrary command/PowerShell/registry primitive was introduced
-- [ ] Logging/diagnostics do not add sensitive data
+- [ ] Logging/diagnostics do not add unnecessary sensitive data
 
 Explain any privilege-boundary change:
 
 ## Compatibility / migration
 
-Describe protocol, persistence-schema, migration, reboot, or backward-compatibility impact.
+Describe protocol, future persistence-schema, migration, reboot, or backward-compatibility impact.
 
 ## Contribution agreement
 
@@ -101,3 +107,4 @@ Describe protocol, persistence-schema, migration, reboot, or backward-compatibil
 - [ ] I did not weaken safety checks to make tests pass
 - [ ] Documentation reflects changed behavior
 - [ ] The PR contains no unrelated formatting/refactor churn
+- [ ] No dead/speculative project or placeholder abstraction was added
