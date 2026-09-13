@@ -552,7 +552,7 @@ public sealed partial class MainWindow : Window
         FormatLargestValue(dpc.P999Microseconds, isr.P999Microseconds);
 
     private static string FormatLargestMaximum(LatencyDistribution dpc, LatencyDistribution isr) =>
-        FormatLargestValue(dpc.MaximumMicroseconds, isr.MaximumMicroseconds);
+        FormatLargestValue(dpc.MaximumMicroseconds, dpc.MaximumMicroseconds is null ? isr.MaximumMicroseconds : isr.MaximumMicroseconds);
 
     private static string FormatLargestValue(double? first, double? second)
     {
@@ -584,13 +584,13 @@ public sealed partial class MainWindow : Window
         {
             assessment = string.Create(
                 CultureInfo.InvariantCulture,
-                $"Severe media-impact range observed: {overThreeMilliseconds:N0} DPC/ISR event(s) exceeded 3 ms. Microsoft's streaming-media assessment treats >3 ms as error-level in that media scenario. This is a strong investigation signal, not a universal system-fail verdict.");
+                $"Long-tail diagnostic bucket observed: {overThreeMilliseconds:N0} DPC/ISR event(s) exceeded 3 ms. LatencyPilot records this for investigation; 3 ms is not presented as an official Windows severity or pass/fail boundary.");
         }
         else if (overOneMillisecond > 0)
         {
             assessment = string.Create(
                 CultureInfo.InvariantCulture,
-                $"Potential real-time impact range observed: {oneToThreeMilliseconds:N0} DPC/ISR event(s) were between 1 and 3 ms. Microsoft's streaming-media assessment warns on long-running DPC/ISR in this range.");
+                $"Millisecond-tail diagnostic bucket observed: {oneToThreeMilliseconds:N0} DPC/ISR event(s) were between 1 and 3 ms. LatencyPilot records this as context, not as an official Windows user-impact threshold.");
         }
         else if (guidanceExceedances > 0)
         {
