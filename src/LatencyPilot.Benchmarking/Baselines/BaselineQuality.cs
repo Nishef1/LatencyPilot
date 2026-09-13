@@ -143,10 +143,10 @@ public static class BaselineQualityAnalyzer
     }
 
     private static void ValidateWindowSequence(
-        IReadOnlyList<BaselineWindowEvidence> windows,
+        BaselineWindowEvidence[] windows,
         string parameterName)
     {
-        for (var index = 0; index < windows.Count; index++)
+        for (var index = 0; index < windows.Length; index++)
         {
             var expectedWindowNumber = index + 1;
             var window = windows[index];
