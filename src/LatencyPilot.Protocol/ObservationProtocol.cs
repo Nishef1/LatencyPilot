@@ -2,7 +2,7 @@ namespace LatencyPilot.Protocol;
 
 public static class ObservationProtocol
 {
-    public const string PipeName = "LatencyPilot.Observation.v2";
+    public const string PipeName = "LatencyPilot.Observation.v3";
     public const int MaximumRequestBytes = 64 * 1024;
     public const int MaximumResponseBytes = 1024 * 1024;
     public const int MaximumCaptureDurationMilliseconds = 30_000;
