@@ -9,7 +9,7 @@ LatencyPilot is a Windows 11 performance-analysis and tuning tool built around o
 It is not a registry-tweak pack, debloater, or one-click FPS booster. The product is intended to measure the effect of low-level changes on the actual machine, expose improvements and regressions, and preserve enough state to safely revert each supported experiment.
 
 > [!IMPORTANT]
-> LatencyPilot is in **pre-alpha**. Current product version: **0.0.1**. Phase 2 is building the trustworthy read-only observation engine. System mutation remains disabled by design.
+> LatencyPilot is in **pre-alpha**. Current product version: **0.0.1**. Phase 2 is building the trustworthy read-only observation and baseline-quality engine. System mutation remains disabled by design.
 
 ## Why LatencyPilot
 
@@ -39,29 +39,30 @@ Windows exposes powerful interrupt, CPU-topology, ETW, USB, networking and sched
 - Phase 0 — governance/architecture: **closed**
 - Phase 1 — buildable foundation + comparison core: **closed**
 - Phase 2 — read-only observation engine: **in progress**
-- Stage A — authoritative DPC/ISR module attribution: **closed in CI**
-- Stage B — physical Windows 11 validation: **current**
+- Stage A — authoritative DPC/ISR module attribution: **closed historically**
+- Stage B — physical Windows 11 validation: **open**
+- Stage C — repeated baseline quality engine: **implemented in source, owner-local WinUI validation pending**
 - System mutation capability: **none by design**
-- Permanent tests: **7 / hard maximum 10**
+- Permanent tests: **8 / hard maximum 10**
 
-Phase 2 currently contains CPU topology, PnP stable identities, driver metadata, stored interrupt configuration, allocated IRQ/resource inspection, a privileged read-only Windows Service, typed local Named Pipe IPC, DPC/ISR ETW observation with per-processor aggregation, p50/p95/p99/p99.9/max summaries, and authoritative routine-address attribution against kernel image ranges. Already-loaded images are recovered through kernel image rundown at session stop. Ambiguous or missing mappings remain explicitly unresolved instead of being guessed.
+Phase 2 contains CPU topology, PnP stable identities, driver metadata, stored interrupt configuration, allocated IRQ/resource inspection, a privileged read-only Windows Service, typed local Named Pipe IPC, DPC/ISR ETW observation with per-processor aggregation, p50/p95/p99/p99.9/max summaries, authoritative routine-address attribution against kernel image ranges, and the first repeated-baseline quality engine. Already-loaded images are recovered through kernel image rundown at session stop. Ambiguous or missing mappings remain explicitly unresolved instead of being guessed.
 
 The observation boundary is fail-closed and bounded: unknown protocol fields are rejected, network identities are denied, the Phase 2 pipe surface is limited to interactive local identities plus required service identities, and abandoned clients cancel active capture work. App/Service failures are recorded in bounded structured local logs correlated by protocol `RequestId`.
 
-The Phase 2 desktop exposes service health, the read-only safety boundary, system topology/inventory, DPC/ISR tail metrics, module-attribution coverage, top contributors and CPU concentration. Repeated baseline/noise/drift analysis is still intentionally deferred to Stage C. A short single capture is called an **observation**, not a trustworthy baseline.
+The Stage C source adds a five-window `Build baseline` flow and deterministic `baseline-quality-v1` interpretation in `LatencyPilot.Benchmarking`. It checks capture integrity, minimum metric evidence, inter-window noise, drift and extreme windows; a lossy/noisy/drifted baseline is `Inconclusive` rather than silently accepted. The WinUI source still requires owner-local Windows compile/run evidence before that UI work is considered closed.
 
-See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the live execution ladder, [`docs/PHYSICAL_VALIDATION.md`](docs/PHYSICAL_VALIDATION.md) for Stage B, and [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) for local logging/correlation rules.
+See [`ROADMAP.md`](ROADMAP.md) for the 100% definition, [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the live execution ladder, [`docs/PHYSICAL_VALIDATION.md`](docs/PHYSICAL_VALIDATION.md) for Stage B, [`docs/BENCHMARK_METHODOLOGY.md`](docs/BENCHMARK_METHODOLOGY.md) for baseline/statistics semantics, and [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) for local logging/correlation rules.
 
 ## Pre-alpha releases
 
-Release versions use exactly three numeric components: `MAJOR.MINOR.PATCH`. `Directory.Build.props` is the product-version source of truth and `RELEASE_VERSION` is the explicit release request. A release is rejected if those values disagree.
+Release versions use exactly three numeric components: `MAJOR.MINOR.PATCH`. `Directory.Build.props` is the product-version source of truth and `RELEASE_VERSION` is the explicit release request. Published versions are immutable; once a tag exists, later source changes require a new product version before publication.
 
-Version 0.0.1 produces two Windows 11 x64 distributions from the same self-contained payload:
+The historical public `v0.0.1` release contains:
 
-- `LatencyPilot-0.0.1-win-x64-setup.exe` — recommended installation path. Installs the app and the read-only observation service, and manages service removal during uninstall.
-- `LatencyPilot-0.0.1-win-x64-portable.zip` — extractable portable bundle containing the app, service payload, runtime dependencies, service scripts, validation/diagnostics guides and build metadata.
+- `LatencyPilot-0.0.1-win-x64-setup.exe` — installer for the app and read-only observation service.
+- `LatencyPilot-0.0.1-win-x64-portable.zip` — extractable portable bundle with app, service payload, runtime dependencies, service scripts, validation/diagnostics guides and build metadata.
 
-Both distributions are fully self-contained and do not require a separate .NET or Windows App Runtime download. Each release asset has a SHA-256 checksum companion.
+Current `main` has advanced beyond those published `v0.0.1` artifacts. Do not treat the old binaries as evidence for the current source. The next published candidate must use a new semantic version and be built locally by the repository owner from the exact tested `main` revision.
 
 The App runs as a normal, non-elevated user. Kernel ETW observation remains behind the privileged Windows Service. In the portable bundle, `Install-Service.ps1` copies the Service payload into `%ProgramFiles%\LatencyPilot\Service` before LocalSystem registration; the privileged binary is therefore not executed from an ordinary user-writable extraction folder. `Uninstall-Service.ps1` removes the registration and protected Service copy. See [`docs/PORTABLE.md`](docs/PORTABLE.md).
 
@@ -117,7 +118,9 @@ Depending on subsystem, evidence may include:
 - USB ETW or NDIS/RSS evidence;
 - audio/stability guardrails where measurable.
 
-All current percentile reporting uses the same documented linear interpolation estimator from `LatencyPilot.Benchmarking.Statistics.Percentiles`; the Service does not define a second percentile rule.
+All current percentile reporting uses the same documented linear interpolation estimator from `LatencyPilot.Benchmarking.Statistics.Percentiles`; the Service and baseline engine do not define a second percentile rule.
+
+`baseline-quality-v1` currently requires five sequential windows, at least 20 events per DPC/ISR metric per clean window, <=30% relative P10-P90 spread, <=20% early/late drift and no >50% extreme-window deviation. These are conservative versioned quality-policy thresholds, not statistical-significance claims.
 
 Results distinguish **Improved**, **Regressed**, **Tradeoff**, **NoMeasurableDifference**, and **Inconclusive** rather than forcing every run into one score.
 
@@ -141,16 +144,17 @@ docs/
   DIAGNOSTICS.md
   PHYSICAL_VALIDATION.md
   PORTABLE.md
+  RELEASING.md
   adr/
 ```
 
 ## Testing policy
 
-The permanent automated suite is intentionally small and has a **hard repository-wide maximum of 10 tests**. The current suite uses seven broader permanent test methods covering state-machine safety, benchmark verdict semantics, invalid metrics, canonical percentiles, fail-closed protocol framing, the read-only protocol surface and a real Windows inventory/topology invariant.
+The permanent automated suite is intentionally small and has a **hard repository-wide maximum of 10 tests**. The current suite uses eight broader permanent test methods covering state-machine safety, benchmark verdict semantics, repeated-baseline quality, invalid metrics, canonical percentiles, fail-closed protocol framing, the read-only protocol surface and a real Windows inventory/topology invariant.
 
 Test count is not a quality goal. When a newer parser/recovery/mutation risk has greater blast radius, merge or remove a lower-value permanent test and reuse that slot. Scenario matrices should be consolidated inside a durable contract test when practical. Temporary implementation/debug tests may be created and deleted before finalization.
 
-Hardware validation is separate from CI and does not count toward the permanent-test cap.
+Hardware validation is separate from automated tests and does not count toward the permanent-test cap.
 
 ## Diagnostics
 
@@ -170,9 +174,17 @@ Service logs:
 
 They use compact JSON, bounded rolling/retention and async file writes. The protocol `RequestId` connects App-side request entries to Service-side capture entries. LatencyPilot does not log one event per raw DPC/ISR sample because diagnostic I/O must not become part of the latency measurement workload. See [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md).
 
-## Building
+## Building and automation
 
-The .NET SDK is pinned in `global.json`. GitHub Actions restores the toolchain, builds Release, runs the permanent critical suite, publishes self-contained Windows x64 App and Service outputs, validates the WinUI resource/GUI smoke path, and builds both the offline setup EXE and portable ZIP from the same payload.
+The .NET SDK is pinned in `global.json`.
+
+GitHub Actions is intentionally **test-only**. It runs:
+
+```powershell
+dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+```
+
+Hosted Actions does not publish the App/Service, build Setup/portable distributions, run production release packaging or publish GitHub releases.
 
 ### Fast local development
 
@@ -183,34 +195,34 @@ Visual Studio is the recommended inner loop for UI work:
 1. Open `LatencyPilot.slnx` and make `LatencyPilot.App` the startup project.
 2. Select the `LatencyPilot.App (Hot Reload)` launch profile.
 3. Start with `F5` so the managed debugger is attached.
-4. Save supported XAML/C# edits to apply Hot Reload. The profile explicitly keeps native debugging disabled because mixed/native debugging interferes with managed WinUI Hot Reload.
+4. Save supported XAML/C# edits to apply Hot Reload.
 
-`HotReloadAutoRestart` is enabled for Debug builds. Unsupported edits can still require a process restart; the setting allows Visual Studio to restart automatically where the project/debugger combination supports quick restart.
-
-For a command-line loop, use the repository script:
+`HotReloadAutoRestart` is enabled for Debug builds. For a command-line loop:
 
 ```powershell
-# First run restores only when project.assets.json is missing, then starts dotnet watch.
 .\dev.ps1
-
-# Run once without watch.
 .\dev.ps1 -Mode run
-
-# Incremental Debug build only.
 .\dev.ps1 -Mode build
-
-# Force a restore after dependency/project changes.
 .\dev.ps1 -ForceRestore
 ```
 
-The script deliberately keeps the normal NuGet global package cache and uses `--no-restore` after a valid restore state exists, so normal edit/build iterations do not intentionally redownload the SDK/runtime/package graph. Visual Studio `F5` remains preferred for XAML Hot Reload; `dotnet watch` is mainly the CLI C# Hot Reload/restart path.
+The script keeps the normal NuGet global package cache and uses `--no-restore` after a valid restore state exists.
 
-Typical release-oriented local commands, if the SDK is installed:
+### Owner-local release build
+
+Release/package creation is an explicit owner action from a clean, current `main` checkout after the exact commit has green Tests evidence:
+
+```powershell
+.\scripts\Publish-Release.ps1
+```
+
+That script performs the Release build, App/Service publish, PRI validation, Setup/portable creation, checksums and GitHub prerelease publication locally. See [`docs/RELEASING.md`](docs/RELEASING.md).
+
+For manual local build/debug without publishing:
 
 ```powershell
 dotnet restore LatencyPilot.slnx
 dotnet build LatencyPilot.slnx -c Release
-dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj -c Release
 dotnet publish src/LatencyPilot.App/LatencyPilot.App.csproj -c Release -r win-x64 --self-contained true
 dotnet publish src/LatencyPilot.Service/LatencyPilot.Service.csproj -c Release -r win-x64 --self-contained true
 ```
