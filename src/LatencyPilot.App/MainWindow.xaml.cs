@@ -342,7 +342,8 @@ public sealed partial class MainWindow : Window
         else
         {
             KernelCaptureStatusText.Text = $"Observation completed with quality warning: {integrityIssue}";
-            ObservationQualityText.Text = $"Treat this observation as incomplete evidence. {FormatCaptureInterpretation(capture)} {MeasurementContextGuidance}";
+            ObservationQualityText.Text =
+                $"Treat this observation as incomplete evidence. Tail/guidance classification is withheld because capture integrity is not clean. Exact values remain visible for diagnosis. {MeasurementContextGuidance}";
         }
 
         RenderPremiumCapture(capture);
@@ -552,7 +553,7 @@ public sealed partial class MainWindow : Window
         FormatLargestValue(dpc.P999Microseconds, isr.P999Microseconds);
 
     private static string FormatLargestMaximum(LatencyDistribution dpc, LatencyDistribution isr) =>
-        FormatLargestValue(dpc.MaximumMicroseconds, dpc.MaximumMicroseconds is null ? isr.MaximumMicroseconds : isr.MaximumMicroseconds);
+        FormatLargestValue(dpc.MaximumMicroseconds, isr.MaximumMicroseconds);
 
     private static string FormatLargestValue(double? first, double? second)
     {
