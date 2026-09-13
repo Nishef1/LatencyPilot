@@ -113,7 +113,13 @@ Only module names are written to this concise operational summary; full module p
 .\scripts\Verify-Evidence.ps1 .\capture.json -ExpectedSha256 <64-hex-digest>
 ```
 
-This helper is a validation/reporting surface over the saved evidence; it does not replace the evidence file itself.
+For physical closure, provenance and measurement quality are deliberately separate gates. `-RequireCleanCapture` fails when any capture has ETW loss, invalid latency/image events or reaches the event limit. `-RequireValidBaseline` additionally requires `baseline-quality-v1`, exactly five aligned captures, a `Valid` quality result, `IsValidForComparison=true`, and five of five valid capture windows:
+
+```powershell
+.\scripts\Verify-Evidence.ps1 .\baseline.json -RequireCleanCapture -RequireValidBaseline
+```
+
+A partial or unstable baseline remains exportable evidence, but it cannot pass the closure-ready baseline gate. This helper is a validation/reporting surface over the saved evidence; it does not replace the evidence file itself.
 
 ## What should be logged
 
