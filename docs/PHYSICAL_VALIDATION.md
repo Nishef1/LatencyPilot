@@ -1,6 +1,6 @@
 # Physical Windows 11 Validation
 
-This runbook closes the read-only Phase 2 measurement substrate on physical Windows 11 hardware. It does **not** authorize system mutation.
+This runbook closes the read-only Phase 2 measurement substrate on physical Windows 11 hardware. It does **not** authorize mutation.
 
 Current contract:
 
@@ -18,37 +18,21 @@ Permanent tests:       8 / 10
 
 ## 1. Preconditions
 
-Use a physical Windows 11 x64 machine and the exact clean `main` revision being evaluated.
+Use one exact clean `main` revision on a physical Windows 11 x64 machine.
 
-Required:
+Required before closure:
 
+- exact revision has a completed green hosted **Tests** run;
+- App/Service are built and run owner-locally on Windows because hosted CI is intentionally test-only;
 - App runs non-elevated;
 - UAC is used only for protected Service install/update/removal;
 - `LatencyPilot.Observation` runs through the Service Control Manager from `%ProgramFiles%\LatencyPilot\Service`;
-- the exact source revision has a completed green hosted **Tests** run;
-- owner-local Windows provides App/Service compile/runtime evidence because hosted CI is test-only;
 - mutation remains unavailable;
 - current authorization uses the active local console session.
 
-Record before testing:
+Record product/source revision, Tests run, local build result, Windows build, CPU/topology, GPU/driver, primary NIC/driver, primary xHCI/driver, power context, workload/scene and other monitoring/overlay tools.
 
-```text
-LatencyPilot version:
-Source revision:
-Hosted Tests run:
-Local build result:
-Windows edition/build:
-CPU/topology:
-GPU + driver:
-Primary NIC + driver:
-Primary xHCI controller + driver:
-Power source / active plan / configured mode:
-Battery Saver:
-Foreground workload/version/scene:
-Other overlays/monitoring tools:
-```
-
-## 2. Build, Service and launch boundary
+## 2. Build and boundary check
 
 From a normal terminal:
 
@@ -69,11 +53,11 @@ Expected privileged payload:
 %ProgramFiles%\LatencyPilot\Service\LatencyPilot.Service.exe
 ```
 
-The App must prove through protocol status that the peer is the installed Windows Service with expected kernel-capture privilege and `MutationAvailable=false`. A random process answering the pipe is insufficient.
+The App must prove through protocol status that the peer is the installed Windows Service with expected kernel-capture privilege and `MutationAvailable=false`. A random pipe peer is insufficient.
 
-The App header must show the exact clean source revision, not `dirty` or revision-unavailable provenance.
+The header must show the exact clean source revision, not `dirty` or revision-unavailable provenance.
 
-## 3. Basic UX/keyboard sanity
+## 3. Keyboard/state sanity
 
 Exercise:
 
@@ -84,62 +68,39 @@ Ctrl+B  repeated decision baseline
 Ctrl+E  export latest completed evidence
 ```
 
-`Ctrl+E` must remain disabled when no completed evidence exists and while measurement is active.
-
-Every successful protocol-v6 capture must carry a unique `RequestId` that correlates App logs, Service logs and evidence-v8.
+`Ctrl+E` must remain disabled without completed evidence and while a measurement is active. Every successful protocol-v6 capture must carry a unique `RequestId` correlating App logs, Service logs and evidence-v8.
 
 ## 4. Scenario semantics
 
 ### Controlled idle
 
-Close unnecessary applications and avoid unrelated user work. Normal background Windows activity remains part of the idle noise floor.
+Close unnecessary applications and avoid unrelated user activity. Normal Windows background activity remains part of the idle noise floor.
 
 ### Real-world workload
 
-Keep the game/applications that reproduce the issue open. Before starting a **decision baseline**, place the workload at the same warmed/repeatable point you intend to compare.
-
-Do not close relevant apps merely to improve the numbers.
+Keep the game/apps that reproduce the issue open. Before a decision baseline, place the workload at the same warmed/repeatable scene or operation you intend to compare. Do not close relevant apps merely to improve the numbers.
 
 ### Before / after
 
 Keep workload, foreground applications, power state and background conditions as consistent as practical on both sides.
 
-Changing the scenario after a completed run must invalidate stale visible/export evidence instead of relabeling the old capture.
+Changing scenario after a completed run must invalidate stale visible/export evidence rather than relabel an old capture.
 
 ## 5. Quick diagnostic snapshot
 
-A quick snapshot is one five-second DPC/ISR capture. Its job is integrity, attribution, concentration and hypothesis generation. It is **not** a health verdict or optimization decision.
+A quick snapshot is one five-second DPC/ISR capture used for integrity, attribution, CPU concentration and hypothesis generation. It is **not** a health verdict or optimization decision.
 
-On the final candidate, take at least one Real-world quick snapshot and record:
+Record requested/actual duration, DPC/ISR count/p99/p99.9-if-available/max, reference/bucket counts, top CPUs/modules, attribution coverage, ETW loss, invalid-event/image counts, event-limit state and runtime CPU/power context.
 
-```text
-Scenario:
-Requested / actual duration:
-DPC count / p99 / p99.9 if available / max:
-ISR count / p99 / p99.9 if available / max:
-DPC >100 us reference count/rate:
-ISR >25 us reference count/rate:
-DPC/ISR >1 ms local-bucket count:
-DPC/ISR >3 ms local-bucket count:
-Top CPUs / concentration:
-Resolved / unresolved attribution:
-Top modules:
-ETW events lost:
-Invalid latency/image events:
-Event limit reached:
-Runtime CPU busy %:
-Power context and whether it changed:
-```
-
-Interpretation:
+Interpretation rules:
 
 - DPC `>100 µs` and ISR `>25 µs` are Microsoft driver-duration guidance references, not LatencyPilot pass/fail thresholds;
-- `>1 ms` and `>3 ms` are LatencyPilot diagnostic buckets, not official Windows severity categories;
+- `>1 ms` and `>3 ms` are LatencyPilot local diagnostic buckets, not official Windows severity categories;
 - CPU0 concentration is a hypothesis, not an automatic fault;
 - no exceedance in five seconds does not prove stable latency;
-- p99.9 is shown only with at least **10,000 samples** in that distribution.
+- p99.9 is exposed only with at least **10,000 samples** in that distribution.
 
-ETW loss/invalid/event-limit state is decision-critical. Microsoft documents that real-time ETW events can be lost when the consumer does not consume quickly enough, so loss cannot be silently treated as zero or ignored.
+ETW integrity is decision-critical. Microsoft documents that real-time ETW consumers can lose events when they cannot consume quickly enough, so unavailable/non-zero loss cannot be silently treated as zero.
 
 Export and verify:
 
@@ -159,11 +120,11 @@ purpose:  quick-diagnostic-snapshot
 protocol: 6
 ```
 
-A clean snapshot is still diagnostic-only.
+Passing clean-capture verification still leaves the artifact diagnostic-only.
 
 ## 6. Repeated decision baseline — `baseline-quality-v2`
 
-Decision sequence:
+Sequence:
 
 ```text
 workload already warmed/repeatable when applicable
@@ -181,11 +142,9 @@ workload already warmed/repeatable when applicable
 20 s window 5
 ```
 
-The initial five seconds are **not** workload warm-up. Do not start while a game is still loading/shader-compiling unless startup itself is the intended workload.
+The initial five seconds are **not** workload warm-up. Do not start while a game is still loading/shader-compiling unless startup itself is intentionally the workload.
 
-Heavy module/CPU/tail UI redraw and evidence file I/O must stay outside authoritative windows. Lightweight progress text between windows is acceptable.
-
-### Window eligibility
+Heavy module/CPU/tail redraw and evidence file I/O must stay outside authoritative windows. Lightweight progress text is acceptable.
 
 Every window must satisfy:
 
@@ -199,28 +158,22 @@ finite positive DPC p99
 finite positive ISR p99
 ```
 
-### Five-window stability gate
-
 Both DPC p99 and ISR p99 must satisfy:
 
 ```text
 P10-P90 relative spread <= 30%
-early/late relative drift typo has been removed; early/late relative drift <= 20%
+early/late typo does not exist in the contract; early/late relative drift <= 20%
 no >50% extreme-window deviation
 ```
 
-Do not delete inconvenient windows. `Valid` means repeatable enough for the comparison method, not globally healthy.
+Do not delete inconvenient windows. `Valid` means repeatable enough for the current comparison method; it does not mean globally healthy.
 
-### Required physical baselines
-
-Run and export separately:
+Required physical baselines on the final candidate:
 
 1. **Real-world workload** — same warmed/repeatable workload through all five windows.
 2. **Controlled idle** — same controlled-idle condition through all five windows.
 
-For each window record duration, integrity, DPC/ISR count+p99 and runtime power/CPU context. Record aggregate median/noise/drift/extreme-window reasons and overall status.
-
-Verify each baseline:
+Export each separately and verify:
 
 ```powershell
 .\scripts\Verify-Evidence.ps1 .\LatencyPilot-baseline-*.json `
@@ -240,29 +193,22 @@ protocol:              6
 captures/windows:      exactly 5 aligned entries
 ```
 
-The verifier independently enforces five clean windows, duration adequacy, >=1,000 DPC and ISR events per window and `Status=Valid` / `IsValidForComparison=true`.
-
-A partial, short, lossy, undersampled, noisy or drifted baseline may be useful diagnostic evidence but cannot pass the closure gate.
+A partial, short, lossy, undersampled, noisy or drifted baseline may remain useful diagnostic evidence but cannot pass the closure gate.
 
 ## 7. Independent plausibility
 
-Where practical compare a representative workload with WPA/PerfView or LatencyMon for broad plausibility of:
+Where practical compare a representative workload with WPA/PerfView or LatencyMon for broad plausibility of DPC/ISR activity, dominant modules and processor concentration. Exact counts need not match because windows/aggregation/observer overhead differ.
 
-- DPC/ISR activity;
-- dominant module identities;
-- processor concentration;
-- absence of impossible attribution.
-
-Exact counts/percentiles need not match because capture windows, aggregation and observer overhead differ. Attribution to an image that cannot contain the routine address is a blocker.
+Attribution to an image that cannot contain the routine address is a blocker.
 
 ## 8. Representative device evidence
 
-Inspect representative GPU/display, NIC and actual `USBXHCI` entries and keep these layers separate:
+Inspect representative GPU/display, NIC and actual `USBXHCI` entries while preserving:
 
 ```text
 stored interrupt configuration
-allocated IRQ/resource assignment
-runtime DPC/ISR behavior
+≠ allocated IRQ/resource assignment
+≠ runtime DPC/ISR behavior
 ```
 
 A read failure is not “no configuration”. Stored MSI/affinity policy is not proof of assigned delivery state.
@@ -271,34 +217,27 @@ A read failure is not “no configuration”. Stored MSI/affinity policy is not 
 
 Exercise at least:
 
-1. close the App during a quick snapshot;
-2. relaunch and start a new status/capture promptly;
-3. stop/restart the Service around capture and reconnect the normal-user App;
-4. run another capture after recovery;
-5. close the App during a repeated-baseline window and confirm partial evidence cannot become `Valid`;
-6. verify no stale `LatencyPilot-Kernel-*` ETW session remains after interruption;
-7. where practical, malformed/incompatible protocol input fails bounded/closed;
-8. where practical, a client outside the active console session is rejected without weakening authorization.
+1. close the App during a quick snapshot, relaunch and verify a new request starts promptly;
+2. stop/restart the Service around capture and reconnect the normal-user App;
+3. run another capture after recovery;
+4. close the App during a repeated-baseline window and confirm partial evidence cannot become `Valid`;
+5. verify no stale `LatencyPilot-Kernel-*` ETW session remains after interruption;
+6. where practical, malformed/incompatible protocol input fails bounded/closed;
+7. where practical, a client outside the active console session is rejected without weakening authorization.
 
 Unproven cleanup or authorization keeps Phase 2 open.
 
 ## 10. Accessibility/responsive sanity
 
-Check:
+Check Light, Dark, Windows High Contrast, narrow/wide widths, enlarged text scaling, keyboard-only focus order and screen-reader/UI Automation reading of Service state, scenario, measurement purpose, exact values, runtime context and baseline verdict.
 
-- Light, Dark and Windows High Contrast;
-- narrow/wide widths;
-- representative enlarged Windows text scaling;
-- keyboard-only focus order;
-- screen-reader/UI Automation for Service state, scenario, measurement purpose, exact values, runtime context and baseline verdict.
-
-Color cannot be the only state cue. A quick snapshot must not be announced as a health verdict.
+Color must not be the only state cue. A quick snapshot must not be announced or framed as a health verdict.
 
 ## 11. Zero-mutation boundary
 
 Phase 2 must not alter interrupt affinity, MSI settings, CPU Sets, power settings, network configuration, device policy, timer settings or unrelated services.
 
-Only LatencyPilot installation/Service files and documented diagnostic/evidence artifacts may persist. Any unrelated persistent configuration change is a blocker.
+Only LatencyPilot installation/Service files and documented diagnostics/evidence artifacts may persist. Any unrelated persistent configuration change is a blocker.
 
 ## 12. Removal check for release candidates
 
