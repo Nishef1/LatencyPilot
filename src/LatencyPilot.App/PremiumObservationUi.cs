@@ -166,7 +166,7 @@ public sealed partial class MainWindow
 
         _latencyHealthSummaryText = new TextBlock
         {
-            Text = "Numbers remain authoritative; color and severity labels are additional cues only.",
+            Text = "Numbers remain authoritative; color and context labels are additional cues only.",
             FontSize = 14,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
@@ -219,20 +219,20 @@ public sealed partial class MainWindow
             out _isrGuidanceValueText));
         chartStack.Children.Add(CreateTailBarRow(
             "DPC/ISR > 1 ms",
-            "Millisecond-scale events as a share of all observed DPC and ISR events.",
+            "Local diagnostic bucket: millisecond-scale events as a share of all observed DPC and ISR events. This is not a Windows pass/fail threshold.",
             "ImpactBrush",
             out _oneMillisecondBar,
             out _oneMillisecondValueText));
         chartStack.Children.Add(CreateTailBarRow(
             "DPC/ISR > 3 ms",
-            "Severe tail events as a share of all observed DPC and ISR events.",
+            "Local diagnostic bucket: events above 3 ms as a share of all observed DPC and ISR events. This is not a Windows pass/fail threshold.",
             "DangerBrush",
             out _threeMillisecondBar,
             out _threeMillisecondValueText));
 
         chartStack.Children.Add(new TextBlock
         {
-            Text = "The bars are an auto-scaled visual aid. Exact count, denominator and percentage stay visible; guidance rows use their DPC/ISR family as the denominator and millisecond rows use all DPC + ISR events.",
+            Text = "The bars are an auto-scaled visual aid. Exact count, denominator and percentage stay visible; 100 µs DPC / 25 µs ISR are Microsoft driver guidance, while the 1 ms / 3 ms rows are local diagnostic buckets rather than Windows pass/fail thresholds.",
             FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
@@ -406,16 +406,16 @@ public sealed partial class MainWindow
                     "Short exceedances can occur without a user-visible problem. Use the module list, maximum durations and repeated baseline to see whether the same tail repeats under the workload you care about.";
                 break;
             case CaptureSeverity.PotentialImpact:
-                _latencyHealthBadgeText.Text = "Potential impact";
+                _latencyHealthBadgeText.Text = "≥1 ms tail observed";
                 _latencyHealthTitleText.Text = "A millisecond-scale DPC/ISR event was observed.";
                 _latencyHealthSummaryText.Text =
-                    "At least one event exceeded 1 ms. Reproduce the same workload and inspect the responsible modules; repeated events in this range can matter to audio, video and other real-time paths.";
+                    "At least one event exceeded 1 ms. LatencyPilot treats this as a local diagnostic bucket, not a Windows pass/fail threshold. Repeat the same workload and inspect the responsible modules before drawing a conclusion.";
                 break;
             case CaptureSeverity.Severe:
-                _latencyHealthBadgeText.Text = "Severe tail";
-                _latencyHealthTitleText.Text = "A severe tail spike was observed in this capture.";
+                _latencyHealthBadgeText.Text = "≥3 ms tail observed";
+                _latencyHealthTitleText.Text = "A long DPC/ISR tail event was observed.";
                 _latencyHealthSummaryText.Text =
-                    "At least one DPC/ISR exceeded 3 ms. This deserves investigation, but do not blame a driver from one sample alone—repeat the workload, build a baseline and compare the module-level max/tail evidence.";
+                    "At least one DPC/ISR exceeded 3 ms. This is a local diagnostic bucket rather than an official Windows severity boundary; repeat the workload, build a baseline and compare module-level max/tail evidence before attributing impact.";
                 break;
             default:
                 ClearPremiumCapture();
@@ -429,8 +429,12 @@ public sealed partial class MainWindow
         }
         else
         {
-            DpcP999Text.Foreground = SeverityBrush(GetDistributionSeverity(capture.DpcThresholds));
-            IsrP999Text.Foreground = SeverityBrush(GetDistributionSeverity(capture.IsrThresholds));
+            DpcP999Text.Foreground = capture.Dpc.P999Microseconds is null
+                ? ThemeBrush("MutedTextBrush")
+                : SeverityBrush(GetDistributionSeverity(capture.DpcThresholds));
+            IsrP999Text.Foreground = capture.Isr.P999Microseconds is null
+                ? ThemeBrush("MutedTextBrush")
+                : SeverityBrush(GetDistributionSeverity(capture.IsrThresholds));
         }
 
         UpdateTailChart(capture);
@@ -636,7 +640,7 @@ public sealed partial class MainWindow
         _latencyHealthBadgeText.Text = "Not captured";
         _latencyHealthTitleText.Text = "Capture an observation to classify the tail.";
         _latencyHealthSummaryText.Text =
-            "The app keeps the exact p99/p99.9/max values visible and adds semantic severity plus a compact tail-rate view.";
+            "The app keeps exact p99/max values visible, shows p99.9 only when at least 1,000 samples support it, and adds bounded context labels plus a compact tail-rate view.";
 
         DpcP999Text.Foreground = ThemeBrush("TextBrush");
         IsrP999Text.Foreground = ThemeBrush("TextBrush");
