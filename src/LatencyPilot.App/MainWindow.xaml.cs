@@ -428,7 +428,7 @@ public sealed partial class MainWindow : Window
     }
 
     private void TryPrepareBaselineEvidence(
-        IReadOnlyList<KernelLatencyCaptureResponse> captures,
+        List<KernelLatencyCaptureResponse> captures,
         IReadOnlyList<BaselineWindowEvidence> windows,
         BaselineQualityResult quality,
         bool isPartial)
