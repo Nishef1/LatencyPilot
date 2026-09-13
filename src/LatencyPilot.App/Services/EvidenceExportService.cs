@@ -10,7 +10,7 @@ namespace LatencyPilot.App.Services;
 
 internal static class EvidenceExportService
 {
-    private const string EvidenceSchema = "latencypilot-evidence-v1";
+    private const string EvidenceSchema = "latencypilot-evidence-v2";
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
