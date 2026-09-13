@@ -2,7 +2,6 @@ using System.Globalization;
 using LatencyPilot.Protocol;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI.ViewManagement;
@@ -18,10 +17,10 @@ public sealed partial class MainWindow
     private TextBlock? _latencyHealthTitleText;
     private TextBlock? _latencyHealthSummaryText;
     private TextBlock? _tailChartScaleText;
-    private ProgressBar? _dpcGuidanceBar;
-    private ProgressBar? _isrGuidanceBar;
-    private ProgressBar? _oneMillisecondBar;
-    private ProgressBar? _threeMillisecondBar;
+    private TailDataBar? _dpcGuidanceBar;
+    private TailDataBar? _isrGuidanceBar;
+    private TailDataBar? _oneMillisecondBar;
+    private TailDataBar? _threeMillisecondBar;
     private TextBlock? _dpcGuidanceValueText;
     private TextBlock? _isrGuidanceValueText;
     private TextBlock? _oneMillisecondValueText;
@@ -35,6 +34,28 @@ public sealed partial class MainWindow
         GuidanceExceeded,
         PotentialImpact,
         Severe,
+    }
+
+    private sealed class TailDataBar
+    {
+        private readonly ColumnDefinition _fillColumn;
+        private readonly ColumnDefinition _remainderColumn;
+
+        public TailDataBar(ColumnDefinition fillColumn, ColumnDefinition remainderColumn)
+        {
+            _fillColumn = fillColumn;
+            _remainderColumn = remainderColumn;
+        }
+
+        public void Set(double value, double maximum)
+        {
+            var safeMaximum = double.IsFinite(maximum) && maximum > 0d ? maximum : 1d;
+            var safeValue = double.IsFinite(value) ? Math.Clamp(value, 0d, safeMaximum) : 0d;
+            _fillColumn.Width = new GridLength(safeValue, GridUnitType.Star);
+            _remainderColumn.Width = new GridLength(Math.Max(0d, safeMaximum - safeValue), GridUnitType.Star);
+        }
+
+        public void Reset() => Set(0d, 1d);
     }
 
     private void InitializePremiumObservationUi()
@@ -223,7 +244,7 @@ public sealed partial class MainWindow
 
         chartStack.Children.Add(new TextBlock
         {
-            Text = "The bars are an auto-scaled visual aid. Exact count, denominator and percentage stay visible; 100 µs DPC / 25 µs ISR are Microsoft driver guidance, while the 1 ms / 3 ms rows are local diagnostic buckets rather than Windows pass/fail thresholds.",
+            Text = "Bars are auto-scaled visual aids only. Exact count, denominator and percentage stay visible; 100 µs DPC / 25 µs ISR are Microsoft driver guidance, while 1 ms / 3 ms are LatencyPilot diagnostic buckets rather than Windows pass/fail thresholds.",
             FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
@@ -237,7 +258,7 @@ public sealed partial class MainWindow
         string label,
         string tooltip,
         string foregroundBrushKey,
-        out ProgressBar bar,
+        out TailDataBar bar,
         out TextBlock valueText)
     {
         var row = new Grid { RowSpacing = 6 };
@@ -263,24 +284,33 @@ public sealed partial class MainWindow
             FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
         };
+        ToolTipService.SetToolTip(valueText, tooltip);
         Grid.SetColumn(valueText, 1);
         header.Children.Add(valueText);
         row.Children.Add(header);
 
-        bar = new ProgressBar
+        var fillColumn = new ColumnDefinition { Width = new GridLength(0, GridUnitType.Star) };
+        var remainderColumn = new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) };
+        var barGrid = new Grid();
+        barGrid.ColumnDefinitions.Add(fillColumn);
+        barGrid.ColumnDefinitions.Add(remainderColumn);
+        barGrid.Children.Add(new Border
         {
-            Minimum = 0,
-            Maximum = 1,
-            Value = 0,
+            Background = ThemeBrush(foregroundBrushKey),
+            CornerRadius = new CornerRadius(3.5),
+        });
+
+        var track = new Border
+        {
             Height = 7,
-            Foreground = ThemeBrush(foregroundBrushKey),
+            CornerRadius = new CornerRadius(3.5),
             Background = ThemeBrush("ChartTrackBrush"),
-            IsTabStop = false,
+            Child = barGrid,
         };
-        AutomationProperties.SetName(bar, label + " event rate");
-        AutomationProperties.SetHelpText(bar, tooltip);
-        Grid.SetRow(bar, 1);
-        row.Children.Add(bar);
+        Grid.SetRow(track, 1);
+        row.Children.Add(track);
+
+        bar = new TailDataBar(fillColumn, remainderColumn);
         return row;
     }
 
@@ -395,25 +425,19 @@ public sealed partial class MainWindow
     }
 
     private static void SetTailBar(
-        ProgressBar bar,
+        TailDataBar bar,
         TextBlock valueText,
         double maximum,
         double rate,
         int count,
         int total)
     {
-        bar.Maximum = maximum;
-        bar.Value = Math.Clamp(rate, 0d, maximum);
+        bar.Set(rate, maximum);
         valueText.Text = total == 0
             ? "—"
             : string.Create(
                 CultureInfo.InvariantCulture,
                 $"{count:N0} / {total:N0} · {rate:0.###}%");
-        AutomationProperties.SetHelpText(
-            bar,
-            total == 0
-                ? "No eligible events were observed."
-                : string.Create(CultureInfo.InvariantCulture, $"{count:N0} of {total:N0} events, {rate:0.###} percent."));
     }
 
     private static double Rate(int count, int total) =>
@@ -507,7 +531,8 @@ public sealed partial class MainWindow
             ? "SuccessBrush"
             : text.Contains("checking", StringComparison.OrdinalIgnoreCase)
                 ? "AccentBrush"
-                : text.Contains("mismatch", StringComparison.OrdinalIgnoreCase)
+                : text.Contains("mismatch", StringComparison.OrdinalIgnoreCase) ||
+                  text.Contains("not ready", StringComparison.OrdinalIgnoreCase)
                     ? "WarningBrush"
                     : "DangerBrush";
         ServiceStatusDot.Background = ThemeBrush(brushKey);
@@ -570,14 +595,9 @@ public sealed partial class MainWindow
         }
     }
 
-    private static void ResetTailBar(ProgressBar? bar, TextBlock? valueText)
+    private static void ResetTailBar(TailDataBar? bar, TextBlock? valueText)
     {
-        if (bar is not null)
-        {
-            bar.Maximum = 1;
-            bar.Value = 0;
-        }
-
+        bar?.Reset();
         if (valueText is not null)
         {
             valueText.Text = "—";
