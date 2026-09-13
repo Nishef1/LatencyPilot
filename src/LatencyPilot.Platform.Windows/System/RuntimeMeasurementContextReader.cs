@@ -186,7 +186,7 @@ public static class RuntimeMeasurementContextReader
     private static (Guid? ModeId, UserConfiguredPowerMode? Mode) TryCaptureUserConfiguredPowerMode(
         SystemPowerLineState lineState)
     {
-        Guid modeId;
+        var modeId = Guid.Empty;
         var result = lineState switch
         {
             SystemPowerLineState.Online => PowerGetUserConfiguredACPowerMode(out modeId),
