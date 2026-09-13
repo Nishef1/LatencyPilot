@@ -175,6 +175,9 @@ elseif ($null -ne $capturesProperty -and $null -ne $capturesProperty.Value) {
 if ($captures.Count -eq 0) {
     throw 'Evidence contains neither an observation capture nor a baseline capture sequence.'
 }
+if ($RequireValidBaseline -and $evidenceType -ne 'baseline') {
+    throw '-RequireValidBaseline can only be used with baseline evidence.'
+}
 
 $missingRequestIds = @($requestIds | Where-Object { [string]::IsNullOrWhiteSpace($_) })
 if ($missingRequestIds.Count -ne 0) {
