@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
+using LatencyPilot.Platform.Windows.Interop;
 
 namespace LatencyPilot.Platform.Windows.System;
 
@@ -109,9 +110,9 @@ public static class RuntimeMeasurementContextReader
 
     private static SystemLoadSnapshot CaptureSystemLoad()
     {
-        if (!GetSystemTimes(out var idle, out var kernel, out var user))
+        if (!Kernel32.GetSystemTimes(out var idle, out var kernel, out var user))
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "GetSystemTimes failed.");
+            throw new Win32Exception(Marshal.GetLastPInvokeError(), "GetSystemTimes failed.");
         }
 
         return new SystemLoadSnapshot(
@@ -122,9 +123,9 @@ public static class RuntimeMeasurementContextReader
 
     private static SystemPowerSnapshot CapturePower()
     {
-        if (!GetSystemPowerStatus(out var status))
+        if (!Kernel32.GetSystemPowerStatus(out var status))
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "GetSystemPowerStatus failed.");
+            throw new Win32Exception(Marshal.GetLastPInvokeError(), "GetSystemPowerStatus failed.");
         }
 
         var lineState = status.AcLineStatus switch
@@ -166,8 +167,8 @@ public static class RuntimeMeasurementContextReader
 
     private static (Guid? SchemeId, string? SchemeName) TryCaptureActivePowerScheme()
     {
-        var result = PowerGetActiveScheme(IntPtr.Zero, out var activePolicyGuid);
-        if (result != ErrorSuccess || activePolicyGuid == IntPtr.Zero)
+        var result = PowerProf.PowerGetActiveScheme(nint.Zero, out var activePolicyGuid);
+        if (result != ErrorSuccess || activePolicyGuid == nint.Zero)
         {
             return (null, null);
         }
@@ -179,7 +180,7 @@ public static class RuntimeMeasurementContextReader
         }
         finally
         {
-            _ = LocalFree(activePolicyGuid);
+            _ = Kernel32.LocalFree(activePolicyGuid);
         }
     }
 
@@ -189,8 +190,8 @@ public static class RuntimeMeasurementContextReader
         var modeId = Guid.Empty;
         var result = lineState switch
         {
-            SystemPowerLineState.Online => PowerGetUserConfiguredACPowerMode(out modeId),
-            SystemPowerLineState.Offline => PowerGetUserConfiguredDCPowerMode(out modeId),
+            SystemPowerLineState.Online => PowerProf.PowerGetUserConfiguredACPowerMode(out modeId),
+            SystemPowerLineState.Offline => PowerProf.PowerGetUserConfiguredDCPowerMode(out modeId),
             _ => uint.MaxValue,
         };
 
@@ -219,29 +220,33 @@ public static class RuntimeMeasurementContextReader
             : UserConfiguredPowerMode.Unknown;
     }
 
-    private static string? TryReadPowerSchemeFriendlyName(Guid schemeId)
+    private static unsafe string? TryReadPowerSchemeFriendlyName(Guid schemeId)
     {
         uint bufferSize = 0;
-        var result = PowerReadFriendlyName(
-            IntPtr.Zero,
+        var result = PowerProf.PowerReadFriendlyName(
+            nint.Zero,
             ref schemeId,
-            IntPtr.Zero,
-            IntPtr.Zero,
-            null,
+            nint.Zero,
+            nint.Zero,
+            nint.Zero,
             ref bufferSize);
         if (result != ErrorSuccess || bufferSize == 0)
         {
             return null;
         }
 
-        var buffer = new byte[bufferSize];
-        result = PowerReadFriendlyName(
-            IntPtr.Zero,
-            ref schemeId,
-            IntPtr.Zero,
-            IntPtr.Zero,
-            buffer,
-            ref bufferSize);
+        var buffer = new byte[checked((int)bufferSize)];
+        fixed (byte* bufferPointer = buffer)
+        {
+            result = PowerProf.PowerReadFriendlyName(
+                nint.Zero,
+                ref schemeId,
+                nint.Zero,
+                nint.Zero,
+                (nint)bufferPointer,
+                ref bufferSize);
+        }
+
         if (result != ErrorSuccess)
         {
             return null;
@@ -253,56 +258,4 @@ public static class RuntimeMeasurementContextReader
 
     private static ulong ToUInt64(NativeFileTime value) =>
         ((ulong)value.HighDateTime << 32) | value.LowDateTime;
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetSystemTimes(
-        out NativeFileTime idleTime,
-        out NativeFileTime kernelTime,
-        out NativeFileTime userTime);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetSystemPowerStatus(out NativeSystemPowerStatus systemPowerStatus);
-
-    [DllImport("powrprof.dll")]
-    private static extern uint PowerGetActiveScheme(
-        IntPtr userRootPowerKey,
-        out IntPtr activePolicyGuid);
-
-    [DllImport("powrprof.dll")]
-    private static extern uint PowerReadFriendlyName(
-        IntPtr rootPowerKey,
-        ref Guid schemeGuid,
-        IntPtr subgroupOfPowerSettingsGuid,
-        IntPtr powerSettingGuid,
-        [Out] byte[]? buffer,
-        ref uint bufferSize);
-
-    [DllImport("powrprof.dll")]
-    private static extern uint PowerGetUserConfiguredACPowerMode(out Guid powerModeGuid);
-
-    [DllImport("powrprof.dll")]
-    private static extern uint PowerGetUserConfiguredDCPowerMode(out Guid powerModeGuid);
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr LocalFree(IntPtr memory);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeFileTime
-    {
-        public uint LowDateTime;
-        public uint HighDateTime;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeSystemPowerStatus
-    {
-        public byte AcLineStatus;
-        public byte BatteryFlag;
-        public byte BatteryLifePercent;
-        public byte SystemStatusFlag;
-        public uint BatteryLifeTime;
-        public uint BatteryFullLifeTime;
-    }
 }
