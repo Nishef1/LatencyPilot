@@ -12,6 +12,8 @@ This runbook is for **Stage B** validation of the read-only `0.0.x` LatencyPilot
 - `BUILD_INFO.txt` from current owner-local release tooling must record `app_launch_smoke=passed`;
 - `docs/DIAGNOSTICS.md` available for log correlation if a failure occurs.
 
+The current Phase 2 privileged observation path supports the **active local console session**. RDP/multi-session access is intentionally not implied: the Service rejects a pipe client whose Windows session does not match the active console session. Broader session support requires a deliberate authorization design rather than weakening this validation rule.
+
 For the current source line, `v0.0.1` is a retired/reserved historical identity and must not be reused. The next candidate prepared by `main` is `0.0.2`; validate the exact version and commit embedded in the package rather than assuming a version from the filename alone.
 
 Record before starting:
@@ -25,6 +27,7 @@ Commit (from BUILD_INFO.txt):
 Tests workflow run (from BUILD_INFO.txt):
 App launch smoke (from BUILD_INFO.txt):
 Windows edition/build:
+Interactive session type / active console session notes:
 CPU:
 Motherboard/firmware:
 GPU + driver:
@@ -69,7 +72,7 @@ The distribution contains `VERSION.txt`, `BUILD_INFO.txt`, the validation runboo
 
 ## 2. Start the App without elevation
 
-Launch **LatencyPilot** as a normal user. The desktop App must show that the privileged observation service is connected while mutation remains disabled.
+Launch **LatencyPilot** as a normal user in the active local console session. The desktop App must show that the privileged observation service is connected while mutation remains disabled.
 
 Confirm the visible product version matches `VERSION.txt`. Confirm the safety boundary distinguishes these evidence levels instead of presenting them as interchangeable:
 
@@ -90,7 +93,7 @@ Ctrl+E  export the latest completed aggregate evidence as JSON
 
 `Ctrl+E` must remain disabled while no completed exportable evidence exists and while a capture sequence is active.
 
-If the UI reports a failure, record the visible message and preserve the relevant App/Service structured log entries. Use protocol `RequestId` to correlate the two sides when available; do not attach unrelated sensitive system information.
+If the UI reports a failure, record the visible message and preserve the relevant App/Service structured log entries. Protocol v5 capture evidence carries the same `RequestId` used by App/Service diagnostics, so exported JSON should correlate directly to those log entries without relying on timestamp matching alone. Do not attach unrelated sensitive system information.
 
 ## 3. Idle observation
 
@@ -115,9 +118,13 @@ Invalid image events:
 Event limit reached:
 ```
 
+`p99.9` is intentionally absent when the corresponding DPC/ISR distribution contains fewer than 1,000 samples. That is not a capture failure; it is the current sample-adequacy rule for exposing that extreme percentile. p99/max remain available according to their normal contracts.
+
+The `>100 µs` DPC and `>25 µs` ISR rows are Microsoft driver-guidance evidence. The `>1 ms` and `>3 ms` rows are LatencyPilot local diagnostic tail buckets only; do not treat them as official Windows pass/fail or user-impact severity thresholds.
+
 A non-zero unresolved count is not automatically a failure. LatencyPilot intentionally preserves unknown routine addresses instead of guessing a driver identity.
 
-After the observation completes, export the evidence JSON. The export must contain the full bounded processor/module/unresolved-routine aggregates and capture-integrity metadata returned by the protocol, not only the compact values visible in the dashboard. Unresolved 64-bit routine addresses are exported as hexadecimal strings to avoid precision loss in JSON/JavaScript tooling.
+After the observation completes, export the evidence JSON. The export must contain the full bounded processor/module/unresolved-routine aggregates and capture-integrity metadata returned by the protocol, not only the compact values visible in the dashboard. It must also contain the capture `RequestId`, protocol version, product version, export timestamp and bounded non-personal environment provenance. Unresolved 64-bit routine addresses are exported as hexadecimal strings to avoid precision loss in JSON/JavaScript tooling.
 
 Record the evidence artifact:
 
@@ -158,15 +165,15 @@ Overall verdict (Valid/Inconclusive):
 Reasons shown:
 ```
 
-The source contract requires a contiguous chronological window sequence. Window numbers must be `1..N` and start timestamps must increase with window number. A persisted/reconstructed baseline with missing numbers or non-chronological evidence must not be accepted for drift interpretation.
+The source contract requires a contiguous capture sequence. Window numbers must be `1..N`; they are the authoritative ordering for the in-process sequence. `StartedAtUtc` remains provenance and is not treated as a monotonic clock because Windows/NTP/VM time synchronization can move wall time backwards. Missing/gapped window numbers remain invalid. Future persisted evidence that requires stronger timing guarantees should record an explicit monotonic/sequence field rather than inferring monotonicity from UTC.
 
 For current `baseline-quality-v1`, a clean five-window run can still be `Inconclusive` because of insufficient event counts, >30% relative P10–P90 noise, >20% early/late drift, or >50% extreme-window deviation. That is an expected quality result, not a reason to suppress evidence.
 
 Repeat the baseline flow under one controlled, repeatable workload when practical. The purpose is to confirm that the quality UI and reasons behave sensibly under a different but intentionally controlled operating condition, not to prove an optimization.
 
-A non-zero ETW loss count, invalid latency/image events or event-limit hit must make the affected baseline evidence ineligible. If the UI reports `Valid` despite any of those conditions, treat it as a blocker.
+A non-zero ETW loss count, invalid latency/image events or event-limit hit must make the affected baseline evidence ineligible. If the UI reports `Valid` despite any of those conditions, treat it as a blocker. Likewise, an integrity-warning capture must not receive a healthy/within-guidance classification merely because its observed threshold counts are low.
 
-After a complete or partially completed baseline sequence, export the evidence JSON and record its SHA-256. The baseline export must contain each completed raw aggregate capture, the derived window evidence, `baseline-quality-v1` method identity, metric quality and all verdict reasons. Export preparation occurs only after the capture sequence stops or completes; it must not add file I/O between authoritative baseline windows.
+After a complete or partially completed baseline sequence, export the evidence JSON and record its SHA-256. The baseline export must contain each completed bounded aggregate capture (including its `RequestId`), the derived window evidence, bounded environment provenance, `baseline-quality-v1` method identity, metric quality and all verdict reasons. Export preparation occurs only after the capture sequence stops or completes; it must not add file I/O between authoritative baseline windows.
 
 ## 6. External plausibility comparison
 
@@ -183,7 +190,7 @@ Exact counts or percentile values are not expected to be identical across tools 
 
 If LatencyPilot resolves a routine address to a module that does not contain that address in authoritative image mapping, treat it as a blocker.
 
-## 7. Failure-path cleanup
+## 7. Failure-path and authorization cleanup
 
 Exercise at least these cases one at a time:
 
@@ -193,11 +200,12 @@ Exercise at least these cases one at a time:
 4. start the Service again and reconnect the normal-user App;
 5. perform another observation after recovery;
 6. close the App during a repeated-baseline window and confirm the baseline cannot become `Valid` from the partial sequence;
-7. where practical, send/trigger a malformed or incompatible local protocol request in a controlled developer environment and verify the Service rejects it without terminating.
+7. where practical, send/trigger a malformed or incompatible local protocol request in a controlled developer environment and verify the Service rejects it without terminating;
+8. where a second Windows interactive session is available, verify a client outside the active console session is rejected and Service log EventId `1007` records the bounded session rejection; do not broaden the ACL/session policy merely to make this case connect.
 
-After each case verify there is no lingering `LatencyPilot-Kernel-*` ETW session and that a subsequent observation can start normally. The App/Service logs should show bounded cancellation/rejection evidence rather than an orphaned capture continuing for the full requested window.
+After each capture-related case verify there is no lingering `LatencyPilot-Kernel-*` ETW session and that a subsequent authorized observation can start normally. The App/Service logs should show bounded cancellation/rejection evidence rather than an orphaned capture continuing for the full requested window. Expected ETW/capture-start failures should preserve EventId `1006` failure-kind/native-error provenance when applicable.
 
-If cleanup cannot be proven, Stage B remains open.
+If cleanup or the active-session authorization boundary cannot be proven, Stage B remains open.
 
 ## 8. Inventory partial-evidence behavior
 
@@ -247,13 +255,15 @@ A Stage B result is acceptable only when the validation record includes:
 - release version/revision;
 - distribution type and SHA-256;
 - `BUILD_INFO.txt` commit SHA;
-- matching green Tests workflow run;
+- matching green Tests workflow run (critical suite + Windows-host compile gate);
 - owner-local App launch-smoke result;
-- physical-machine context;
-- idle observation plus exported JSON filename/SHA-256;
-- controlled-load observation plus exported JSON filename/SHA-256;
+- physical-machine context and active-console session context;
+- idle observation plus exported JSON filename/SHA-256 and RequestId correlation;
+- controlled-load observation plus exported JSON filename/SHA-256 and RequestId correlation;
+- p99.9 adequacy behavior when sample counts are below/above the 1,000-sample rule where naturally observable;
 - attribution plausibility comparison;
 - cleanup/disconnect/failure-path result;
+- active-session authorization result where a second session is practical;
 - representative partial-inventory evidence;
 - protected Service-path verification;
 - zero-mutation result;
