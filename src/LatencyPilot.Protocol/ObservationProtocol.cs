@@ -2,7 +2,7 @@ namespace LatencyPilot.Protocol;
 
 public static class ObservationProtocol
 {
-    public const string PipeName = "LatencyPilot.Observation.v3";
+    public const string PipeName = "LatencyPilot.Observation.v4";
     public const int MaximumRequestBytes = 64 * 1024;
     public const int MaximumResponseBytes = 1024 * 1024;
     public const int MaximumCaptureDurationMilliseconds = 30_000;
@@ -70,6 +70,8 @@ public sealed record KernelLatencyCaptureResponse(
     bool UnresolvedRoutineListTruncated,
     LatencyDistribution Dpc,
     LatencyDistribution Isr,
+    LatencyThresholdSummary DpcThresholds,
+    LatencyThresholdSummary IsrThresholds,
     IReadOnlyList<ProcessorLatencyDistribution> Processors,
     IReadOnlyList<ModuleLatencyDistribution> Modules,
     IReadOnlyList<UnresolvedRoutineLatencyDistribution> UnresolvedRoutines);
@@ -82,20 +84,32 @@ public sealed record LatencyDistribution(
     double? P999Microseconds,
     double? MaximumMicroseconds);
 
+public sealed record LatencyThresholdSummary(
+    double GuidanceThresholdMicroseconds,
+    int GuidanceExceedanceCount,
+    int OverOneMillisecondCount,
+    int OverThreeMillisecondsCount);
+
 public sealed record ProcessorLatencyDistribution(
     int ProcessorNumber,
     LatencyDistribution Dpc,
-    LatencyDistribution Isr);
+    LatencyDistribution Isr,
+    LatencyThresholdSummary DpcThresholds,
+    LatencyThresholdSummary IsrThresholds);
 
 public sealed record ModuleLatencyDistribution(
     string ModuleName,
     string ImagePath,
     double TotalDurationMicroseconds,
     LatencyDistribution Dpc,
-    LatencyDistribution Isr);
+    LatencyDistribution Isr,
+    LatencyThresholdSummary DpcThresholds,
+    LatencyThresholdSummary IsrThresholds);
 
 public sealed record UnresolvedRoutineLatencyDistribution(
     ulong RoutineAddress,
     double TotalDurationMicroseconds,
     LatencyDistribution Dpc,
-    LatencyDistribution Isr);
+    LatencyDistribution Isr,
+    LatencyThresholdSummary DpcThresholds,
+    LatencyThresholdSummary IsrThresholds);
