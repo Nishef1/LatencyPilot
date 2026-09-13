@@ -5,17 +5,16 @@ param(
 
     [string]$ExpectedCommit,
 
-    [string]$ExpectedSha256
+    [string]$ExpectedSha256,
+
+    [switch]$RequireCleanCapture
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Get-Percent {
-    param(
-        [int]$Numerator,
-        [int]$Denominator
-    )
+    param([int]$Numerator, [int]$Denominator)
 
     if ($Denominator -le 0) {
         return $null
@@ -25,10 +24,7 @@ function Get-Percent {
 }
 
 function Format-Value {
-    param(
-        $Value,
-        [string]$Suffix = ''
-    )
+    param($Value, [string]$Suffix = '')
 
     if ($null -eq $Value) {
         return '—'
@@ -39,6 +35,77 @@ function Format-Value {
     }
 
     return "$Value$Suffix"
+}
+
+function Get-CaptureIntegrityIssues {
+    param($Capture)
+
+    $issues = [System.Collections.Generic.List[string]]::new()
+
+    if ([int]$Capture.eventsLost -ne 0) {
+        $issues.Add("ETW events lost: $($Capture.eventsLost)")
+    }
+    if ([int]$Capture.invalidEventCount -ne 0) {
+        $issues.Add("invalid latency events: $($Capture.invalidEventCount)")
+    }
+    if ([int]$Capture.invalidImageEventCount -ne 0) {
+        $issues.Add("invalid image events: $($Capture.invalidImageEventCount)")
+    }
+    if ([bool]$Capture.eventLimitReached) {
+        $issues.Add('capture event limit reached')
+    }
+
+    return @($issues)
+}
+
+function Write-CaptureSummary {
+    param($Capture, [string]$Prefix = '')
+
+    $dpcRate = Get-Percent ([int]$Capture.dpcThresholds.guidanceExceedanceCount) ([int]$Capture.dpc.count)
+    $isrRate = Get-Percent ([int]$Capture.isrThresholds.guidanceExceedanceCount) ([int]$Capture.isr.count)
+    $attributedTotal = [int]$Capture.resolvedModuleEventCount + [int]$Capture.unresolvedModuleEventCount
+    $coverage = Get-Percent ([int]$Capture.resolvedModuleEventCount) $attributedTotal
+
+    $topDpcProcessor = @($Capture.processors | Sort-Object { [int]$_.dpc.count } -Descending | Select-Object -First 1)
+    $topIsrProcessor = @($Capture.processors | Sort-Object { [int]$_.isr.count } -Descending | Select-Object -First 1)
+    $topDpcModule = @(
+        $Capture.modules |
+            Where-Object { [int]$_.dpcThresholds.guidanceExceedanceCount -gt 0 } |
+            Sort-Object { [int]$_.dpcThresholds.guidanceExceedanceCount } -Descending |
+            Select-Object -First 1
+    )
+    $topIsrModule = @(
+        $Capture.modules |
+            Where-Object { [int]$_.isrThresholds.guidanceExceedanceCount -gt 0 } |
+            Sort-Object { [int]$_.isrThresholds.guidanceExceedanceCount } -Descending |
+            Select-Object -First 1
+    )
+
+    Write-Host "${Prefix}RequestId:       $($Capture.requestId)"
+    Write-Host "${Prefix}Integrity:       lost=$($Capture.eventsLost), invalid=$($Capture.invalidEventCount), invalid-images=$($Capture.invalidImageEventCount), event-limit=$($Capture.eventLimitReached)"
+    Write-Host "${Prefix}DPC:             count=$($Capture.dpc.count), p99=$(Format-Value $Capture.dpc.p99Microseconds ' us'), p99.9=$(Format-Value $Capture.dpc.p999Microseconds ' us'), max=$(Format-Value $Capture.dpc.maximumMicroseconds ' us'), >100 us=$($Capture.dpcThresholds.guidanceExceedanceCount) ($(Format-Value $dpcRate '%'))"
+    Write-Host "${Prefix}ISR:             count=$($Capture.isr.count), p99=$(Format-Value $Capture.isr.p99Microseconds ' us'), p99.9=$(Format-Value $Capture.isr.p999Microseconds ' us'), max=$(Format-Value $Capture.isr.maximumMicroseconds ' us'), >25 us=$($Capture.isrThresholds.guidanceExceedanceCount) ($(Format-Value $isrRate '%'))"
+    Write-Host "${Prefix}Long tail:       >1 ms DPC/ISR=$($Capture.dpcThresholds.overOneMillisecondCount)/$($Capture.isrThresholds.overOneMillisecondCount), >3 ms=$($Capture.dpcThresholds.overThreeMillisecondsCount)/$($Capture.isrThresholds.overThreeMillisecondsCount)"
+    Write-Host "${Prefix}Attribution:     $(Format-Value $coverage '%') coverage; resolved=$($Capture.resolvedModuleEventCount), unresolved=$($Capture.unresolvedModuleEventCount)"
+
+    if ($topDpcProcessor.Count -ne 0) {
+        $share = Get-Percent ([int]$topDpcProcessor[0].dpc.count) ([int]$Capture.dpc.count)
+        Write-Host "${Prefix}Top DPC CPU:     CPU $($topDpcProcessor[0].processorNumber) · $(Format-Value $share '%')"
+    }
+    if ($topIsrProcessor.Count -ne 0) {
+        $share = Get-Percent ([int]$topIsrProcessor[0].isr.count) ([int]$Capture.isr.count)
+        Write-Host "${Prefix}Top ISR CPU:     CPU $($topIsrProcessor[0].processorNumber) · $(Format-Value $share '%')"
+    }
+    if ($topDpcModule.Count -ne 0) {
+        Write-Host "${Prefix}Top >100 us DPC: $($topDpcModule[0].moduleName) · $($topDpcModule[0].dpcThresholds.guidanceExceedanceCount) event(s)"
+    }
+    if ($topIsrModule.Count -ne 0) {
+        Write-Host "${Prefix}Top >25 us ISR:  $($topIsrModule[0].moduleName) · $($topIsrModule[0].isrThresholds.guidanceExceedanceCount) event(s)"
+    }
+
+    if ([bool]$Capture.moduleContributorListTruncated -or [bool]$Capture.unresolvedRoutineListTruncated) {
+        Write-Host "${Prefix}Contributor lists: truncated (module=$($Capture.moduleContributorListTruncated), unresolved=$($Capture.unresolvedRoutineListTruncated))" -ForegroundColor Yellow
+    }
 }
 
 $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
@@ -89,25 +156,46 @@ if (-not [string]::IsNullOrWhiteSpace($ExpectedCommit)) {
 $captureProperty = $document.PSObject.Properties['capture']
 $capturesProperty = $document.PSObject.Properties['captures']
 $requestIds = @()
+$captures = @()
 $evidenceType = 'unknown'
 
 if ($null -ne $captureProperty -and $null -ne $captureProperty.Value) {
+    $captures = @($captureProperty.Value)
     $requestIds = @([string]$captureProperty.Value.requestId)
     $evidenceType = 'observation'
 }
 elseif ($null -ne $capturesProperty -and $null -ne $capturesProperty.Value) {
-    $requestIds = @($capturesProperty.Value | ForEach-Object { [string]$_.requestId })
+    $captures = @($capturesProperty.Value)
+    $requestIds = @($captures | ForEach-Object { [string]$_.requestId })
     $evidenceType = 'baseline'
 }
 
+if ($captures.Count -eq 0) {
+    throw 'Evidence contains neither an observation capture nor a baseline capture sequence.'
+}
+
 $missingRequestIds = @($requestIds | Where-Object { [string]::IsNullOrWhiteSpace($_) })
-if ($requestIds.Count -eq 0 -or $missingRequestIds.Count -ne 0) {
+if ($missingRequestIds.Count -ne 0) {
     throw 'Evidence is missing one or more capture RequestId values.'
 }
 
 $duplicateRequestIds = @($requestIds | Group-Object | Where-Object Count -gt 1)
 if ($duplicateRequestIds.Count -ne 0) {
     throw 'Evidence contains duplicate capture RequestId values.'
+}
+
+if ($evidenceType -eq 'baseline') {
+    $windowsProperty = $document.PSObject.Properties['windows']
+    $runtimeWindowsProperty = $document.PSObject.Properties['runtimeWindows']
+    if ($null -eq $windowsProperty -or $null -eq $runtimeWindowsProperty) {
+        throw 'Baseline evidence is missing window or runtime-window records.'
+    }
+
+    $windowCount = @($windowsProperty.Value).Count
+    $runtimeWindowCount = @($runtimeWindowsProperty.Value).Count
+    if ($captures.Count -ne $windowCount -or $captures.Count -ne $runtimeWindowCount) {
+        throw "Baseline evidence is misaligned: captures=$($captures.Count), windows=$windowCount, runtimeWindows=$runtimeWindowCount."
+    }
 }
 
 $sha256 = (Get-FileHash -LiteralPath $resolvedPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -129,7 +217,15 @@ else {
     'unknown'
 }
 
-Write-Host 'LatencyPilot evidence verification passed.' -ForegroundColor Green
+$integrityIssues = @()
+for ($index = 0; $index -lt $captures.Count; $index++) {
+    $captureIssues = @(Get-CaptureIntegrityIssues $captures[$index])
+    foreach ($issue in $captureIssues) {
+        $integrityIssues += "capture $($index + 1): $issue"
+    }
+}
+
+Write-Host 'Evidence envelope/provenance verification passed.' -ForegroundColor Green
 Write-Host "Path:            $resolvedPath"
 Write-Host "Type:            $evidenceType"
 Write-Host "Schema:          $($document.schema)"
@@ -139,54 +235,55 @@ Write-Host "Source revision: $sourceRevision"
 Write-Host "Capture IDs:     $($requestIds.Count) unique"
 Write-Host "SHA-256:         $sha256"
 
+if ($integrityIssues.Count -eq 0) {
+    Write-Host 'Measurement integrity: CLEAN' -ForegroundColor Green
+}
+else {
+    Write-Host "Measurement integrity: WARNING ($($integrityIssues.Count) issue(s))" -ForegroundColor Yellow
+    $integrityIssues | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
+    if ($RequireCleanCapture) {
+        throw 'Evidence envelope is valid, but capture integrity is not clean.'
+    }
+}
+
 if ($evidenceType -eq 'observation') {
-    $capture = $captureProperty.Value
-    $dpcRate = Get-Percent ([int]$capture.dpcThresholds.guidanceExceedanceCount) ([int]$capture.dpc.count)
-    $isrRate = Get-Percent ([int]$capture.isrThresholds.guidanceExceedanceCount) ([int]$capture.isr.count)
-    $attributedTotal = [int]$capture.resolvedModuleEventCount + [int]$capture.unresolvedModuleEventCount
-    $coverage = Get-Percent ([int]$capture.resolvedModuleEventCount) $attributedTotal
-
-    $topDpcProcessor = @($capture.processors | Sort-Object { [int]$_.dpc.count } -Descending | Select-Object -First 1)
-    $topIsrProcessor = @($capture.processors | Sort-Object { [int]$_.isr.count } -Descending | Select-Object -First 1)
-    $topDpcModule = @(
-        $capture.modules |
-            Where-Object { [int]$_.dpcThresholds.guidanceExceedanceCount -gt 0 } |
-            Sort-Object { [int]$_.dpcThresholds.guidanceExceedanceCount } -Descending |
-            Select-Object -First 1
-    )
-    $topIsrModule = @(
-        $capture.modules |
-            Where-Object { [int]$_.isrThresholds.guidanceExceedanceCount -gt 0 } |
-            Sort-Object { [int]$_.isrThresholds.guidanceExceedanceCount } -Descending |
-            Select-Object -First 1
-    )
-
     Write-Host ''
     Write-Host 'Observation summary'
-    Write-Host "Integrity:       lost=$($capture.eventsLost), invalid=$($capture.invalidEventCount), invalid-images=$($capture.invalidImageEventCount), event-limit=$($capture.eventLimitReached)"
-    Write-Host "DPC:             count=$($capture.dpc.count), p99=$(Format-Value $capture.dpc.p99Microseconds ' us'), p99.9=$(Format-Value $capture.dpc.p999Microseconds ' us'), max=$(Format-Value $capture.dpc.maximumMicroseconds ' us'), >100 us=$($capture.dpcThresholds.guidanceExceedanceCount) ($(Format-Value $dpcRate '%'))"
-    Write-Host "ISR:             count=$($capture.isr.count), p99=$(Format-Value $capture.isr.p99Microseconds ' us'), p99.9=$(Format-Value $capture.isr.p999Microseconds ' us'), max=$(Format-Value $capture.isr.maximumMicroseconds ' us'), >25 us=$($capture.isrThresholds.guidanceExceedanceCount) ($(Format-Value $isrRate '%'))"
-    Write-Host "Long tail:       >1 ms DPC/ISR=$($capture.dpcThresholds.overOneMillisecondCount)/$($capture.isrThresholds.overOneMillisecondCount), >3 ms=$($capture.dpcThresholds.overThreeMillisecondsCount)/$($capture.isrThresholds.overThreeMillisecondsCount)"
-    Write-Host "Attribution:     $(Format-Value $coverage '%') coverage; resolved=$($capture.resolvedModuleEventCount), unresolved=$($capture.unresolvedModuleEventCount)"
-
-    if ($topDpcProcessor.Count -ne 0) {
-        $dpcCpuShare = Get-Percent ([int]$topDpcProcessor[0].dpc.count) ([int]$capture.dpc.count)
-        Write-Host "Top DPC CPU:     CPU $($topDpcProcessor[0].processorNumber) · $(Format-Value $dpcCpuShare '%') of DPC events"
-    }
-    if ($topIsrProcessor.Count -ne 0) {
-        $isrCpuShare = Get-Percent ([int]$topIsrProcessor[0].isr.count) ([int]$capture.isr.count)
-        Write-Host "Top ISR CPU:     CPU $($topIsrProcessor[0].processorNumber) · $(Format-Value $isrCpuShare '%') of ISR events"
-    }
-    if ($topDpcModule.Count -ne 0) {
-        Write-Host "Top >100 us DPC: $($topDpcModule[0].moduleName) · $($topDpcModule[0].dpcThresholds.guidanceExceedanceCount) event(s)"
-    }
-    if ($topIsrModule.Count -ne 0) {
-        Write-Host "Top >25 us ISR:  $($topIsrModule[0].moduleName) · $($topIsrModule[0].isrThresholds.guidanceExceedanceCount) event(s)"
-    }
+    Write-CaptureSummary $captures[0]
 
     $runtimeProperty = $document.PSObject.Properties['runtimeContext']
     if ($null -ne $runtimeProperty -and $null -ne $runtimeProperty.Value) {
         $runtime = $runtimeProperty.Value
         Write-Host "Runtime context: CPU busy=$(Format-Value $runtime.systemCpuBusyPercent '%'), power=$($runtime.startPower.lineState), configured-mode=$($runtime.startPower.userConfiguredPowerMode), changed=$($runtime.powerContextChanged)"
+    }
+}
+elseif ($evidenceType -eq 'baseline') {
+    $qualityProperty = $document.PSObject.Properties['quality']
+    Write-Host ''
+    Write-Host 'Baseline summary'
+    Write-Host "Windows:         $($captures.Count)"
+    Write-Host "Method:          $($document.baselineMethodVersion)"
+
+    if ($null -ne $qualityProperty -and $null -ne $qualityProperty.Value) {
+        $quality = $qualityProperty.Value
+        Write-Host "Status:          $($quality.status)"
+        Write-Host "Valid compare:   $($quality.isValidForComparison)"
+        Write-Host "Valid captures:  $($quality.validCaptureWindowCount)/$($quality.totalWindowCount)"
+        Write-Host "DPC p99 quality: median=$(Format-Value $quality.dpcP99.medianMicroseconds ' us'), noise=$(Format-Value $quality.dpcP99.relativeNoiseFloor), drift=$(Format-Value $quality.dpcP99.relativeDrift)"
+        Write-Host "ISR p99 quality: median=$(Format-Value $quality.isrP99.medianMicroseconds ' us'), noise=$(Format-Value $quality.isrP99.relativeNoiseFloor), drift=$(Format-Value $quality.isrP99.relativeDrift)"
+        $reasons = @($quality.reasons)
+        if ($reasons.Count -eq 0) {
+            Write-Host 'Reasons:         none'
+        }
+        else {
+            Write-Host "Reasons:         $($reasons.Count)"
+            $reasons | ForEach-Object { Write-Host "  - $_" }
+        }
+    }
+
+    for ($index = 0; $index -lt $captures.Count; $index++) {
+        Write-Host ''
+        Write-Host "Window $($index + 1)"
+        Write-CaptureSummary $captures[$index] '  '
     }
 }
