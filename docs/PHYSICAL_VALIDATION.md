@@ -5,15 +5,15 @@ This runbook closes the read-only Phase 2 measurement substrate on physical Wind
 Current authoritative contracts:
 
 ```text
-Product:             0.0.x pre-alpha
-Observation protocol: v6
-Evidence schema:      latencypilot-evidence-v8
-Quick snapshot:       1 × 5 s, diagnostic only
-Decision baseline:    baseline-quality-v2
-                      5 × 20 s authoritative windows
-                      5 s LatencyPilot/service settle before window 1
-                      750 ms inter-window settle
-Permanent tests:      8/10 maximum slots currently used
+Product:               0.0.x pre-alpha
+Observation protocol:  v6
+Evidence schema:       latencypilot-evidence-v8
+Quick snapshot:        1 × 5 s, diagnostic only
+Decision baseline:     baseline-quality-v2
+                       5 × 20 s authoritative windows
+                       5 s LatencyPilot/service settle before window 1
+                       750 ms inter-window settle
+Permanent tests:       8 / 10 maximum slots currently used
 ```
 
 ## 1. Preconditions
@@ -25,7 +25,7 @@ Required conditions:
 - App runs as a normal/non-elevated user;
 - elevation is used only for protected Service installation/update/removal;
 - `LatencyPilot.Observation` runs under the Service Control Manager from the protected Program Files Service path;
-- exact source revision has a completed green hosted **Tests** run;
+- the exact source revision has a completed green hosted **Tests** run;
 - App/Service compile and runtime evidence comes from the owner-local Windows machine because hosted CI intentionally remains test-only;
 - mutation remains unavailable;
 - the active local console session is used for the current Phase 2 authorization model.
@@ -88,7 +88,7 @@ Ctrl+E  export latest completed evidence
 
 `Ctrl+E` must remain unavailable when no completed evidence exists and while a measurement sequence is active.
 
-Protocol v6 capture responses carry unique `RequestId` values for App/Service log correlation.
+Protocol-v6 capture responses carry unique `RequestId` values for App/Service/evidence correlation.
 
 ## 4. Scenario semantics
 
@@ -100,7 +100,7 @@ Close unnecessary applications and avoid unrelated user work. Normal background 
 
 ### Real-world workload
 
-Keep the applications or game that reproduce the issue open. They are part of the evidence. Before starting a **decision baseline**, put the workload at a warmed and repeatable point: for example the same game scene/action loop or application operation.
+Keep the applications or game that reproduce the issue open. They are part of the evidence. Before starting a **decision baseline**, put the workload at a warmed and repeatable point, such as the same game scene/action loop or application operation.
 
 Do not close relevant apps merely to make the numbers look better.
 
@@ -114,7 +114,7 @@ The scenario is evidence provenance. Changing it after a completed measurement m
 
 A quick snapshot is exactly one five-second DPC/ISR capture. It is useful for proving the observation path and generating hypotheses, not for deciding whether the machine is globally healthy or whether a tweak should be kept.
 
-Take at least one **Real-world workload** quick snapshot on the final candidate. Controlled-idle quick snapshot is useful but the decision-grade requirement is the repeated baseline below.
+Take at least one **Real-world workload** quick snapshot on the final candidate. A Controlled-idle quick snapshot is useful too, but decision-grade Phase 2 closure depends on the repeated baselines below.
 
 Record:
 
@@ -141,13 +141,13 @@ Power context changed during capture? :
 
 Interpretation rules:
 
-- `DPC >100 µs` and `ISR >25 µs` are Microsoft driver-duration guidance references, not LatencyPilot pass/fail thresholds.
-- `>1 ms` and `>3 ms` are local diagnostic buckets, not official Windows severity categories.
-- CPU0 concentration is an observation/hypothesis, not an automatic fault.
-- no threshold exceedance in one five-second snapshot is not proof of a consistently clean machine.
-- a p99.9 value is exposed only when that distribution has at least **10,000 samples** under protocol v6.
+- `DPC >100 µs` and `ISR >25 µs` are Microsoft driver-duration guidance references, not LatencyPilot pass/fail thresholds;
+- `>1 ms` and `>3 ms` are LatencyPilot local diagnostic buckets, not official Windows severity categories;
+- CPU0 concentration is an observation/hypothesis, not an automatic fault;
+- no reference exceedance in one five-second snapshot is not proof of a consistently clean machine;
+- p99.9 is exposed only when that distribution has at least **10,000 samples** under protocol v6.
 
-Microsoft's ETW documentation requires monitoring lost events. Any unavailable/non-zero loss count, invalid event/image evidence, or event-limit hit makes the capture unsuitable for decision-grade use. cite not applicable in repo document; see BENCHMARK_METHODOLOGY.md references
+Microsoft's ETW guidance explicitly requires monitoring lost events because real-time consumers can lose events when they do not consume fast enough. Therefore unavailable/non-zero ETW loss, invalid latency/image evidence, or an event-limit hit makes the capture unsuitable for decision-grade use. See `docs/BENCHMARK_METHODOLOGY.md` for the maintained methodology rationale.
 
 ### Export and verify snapshot
 
@@ -169,7 +169,7 @@ purpose:  quick-diagnostic-snapshot
 protocol: 6
 ```
 
-The verifier must explicitly report that a quick snapshot is diagnostic only and is not a benchmark verdict.
+The verifier must explicitly identify the artifact as a quick diagnostic snapshot; passing clean-capture verification does not turn it into a benchmark verdict.
 
 Evidence should contain source/product/protocol provenance, scenario, bounded environment/topology context, best-effort runtime CPU/power context, unique RequestId, processor/module/unresolved aggregates and capture-integrity metadata.
 
@@ -195,7 +195,7 @@ workload already warmed/repeatable by the user
 20 s window 5
 ```
 
-The initial five seconds are **not workload warm-up**. Do not start the sequence while a game is still loading/shader-compiling unless startup behavior itself is the intended workload.
+The initial five seconds are **not workload warm-up**. Do not start the sequence while a game is still loading or shader-compiling unless startup behavior itself is the intended workload.
 
 Detailed module/CPU/tail UI should not be fully redrawn between authoritative windows; lightweight progress text is acceptable. The full cards are rendered after the sequence to reduce observer activity.
 
@@ -240,17 +240,23 @@ The complete baseline is `Valid` only when all five windows are eligible and bot
 
 ```text
 P10-P90 relative spread <= 30%
-early/late relative drift <= 20%
+early/late relative drift: INVALID WORDING — see below
+```
+
+The maintained rule is:
+
+```text
+early/late -> early/late relative drift <= 20%
 no >50% extreme-window deviation
 ```
 
-Do not delete an inconvenient window to make the result pass.
+Do not delete an inconvenient window to make the result pass. `Valid` means repeatable enough for the current comparison method; it does not mean the machine is globally healthy.
 
 ### 6.2 Controlled-idle decision baseline
 
-Return the machine to the intended controlled-idle state, confirm both preparation checks again and run the same five × 20-second sequence.
+Return the machine to the intended Controlled-idle state, confirm both preparation checks again and run the same five × 20-second sequence.
 
-This establishes a second context: the machine's repeatable idle behavior rather than the real-world workload behavior. A difference between idle and real-world concentration is useful evidence; neither context should be substituted for the other.
+This establishes a second context: repeatable idle behavior rather than real-world workload behavior. A difference between idle and real-world concentration is useful evidence; neither context should be substituted for the other.
 
 ### 6.3 Export and verify each baseline
 
@@ -267,16 +273,16 @@ Export each scenario separately. Do not overwrite artifacts.
 Expected envelope:
 
 ```text
-schema:               latencypilot-evidence-v8
-purpose:              repeated-decision-baseline
+schema:                latencypilot-evidence-v8
+purpose:               repeated-decision-baseline
 baselineMethodVersion: baseline-quality-v2
-protocol:             6
-captures/windows:     exactly 5 aligned entries
+protocol:              6
+captures/windows:      exactly 5 aligned entries
 ```
 
 The verifier independently enforces five clean windows, duration adequacy, >=1,000 DPC and ISR events per window and `Status=Valid` / `IsValidForComparison=true`.
 
-A partial or noisy baseline remains useful diagnostic evidence but must not pass the closure gate.
+A partial, short, lossy, undersampled, noisy or drifted baseline remains useful diagnostic evidence but must not pass the closure gate.
 
 ## 7. Plausibility against an independent observer
 
@@ -287,7 +293,7 @@ Where practical, compare a representative workload with WPA/PerfView or LatencyM
 - broad processor concentration;
 - absence of impossible attribution.
 
-Exact counts/percentiles need not match because windows and observer overhead differ. If LatencyPilot attributes an address to an image that cannot authoritatively contain it, treat that as a blocker.
+Exact counts/percentiles need not match because capture windows, aggregation and observer overhead differ. If LatencyPilot attributes an address to an image that cannot authoritatively contain it, treat that as a blocker.
 
 ## 8. Representative device evidence
 
@@ -368,10 +374,10 @@ Do not close Phase 2 until all required outcomes are evidenced for the **same fi
 - exact revision + green hosted Tests run;
 - owner-local App and Service compile/run;
 - protected Service path and normal-user App boundary;
-- protocol v6 connection/capture;
-- at least one v8 quick snapshot proving integrity/provenance/attribution behavior;
-- one **Real-world** v8/v2 repeated decision baseline;
-- one **Controlled-idle** v8/v2 repeated decision baseline;
+- protocol-v6 connection/capture;
+- at least one evidence-v8 quick snapshot proving integrity/provenance/attribution behavior;
+- one **Real-world** evidence-v8 / baseline-v2 repeated decision baseline;
+- one **Controlled-idle** evidence-v8 / baseline-v2 repeated decision baseline;
 - representative GPU/NIC/xHCI evidence;
 - attribution plausibility;
 - failure/disconnect/stale-ETW cleanup;
@@ -383,4 +389,4 @@ Do not close Phase 2 until all required outcomes are evidenced for the **same fi
 
 Historical five-second observations collected under earlier protocol/schema revisions remain useful **diagnostic evidence** for ETW integrity, attribution and hypothesis formation. They do not satisfy the v2 decision-baseline closure requirement.
 
-After Phase 2 closes, Phase 3 may implement reversible mutations. The first candidate must still be measured against a control; no Microsoft default, Reddit tweak, or prior project assumption is automatically accepted as optimal.
+After Phase 2 closes, Phase 3 may implement reversible mutations. The first candidate must still be measured against a control; no Microsoft default, community tweak or prior-project assumption is automatically accepted as optimal.
