@@ -20,6 +20,10 @@ public static class SystemInventoryReader
         }
 
         var version = Environment.OSVersion.Version;
-        return $"Microsoft Windows · build {version.Build} · NT {version.Major}.{version.Minor}";
+        var productName = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000)
+            ? "Microsoft Windows 11"
+            : "Microsoft Windows";
+
+        return $"{productName} · build {version.Build} · NT {version.Major}.{version.Minor}";
     }
 }
