@@ -81,13 +81,21 @@ public static class BaselineQualityAnalyzer
 {
     public const string MethodVersion = "baseline-quality-v1";
 
+    private static readonly BaselineQualityPolicy Version1Policy = new();
+
     public static BaselineQualityResult Analyze(
         IReadOnlyList<BaselineWindowEvidence> windows,
         BaselineQualityPolicy? policy = null)
     {
         ArgumentNullException.ThrowIfNull(windows);
-        policy ??= new BaselineQualityPolicy();
+        policy ??= Version1Policy;
         policy.Validate();
+        if (policy != Version1Policy)
+        {
+            throw new ArgumentException(
+                $"{MethodVersion} has a fixed policy identity. Changing window/sample/noise/drift thresholds requires a new baseline method version.",
+                nameof(policy));
+        }
 
         var ordered = windows.OrderBy(static window => window.WindowNumber).ToArray();
         ValidateWindowSequence(ordered, nameof(windows));
