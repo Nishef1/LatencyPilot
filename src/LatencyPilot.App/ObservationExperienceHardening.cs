@@ -8,18 +8,10 @@ namespace LatencyPilot.App;
 public sealed partial class MainWindow
 {
     private ComboBox? _hardenedScenarioComboBox;
-    private bool _observationExperienceHardeningInitialized;
 
-    internal void InitializeObservationExperienceHardening()
+    private void InitializeObservationExperienceHardening()
     {
-        if (_observationExperienceHardeningInitialized)
-        {
-            return;
-        }
-
-        _observationExperienceHardeningInitialized = true;
         ApplyObservationExperienceHardening();
-
         RootGrid.ActualThemeChanged += (_, _) => ApplyObservationExperienceHardening();
         _accessibilitySettings.HighContrastChanged += (_, _) =>
             DispatcherQueue.TryEnqueue(ApplyObservationExperienceHardening);
