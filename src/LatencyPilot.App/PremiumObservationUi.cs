@@ -421,7 +421,7 @@ public sealed partial class MainWindow
         var dpcGuidanceRate = Rate(capture.DpcThresholds.GuidanceExceedanceCount, capture.Dpc.Count);
         var isrGuidanceRate = Rate(capture.IsrThresholds.GuidanceExceedanceCount, capture.Isr.Count);
         var overOneCount = capture.DpcThresholds.OverOneMillisecondCount + capture.IsrThresholds.OverOneMillisecondCount;
-        var overThreeCount = capture.DpcThresholds.OverThreeMillisecondsCount + capture.IsrThresholds.OverThreeMillisecondCount;
+        var overThreeCount = capture.DpcThresholds.OverThreeMillisecondsCount + capture.IsrThresholds.OverThreeMillisecondsCount;
         var overOneRate = Rate(overOneCount, totalEvents);
         var overThreeRate = Rate(overThreeCount, totalEvents);
 
