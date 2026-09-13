@@ -618,7 +618,7 @@ internal sealed class ObservationHost : BackgroundService
         }
 
         sorted.Sort();
-        var p999 = sorted.Count >= ObservationProtocol.MinimumSamplesForP999
+        double? p999 = sorted.Count >= ObservationProtocol.MinimumSamplesForP999
             ? Percentiles.CalculateSorted(sorted, 0.999)
             : null;
 
