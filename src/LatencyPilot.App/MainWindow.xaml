@@ -340,13 +340,13 @@
                                                 VerticalAlignment="Top"
                                                 CornerRadius="10"
                                                 Background="{ThemeResource AccentSoftBrush}">
-                                            <TextBlock Text="5 windows · ~28 sec baseline"
+                                            <TextBlock Text="5 × 20 s · ~2 min decision baseline"
                                                        FontSize="10"
                                                        FontWeight="SemiBold"
                                                        Foreground="{ThemeResource AccentBrush}" />
                                         </Border>
                                     </StackPanel>
-                                    <TextBlock Text="Capture one five-second observation, or establish normal inter-window variation with the repeated baseline quality gate."
+                                    <TextBlock Text="Capture one five-second diagnostic snapshot, or run five 20-second windows for a decision-grade stability baseline."
                                                FontSize="13"
                                                TextWrapping="Wrap"
                                                Foreground="{ThemeResource MutedTextBrush}" />
@@ -358,8 +358,8 @@
                                     <Button x:Name="CaptureObservationButton"
                                             IsEnabled="False"
                                             Click="CaptureObservationButton_Click"
-                                            Content="Capture 5 seconds"
-                                            ToolTipService.ToolTip="Capture a five-second observation (Ctrl+O)"
+                                            Content="Quick snapshot · 5 s"
+                                            ToolTipService.ToolTip="Capture a five-second diagnostic snapshot (Ctrl+O)"
                                             AutomationProperties.AcceleratorKey="Ctrl+O">
                                         <Button.KeyboardAccelerators>
                                             <KeyboardAccelerator Modifiers="Control" Key="O" />
@@ -369,8 +369,8 @@
                                             IsEnabled="False"
                                             Click="CaptureBaselineButton_Click"
                                             Style="{StaticResource AccentButtonStyle}"
-                                            Content="Build baseline"
-                                            ToolTipService.ToolTip="Build five repeated windows in about 28 seconds (Ctrl+B)"
+                                            Content="Build baseline · ~2 min"
+                                            ToolTipService.ToolTip="Settle LatencyPilot for five seconds, then build five repeated 20-second windows (Ctrl+B)"
                                             AutomationProperties.AcceleratorKey="Ctrl+B">
                                         <Button.KeyboardAccelerators>
                                             <KeyboardAccelerator Modifiers="Control" Key="B" />
@@ -579,11 +579,11 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="4">
-                                            <TextBlock Text="Repeated baseline quality"
+                                            <TextBlock Text="Repeated decision baseline"
                                                        FontSize="16"
                                                        FontWeight="SemiBold"
                                                        Foreground="{ThemeResource TextBrush}" />
-                                            <TextBlock Text="5 × 5 second windows · 750 ms spacing · sample, capture-integrity, noise and drift gates"
+                                            <TextBlock Text="5 × 20 s windows · 5 s pre-sequence settle · 750 ms spacing · duration, sample, capture-integrity, noise and drift gates"
                                                        FontSize="11"
                                                        TextWrapping="Wrap"
                                                        Foreground="{ThemeResource MutedTextBrush}" />
@@ -621,7 +621,7 @@
                                                FontSize="11"
                                                TextWrapping="Wrap"
                                                Foreground="{ThemeResource MutedTextBrush}"
-                                               Text="Capture integrity, sample adequacy, noise and drift reasons will appear here." />
+                                               Text="Duration, capture integrity, sample adequacy, noise and drift reasons will appear here." />
                                     <ListView x:Name="BaselineWindowsList"
                                               MaxHeight="230"
                                               IsItemClickEnabled="False"
