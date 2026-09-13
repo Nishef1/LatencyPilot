@@ -156,13 +156,6 @@ public static class BaselineQualityAnalyzer
                     $"Baseline window numbers must form a contiguous sequence starting at 1. Expected window {expectedWindowNumber}, found {window.WindowNumber}.",
                     parameterName);
             }
-
-            if (index > 0 && window.StartedAtUtc <= windows[index - 1].StartedAtUtc)
-            {
-                throw new ArgumentException(
-                    $"Baseline window timestamps must increase with window number. Window {window.WindowNumber} did not start after window {windows[index - 1].WindowNumber}.",
-                    parameterName);
-            }
         }
     }
 
