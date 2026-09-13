@@ -6,6 +6,11 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+$nativePreferenceVariable = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+if ($null -ne $nativePreferenceVariable) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
+
 function Invoke-Native {
     param(
         [Parameter(Mandatory)]
@@ -210,6 +215,7 @@ try {
         '--target', $commit,
         '--title', "LatencyPilot $Version",
         '--prerelease',
+        '--latest=false',
         '--generate-notes'
     )
 
