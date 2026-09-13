@@ -313,7 +313,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private RuntimeMeasurementContextSnapshot? TryCaptureRuntimeContext()
+    private static RuntimeMeasurementContextSnapshot? TryCaptureRuntimeContext()
     {
         try
         {
