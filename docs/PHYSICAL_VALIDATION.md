@@ -156,17 +156,19 @@ Export the JSON and record its SHA-256:
 Get-FileHash .\LatencyPilot-observation-*.json -Algorithm SHA256
 ```
 
-The export should use `latencypilot-evidence-v6` and include at least:
+The export should use `latencypilot-evidence-v7` and include at least:
 
 - product/protocol version;
 - source revision when build metadata provides it;
 - export timestamp;
 - selected measurement scenario/context;
 - bounded non-personal environment/topology context;
-- best-effort runtime context (system CPU busy delta plus power source, Battery Saver, active power plan and user-configured Windows power mode before/after capture);
+- best-effort runtime context (system CPU busy delta plus power source, Battery Saver, active power-scheme GUID and user-configured Windows power mode before/after capture);
 - capture `RequestId`;
 - full bounded processor/module/unresolved-routine aggregates;
 - capture-integrity metadata.
+
+The local UI may display the active power-plan friendly name for readability, but evidence-v7 must **not** persist that potentially user-defined friendly name. The active scheme GUID and configured power-mode provenance remain exportable.
 
 Unresolved 64-bit routine addresses must remain hexadecimal strings in JSON.
 
@@ -241,11 +243,13 @@ After complete or partial baseline termination, export JSON and record SHA-256. 
 - selected scenario/context;
 - every completed bounded aggregate capture and `RequestId`;
 - derived window evidence;
-- best-effort per-window runtime CPU/power context, including active plan and configured Windows power mode when available;
+- best-effort per-window runtime CPU/power context, including active scheme GUID and configured Windows power mode when available;
 - environment/topology provenance;
 - `baseline-quality-v1` identity;
 - metric quality;
 - all verdict reasons.
+
+As with observation evidence, user-defined power-plan friendly names must remain local UI context and must not be persisted in evidence-v7 JSON.
 
 Export serialization/file I/O must occur only after the capture sequence stops or completes; it must not add file I/O between authoritative windows.
 
@@ -342,7 +346,7 @@ Stage B requires:
 - Controlled-idle observation + JSON/SHA-256/RequestId;
 - Real-world workload observation + JSON/SHA-256/RequestId;
 - p99.9 adequacy behavior where naturally observable;
-- scenario provenance and runtime CPU/power-plan/configured-mode context in exported evidence;
+- scenario provenance and runtime CPU/power-scheme GUID/configured-mode context in exported evidence;
 - attribution plausibility comparison;
 - cleanup/disconnect/failure-path result;
 - representative inventory/resource evidence;
@@ -352,6 +356,6 @@ Stage B requires:
 - uninstall/removal result when applicable;
 - all unresolved blockers.
 
-For Stage C closure, additionally preserve both controlled-idle and one repeatable real-world repeated-baseline result, including all window evidence, runtime-context windows, verdict/reasons, exported JSON and hashes.
+For Stage C closure, additionally preserve both controlled-idle and one repeatable real-world repeated-baseline result, including all window evidence, runtime-context windows, verdict/reasons, exported evidence-v7 JSON and hashes.
 
 Do not close Stage B or Stage C from VM/CI evidence alone.
