@@ -1,12 +1,20 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
-param()
+param(
+    [string]$SourceServiceDirectory
+)
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $serviceName = 'LatencyPilot.Observation'
 $displayName = 'LatencyPilot Observation Service'
-$sourceServiceDirectory = Join-Path $PSScriptRoot 'Service'
+
+if ([string]::IsNullOrWhiteSpace($SourceServiceDirectory)) {
+    $SourceServiceDirectory = Join-Path $PSScriptRoot 'Service'
+}
+
+$sourceServiceDirectory = [System.IO.Path]::GetFullPath($SourceServiceDirectory).TrimEnd('\')
 $sourceServiceExe = Join-Path $sourceServiceDirectory 'LatencyPilot.Service.exe'
 
 if (-not (Test-Path -LiteralPath $sourceServiceExe -PathType Leaf)) {
@@ -17,9 +25,8 @@ if ([string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
     throw 'Program Files could not be resolved for the protected service installation path.'
 }
 
-$managedServiceDirectory = Join-Path $env:ProgramFiles 'LatencyPilot\Service'
-$sourceServiceDirectory = [System.IO.Path]::GetFullPath($sourceServiceDirectory).TrimEnd('\')
-$managedServiceDirectory = [System.IO.Path]::GetFullPath($managedServiceDirectory).TrimEnd('\')
+$managedServiceDirectory = [System.IO.Path]::GetFullPath(
+    (Join-Path $env:ProgramFiles 'LatencyPilot\Service')).TrimEnd('\')
 $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 
 if ($null -ne $existing -and $existing.Status -ne 'Stopped') {
