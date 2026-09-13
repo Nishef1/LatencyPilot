@@ -230,6 +230,7 @@ Implemented in source:
 - explicit local-bucket wording for `>1 ms` / `>3 ms`;
 - Real-world / Controlled idle / Before-after scenarios;
 - scenario-specific guidance and stale-evidence invalidation;
+- scenario-specific two-check preparation gate for the repeated baseline: real-world keeps issue-reproducing apps open, controlled idle closes unnecessary apps, and before/after requires reproducible workload/background conditions; the single five-second observation remains available without these confirmations;
 - runtime CPU/power context summary plus power-context-change warning;
 - repeated baseline progress/verdict/reasons source;
 - read-only representative device-evidence inspector;
@@ -250,7 +251,7 @@ Still open:
 - physical JSON-vs-visible-evidence audit and SHA-256 retention;
 - narrow-window/text-scaling sanity on physical WinUI;
 - keyboard focus/screen-reader sanity;
-- physical evidence that warning/sample-insufficient/runtime-context/scenario invalidation states present correctly;
+- physical evidence that warning/sample-insufficient/runtime-context/scenario invalidation/readiness-gate states present correctly;
 - physical validation of the new device-evidence inspector;
 - remove/simplify duplicate explanatory surfaces only if the physical UI pass proves they are redundant.
 
