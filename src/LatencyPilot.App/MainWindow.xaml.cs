@@ -19,9 +19,6 @@ public sealed partial class MainWindow : Window
     private static readonly BaselineQualityPolicy BaselinePolicy = new();
     private const int ObservationMaximumEvents = 200_000;
     private const int BaselineWindowCount = 5;
-    private const string MeasurementContextGuidance =
-        "Measurement context: for a diagnostic capture, keep the apps and workload that reproduce the issue open. " +
-        "For a controlled idle baseline, close unnecessary apps. For before/after comparisons, keep the same apps, workload, power state and background activity on both sides.";
 
     private bool _observationServiceReady;
     private bool _initialLoadStarted;
@@ -34,7 +31,7 @@ public sealed partial class MainWindow : Window
         Title = "LatencyPilot";
         VersionText.Text = $"v{GetProductVersion()}";
         BaselineProgressBar.Maximum = BaselineWindowCount;
-        ObservationQualityText.Text = MeasurementContextGuidance;
+        ObservationQualityText.Text = EvidenceExportService.GetMeasurementGuidance(MeasurementScenario.RealWorld);
         InitializePremiumObservationUi();
         InitializeMeasurementExperience();
         InitializeObservationExperienceHardening();
@@ -241,17 +238,18 @@ public sealed partial class MainWindow : Window
                 $"p99 {FormatLargestP99(processor)} · max {FormatLargestMaximum(processor.Dpc, processor.Isr)}"))
             .ToArray();
 
+        var measurementGuidance = EvidenceExportService.GetMeasurementGuidance(SelectedMeasurementScenario);
         var integrityIssue = GetCaptureIntegrityIssue(capture);
         if (integrityIssue is null)
         {
             KernelCaptureStatusText.Text = $"Observation complete in {capture.ActualDurationMilliseconds:F0} ms with no ETW loss detected.";
-            ObservationQualityText.Text = $"Capture integrity looks clean. {FormatCaptureInterpretation(capture)} {MeasurementContextGuidance}";
+            ObservationQualityText.Text = $"Capture integrity looks clean. {FormatCaptureInterpretation(capture)} {measurementGuidance}";
         }
         else
         {
             KernelCaptureStatusText.Text = $"Observation completed with quality warning: {integrityIssue}";
             ObservationQualityText.Text =
-                $"Treat this observation as incomplete evidence. Tail/guidance classification is withheld because capture integrity is not clean. Exact values remain visible for diagnosis. {MeasurementContextGuidance}";
+                $"Treat this observation as incomplete evidence. Tail/guidance classification is withheld because capture integrity is not clean. Exact values remain visible for diagnosis. {measurementGuidance}";
         }
 
         RenderPremiumCapture(capture);
@@ -333,45 +331,6 @@ public sealed partial class MainWindow : Window
         return issues.Count == 0 ? null : string.Join(" ", issues);
     }
 
-    private void TryPrepareObservationEvidence(KernelLatencyCaptureResponse capture)
-    {
-        try
-        {
-            SetExportEvidence(
-                EvidenceExportService.CreateObservationJson(GetProductVersion(), capture),
-                EvidenceExportService.CreateSuggestedFileName("observation", capture.StartedAtUtc),
-                "Full bounded observation aggregates are ready for JSON export.");
-        }
-        catch (Exception exception)
-        {
-            Logger.Error(exception, "Observation evidence preparation failed.");
-            ClearExportEvidence("Observation completed, but evidence export preparation failed. See the diagnostics log for details.");
-        }
-    }
-
-    private void TryPrepareBaselineEvidence(
-        IReadOnlyList<KernelLatencyCaptureResponse> captures,
-        IReadOnlyList<BaselineWindowEvidence> windows,
-        BaselineQualityResult quality,
-        bool isPartial)
-    {
-        try
-        {
-            var evidenceType = isPartial ? "baseline-partial" : "baseline";
-            SetExportEvidence(
-                EvidenceExportService.CreateBaselineJson(GetProductVersion(), captures, windows, quality),
-                EvidenceExportService.CreateSuggestedFileName(evidenceType, captures[0].StartedAtUtc),
-                isPartial
-                    ? "Partial baseline aggregates and quality reasons are ready for JSON export."
-                    : "Full baseline aggregates, windows and quality reasons are ready for JSON export.");
-        }
-        catch (Exception exception)
-        {
-            Logger.Error(exception, "Baseline evidence preparation failed.");
-            ClearExportEvidence("Baseline result remains available, but evidence export preparation failed. See the diagnostics log for details.");
-        }
-    }
-
     private void SetExportEvidence(string json, string suggestedFileName, string status)
     {
         _latestEvidenceJson = json;
@@ -442,7 +401,7 @@ public sealed partial class MainWindow : Window
         TopModuleText.Text = "No observation yet.";
         TopModulesList.ItemsSource = null;
         TopProcessorsList.ItemsSource = null;
-        ObservationQualityText.Text = MeasurementContextGuidance;
+        ObservationQualityText.Text = EvidenceExportService.GetMeasurementGuidance(SelectedMeasurementScenario);
         ClearPremiumCapture();
     }
 
@@ -458,7 +417,7 @@ public sealed partial class MainWindow : Window
         FormatLargestValue(processor.Dpc.P99Microseconds, processor.Isr.P99Microseconds);
 
     private static string FormatLargestP999(LatencyDistribution dpc, LatencyDistribution isr) =>
-        FormatLargestValue(dpc.P999Microseconds, isr.P999Microseconds);
+        FormatLargestValue(dpc.P999Microseconds, dpc: isr.P999Microseconds);
 
     private static string FormatLargestMaximum(LatencyDistribution dpc, LatencyDistribution isr) =>
         FormatLargestValue(dpc.MaximumMicroseconds, isr.MaximumMicroseconds);
