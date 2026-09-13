@@ -207,6 +207,7 @@ internal sealed class ObservationHost : BackgroundService
             disconnectMonitorCancellation.Token);
 
         ObservationResponse response;
+        bool clientDisconnected;
         try
         {
             response = await Task.Run(
@@ -216,7 +217,7 @@ internal sealed class ObservationHost : BackgroundService
         finally
         {
             disconnectMonitorCancellation.Cancel();
-            await AwaitDisconnectMonitorAsync(disconnectMonitor).ConfigureAwait(false);
+            clientDisconnected = await AwaitDisconnectMonitorAsync(disconnectMonitor).ConfigureAwait(false);
         }
 
         if (stoppingToken.IsCancellationRequested)
@@ -224,10 +225,15 @@ internal sealed class ObservationHost : BackgroundService
             return;
         }
 
-        if (operationCancellation.IsCancellationRequested || !server.IsConnected)
+        if (clientDisconnected || !server.IsConnected)
         {
             ClientDisconnectedDuringOperation(logger, request.RequestId, null);
             return;
+        }
+
+        if (operationCancellation.IsCancellationRequested)
+        {
+            KernelLatencyCaptureUnavailable(logger, request.RequestId, "OperationDeadline", 0, null);
         }
 
         using var responseDeadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -246,7 +252,7 @@ internal sealed class ObservationHost : BackgroundService
         }
     }
 
-    private static async Task MonitorClientDisconnectAsync(
+    private static async Task<bool> MonitorClientDisconnectAsync(
         NamedPipeServerStream server,
         CancellationTokenSource operationCancellation,
         CancellationToken cancellationToken)
@@ -257,26 +263,30 @@ internal sealed class ObservationHost : BackgroundService
         {
             _ = await server.ReadAsync(probe, cancellationToken).ConfigureAwait(false);
             operationCancellation.Cancel();
+            return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // The operation completed normally; stop the disconnect probe.
+            return false;
         }
         catch (IOException)
         {
             operationCancellation.Cancel();
+            return true;
         }
     }
 
-    private static async Task AwaitDisconnectMonitorAsync(Task monitor)
+    private static async Task<bool> AwaitDisconnectMonitorAsync(Task<bool> monitor)
     {
         try
         {
-            await monitor.ConfigureAwait(false);
+            return await monitor.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             // Cancellation is the normal way to stop the disconnect probe after a response is ready.
+            return false;
         }
     }
 
