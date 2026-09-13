@@ -119,6 +119,8 @@ Current App capture protocol:
 + 750 ms spacing between completed windows
 ```
 
+Window ordering is defined by the explicit contiguous `WindowNumber` sequence (`1..N`). `StartedAtUtc` is provenance, not a monotonic clock. A wall-clock adjustment from NTP, VM synchronization or manual time correction must not by itself invalidate an otherwise contiguous in-process capture sequence. Future persisted/reconstructed evidence that needs stronger temporal guarantees should add an explicit monotonic/sequence field rather than treating UTC wall clock as monotonic.
+
 For each window, the current quality gate records DPC p99 and ISR p99 together with event counts and capture-integrity provenance.
 
 A window is not clean when any of the following is true:
@@ -215,7 +217,9 @@ value = samples[lower] + (samples[upper] - samples[lower]) * (position - lower)
 
 When `lower == upper`, that sample is returned directly. This is the **linear-n-minus-one-v1** interpretation for current results. Service observation summaries, repeated-baseline quality and benchmark comparisons must call this same implementation rather than defining local nearest-rank variants.
 
-If this estimator changes later, the method/version must change with it so historical results remain interpretable.
+The Phase 2 observation protocol has an additional presentation/evidence-adequacy rule: `p99.9` is omitted (`null`) when that distribution has fewer than **1,000 samples**. This is a conservative minimum chosen so the named 99.9th-percentile tail is not prominently reported when the sample set contains fewer than roughly one expected observation in the top 0.1%. It is a product adequacy policy, not a statistical-confidence interval. p50/p95/p99/max remain available according to their existing contracts. The raw estimator can still mathematically calculate p99.9 for deterministic tests; the Service decides whether the result is adequate to expose as observation evidence.
+
+If this estimator or the p99.9 adequacy policy changes later, the method/protocol interpretation must change with it so historical results remain interpretable.
 
 ## 8. Sample adequacy
 
@@ -223,7 +227,7 @@ Do not calculate or emphasize extreme percentiles from obviously inadequate samp
 
 The benchmark implementation must define minimum sample rules for each metric family.
 
-If evidence is insufficient, return `Inconclusive` instead of extrapolating confidence.
+If evidence is insufficient, return `Inconclusive` or omit that derived tail statistic instead of extrapolating confidence.
 
 A percentile can be mathematically calculated from a small sample while still being statistically inadequate for an authoritative decision. Calculation availability and evidence adequacy are separate concepts.
 
@@ -267,7 +271,12 @@ Where ETW data permits, collect/derive:
 - time-windowed spikes;
 - p50/p95/p99/p99.9/max as sample counts permit.
 
-CPU0 concentration must be reported as an observation, not automatically classified as a fault.
+Current observation presentation distinguishes documented driver guidance from local diagnostic buckets:
+
+- DPC `> 100 µs` and ISR `> 25 µs` are presented as Microsoft driver guidance thresholds;
+- `> 1 ms` and `> 3 ms` are retained as useful local tail-count buckets only. They are **not** represented as official Windows pass/fail, severity or user-impact boundaries.
+
+A single threshold exceedance is evidence to investigate in context, not automatic proof that a driver caused a user-visible problem. CPU0 concentration likewise must be reported as an observation, not automatically classified as a fault.
 
 ## 12. GPU experiment metrics
 
@@ -417,7 +426,7 @@ High-value statistical scenarios should be consolidated into data/scenario matri
 - baseline drift;
 - primary improvement plus guardrail regression.
 
-The Stage C repeated-baseline gate intentionally uses one permanent scenario test to cover stable, drifted and capture-integrity-failed baselines rather than consuming multiple permanent slots.
+The Stage C repeated-baseline gate intentionally uses one permanent scenario test to cover stable, drifted and capture-integrity-failed baselines rather than consuming multiple permanent slots. The same contract also verifies that missing/gapped window numbers fail while a backwards UTC wall-clock adjustment does not invalidate an otherwise contiguous capture sequence.
 
 Not all scenarios must occupy independent permanent slots at the same time. When a later recovery/mutation risk is more important, merge or retire a lower-value scenario/test rather than violating the cap. Temporary investigative tests may be used during implementation and deleted before finalization.
 
@@ -445,7 +454,7 @@ Performance work must preserve the authoritative event meaning, attribution rule
 
 Measure LatencyPilot's own allocation/GC/CPU overhead in `perf/` only when profiling shows a meaningful need. Do not create a speculative performance-test subsystem merely because one may be useful later. Physical or controlled profiling evidence should guide deeper optimization, especially when value-type copies, pooling or streaming aggregation could introduce new trade-offs.
 
-GitHub Actions timing is not a benchmark signal. Under the current owner policy hosted Actions runs the permanent correctness suite only; build/package and performance evidence are owner-local or physical as appropriate.
+GitHub Actions timing is not a benchmark signal. Hosted Actions runs the permanent correctness suite and compiles the Windows App/Service hosts as a buildability gate; publish/package/release and performance evidence remain owner-local or physical as appropriate.
 
 ## 23. User-facing presentation
 
