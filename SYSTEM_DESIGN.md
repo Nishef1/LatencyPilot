@@ -131,7 +131,7 @@ Durable SQLite migrations, snapshots, pending/closed journal records, benchmark 
 The narrow privileged execution boundary. During Phase 2 it hosts only privileged read-only observation. During Phase 3 it may gain mutation authority only after durable journaling, validation, authorization, verification and recovery exist. It never becomes a generic scripting host.
 
 ### `LatencyPilot.App`
-The non-elevated WinUI 3 experience. It presents inventory, evidence, trade-offs, decisions and recovery state. It may perform local non-privileged read-only inventory directly through `Platform.Windows`; privileged observation/mutation crosses `Protocol` to the Service. Repeated-baseline interpretation is delegated to deterministic `Benchmarking` logic rather than duplicated in the UI.
+The non-elevated WinUI 3 experience. It presents inventory, evidence, trade-offs, decisions and recovery state. It may perform local non-privileged read-only inventory directly through `Platform.Windows`; privileged observation/mutation crosses `Protocol` to the Service. Repeated-baseline interpretation is delegated to deterministic `Benchmarking` logic rather than duplicated in the UI. Because current `Platform.Windows` inventory/topology APIs expose stable `Core` snapshot types in their public signatures, the App also requires a direct `Core` project reference for compile-time type resolution.
 
 ## 6. Dependency direction
 
@@ -141,11 +141,11 @@ Benchmarking         → Core
 Protocol             ← no project dependency
 Platform.Windows     → Core
 Service              → Core + Benchmarking + Protocol + Platform.Windows
-App                  → Benchmarking + Protocol + Platform.Windows
+App                  → Core + Benchmarking + Protocol + Platform.Windows
 CriticalTests        → only projects needed by the current critical scenarios
 ```
 
-The Service and App depend on `Benchmarking` only for shared deterministic evidence/statistics semantics. They must not duplicate layer-specific percentile, noise or drift interpretations. `Protocol` stays independent because its wire DTOs/framing currently need no Core types. The App does not carry a redundant direct Core reference when its active features are already expressed through Benchmarking and Platform.Windows boundaries. Add the Phase 3 persistence project/dependency only when durable journaling/recovery introduces the concrete need.
+The Service and App depend on `Benchmarking` only for shared deterministic evidence/statistics semantics. They must not duplicate layer-specific percentile, noise or drift interpretations. `Protocol` stays independent because its wire DTOs/framing currently need no Core types. The App's direct Core reference is intentional rather than redundant: the active public `Platform.Windows` API surface returns Core-owned inventory/topology snapshot types, and C# consumers require the defining assembly at compile time. Remove that direct reference only if the platform boundary is deliberately redesigned so Core types no longer cross its public signatures. Add the Phase 3 persistence project/dependency only when durable journaling/recovery introduces the concrete need.
 
 No cyclic references. No speculative abstraction projects. Do not retain projects or references merely for possible future work.
 
