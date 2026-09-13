@@ -76,7 +76,7 @@ Proceed to Phase 1: buildable solution → comparison-domain invariants → read
 ### 1.1 Toolchain/repository
 - [x] pin .NET 10 SDK;
 - [x] solution/shared build settings;
-- [x] Core, Benchmarking, Protocol, Platform.Windows, Persistence, Service and App projects;
+- [x] Core, Benchmarking, Protocol, Platform.Windows, Service and App project boundaries established; an early empty Persistence scaffold existed historically and was later removed under the repository YAGNI rule until Phase 3 has a concrete schema/recovery contract;
 - [x] one focused permanent-test project;
 - [x] historical Windows Release CI at Phase 1 closure. Current hosted validation is intentionally **test-only**; App/Service compile, publish/package and release evidence are owner-local.
 
@@ -186,7 +186,7 @@ Current `baseline-quality-v1` requires exactly five windows, at least 20 events 
 A user can run a repeatable **read-only** baseline on a real Windows 11 PC and identify CPU/module latency concentration without LatencyPilot changing system configuration.
 
 ### After Phase 2 closes
-Proceed to Phase 3. Do **not** recreate the Service/IPC: Phase 2 already owns that infrastructure. Phase 3 starts with durable journal/recovery and mutation-specific authorization, then implements the first reversible GPU interrupt experiment.
+Proceed to Phase 3. Do **not** recreate the Service/IPC: Phase 2 already owns that infrastructure. Phase 3 starts by materializing the concrete SQLite persistence project/schema/journal/recovery contract plus mutation-specific authorization, then implements the first reversible GPU interrupt experiment.
 
 ---
 
@@ -198,14 +198,14 @@ Proceed to Phase 3. Do **not** recreate the Service/IPC: Phase 2 already owns th
 - [x] privileged Windows Service exists as the narrow boundary;
 - [x] versioned Named Pipe protocol exists;
 - [x] generic registry/shell/process execution is prohibited by contract and absent from Phase 2 protocol;
-- [ ] SQLite durable experiment journal/recovery state;
+- [ ] create the concrete persistence project with SQLite schema/migrations and durable experiment journal/recovery state;
 - [ ] mutation-specific command authorization/allowlist extension;
 - [ ] Detect → Snapshot → Validate → Journal → Apply → Verify lifecycle;
 - [ ] pending experiment survives interruption;
 - [ ] verified rollback/recovery;
 - [ ] reboot-required/recovery-required states represented explicitly.
 
-The three checked infrastructure items are inherited prerequisites only; they do not mean Phase 3 has begun mutation work.
+The three checked infrastructure items are inherited prerequisites only; they do not mean Phase 3 has begun mutation work. The persistence project is intentionally not pre-created during Phase 2; it should arrive together with its real durable-state contract.
 
 ### 3.2 GPU experiment
 - [ ] GPU applicability detection;
