@@ -55,13 +55,19 @@ This is deliberately a presentation layer over the authoritative structured file
 .\live.ps1
 ```
 
-Use `-NoLogs` when terminal streaming is not wanted. Live terminal output is a development aid, not benchmark evidence and not a replacement for the persisted structured logs.
+Remote-code auto-pull is deliberately **disabled by default** because incoming shared/Service changes can require rebuilding and reinstalling the privileged LocalSystem Service. Enable it only as an explicit development choice:
+
+```powershell
+.\live.ps1 -AutoPull
+```
+
+`-NoAutoPull` remains accepted for compatibility and cannot be combined with `-AutoPull`. Use `-NoLogs` when terminal streaming is not wanted. Live terminal output is a development aid, not benchmark evidence and not a replacement for the persisted structured logs.
 
 The App must not be launched from an elevated terminal. When the development Service needs to be refreshed, `live.ps1` requests elevation only for `scripts/Install-Service.ps1`, which copies the built Service payload to the protected `%ProgramFiles%\LatencyPilot\Service` path and registers/starts it as LocalSystem. This preserves the normal-user WinUI boundary while retaining the privilege required for kernel ETW observation.
 
 ## Correlation and event identity
 
-Every observation request already owns a protocol `RequestId`. The App logs request start/completion/failure with that ID and the Service logs capture lifecycle events with the same ID. This is the primary correlation key for App → Named Pipe → Service → ETW investigation.
+Every observation request owns a protocol `RequestId`. The App logs request start/completion/failure with that ID and the Service logs capture lifecycle events with the same ID. Protocol v5 also carries the capture `RequestId` inside exported capture evidence, so a saved evidence JSON can be correlated back to App and Service diagnostics without depending on timestamps alone.
 
 Stable Service event IDs currently include:
 
@@ -73,6 +79,8 @@ Stable Service event IDs currently include:
 | 1003 | kernel capture completed |
 | 1004 | active observation cancelled after client disconnect/protocol activity while the operation was running |
 | 1005 | framed pipe request rejected before execution |
+| 1006 | expected kernel-capture unavailability with bounded failure kind/native error provenance |
+| 1007 | pipe client rejected because its Windows session is not the active console session, or its session identity cannot be established |
 
 New event IDs should represent durable operational concepts rather than individual code branches.
 
@@ -85,7 +93,9 @@ Log bounded lifecycle and failure evidence such as:
 - protocol request ID, command, deadline and elapsed duration;
 - malformed/oversized/incompatible IPC frames;
 - capture start/completion/cancellation/failure;
+- expected ETW-start/capture failures with exception type and native error where available;
 - ETW event-loss/invalid/event-limit summaries;
+- rejected local client-session access at the privileged IPC boundary;
 - unexpected exceptions at App/Service boundaries;
 - partial inventory failures where a user-facing diagnostic is required.
 
@@ -104,7 +114,7 @@ Do not log:
 - arbitrary command lines;
 - complete device/driver inventories on every refresh when a bounded summary is enough.
 
-A future diagnostics-export feature must apply explicit redaction before collection leaves the local machine.
+Evidence export is separate from diagnostics. Current local evidence JSON contains the bounded observation/baseline aggregates, protocol correlation ID and a small non-personal environment summary; it does not upload data or turn operational logs into telemetry. Any future support/export path that sends data off-machine must define explicit redaction and user consent first.
 
 ## Measurement-safety rule
 
@@ -114,6 +124,6 @@ Raw/auditable benchmark evidence is a separate product concern from operational 
 
 ## Failure handling
 
-Expected transport/protocol failures should produce bounded warnings/errors and leave the long-lived Service able to accept the next client. Unexpected App boundary failures should be logged and converted into a safe unavailable/error state where possible rather than leaking full exception details into the UI.
+Expected transport/protocol failures should produce bounded warnings/errors and leave the long-lived Service able to accept the next client. Expected kernel-capture failures should preserve enough failure provenance in the Service log to distinguish access/Win32/state failures without leaking implementation details into the UI. Unexpected App boundary failures should be logged and converted into a safe unavailable/error state where possible rather than leaking full exception details into the UI.
 
-When investigating a capture problem, start with the App log entry for the relevant `RequestId`, then find the matching Service entries. If no Service entry exists, investigate connection/ACL/service-lifecycle failures before the ETW layer.
+When investigating a capture problem, start with the App log entry for the relevant `RequestId`, then find the matching Service entries. Exported protocol-v5 evidence carries the same capture `RequestId`. If no Service entry exists, investigate connection/ACL/session-authorization/service-lifecycle failures before the ETW layer.
