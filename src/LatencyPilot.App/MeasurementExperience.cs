@@ -102,6 +102,7 @@ public sealed partial class MainWindow
             _ => 0,
         };
         _measurementScenarioComboBox.SelectionChanged += MeasurementScenarioComboBox_SelectionChanged;
+        _measurementScenarioComboBox.SelectionChanged += MeasurementScenarioSelection_InvalidatesPreviousEvidence;
         AutomationProperties.SetName(_measurementScenarioComboBox, "Measurement scenario");
         AutomationProperties.SetHelpText(
             _measurementScenarioComboBox,
