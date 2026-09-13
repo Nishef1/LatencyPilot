@@ -229,6 +229,7 @@ public sealed class CriticalPathTests
         var topology = ProcessorTopologyReader.Capture();
         var logicalProcessors = topology.Cores.SelectMany(static core => core.LogicalProcessors).Distinct().ToArray();
         var devices = DeviceInventoryReader.CapturePresentDevices();
+        var representativeDevices = RepresentativeDeviceEvidenceSelector.Select(devices);
         var runtimeContext = RuntimeMeasurementContextReader.Capture();
 
         Assert.IsTrue(topology.PhysicalCoreCount > 0);
@@ -238,6 +239,14 @@ public sealed class CriticalPathTests
         Assert.IsTrue(devices.PresentDeviceCount > 0);
         Assert.IsTrue(devices.Devices.All(static device => !string.IsNullOrWhiteSpace(device.InstanceId)));
         Assert.IsTrue(devices.DevicesWithDriverMetadataCount > 0);
+
+        Assert.IsTrue(representativeDevices
+            .GroupBy(static device => device.Kind)
+            .All(static group => group.Count() <= 3));
+        Assert.IsTrue(representativeDevices.All(device => devices.Devices.Contains(device.Device)));
+        Assert.IsTrue(representativeDevices
+            .Where(static device => device.Kind == RepresentativeDeviceKind.XhciController)
+            .All(static device => string.Equals(device.Device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase)));
 
         Assert.IsTrue(runtimeContext.SystemLoad.KernelTime100Nanoseconds >= runtimeContext.SystemLoad.IdleTime100Nanoseconds);
         Assert.IsTrue(Enum.IsDefined(runtimeContext.Power.LineState));
