@@ -28,8 +28,8 @@ internal static class EvidenceExportService
 
     public static string CreateBaselineJson(
         string productVersion,
-        List<KernelLatencyCaptureResponse> captures,
-        List<BaselineWindowEvidence> windows,
+        IReadOnlyList<KernelLatencyCaptureResponse> captures,
+        IReadOnlyList<BaselineWindowEvidence> windows,
         BaselineQualityResult quality) =>
         CreateBaselineJson(
             productVersion,
