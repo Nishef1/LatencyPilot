@@ -222,6 +222,7 @@ public sealed class CriticalPathTests
         var topology = ProcessorTopologyReader.Capture();
         var logicalProcessors = topology.Cores.SelectMany(static core => core.LogicalProcessors).Distinct().ToArray();
         var devices = DeviceInventoryReader.CapturePresentDevices();
+        var runtimeContext = RuntimeMeasurementContextReader.Capture();
 
         Assert.IsTrue(topology.PhysicalCoreCount > 0);
         Assert.IsTrue(topology.Packages.Count > 0);
@@ -230,6 +231,22 @@ public sealed class CriticalPathTests
         Assert.IsTrue(devices.PresentDeviceCount > 0);
         Assert.IsTrue(devices.Devices.All(static device => !string.IsNullOrWhiteSpace(device.InstanceId)));
         Assert.IsTrue(devices.DevicesWithDriverMetadataCount > 0);
+
+        Assert.IsTrue(runtimeContext.SystemLoad.KernelTime100Nanoseconds >= runtimeContext.SystemLoad.IdleTime100Nanoseconds);
+        Assert.IsTrue(Enum.IsDefined(typeof(SystemPowerLineState), runtimeContext.Power.LineState));
+        if (runtimeContext.Power.BatteryPercent is not null)
+        {
+            Assert.IsTrue(runtimeContext.Power.BatteryPercent is >= 0 and <= 100);
+        }
+        if (runtimeContext.Power.UserConfiguredPowerMode is not null)
+        {
+            Assert.IsTrue(Enum.IsDefined(typeof(UserConfiguredPowerMode), runtimeContext.Power.UserConfiguredPowerMode.Value));
+        }
+
+        var calculatedBusy = RuntimeMeasurementContextReader.CalculateSystemCpuBusyPercent(
+            new SystemLoadSnapshot(100, 500, 300),
+            new SystemLoadSnapshot(200, 800, 500));
+        Assert.AreEqual(80d, calculatedBusy, 0.000001);
     }
 
     private static BaselineWindowEvidence Window(int number, double dpcP99, double isrP99) =>
