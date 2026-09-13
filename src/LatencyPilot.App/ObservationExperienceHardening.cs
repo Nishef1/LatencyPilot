@@ -48,9 +48,9 @@ public sealed partial class MainWindow
 
         if (_measurementScenarioComboBox is not null)
         {
-            // RefreshServiceButton is disabled only while a measurement/service refresh operation is busy.
-            // Rebuilt theme resources must not accidentally re-enable scenario changes mid-capture.
-            _measurementScenarioComboBox.IsEnabled = RefreshServiceButton.IsEnabled;
+            // Theme/high-contrast rebuilds can replace the ComboBox while a capture is active.
+            // Restore the explicit measurement-busy state instead of inferring it from unrelated controls.
+            _measurementScenarioComboBox.IsEnabled = !_measurementBusy;
         }
     }
 
