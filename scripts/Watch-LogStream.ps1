@@ -30,6 +30,32 @@ function Get-EventValue {
     return $property.Value
 }
 
+function Get-LevelLabel {
+    param([object]$Value)
+
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) {
+        return 'INF'
+    }
+
+    switch (([string]$Value).ToUpperInvariant()) {
+        'VERBOSE' { return 'VRB' }
+        'VRB' { return 'VRB' }
+        'DEBUG' { return 'DBG' }
+        'DBG' { return 'DBG' }
+        'INFORMATION' { return 'INF' }
+        'INFO' { return 'INF' }
+        'INF' { return 'INF' }
+        'WARNING' { return 'WRN' }
+        'WARN' { return 'WRN' }
+        'WRN' { return 'WRN' }
+        'ERROR' { return 'ERR' }
+        'ERR' { return 'ERR' }
+        'FATAL' { return 'FTL' }
+        'FTL' { return 'FTL' }
+        default { return ([string]$Value).ToUpperInvariant() }
+    }
+}
+
 function Write-LogLine {
     param([Parameter(Mandatory = $true)][string]$Line)
 
@@ -47,13 +73,7 @@ function Write-LogLine {
             '--:--:--.---'
         }
 
-        $level = if ([string]::IsNullOrWhiteSpace([string]$levelValue)) {
-            'INF'
-        }
-        else {
-            ([string]$levelValue).ToUpperInvariant()
-        }
-
+        $level = Get-LevelLabel -Value $levelValue
         $message = if ([string]::IsNullOrWhiteSpace([string]$messageValue)) {
             $Line
         }
