@@ -344,14 +344,7 @@ internal sealed class ObservationHost : BackgroundService
         var processors = result.Events
             .GroupBy(static item => item.ProcessorNumber)
             .OrderBy(static group => group.Key)
-            .Select(static group => new ProcessorLatencyDistribution(
-                group.Key,
-                CreateDistribution(group
-                    .Where(static item => item.Kind == KernelLatencyEventKind.Dpc)
-                    .Select(static item => item.DurationMicroseconds)),
-                CreateDistribution(group
-                    .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
-                    .Select(static item => item.DurationMicroseconds))))
+            .Select(static group => CreateProcessorDistribution(group.Key, group))
             .ToArray();
 
         var allModules = result.Events
@@ -389,11 +382,28 @@ internal sealed class ObservationHost : BackgroundService
             allUnresolvedRoutines.Take(ObservationProtocol.MaximumUnresolvedRoutineContributors).ToArray());
     }
 
+    private static ProcessorLatencyDistribution CreateProcessorDistribution(
+        int processorNumber,
+        IEnumerable<KernelLatencyEvent> events)
+    {
+        var dpcDurations = new List<double>();
+        var isrDurations = new List<double>();
+        SplitDurations(events, dpcDurations, isrDurations, out _);
+
+        return new ProcessorLatencyDistribution(
+            processorNumber,
+            CreateDistribution(dpcDurations),
+            CreateDistribution(isrDurations));
+    }
+
     private static ModuleLatencyDistribution CreateModuleDistribution(
         string path,
         IEnumerable<KernelLatencyEvent> events)
     {
-        var materialized = events.ToArray();
+        var dpcDurations = new List<double>();
+        var isrDurations = new List<double>();
+        SplitDurations(events, dpcDurations, isrDurations, out var totalDurationMicroseconds);
+
         var moduleName = Path.GetFileName(path);
         if (string.IsNullOrWhiteSpace(moduleName))
         {
@@ -403,41 +413,60 @@ internal sealed class ObservationHost : BackgroundService
         return new ModuleLatencyDistribution(
             moduleName,
             path,
-            materialized.Sum(static item => item.DurationMicroseconds),
-            CreateDistribution(materialized
-                .Where(static item => item.Kind == KernelLatencyEventKind.Dpc)
-                .Select(static item => item.DurationMicroseconds)),
-            CreateDistribution(materialized
-                .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
-                .Select(static item => item.DurationMicroseconds)));
+            totalDurationMicroseconds,
+            CreateDistribution(dpcDurations),
+            CreateDistribution(isrDurations));
     }
 
     private static UnresolvedRoutineLatencyDistribution CreateUnresolvedRoutineDistribution(
         ulong routineAddress,
         IEnumerable<KernelLatencyEvent> events)
     {
-        var materialized = events.ToArray();
+        var dpcDurations = new List<double>();
+        var isrDurations = new List<double>();
+        SplitDurations(events, dpcDurations, isrDurations, out var totalDurationMicroseconds);
+
         return new UnresolvedRoutineLatencyDistribution(
             routineAddress,
-            materialized.Sum(static item => item.DurationMicroseconds),
-            CreateDistribution(materialized
-                .Where(static item => item.Kind == KernelLatencyEventKind.Dpc)
-                .Select(static item => item.DurationMicroseconds)),
-            CreateDistribution(materialized
-                .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
-                .Select(static item => item.DurationMicroseconds)));
+            totalDurationMicroseconds,
+            CreateDistribution(dpcDurations),
+            CreateDistribution(isrDurations));
+    }
+
+    private static void SplitDurations(
+        IEnumerable<KernelLatencyEvent> events,
+        List<double> dpcDurations,
+        List<double> isrDurations,
+        out double totalDurationMicroseconds)
+    {
+        totalDurationMicroseconds = 0d;
+
+        foreach (var item in events)
+        {
+            totalDurationMicroseconds += item.DurationMicroseconds;
+            if (item.Kind == KernelLatencyEventKind.Dpc)
+            {
+                dpcDurations.Add(item.DurationMicroseconds);
+            }
+            else
+            {
+                isrDurations.Add(item.DurationMicroseconds);
+            }
+        }
     }
 
     private static LatencyDistribution CreateDistribution(IEnumerable<double> durations)
     {
-        var sorted = durations.Order().ToArray();
-        if (sorted.Length == 0)
+        var sorted = durations.ToList();
+        if (sorted.Count == 0)
         {
             return new LatencyDistribution(0, null, null, null, null, null);
         }
 
+        sorted.Sort();
+
         return new LatencyDistribution(
-            sorted.Length,
+            sorted.Count,
             Percentiles.CalculateSorted(sorted, 0.50),
             Percentiles.CalculateSorted(sorted, 0.95),
             Percentiles.CalculateSorted(sorted, 0.99),
