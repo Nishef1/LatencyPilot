@@ -32,7 +32,11 @@ The release machine must have:
 - GitHub CLI (`gh`) authenticated to the repository owner account;
 - Inno Setup 6 (`ISCC.exe`).
 
-Before publishing, update `Directory.Build.props` and `RELEASE_VERSION` together when changing the product version. `RELEASE_REVISION` is optional release-attempt/build metadata for the same semantic product version; it does not change the Git tag name.
+Before publishing, update `Directory.Build.props` and `RELEASE_VERSION` together when changing the product version. `RELEASE_REVISION` is optional build-attempt metadata for a semantic product version; it does not change the Git tag name.
+
+Published semantic versions are immutable. A version remains reserved after public publication even if its release/tag is later removed from GitHub. Do not reuse that version for different binaries.
+
+Historical note: `v0.0.1` was previously published and is therefore reserved, even though it is no longer present on the current Releases page. Current `main` advances to `0.0.2`.
 
 ## Safety checks performed by the publisher
 
@@ -45,9 +49,11 @@ Before publishing, update `Directory.Build.props` and `RELEASE_VERSION` together
 5. the requested version matches the project `Version` property;
 6. GitHub CLI authentication is available;
 7. a successful `Tests` workflow run exists for the exact release commit;
-8. an existing release/tag is not being replaced unless `-ReplaceExisting` was explicitly supplied.
+8. neither the release nor remote tag already exists.
 
 These checks are release gates, not convenience warnings.
+
+The script deliberately has no replacement/delete mode. If a version has already been published, advance the semantic version instead of replacing the public artifact identity.
 
 ## Build and package outputs
 
@@ -89,24 +95,18 @@ gh auth status
 The script uses `RELEASE_VERSION` by default. A version can be supplied explicitly only when it still matches the repository project version:
 
 ```powershell
-.\scripts\Publish-Release.ps1 -Version 0.0.1
+.\scripts\Publish-Release.ps1 -Version 0.0.2
 ```
 
-The publisher creates the missing tag through `gh release create --target <exact-commit>` rather than relying on a Git tag push from a GitHub Actions token.
+The publisher uses:
 
-## Replacing an existing prerelease
-
-Replacement is destructive and therefore requires an explicit switch:
-
-```powershell
-.\scripts\Publish-Release.ps1 -ReplaceExisting
+```text
+gh release create <tag> ... --target <exact-commit>
 ```
 
-Without that switch, an existing release or tag is a hard error.
+GitHub CLI creates the missing tag at the specified target commit when the tag does not already exist. The script intentionally does not use `--verify-tag`, because that option requires the remote tag to exist before release creation. This avoids the earlier GitHub Actions token failure mode where a separate tag push was rejected for workflow-changing commits.
 
-When replacement is explicitly requested, the script removes the existing GitHub prerelease/tag first and creates the replacement only after the new local setup, portable archive and checksums have already been built successfully.
-
-Do not use replacement for ordinary version progression. Prefer a new semantic version when the published artifact has already become meaningful external evidence.
+The prerelease is explicitly published with `--latest=false`; pre-alpha validation artifacts must not become the repository's latest stable release signal.
 
 ## Relation to Stage B physical validation
 
@@ -125,4 +125,6 @@ A green GitHub Actions test run alone does not prove packaging, ETW correctness 
 
 If publication fails after local artifacts are built, preserve the local artifacts/checksums and inspect the exact failing command. Do not weaken tests, version checks, branch checks or release identity checks merely to make publication pass.
 
-If a replacement attempt has already removed the previous prerelease/tag, restore publication only from an artifact set whose commit/version/build metadata is known. Do not attach unrelated binaries to a tag merely to make the Releases page look populated.
+If publication fails after a missing tag was created as part of `gh release create`, inspect the resulting repository state before retrying. Do not delete or replace an already-public artifact merely to make the next attempt convenient. Advance the version when public identity has already escaped.
+
+Do not attach unrelated binaries to a historical tag merely to make the Releases page look populated.
