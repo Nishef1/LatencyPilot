@@ -1,5 +1,2 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="../LatencyPilot.Core/LatencyPilot.Core.csproj" />
-  </ItemGroup>
 </Project>
