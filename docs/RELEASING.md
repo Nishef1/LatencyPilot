@@ -11,16 +11,16 @@ Release packaging and publication are explicit owner actions from a clean, up-to
 .\scripts\Publish-Release.ps1
 ```
 
-The script builds the Windows distributions locally and publishes the GitHub prerelease through the authenticated GitHub CLI account.
+The script builds the Windows distributions locally, launch-smoke-tests the published WinUI App, and publishes the GitHub prerelease through the authenticated GitHub CLI account.
 
 ## Why this model
 
 The repository separates two concerns:
 
 - GitHub Actions supplies reproducible automated correctness evidence for the permanent critical test suite.
-- The repository owner explicitly builds and publishes release artifacts from the exact tested `main` revision.
+- The repository owner explicitly builds, smoke-validates and publishes release artifacts from the exact tested `main` revision.
 
-This avoids an implicit cloud-build/release pipeline while preserving a hard requirement that the release commit itself has green CI evidence.
+This avoids an implicit cloud-build/release pipeline while preserving a hard requirement that the release commit itself has green CI evidence and that the actual WinUI payload can start on the owner Windows machine before publication.
 
 ## Prerequisites
 
@@ -49,11 +49,15 @@ Historical note: `v0.0.1` was previously published and is therefore reserved, ev
 5. the requested version matches the project `Version` property;
 6. GitHub CLI authentication is available;
 7. a successful `Tests` workflow run exists for the exact release commit;
-8. neither the release nor remote tag already exists.
+8. neither the release nor remote tag already exists;
+9. the self-contained WinUI publish contains a non-empty `LatencyPilot.pri`;
+10. the published `LatencyPilot.exe` opens the expected `LatencyPilot` main window and remains alive for the local startup-smoke interval without writing a startup-failure report.
 
 These checks are release gates, not convenience warnings.
 
 The script deliberately has no replacement/delete mode. If a version has already been published, advance the semantic version instead of replacing the public artifact identity.
+
+The App launch smoke is deliberately narrow. It catches publish/XAML/resource/startup breakage before packaging, but it does **not** prove that the privileged Service, ETW capture, baseline quality or physical hardware evidence is correct. Those remain Stage B/C owner-local validation work.
 
 ## Build and package outputs
 
@@ -64,6 +68,7 @@ dotnet restore win-x64 graph
 → Release solution build
 → self-contained WinUI App publish
 → verify LatencyPilot.pri
+→ launch-smoke the published App
 → self-contained Service publish
 → prepare version/build/validation/diagnostics metadata
 → build Inno Setup EXE
@@ -81,7 +86,7 @@ LatencyPilot-<version>-win-x64-portable.zip
 LatencyPilot-<version>-win-x64-portable.zip.sha256
 ```
 
-`BUILD_INFO.txt` records the exact commit, `RELEASE_REVISION`, matching GitHub Actions Tests run and `build_mode=owner-local`.
+`BUILD_INFO.txt` records the exact commit, `RELEASE_REVISION`, matching GitHub Actions Tests run, `build_mode=owner-local`, and `app_launch_smoke=passed` for the packaged payload.
 
 ## Publishing a new version
 
@@ -116,14 +121,15 @@ A Stage B validation record must refer to the exact package it tested. Record at
 - release revision when present;
 - Git commit from `BUILD_INFO.txt`;
 - Tests workflow run from `BUILD_INFO.txt`;
+- App launch-smoke result from `BUILD_INFO.txt`;
 - setup/portable SHA-256;
 - physical-machine evidence required by `PHYSICAL_VALIDATION.md`.
 
-A green GitHub Actions test run alone does not prove packaging, ETW correctness on the target PC or hardware-level validity. Conversely, a locally built release without green CI for the exact commit is not an approved LatencyPilot release candidate.
+A green GitHub Actions test run plus a successful startup smoke still does not prove ETW correctness on the target PC or hardware-level validity. Conversely, a locally built release without green CI for the exact commit is not an approved LatencyPilot release candidate.
 
 ## Failure discipline
 
-If publication fails after local artifacts are built, preserve the local artifacts/checksums and inspect the exact failing command. Do not weaken tests, version checks, branch checks or release identity checks merely to make publication pass.
+If publication fails after local artifacts are built, preserve the local artifacts/checksums and inspect the exact failing command. Do not weaken tests, version checks, branch checks, startup checks or release identity checks merely to make publication pass.
 
 If publication fails after a missing tag was created as part of `gh release create`, inspect the resulting repository state before retrying. Do not delete or replace an already-public artifact merely to make the next attempt convenient. Advance the version when public identity has already escaped.
 
