@@ -109,7 +109,7 @@ Mutation remains disabled until Phase 3 safety infrastructure exists. The Servic
 Stable domain concepts and invariants only. No WinUI, ETW implementation details, registry paths, SQLite, P/Invoke, Windows Service hosting or machine state.
 
 ### `LatencyPilot.Benchmarking`
-Percentiles, distributions, noise/drift analysis, comparisons, guardrails and verdicts. Keep deterministic and hardware-independent where possible.
+Percentiles, distributions, repeated-baseline quality, noise/drift analysis, comparisons, guardrails and verdicts. Keep deterministic and hardware-independent where possible.
 
 ### `LatencyPilot.Protocol`
 Versioned IPC commands/events/DTOs/errors only. Never generic privileged execution. Phase 2 commands are observation-only and explicitly allowlisted.
@@ -126,7 +126,7 @@ SQLite, migrations, snapshots, pending/closed journal records, benchmark history
 The narrow privileged execution boundary. During Phase 2 it hosts only privileged read-only observation. During Phase 3 it may gain mutation authority only after durable journaling, validation, authorization, verification and recovery exist. It never becomes a generic scripting host.
 
 ### `LatencyPilot.App`
-The non-elevated WinUI 3 experience. It presents inventory, evidence, trade-offs, decisions and recovery state. It may perform local non-privileged read-only inventory directly through `Platform.Windows`; privileged observation/mutation crosses `Protocol` to the Service.
+The non-elevated WinUI 3 experience. It presents inventory, evidence, trade-offs, decisions and recovery state. It may perform local non-privileged read-only inventory directly through `Platform.Windows`; privileged observation/mutation crosses `Protocol` to the Service. Repeated-baseline interpretation is delegated to deterministic `Benchmarking` logic rather than duplicated in the UI.
 
 ## 6. Dependency direction
 
@@ -137,11 +137,11 @@ Protocol             → Core
 Platform.Windows     → Core
 Persistence          → Core
 Service              → Core + Benchmarking + Protocol + Platform.Windows + Persistence
-App                  → Core + Protocol + Platform.Windows
+App                  → Core + Benchmarking + Protocol + Platform.Windows
 CriticalTests        → only projects needed by the current critical scenarios
 ```
 
-The Service depends on `Benchmarking` only for shared deterministic evidence/statistics semantics such as the canonical percentile estimator. It must not duplicate a second statistical interpretation locally.
+The Service and App depend on `Benchmarking` only for shared deterministic evidence/statistics semantics. They must not duplicate layer-specific percentile, noise or drift interpretations.
 
 No cyclic references. No speculative abstraction projects.
 
@@ -157,7 +157,7 @@ WindowsAppSDKSelfContained=true
 runtime target=win-x64
 ```
 
-The artifact publishes App and Service separately under one Windows x64 artifact. The app is unpackaged. MSIX/package identity is not introduced without a separate need/decision. `PublishSingleFile` is not enabled by default because it adds extraction and publish constraints without current value.
+The release artifact publishes App and Service separately under one Windows x64 distribution. The app is unpackaged. MSIX/package identity is not introduced without a separate need/decision. `PublishSingleFile` is not enabled by default because it adds extraction and publish constraints without current value.
 
 Installer deployments place App and Service under the protected Program Files tree. Portable distributions may place the normal-user App in a user-controlled extraction directory, but an elevated `Install-Service.ps1` copies the privileged Service payload to `%ProgramFiles%\LatencyPilot\Service` before LocalSystem registration. A LocalSystem service must not execute from an ordinary user-writable portable extraction path.
 
@@ -177,7 +177,7 @@ A configuration hint must not be named or displayed as proof of active interrupt
 
 Partial device metadata is representable. A device without a readable hardware key is not equivalent to “no interrupt configuration”; preserve availability/error provenance instead of failing the entire inventory or silently inventing null semantics. Optional property/resource failures should degrade that device to partial evidence where safe; only an actual inventory-enumeration failure should normally abort the whole snapshot.
 
-A single short ETW capture is an **observation**, not a trustworthy baseline. Baseline terminology requires repeated windows plus quality/noise/drift handling.
+A single short ETW capture is an **observation**, not a trustworthy baseline. Baseline terminology requires repeated windows plus explicit capture-integrity, sample-adequacy, noise and drift handling.
 
 ## 9. Experiment lifecycle
 
@@ -204,9 +204,22 @@ The canonical percentile estimator is owned by `LatencyPilot.Benchmarking.Statis
 position = (sampleCount - 1) * percentile
 ```
 
-between the surrounding samples. Service observation summaries and benchmark comparisons must use this same estimator; introducing a second nearest-rank or layer-specific percentile implementation is prohibited unless the methodology is intentionally versioned and documented.
+between the surrounding samples. Service observation summaries, baseline quality and benchmark comparisons must use this same estimator; introducing a second nearest-rank or layer-specific percentile implementation is prohibited unless the methodology is intentionally versioned and documented.
 
-Phase 2 observation currently supports DPC/ISR count and duration distributions including p50/p95/p99/p99.9/max. Repeated baseline windows, empirical noise floor, drift detection and quality verdicts are still separate required work.
+Phase 2 observation supports DPC/ISR count and duration distributions including p50/p95/p99/p99.9/max.
+
+`baseline-quality-v1` adds the first conservative repeated-baseline gate:
+
+- exactly five sequential five-second windows are requested by the current App flow;
+- a metric window requires at least 20 DPC/ISR events and a finite positive p99 value;
+- any unavailable or non-zero ETW loss count, invalid latency/image event, or event-limit hit makes that capture window invalid;
+- per-metric normal variability is summarized as `(P90 - P10) / |median|` across eligible window-level p99 values;
+- variability above 30% is inconclusive;
+- drift compares early and late window medians relative to the overall median; above 20% is inconclusive;
+- a window more than 50% away from the median is explicitly reported as extreme and is never silently discarded;
+- all required windows and both DPC/ISR p99 metrics must pass for the result to become `Valid`; otherwise the baseline is `Inconclusive`.
+
+These values are a versioned quality gate, not a claim of statistical significance. Physical evidence may justify revising them in a later methodology version. Background-load and thermal/power quality signals remain open until authoritative, sufficiently low-overhead evidence is chosen.
 
 A neutral target cannot hide a regressed guardrail; collateral regression must remain visible in the verdict.
 
@@ -286,6 +299,8 @@ Prefer a small portfolio of:
 - one or a few Windows integration invariants that exercise real read-only APIs;
 - data/scenario matrices consolidated inside a durable high-value test rather than one permanent test per branch.
 
+The repeated-baseline quality gate is a high-blast-radius safety contract because accepting a noisy/lossy baseline would invalidate all later optimization decisions; one consolidated permanent scenario test protects stable, drifted and capture-loss cases.
+
 If a later parser/recovery/mutation risk is more important, replace/merge a lower-value test. More than 10 permanent tests requires explicit owner approval plus ADR justification that remaining at 10 is more harmful.
 
 Hardware validation and release checklists are separate and do not count toward the cap.
@@ -298,30 +313,34 @@ Do not emit one log event per raw DPC/ISR event, dump arbitrary registry/environ
 
 ## 17. Release and CI contract
 
-Main CI:
+GitHub Actions is intentionally **test-only**:
 
 ```text
-restore
-→ Release build
-→ permanent critical tests
-→ self-contained win-x64 App publish
-→ WinUI resource + GUI smoke validation
-→ self-contained win-x64 Service publish
-→ setup + portable distribution validation
-→ artifact upload when appropriate
+checkout
+→ pinned .NET SDK
+→ NuGet cache
+→ dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
 ```
 
-The same publish/package validation runs for pull requests; only distribution upload/release publication may be skipped. This prevents packaging/service regressions from first appearing after merge.
+Hosted CI does not build/publish the WinUI App, publish the Service, perform GUI smoke, build Setup/portable distributions, upload production binaries or publish releases. The Tests workflow runs for every `main` revision so an owner-local release can require green automated correctness evidence for the exact commit.
 
-Warnings are errors. Fix root causes instead of broad suppression.
+Owner-local Windows validation owns build/package evidence:
 
-CI proves build/package and selected invariants only; it does not prove hardware latency improvement or close physical-hardware validation items.
+```text
+local Debug/F5 or dev.ps1 for normal iteration
+→ owner-local Release build when needed
+→ owner-local self-contained App/Service publish
+→ owner-local PRI/package validation
+→ owner-local Setup + portable creation/publication
+```
 
-Release replacement is staged: build/test/package first, then replace a stale prerelease/tag only after new artifacts exist. Release runs are not cancelled mid-publication by a newer run.
+The explicit owner-run publication flow is documented in `docs/RELEASING.md` and implemented by `scripts/Publish-Release.ps1`. Warnings remain errors; fix root causes instead of broad suppression.
+
+Test CI proves selected deterministic/integration invariants only. Local Windows build/package evidence proves buildability/distribution for the tested revision. Neither alone proves hardware latency improvement or closes physical-hardware validation items.
 
 ## 18. Hardware-validation contract
 
-Optimization claims and hardware-dependent observation gates require physical Windows 11 evidence with enough system/app/hardware context to interpret the result. GitHub-hosted Windows Server runners can validate API/build behavior but cannot close hardware-dependent performance claims.
+Optimization claims and hardware-dependent observation gates require physical Windows 11 evidence with enough system/app/hardware context to interpret the result. GitHub-hosted Windows Server runners supply test evidence only and cannot close build/package or hardware-dependent performance claims under the current owner policy.
 
 ## 19. Mandatory step-back review
 
