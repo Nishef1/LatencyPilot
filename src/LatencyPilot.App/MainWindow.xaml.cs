@@ -417,7 +417,7 @@ public sealed partial class MainWindow : Window
         FormatLargestValue(processor.Dpc.P99Microseconds, processor.Isr.P99Microseconds);
 
     private static string FormatLargestP999(LatencyDistribution dpc, LatencyDistribution isr) =>
-        FormatLargestValue(dpc.P999Microseconds, dpc: isr.P999Microseconds);
+        FormatLargestValue(dpc.P999Microseconds, isr.P999Microseconds);
 
     private static string FormatLargestMaximum(LatencyDistribution dpc, LatencyDistribution isr) =>
         FormatLargestValue(dpc.MaximumMicroseconds, isr.MaximumMicroseconds);
