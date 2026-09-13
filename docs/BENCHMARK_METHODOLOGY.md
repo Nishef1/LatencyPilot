@@ -1,190 +1,203 @@
 # Benchmark Methodology
 
-Status: **V0.3 benchmark contract**  
+Status: **V0.4 benchmark contract**  
 Last updated: 2026-09-13
 
-LatencyPilot exists to distinguish measurable improvement from placebo, noise, drift, or a trade-off hidden by a single headline number.
+LatencyPilot exists to distinguish measurable improvement from placebo, ordinary run-to-run variation, drift, or a trade-off hidden by one headline number. It is an experimental optimization platform, not a collection of assumed Windows tweaks.
 
-This document defines the minimum methodology for benchmark-backed recommendations.
+This document defines the minimum methodology for benchmark-backed recommendations. Where implementation and this contract disagree, the discrepancy must be resolved explicitly; the product must not silently lower the evidence bar.
 
-## 1. Principles
+## 1. Evidence hierarchy
 
-1. A before/after percentage alone is not evidence.
-2. Baseline variability must be measured.
-3. Tail latency matters.
-4. Target metrics and guardrail metrics are distinct.
-5. Repeated runs are preferred over a single pair.
-6. Raw or auditable measurements must be preserved.
-7. Invalid and inconclusive experiments are valid outcomes.
-8. A primary improvement can still produce a trade-off verdict.
-9. GitHub-hosted CI is not a physical-hardware benchmark environment.
-10. The benchmark must not claim to measure a physical quantity it does not actually observe.
-11. Measurement-engine observer overhead is itself a validity concern; avoid introducing avoidable allocation, GC, logging or synchronous I/O pressure into the measured window.
+LatencyPilot intentionally separates three evidence levels.
 
-## 2. Experiment structure
+### 1.1 Quick diagnostic snapshot
 
-Conceptually:
+The current quick snapshot is:
+
+```text
+1 × 5-second DPC/ISR capture
+```
+
+Its purpose is limited to:
+
+- confirming ETW capture integrity;
+- checking module/routine attribution;
+- locating per-CPU concentration;
+- identifying obvious long-tail events;
+- generating a fast hypothesis for what deserves controlled testing.
+
+A quick snapshot is **not** a benchmark verdict, stability proof, system-health score, or optimization recommendation. Repeating several snapshots can strengthen a hypothesis, but does not silently convert those snapshots into a controlled baseline.
+
+### 1.2 Repeated decision baseline
+
+The implemented decision-grade Phase 2 baseline is `baseline-quality-v2`:
+
+```text
+LatencyPilot/service settle: 5 seconds
+5 authoritative windows × 20 seconds
+750 ms inter-window settle between completed windows
+= 100 seconds of authoritative DPC/ISR measurement
+```
+
+The 5-second pre-sequence delay only lets LatencyPilot and the service settle. It does **not** claim to warm a game, compile shaders, stabilize clocks, fill application caches, or otherwise prepare the workload. For real-world and before/after scenarios, the workload must already be at a warmed and repeatable point before the user starts the decision baseline, unless startup/loading behavior is deliberately the workload under test.
+
+Five separate windows are retained instead of one 100-second aggregate because LatencyPilot needs inter-window variation and early/late drift evidence, not only a larger sample pool.
+
+### 1.3 Controlled A/B experiment
+
+A mutation is not accepted because its post-change number looks better once. The intended experiment structure is:
 
 ```text
 Environment snapshot
     ↓
-Warm-up
+Workload warm-up / stabilization
     ↓
-Baseline runs
+Baseline measurement(s)
     ↓
 Candidate mutation
     ↓
-Verification
+Applied-state verification
     ↓
-Candidate runs
+Candidate measurement(s)
     ↓
-Baseline validation / drift check
+Baseline re-check / drift check
     ↓
-Statistical comparison
+Statistical + practical comparison
     ↓
 Guardrail evaluation
     ↓
-Verdict
+Keep or Revert
 ```
 
-Where safe and practical, prefer interleaved sequences such as:
+Where practical, confirmation should use a balanced or interleaved order such as:
 
 ```text
 A1 → B1 → B2 → A2
 ```
 
-rather than only:
+or a randomized/balanced equivalent such as ABBA/BAAB. This reduces the chance that temperature, background activity, clocks, cache state, or simple passage of time is mistaken for a candidate effect.
 
-```text
-A → B
-```
+For reboot-requiring mutations, persist the complete experiment and rollback state across boots and use a reboot-aware ordering rather than pretending the two sides were contiguous.
 
-For changes requiring reboot, use a reboot-aware design and persist the complete experiment state across boots.
+## 2. Source hierarchy and independent judgment
 
-## 3. Environment capture
+LatencyPilot uses different sources for different questions.
 
-Record enough context to make the result interpretable, including where applicable:
+- **Microsoft documentation** is authoritative for Windows API contracts, ETW semantics, resource descriptors, interrupt-policy meanings, driver guidance, and supported behavior.
+- **Measured local evidence** is authoritative for whether a specific candidate helps a specific machine and workload.
+- **Maintained tools/projects** such as PresentMon and AutoGpuAffinity are useful prior art for metrics and experimental design, but are not copied as product truth.
+- **Community reports** can identify hypotheses and failure modes. They are anecdotes unless independently reproduced.
 
-- Windows edition/build;
-- LatencyPilot version;
+For example, Microsoft documents the 100 µs DPC and 25 µs ISR driver-duration guidance and the semantics of interrupt-affinity policies. Those values remain useful reference lines. They do **not** prove that staying below them means a user has no latency problem, and the default Windows interrupt placement is not assumed to be the latency optimum for every machine.
+
+Likewise, repeated reports that graphics interrupts concentrate on CPU 0 can justify testing non-default candidates. They do **not** justify a universal rule that CPU 0 is bad.
+
+References used when revising this contract include:
+
+- Microsoft: DPC/ISR ETW measurement and event-loss guidance;
+- Microsoft: interrupt affinity and WDF interrupt policy documentation;
+- Intel/GameTechDev PresentMon metric definitions;
+- `valleyofdoom/AutoGpuAffinity`, which performs per-candidate GPU-affinity measurements with a configurable 30-second benchmark interval and workload/cache settling;
+- older AutoGpuAffinity documentation recommending repeated 30-second trials and whole-session reproducibility checks.
+
+These references inform the methodology; LatencyPilot's own versioned evidence contract remains authoritative for LatencyPilot results.
+
+## 3. Environment and provenance
+
+Record enough context to interpret and reproduce an authoritative run, including where applicable:
+
+- exact LatencyPilot product version and clean source revision;
+- observation protocol version;
+- evidence schema and analysis-method version;
+- Windows edition/build and, where available, servicing revision;
 - CPU model and topology;
-- GPU model and driver version;
-- target device identity and driver version;
-- power mode/profile if relevant;
-- workload identity/version;
-- experiment timestamps;
-- benchmark duration;
-- applied mutation and verified actual state.
+- GPU/device identity and driver version;
+- power source, plan and configured power mode;
+- workload identity/version/scene or action loop;
+- timestamps and requested/actual capture duration;
+- applied mutation plus verified actual state;
+- unique capture RequestIds.
 
 Do not collect unnecessary personal data.
 
-## 4. Warm-up
+Evidence exported from a dirty or unverifiable source tree must not claim an exact clean source revision.
 
-Warm-up exists to reduce one-time effects such as:
+## 4. Warm-up versus settle
+
+Warm-up reduces one-time effects such as:
 
 - process startup;
-- shader/cache initialization;
-- initial JIT or code-path initialization;
-- workload loading;
+- shader compilation;
+- cache initialization;
+- initial JIT/code-path initialization;
+- level/scene loading;
 - initial thermal/clock transitions.
 
-Warm-up measurements should not silently mix into the authoritative measurement window unless the benchmark explicitly defines them as part of the workload.
+A **workload warm-up** belongs to the benchmark definition and may require tens of seconds or longer depending on the workload.
 
-## 5. Baseline noise floor
+A **LatencyPilot settle delay** only reduces observer-side transition effects around beginning a sequence. These concepts must not be conflated in code or UI.
 
-Before interpreting a candidate delta, LatencyPilot must estimate normal baseline variability for the relevant metrics.
+Warm-up samples should not silently enter the authoritative window unless the benchmark explicitly defines startup behavior as part of the workload.
 
-At minimum, compare repeated baseline windows/runs and quantify expected variation.
+## 5. Capture integrity
 
-A candidate difference smaller than normal baseline variation should not be marketed as an improvement.
-
-Possible classifications:
-
-```text
-NoMeasurableDifference
-Inconclusive
-```
-
-rather than `Improved`.
-
-### 5.1 `baseline-quality-v1`
-
-The first implemented repeated-baseline quality gate is deliberately conservative and versioned separately from the later A/B experiment verdict model.
-
-Current App capture protocol:
-
-```text
-5 sequential windows
-× 5 seconds each
-+ 750 ms spacing between completed windows
-```
-
-Window ordering is defined by the explicit contiguous `WindowNumber` sequence (`1..N`). `StartedAtUtc` is provenance, not a monotonic clock. A wall-clock adjustment from NTP, VM synchronization or manual time correction must not by itself invalidate an otherwise contiguous in-process capture sequence. Future persisted/reconstructed evidence that needs stronger temporal guarantees should add an explicit monotonic/sequence field rather than treating UTC wall clock as monotonic.
-
-For each window, the current quality gate records DPC p99 and ISR p99 together with event counts and capture-integrity provenance.
-
-A window is not clean when any of the following is true:
+A capture is not clean when any of the following is true:
 
 - ETW loss count is unavailable;
 - ETW reports one or more lost events;
 - one or more latency events are invalid;
 - one or more image-attribution events are invalid;
-- the configured event safety limit is reached.
+- the bounded event safety limit is reached.
 
-A metric value is analyzable for a window only when:
+Microsoft's ETW guidance explicitly requires monitoring lost events because a consumer or buffer configuration that cannot keep up can lose evidence. LatencyPilot therefore fails closed for decision-grade use rather than estimating around missing events.
 
-- the window itself is capture-integrity clean;
-- at least 20 events exist for that metric family in the window;
-- p99 exists, is finite, and is positive.
+Contributor-list truncation is reported separately. Raw aggregate integrity and the completeness of displayed contributor lists are different concepts.
 
-For eligible window-level p99 values:
+## 6. `baseline-quality-v2`
+
+The Phase 2 repeated baseline quality method is versioned independently of later A/B experiment verdict logic.
+
+A complete v2 baseline requires exactly five contiguous `WindowNumber` records (`1..5`). `StartedAtUtc` is provenance, not a monotonic sequence clock; an NTP or manual wall-clock correction must not reorder an in-process sequence. If persisted/reconstructed experiments later require a stronger ordering guarantee, add an explicit monotonic sequence field.
+
+Each window must satisfy all of the following:
 
 ```text
-median = P50(values)
-relative noise floor = (P90(values) - P10(values)) / abs(median)
+requested duration >= 20,000 ms
+actual duration >= 95% of requested duration
+capture integrity = clean
+DPC sample count >= 1,000
+ISR sample count >= 1,000
+DPC p99 exists, finite, positive
+ISR p99 exists, finite, positive
 ```
 
-The baseline is inconclusive when the relative noise floor is greater than 30%.
+The 1,000-event rule is a product adequacy threshold for using a window-level p99 in the current stability screen. It is not a confidence interval and does not claim that 1,000 samples are sufficient for every tail statistic.
 
-Drift is estimated by comparing the median of the early half of eligible windows with the median of the late half:
+For each metric family, eligible window-level p99 values are summarized as:
 
 ```text
+median = P50(window p99 values)
+relative noise floor = (P90 - P10) / abs(median)
 relative drift = abs(lateMedian - earlyMedian) / abs(overallMedian)
 ```
 
-The baseline is inconclusive when relative drift is greater than 20%.
+The metric is inconclusive when:
 
-Any eligible window whose metric value is more than 50% away from the overall median is explicitly reported as an extreme window. It is **not silently removed**; its presence makes that metric quality inconclusive under this method.
+- P10–P90 relative spread exceeds 30%;
+- early/late relative drift exceeds 20%;
+- any eligible window deviates by more than 50% from the overall median;
+- any required window is missing, short, dirty or undersampled.
 
-The overall repeated baseline is `Valid` only when all required windows exist, every capture is clean, and both DPC p99 and ISR p99 pass sample-adequacy, noise, drift and extreme-window checks. Otherwise the quality result is `Inconclusive` with explicit reasons.
+Extreme windows are reported, never silently deleted.
 
-These 20-event/30%-noise/20%-drift/50%-extreme thresholds are quality-gate policy values, not confidence intervals and not claims of statistical significance. They may be revised only by versioning/documenting the interpretation so historical evidence remains understandable.
+The overall baseline is `Valid` only when all five captures are clean and both DPC p99 and ISR p99 pass duration, sample-adequacy, noise, drift and extreme-window checks. Otherwise the baseline is `Inconclusive` with explicit reasons.
 
-Background-load and thermal/power warnings remain separate open work until LatencyPilot has authoritative, sufficiently low-overhead evidence for those signals. Absence of those warnings must not be represented as proof that background/thermal state was stable.
+A `Valid` baseline means **repeatable enough for the current comparison method**. It does not mean the machine is healthy, fast, optimally configured, or within a universal latency target.
 
-## 6. Metrics
+## 7. Distribution reporting and canonical percentile rule
 
-Metrics are categorized as:
-
-### Primary / target metrics
-
-Measurements the experiment is specifically intended to improve.
-
-### Guardrail metrics
-
-Measurements that detect collateral regressions elsewhere.
-
-### Context metrics
-
-Measurements that help explain the run but do not directly determine success.
-
-Every optimization domain must document its metric set before automatic recommendations are enabled.
-
-## 7. Distribution reporting and percentile definition
-
-Do not rely on averages alone.
-
-For latency-like distributions, retain or calculate as applicable:
+Do not rely on averages alone. For latency-like distributions, retain or calculate as applicable:
 
 - sample count;
 - mean;
@@ -192,21 +205,15 @@ For latency-like distributions, retain or calculate as applicable:
 - p90;
 - p95;
 - p99;
-- p99.9 when sample count supports it;
+- p99.9 when adequately sampled;
 - maximum;
 - standard deviation where meaningful;
 - median absolute deviation or another robust dispersion measure where useful;
-- outlier information without silently deleting valid tail events.
+- outlier/tail information without silently deleting valid events.
 
-Percentiles must satisfy ordering invariants such as:
+The current observation response exposes a narrower Phase 2 subset: count, p50, p95, p99, conditionally p99.9 and max. The broader list remains a future comparison/analytics requirement; do not misrepresent the narrower response as the final statistical model.
 
-```text
-p50 <= p90 <= p95 <= p99 <= p99.9 <= max
-```
-
-LatencyPilot currently uses one canonical deterministic estimator, implemented by `LatencyPilot.Benchmarking.Statistics.Percentiles`.
-
-For an ascending sorted sample vector of length `n` and percentile fraction `p` in `[0, 1]`:
+Percentiles use the canonical deterministic `linear-n-minus-one-v1` estimator implemented by `LatencyPilot.Benchmarking.Statistics.Percentiles`:
 
 ```text
 position = (n - 1) * p
@@ -215,128 +222,181 @@ upper = ceil(position)
 value = samples[lower] + (samples[upper] - samples[lower]) * (position - lower)
 ```
 
-When `lower == upper`, that sample is returned directly. This is the **linear-n-minus-one-v1** interpretation for current results. Service observation summaries, repeated-baseline quality and benchmark comparisons must call this same implementation rather than defining local nearest-rank variants.
+Expected ordering:
 
-The Phase 2 observation protocol has an additional presentation/evidence-adequacy rule: `p99.9` is omitted (`null`) when that distribution has fewer than **1,000 samples**. This is a conservative minimum chosen so the named 99.9th-percentile tail is not prominently reported when the sample set contains fewer than roughly one expected observation in the top 0.1%. It is a product adequacy policy, not a statistical-confidence interval. p50/p95/p99/max remain available according to their existing contracts. The raw estimator can still mathematically calculate p99.9 for deterministic tests; the Service decides whether the result is adequate to expose as observation evidence.
+```text
+p50 <= p90 <= p95 <= p99 <= p99.9 <= max
+```
 
-If this estimator or the p99.9 adequacy policy changes later, the method/protocol interpretation must change with it so historical results remain interpretable.
+No subsystem may silently introduce a different estimator for a metric with the same name.
 
-## 8. Sample adequacy
+## 8. p99.9 adequacy
 
-Do not calculate or emphasize extreme percentiles from obviously inadequate sample counts.
+Protocol v6 exposes p99.9 only when a distribution has at least:
 
-The benchmark implementation must define minimum sample rules for each metric family.
+```text
+10,000 samples
+```
 
-If evidence is insufficient, return `Inconclusive` or omit that derived tail statistic instead of extrapolating confidence.
+The old 1,000-sample floor was deliberately rejected after review because a nominal p99.9 based on roughly one expected top-0.1% observation is too fragile to present prominently as decision evidence.
 
-A percentile can be mathematically calculated from a small sample while still being statistically inadequate for an authoritative decision. Calculation availability and evidence adequacy are separate concepts.
+Ten thousand samples still do **not** establish a formal confidence guarantee; they provide roughly ten expected samples in the top 0.1% and are a stricter product adequacy floor. More demanding experiment layers may require more samples or resampling confidence intervals.
 
-## 9. Statistical comparison
+Calculation availability and evidence adequacy are separate concepts. The raw percentile estimator can calculate a mathematical p99.9 from a small vector; the observation protocol decides whether that statistic is adequate to expose.
 
-Latency data may be skewed, multimodal, and heavy-tailed. Do not assume a normal distribution without evidence.
+## 9. Microsoft guidance and local diagnostic buckets
 
-Where appropriate, LatencyPilot may use bootstrap/resampling confidence intervals for deltas or summary statistics.
+Current DPC/ISR presentation may retain:
 
-A confidence interval that crosses a no-effect boundary should not be labeled a confirmed improvement merely because the point estimate is favorable.
+- DPC `>100 µs`: Microsoft driver-duration guidance reference;
+- ISR `>25 µs`: Microsoft driver-duration guidance reference;
+- `>1 ms`: LatencyPilot local diagnostic bucket;
+- `>3 ms`: LatencyPilot local diagnostic bucket.
 
-The exact statistical method must be versioned/documented so historical results remain interpretable. A new layer must not silently introduce a different percentile/noise interpretation for the same named metric.
+These are **context/reference lines**, not the optimizer objective and not a Windows health score.
 
-## 10. Drift detection
+A single threshold exceedance is not proof of user-visible impact. Conversely, having no exceedance in a five-second snapshot is not proof that a system is consistently clean.
 
-An experiment can become invalid if the environment changes materially between baseline and candidate runs.
+A global exceedance percentage can also be misleading when the denominator changes because another module emits many short events. Therefore decisions should use the underlying distributions, module attribution, per-CPU concentration, repeated-window behavior, and workload-specific guardrails rather than ranking candidates by one global exceedance rate.
 
-Potential drift indicators include:
+## 10. CPU concentration and affinity hypotheses
 
-- baseline A1 vs A2 divergence;
-- significant thermal or clock-state change;
-- workload mismatch;
-- background load spike;
-- device/driver state change;
-- power-state change;
-- unexpected process or benchmark termination.
+Per-CPU DPC/ISR concentration is observation evidence. It becomes a candidate-selection signal only after repeated measurement.
 
-Until a separate persisted invalid-experiment state is intentionally introduced, a run that cannot support attribution because of drift or failed validity checks produces an `Inconclusive` verdict with explicit validity reasons. Do not invent a sixth verdict in one layer only.
+Rules:
 
-## 11. DPC/ISR analysis
+- CPU 0 is not automatically faulty or excluded.
+- Default Windows policy remains the control candidate unless the experiment explicitly defines another control.
+- A candidate core is never accepted solely because it is not CPU 0.
+- Processor groups, physical cores and SMT siblings must be represented correctly.
+- Prefer physical-core-aware screening instead of blindly iterating every logical processor as if all candidates were independent.
+- Candidate application must be verified before measurement.
+- Original affinity/MSI state must be snapshotted exactly and rollback must be available.
 
-Where ETW data permits, collect/derive:
+Microsoft policy semantics define what LatencyPilot is allowed to set. Measurement decides whether a setting should be kept.
 
-- DPC/ISR duration;
-- event count;
-- per-CPU distribution;
-- module/driver attribution;
-- function attribution where resolvable;
-- interrupt vector/message information where available;
-- total duration by driver and CPU;
-- time-windowed spikes;
-- p50/p95/p99/p99.9/max as sample counts permit.
+## 11. Candidate search strategy
 
-Current observation presentation distinguishes documented driver guidance from local diagnostic buckets:
+Exhaustively running every possible candidate at decision-grade duration may be unnecessarily slow. The optimizer should use a staged search once mutation is enabled.
 
-- DPC `> 100 µs` and ISR `> 25 µs` are presented as Microsoft driver guidance thresholds;
-- `> 1 ms` and `> 3 ms` are retained as useful local tail-count buckets only. They are **not** represented as official Windows pass/fail, severity or user-impact boundaries.
+### Screening
 
-A single threshold exceedance is evidence to investigate in context, not automatic proof that a driver caused a user-visible problem. CPU0 concentration likewise must be reported as an observation, not automatically classified as a fault.
+Use topology and prior observation to remove invalid/duplicate candidates and cheaply identify plausible finalists. Screening must not itself be represented as final proof.
 
-## 12. GPU experiment metrics
+Possible signals include:
 
-For GPU interrupt-affinity experiments, potential primary metrics include:
+- physical-core identity and SMT relationships;
+- existing DPC/ISR concentration;
+- module-specific graphics activity;
+- obvious contention;
+- hardware/resource constraints.
 
-- GPU-driver DPC/ISR tail behavior;
+### Confirmation
+
+Confirm the control and a small finalist set with longer, balanced repeated measurements. A practical starting design for GPU affinity is approximately 30 seconds per authoritative A/B run, with repeated/interleaved ordering. The exact duration and count must be versioned when implemented and may be extended when sample adequacy or variance demands it.
+
+AutoGpuAffinity's 30-second candidate interval and repeated-trial guidance are useful evidence that single five-second candidate runs are too weak, but LatencyPilot does not inherit its ranking formula blindly.
+
+## 12. Primary, guardrail and context metrics
+
+Every optimization domain must define three groups before automatic recommendations are enabled.
+
+### Primary metrics
+
+What the experiment is actually trying to improve.
+
+### Guardrail metrics
+
+Signals that prevent a local optimization from causing a worse overall system.
+
+### Context metrics
+
+Useful explanatory state that should not independently turn a candidate into a winner.
+
+A candidate with a primary improvement plus a material guardrail regression is a `Tradeoff`, not silently an improvement.
+
+## 13. GPU experiment contract
+
+DPC/ISR evidence alone is not sufficient for a final GPU-affinity recommendation.
+
+Potential primary metrics include:
+
+- GPU-driver DPC/ISR p99 and adequately sampled p99.9;
 - total DPC/ISR tail behavior;
-- per-CPU interrupt/DPC concentration;
+- accumulated DPC/ISR duration;
+- per-CPU concentration;
 - frame-time distribution;
-- PresentMon CPU/GPU timing metrics where the workload supports them;
-- displayed/presented frame behavior where meaningful.
+- PresentMon CPU busy/wait and GPU busy/wait;
+- GPU latency and display latency where available;
+- displayed/presented FPS and dropped-frame behavior where meaningful.
 
 Potential guardrails include:
 
-- Raw Input interval/jitter;
+- Raw Input interval/jitter when the profile cares about input;
 - USB/xHCI DPC behavior;
 - NDIS/network DPC behavior;
-- audio glitches/underruns where measurable;
-- CPU-core contention;
-- stability/errors;
-- power/thermal context where available.
+- audio glitch/underrun evidence when available;
+- CPU contention;
+- crashes/device resets/errors;
+- power/thermal context when authoritative telemetry is available.
 
-A workload must be repeatable enough for the selected metrics to be meaningful.
+PresentMon provides per-frame timing, CPU/GPU busy/wait, GPU latency, display latency and related metrics. LatencyPilot should use those metrics when they actually apply to the workload, rather than inventing an opaque FPS/latency score.
 
-## 13. Input measurements
+## 14. Input measurements
 
-Raw Input can characterize report arrival behavior such as:
+Raw Input can characterize application-observable report arrival behavior such as:
 
 - report intervals;
 - interval jitter;
 - burst/coalescing behavior;
-- missing/irregular reports as observable by the application.
+- missing/irregular reports visible to the application.
 
-Raw Input alone does **not** establish physical switch-to-photon latency. LatencyPilot must not label it as such.
+Raw Input alone does not establish physical switch-to-photon latency. Do not label it that way. Hardware end-to-end claims require appropriate external measurement hardware and methodology.
 
-Hardware-level end-to-end latency claims require appropriate external measurement hardware and methodology.
+## 15. Network measurements
 
-## 14. Network measurements
+Internet path latency is uncontrolled and should not be the sole primary signal for NIC/RSS tuning.
 
-Internet path latency is uncontrolled and should not be the sole primary metric for NIC/RSS tuning.
-
-Prefer controlled or local measurements where possible, combined with Windows/NDIS/RSS telemetry.
-
-Possible metrics include:
+Prefer controlled/local peers where possible, combined with Windows/NDIS/RSS telemetry. Potential signals include:
 
 - RTT distribution;
 - jitter;
-- packet loss;
+- loss;
 - throughput guardrail;
 - NDIS DPC/ISR distribution;
 - RSS processor distribution;
 - CPU utilization/context.
 
-## 15. Verdict model
+## 16. Drift and invalid experiments
 
-The authoritative `ExperimentVerdict` values are exactly:
+An experiment may become inconclusive when the environment changes materially between sides. Examples include:
+
+- A1/A2 baseline disagreement;
+- workload/scene mismatch;
+- power-state change;
+- major background-load change;
+- device/driver state change;
+- benchmark crash/termination;
+- thermal/clock change when authoritative telemetry shows it;
+- dirty/lost ETW evidence.
+
+Do not invent a favorable verdict around invalid evidence. Until a separate persisted invalid-state type is introduced, use `Inconclusive` plus explicit validity reasons.
+
+## 17. Statistical comparison
+
+Latency distributions may be skewed, multimodal and heavy-tailed. Do not assume normality without evidence.
+
+Where appropriate, later comparison versions may use bootstrap/resampling confidence intervals for deltas or summary statistics. A confidence interval crossing the no-effect boundary must not be called a confirmed improvement simply because the point estimate is favorable.
+
+The statistical method, practical-effect threshold and noise interpretation must be versioned. Historical evidence must not silently change meaning when the implementation evolves.
+
+## 18. Verdict model
+
+The authoritative verdict set remains exactly:
 
 ### `Improved`
 
-The target metric(s) improve beyond the configured/measured practical-noise boundary, no material guardrail regression invalidates the benefit, and the experiment is valid enough to classify.
+Target metric(s) improve beyond the configured/measured practical-noise boundary, the experiment is valid, applied state is verified, and no material guardrail regression invalidates the benefit.
 
 ### `Regressed`
 
@@ -348,27 +408,25 @@ At least one meaningful target improves while another important target/guardrail
 
 ### `NoMeasurableDifference`
 
-The observed delta is small enough to be indistinguishable from the configured/measured normal variation or otherwise fails the practical-effect threshold.
+The observed delta is indistinguishable from normal variation or below the documented practical-effect threshold.
 
 ### `Inconclusive`
 
-Evidence is insufficient, invalid, drifted, unverified, or uncertainty remains too high to classify the candidate reliably.
+Evidence is insufficient, dirty, drifted, undersampled, unverified, or too uncertain to classify reliably.
 
-Validity reasons such as failed apply verification, workload mismatch, drift or capture-integrity failure are recorded separately from the five-value verdict. Changing the verdict set requires an intentional domain/schema decision, not documentation-only terminology.
+Quick diagnostic snapshots do not receive one of these experiment verdicts.
 
-## 16. Practical significance
+## 19. Practical significance
 
-Statistical confidence alone is not enough. A tiny but statistically detectable change may have no practical value.
+Statistical confidence alone is insufficient. A tiny detectable delta may have no useful effect.
 
-Each metric family may define a practical-effect threshold based on measurement resolution, noise, and user-visible relevance.
+Each metric family may define a practical-effect threshold based on resolution, normal variation and user-visible relevance. Keep that threshold visible/auditable.
 
-Do not hide this threshold.
+## 20. Composite scores
 
-## 17. Composite scores
+A composite score may be a convenience but must never replace the authoritative vector of raw/derived results.
 
-A composite score may be presented as a convenience but must never replace the underlying metrics or authoritative vector of results.
-
-A score must not transform:
+Do not collapse:
 
 ```text
 GPU latency improved
@@ -378,9 +436,7 @@ Input unchanged
 
 into an unexplained `94/100` recommendation.
 
-The raw target/guardrail outcome remains authoritative.
-
-## 18. Workload profiles
+## 21. Workload profiles
 
 Profiles may prioritize metrics differently for:
 
@@ -390,104 +446,57 @@ Profiles may prioritize metrics differently for:
 - streaming/content creation;
 - networking.
 
-Profiles must not alter raw data. They influence recommendation weighting only.
+Profiles affect recommendation weighting, not raw measurements.
 
-## 19. Persistence
+## 22. Persistence and auditability
 
-Each authoritative benchmark run should retain enough information to audit the verdict later, including:
+Each authoritative benchmark run should eventually retain enough information to audit the verdict later, including:
 
 - experiment ID;
-- run role (baseline/candidate/validation);
-- metric definition version;
+- run role (baseline/candidate/validation/control);
+- schema/protocol/method versions;
 - workload definition/version;
-- capture interval;
-- raw sample reference or sufficient summary representation;
-- sample count;
+- requested/actual capture interval;
+- raw-sample reference or sufficient auditable representation;
+- sample counts;
 - statistical outputs;
 - environment context;
 - validity flags;
-- application version.
+- mutation requested state and verified actual state;
+- application/source version.
 
-Historical results should not silently change meaning when analysis algorithms evolve. Store algorithm/schema versions.
+Historical results must not silently change interpretation after algorithm upgrades.
 
-## 20. Synthetic statistical scenarios under the permanent-test cap
+## 23. Observer effect
 
-The repository intentionally caps permanent automated tests at 10. The benchmark suite therefore does **not** create one permanent test method for every dataset shape.
+LatencyPilot itself can perturb the system it measures. The capture path should avoid unnecessary:
 
-High-value statistical scenarios should be consolidated into data/scenario matrices inside durable contract tests where that remains readable. Relevant scenarios over the lifetime of the project include:
+- per-event heap allocation;
+- high-volume logging;
+- synchronous file I/O;
+- frequent UI redraws;
+- avoidable GC pressure.
 
-- identical or near-identical A/B distributions;
-- known positive shift;
-- known negative shift;
-- heavy-tailed distributions;
-- isolated extreme spikes;
-- multimodal distributions;
-- low sample count;
-- baseline drift;
-- primary improvement plus guardrail regression.
+Detailed UI is intentionally not redrawn between authoritative repeated-baseline windows. Optimize the observer only when profiling identifies meaningful overhead; do not change event semantics or percentile meaning merely to make the observer faster.
 
-The Stage C repeated-baseline gate intentionally uses one permanent scenario test to cover stable, drifted and capture-integrity-failed baselines rather than consuming multiple permanent slots. The same contract also verifies that missing/gapped window numbers fail while a backwards UTC wall-clock adjustment does not invalidate an otherwise contiguous capture sequence.
+## 24. Permanent-test cap
 
-Not all scenarios must occupy independent permanent slots at the same time. When a later recovery/mutation risk is more important, merge or retire a lower-value scenario/test rather than violating the cap. Temporary investigative tests may be used during implementation and deleted before finalization.
+The repository intentionally caps permanent automated tests at 10. High-value statistical scenarios should therefore be consolidated inside durable contract tests rather than consuming one test method per edge case.
 
-## 21. Golden telemetry fixtures
+The existing repeated-baseline contract test should cover stable, drifted, dirty, too-short, undersampled and sequence-invalid evidence where readable. Temporary investigative tests may be created, run and deleted during implementation.
 
-A small approved trace fixture can be valuable when parser/attribution semantics become a sufficiently high-blast-radius risk:
+The test cap must never be used as a reason to weaken an important invariant. If a future recovery/mutation invariant is more important, merge or retire a lower-value permanent case rather than exceeding the cap casually.
 
-```text
-fixture input
-→ parser
-→ normalized events
-→ aggregation
-→ expected result
-```
+## 25. Phase boundary
 
-A golden fixture is not automatically an additional permanent test. Under the 10-test rule it must either share an existing durable contract or replace a lower-value permanent test. Parser updates must not silently change an approved fixture expectation; an intended semantic change requires explicit expectation review and methodology documentation.
+Phase 2 closes only when the read-only measurement substrate has physical evidence that:
 
-Physical ETW/hardware validation remains separate from synthetic golden data.
+- current App and Service build/run together on exact clean source;
+- protocol v6 capture works with no stale-service mismatch;
+- quick snapshot integrity/attribution works as diagnostic evidence;
+- evidence schema v8 carries exact provenance and purpose;
+- both real-world and controlled-idle `baseline-quality-v2` sequences can be physically exercised and verified;
+- required device evidence, cleanup/recovery and accessibility checks pass;
+- no mutation path is exposed.
 
-## 22. Benchmark performance vs benchmark correctness
-
-LatencyPilot's own capture/parser/statistics performance is part of measurement validity because the observer can perturb the machine it is measuring. The capture path should avoid avoidable per-event heap allocation, synchronous file I/O and high-volume diagnostic logging, and should keep bounded intermediate materialization where exact evidence semantics permit it.
-
-Performance work must preserve the authoritative event meaning, attribution rules and statistical estimator. Do not trade exactness or silently change percentile semantics merely to reduce allocations.
-
-Measure LatencyPilot's own allocation/GC/CPU overhead in `perf/` only when profiling shows a meaningful need. Do not create a speculative performance-test subsystem merely because one may be useful later. Physical or controlled profiling evidence should guide deeper optimization, especially when value-type copies, pooling or streaming aggregation could introduce new trade-offs.
-
-GitHub Actions timing is not a benchmark signal. Hosted Actions runs the permanent correctness suite and compiles the Windows App/Service hosts as a buildability gate; publish/package/release and performance evidence remain owner-local or physical as appropriate.
-
-## 23. User-facing presentation
-
-For each experiment, the UI should expose at minimum:
-
-```text
-What changed?
-Was it actually applied and verified?
-What workload was measured?
-How many runs/samples?
-What changed in the target metrics?
-What changed in guardrails?
-How large was normal baseline noise?
-What uncertainty remains?
-What is the verdict?
-Can it be reverted?
-```
-
-The user must be able to make a different keep/revert decision than the profile recommendation when a trade-off exists.
-
-## 24. Rule for new optimization domains
-
-A new optimizer cannot become automatic until its benchmark specification defines:
-
-- applicability;
-- controlled variable;
-- target metrics;
-- guardrails;
-- workload;
-- repetition strategy;
-- noise/drift handling;
-- validity conditions;
-- verdict rules;
-- recovery/revert behavior.
-
-If those are not known, the feature remains observational or experimental.
+Only then may Phase 3 introduce state-changing experiments. The first mutation implementation must preserve the same principle that motivated this revision: measure the machine, do not assume the tweak.
