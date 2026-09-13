@@ -5,11 +5,13 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.UI.ViewManagement;
 
 namespace LatencyPilot.App;
 
 public sealed partial class MainWindow
 {
+    private readonly AccessibilitySettings _accessibilitySettings = new();
     private Border? _latencyHealthCard;
     private Border? _latencyHealthBadge;
     private TextBlock? _latencyHealthBadgeText;
@@ -30,6 +32,7 @@ public sealed partial class MainWindow
     private enum CaptureSeverity
     {
         NoData,
+        CaptureWarning,
         WithinGuidance,
         GuidanceExceeded,
         PotentialImpact,
@@ -57,6 +60,18 @@ public sealed partial class MainWindow
 
         RebuildPremiumObservationCard();
         RootGrid.ActualThemeChanged += (_, _) => RebuildPremiumObservationCard();
+        _accessibilitySettings.HighContrastChanged += (_, _) =>
+            DispatcherQueue.TryEnqueue(RebuildPremiumObservationCard);
+
+        ServiceStatusBadgeText.RegisterPropertyChangedCallback(
+            TextBlock.TextProperty,
+            (_, _) => ApplyServiceStatusAppearance());
+        BaselineVerdictText.RegisterPropertyChangedCallback(
+            TextBlock.TextProperty,
+            (_, _) => ApplyBaselineVerdictAppearance());
+
+        ApplyServiceStatusAppearance();
+        ApplyBaselineVerdictAppearance();
     }
 
     private void RebuildPremiumObservationCard()
@@ -82,6 +97,9 @@ public sealed partial class MainWindow
         {
             RenderPremiumCapture(_lastPremiumCapture);
         }
+
+        ApplyServiceStatusAppearance();
+        ApplyBaselineVerdictAppearance();
     }
 
     private Border BuildLatencyHealthCard()
@@ -106,14 +124,14 @@ public sealed partial class MainWindow
         heading.Children.Add(new TextBlock
         {
             Text = "Latency health",
-            FontSize = 17,
+            FontSize = 18,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
         });
         heading.Children.Add(new TextBlock
         {
-            Text = "A plain-language interpretation of the exact DPC/ISR evidence below.",
-            FontSize = 11,
+            Text = "Plain-language context for the exact DPC/ISR evidence below.",
+            FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
         });
@@ -121,8 +139,8 @@ public sealed partial class MainWindow
 
         _latencyHealthBadgeText = new TextBlock
         {
-            Text = "NOT CAPTURED",
-            FontSize = 10,
+            Text = "Not captured",
+            FontSize = 12,
             FontWeight = FontWeights.SemiBold,
         };
         _latencyHealthBadge = new Border
@@ -149,7 +167,7 @@ public sealed partial class MainWindow
         _latencyHealthSummaryText = new TextBlock
         {
             Text = "Numbers remain authoritative; color and severity labels are additional cues only.",
-            FontSize = 12,
+            FontSize = 14,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
         };
@@ -160,8 +178,10 @@ public sealed partial class MainWindow
             Padding = new Thickness(15),
             CornerRadius = new CornerRadius(13),
             Background = ThemeBrush("SurfaceAltBrush"),
+            BorderBrush = ThemeBrush("BorderBrush"),
+            BorderThickness = new Thickness(1),
         };
-        var chartStack = new StackPanel { Spacing = 11 };
+        var chartStack = new StackPanel { Spacing = 12 };
         chartCard.Child = chartStack;
 
         var chartHeader = new Grid();
@@ -170,14 +190,14 @@ public sealed partial class MainWindow
         chartHeader.Children.Add(new TextBlock
         {
             Text = "Tail profile",
-            FontSize = 13,
+            FontSize = 14,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
         });
         _tailChartScaleText = new TextBlock
         {
-            Text = "rate within this capture",
-            FontSize = 10,
+            Text = "Auto-scaled event rate",
+            FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -187,33 +207,33 @@ public sealed partial class MainWindow
 
         chartStack.Children.Add(CreateTailBarRow(
             "DPC > 100 µs",
-            "Driver-guidance exceedance rate for DPC events.",
+            "Driver-guidance exceedance rate within DPC events.",
             "WarningBrush",
             out _dpcGuidanceBar,
             out _dpcGuidanceValueText));
         chartStack.Children.Add(CreateTailBarRow(
             "ISR > 25 µs",
-            "Driver-guidance exceedance rate for ISR events.",
+            "Driver-guidance exceedance rate within ISR events.",
             "WarningBrush",
             out _isrGuidanceBar,
             out _isrGuidanceValueText));
         chartStack.Children.Add(CreateTailBarRow(
             "DPC/ISR > 1 ms",
-            "Millisecond-scale events that can matter to real-time workloads.",
+            "Millisecond-scale events as a share of all observed DPC and ISR events.",
             "ImpactBrush",
             out _oneMillisecondBar,
             out _oneMillisecondValueText));
         chartStack.Children.Add(CreateTailBarRow(
             "DPC/ISR > 3 ms",
-            "Severe tail events in the media-impact range.",
+            "Severe tail events as a share of all observed DPC and ISR events.",
             "DangerBrush",
             out _threeMillisecondBar,
             out _threeMillisecondValueText));
 
         chartStack.Children.Add(new TextBlock
         {
-            Text = "Bars share the scale shown above; exact counts and percentages remain visible at the right.",
-            FontSize = 10,
+            Text = "The bars are an auto-scaled visual aid. Exact count, denominator and percentage stay visible; guidance rows use their DPC/ISR family as the denominator and millisecond rows use all DPC + ISR events.",
+            FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
         });
@@ -230,7 +250,7 @@ public sealed partial class MainWindow
         out ProgressBar bar,
         out TextBlock valueText)
     {
-        var row = new Grid { RowSpacing = 5 };
+        var row = new Grid { RowSpacing = 6 };
         row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
@@ -241,8 +261,7 @@ public sealed partial class MainWindow
         var labelText = new TextBlock
         {
             Text = label,
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
+            FontSize = 12,
             Foreground = ThemeBrush("TextBrush"),
         };
         ToolTipService.SetToolTip(labelText, tooltip);
@@ -251,7 +270,7 @@ public sealed partial class MainWindow
         valueText = new TextBlock
         {
             Text = "—",
-            FontSize = 10,
+            FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
         };
         Grid.SetColumn(valueText, 1);
@@ -263,11 +282,13 @@ public sealed partial class MainWindow
             Minimum = 0,
             Maximum = 1,
             Value = 0,
-            Height = 6,
+            Height = 7,
             Foreground = ThemeBrush(foregroundBrushKey),
             Background = ThemeBrush("ChartTrackBrush"),
+            IsTabStop = false,
         };
         AutomationProperties.SetName(bar, label + " event rate");
+        AutomationProperties.SetHelpText(bar, tooltip);
         Grid.SetRow(bar, 1);
         row.Children.Add(bar);
         return row;
@@ -280,6 +301,8 @@ public sealed partial class MainWindow
             Padding = new Thickness(14),
             CornerRadius = new CornerRadius(13),
             Background = ThemeBrush("AccentSoftBrush"),
+            BorderBrush = ThemeBrush("BorderBrush"),
+            BorderThickness = new Thickness(1),
         };
         var stack = new StackPanel { Spacing = 9 };
         card.Child = stack;
@@ -287,38 +310,28 @@ public sealed partial class MainWindow
         stack.Children.Add(new TextBlock
         {
             Text = "Measure the scenario you actually care about",
-            FontSize = 12,
+            FontSize = 14,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
         });
 
-        var modes = new Grid { ColumnSpacing = 9 };
-        for (var index = 0; index < 3; index++)
-        {
-            modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        }
-
         AddMeasurementMode(
-            modes,
-            0,
-            "REAL-WORLD",
+            stack,
+            "Real-world",
             "Keep the apps or game that reproduce the issue open. Their activity is part of the evidence.");
         AddMeasurementMode(
-            modes,
-            1,
-            "IDLE BASELINE",
+            stack,
+            "Idle baseline",
             "Close unnecessary apps when you want a controlled idle baseline with less background noise.");
         AddMeasurementMode(
-            modes,
-            2,
-            "BEFORE / AFTER",
+            stack,
+            "Before / after",
             "Use the same apps, workload and power state on both sides. Consistency matters more than closing everything.");
 
-        stack.Children.Add(modes);
         return card;
     }
 
-    private void AddMeasurementMode(Grid host, int column, string title, string body)
+    private void AddMeasurementMode(StackPanel host, string title, string body)
     {
         var mode = new Border
         {
@@ -328,23 +341,30 @@ public sealed partial class MainWindow
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(1),
         };
-        var content = new StackPanel { Spacing = 4 };
+        var content = new Grid { ColumnSpacing = 12 };
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(116) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
         content.Children.Add(new TextBlock
         {
             Text = title,
-            FontSize = 9,
+            FontSize = 12,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("AccentBrush"),
+            VerticalAlignment = VerticalAlignment.Top,
         });
-        content.Children.Add(new TextBlock
+
+        var bodyText = new TextBlock
         {
             Text = body,
-            FontSize = 10,
+            FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
-        });
+        };
+        Grid.SetColumn(bodyText, 1);
+        content.Children.Add(bodyText);
+
         mode.Child = content;
-        Grid.SetColumn(mode, column);
         host.Children.Add(mode);
     }
 
@@ -359,31 +379,40 @@ public sealed partial class MainWindow
             return;
         }
 
-        var severity = GetCaptureSeverity(capture);
+        var integrityIssue = GetCaptureIntegrityIssue(capture);
+        var severity = integrityIssue is null
+            ? GetCaptureSeverity(capture)
+            : CaptureSeverity.CaptureWarning;
         ApplySeverityAppearance(severity);
 
         switch (severity)
         {
+            case CaptureSeverity.CaptureWarning:
+                _latencyHealthBadgeText.Text = "Capture warning";
+                _latencyHealthTitleText.Text = "This window is incomplete evidence.";
+                _latencyHealthSummaryText.Text =
+                    $"{integrityIssue} Exact values remain visible for diagnosis, but do not interpret a green-looking metric or low tail count as a clean result until capture integrity is restored.";
+                break;
             case CaptureSeverity.WithinGuidance:
-                _latencyHealthBadgeText.Text = "WITHIN GUIDANCE";
+                _latencyHealthBadgeText.Text = "Within guidance";
                 _latencyHealthTitleText.Text = "No guidance exceedance was observed in this window.";
                 _latencyHealthSummaryText.Text =
                     "No DPC exceeded 100 µs and no ISR exceeded 25 µs. That is encouraging for this five-second capture, but a repeated baseline is still required before treating the system as consistently clean.";
                 break;
             case CaptureSeverity.GuidanceExceeded:
-                _latencyHealthBadgeText.Text = "NEEDS CONTEXT";
+                _latencyHealthBadgeText.Text = "Needs context";
                 _latencyHealthTitleText.Text = "Driver guidance was exceeded, without a millisecond-scale spike.";
                 _latencyHealthSummaryText.Text =
                     "Short exceedances can occur without a user-visible problem. Use the module list, maximum durations and repeated baseline to see whether the same tail repeats under the workload you care about.";
                 break;
             case CaptureSeverity.PotentialImpact:
-                _latencyHealthBadgeText.Text = "POTENTIAL IMPACT";
+                _latencyHealthBadgeText.Text = "Potential impact";
                 _latencyHealthTitleText.Text = "A millisecond-scale DPC/ISR event was observed.";
                 _latencyHealthSummaryText.Text =
                     "At least one event exceeded 1 ms. Reproduce the same workload and inspect the responsible modules; repeated events in this range can matter to audio, video and other real-time paths.";
                 break;
             case CaptureSeverity.Severe:
-                _latencyHealthBadgeText.Text = "SEVERE TAIL";
+                _latencyHealthBadgeText.Text = "Severe tail";
                 _latencyHealthTitleText.Text = "A severe tail spike was observed in this capture.";
                 _latencyHealthSummaryText.Text =
                     "At least one DPC/ISR exceeded 3 ms. This deserves investigation, but do not blame a driver from one sample alone—repeat the workload, build a baseline and compare the module-level max/tail evidence.";
@@ -393,8 +422,17 @@ public sealed partial class MainWindow
                 return;
         }
 
-        DpcP999Text.Foreground = SeverityBrush(GetDistributionSeverity(capture.DpcThresholds));
-        IsrP999Text.Foreground = SeverityBrush(GetDistributionSeverity(capture.IsrThresholds));
+        if (severity == CaptureSeverity.CaptureWarning)
+        {
+            DpcP999Text.Foreground = ThemeBrush("WarningBrush");
+            IsrP999Text.Foreground = ThemeBrush("WarningBrush");
+        }
+        else
+        {
+            DpcP999Text.Foreground = SeverityBrush(GetDistributionSeverity(capture.DpcThresholds));
+            IsrP999Text.Foreground = SeverityBrush(GetDistributionSeverity(capture.IsrThresholds));
+        }
+
         UpdateTailChart(capture);
     }
 
@@ -433,7 +471,7 @@ public sealed partial class MainWindow
 
         _tailChartScaleText.Text = string.Create(
             CultureInfo.InvariantCulture,
-            $"0–{chartMaximum:0.#}% of events");
+            $"Auto-scale 0–{chartMaximum:0.#}%");
     }
 
     private static void SetTailBar(
@@ -451,6 +489,11 @@ public sealed partial class MainWindow
             : string.Create(
                 CultureInfo.InvariantCulture,
                 $"{count:N0} / {total:N0} · {rate:0.###}%");
+        AutomationProperties.SetHelpText(
+            bar,
+            total == 0
+                ? "No eligible events were observed."
+                : string.Create(CultureInfo.InvariantCulture, $"{count:N0} of {total:N0} events, {rate:0.###} percent."));
     }
 
     private static double Rate(int count, int total) =>
@@ -506,6 +549,7 @@ public sealed partial class MainWindow
         var foregroundKey = severity switch
         {
             CaptureSeverity.WithinGuidance => "SuccessBrush",
+            CaptureSeverity.CaptureWarning => "WarningBrush",
             CaptureSeverity.GuidanceExceeded => "WarningBrush",
             CaptureSeverity.PotentialImpact => "ImpactBrush",
             CaptureSeverity.Severe => "DangerBrush",
@@ -514,6 +558,7 @@ public sealed partial class MainWindow
         var backgroundKey = severity switch
         {
             CaptureSeverity.WithinGuidance => "SuccessSoftBrush",
+            CaptureSeverity.CaptureWarning => "WarningSoftBrush",
             CaptureSeverity.GuidanceExceeded => "WarningSoftBrush",
             CaptureSeverity.PotentialImpact => "ImpactSoftBrush",
             CaptureSeverity.Severe => "DangerSoftBrush",
@@ -528,11 +573,52 @@ public sealed partial class MainWindow
         ThemeBrush(severity switch
         {
             CaptureSeverity.WithinGuidance => "SuccessBrush",
+            CaptureSeverity.CaptureWarning => "WarningBrush",
             CaptureSeverity.GuidanceExceeded => "WarningBrush",
             CaptureSeverity.PotentialImpact => "ImpactBrush",
             CaptureSeverity.Severe => "DangerBrush",
             _ => "TextBrush",
         });
+
+    private void ApplyServiceStatusAppearance()
+    {
+        var text = ServiceStatusBadgeText.Text ?? string.Empty;
+        var brushKey = text.Contains("connected", StringComparison.OrdinalIgnoreCase)
+            ? "SuccessBrush"
+            : text.Contains("checking", StringComparison.OrdinalIgnoreCase)
+                ? "AccentBrush"
+                : text.Contains("mismatch", StringComparison.OrdinalIgnoreCase)
+                    ? "WarningBrush"
+                    : "DangerBrush";
+        ServiceStatusDot.Background = ThemeBrush(brushKey);
+    }
+
+    private void ApplyBaselineVerdictAppearance()
+    {
+        if (BaselineVerdictText.Parent is not Border badge)
+        {
+            return;
+        }
+
+        var verdict = BaselineVerdictText.Text ?? string.Empty;
+        var foregroundKey = verdict.Equals("Valid", StringComparison.OrdinalIgnoreCase)
+            ? "SuccessBrush"
+            : verdict.Equals("Capturing", StringComparison.OrdinalIgnoreCase)
+                ? "AccentBrush"
+                : verdict.Equals("Inconclusive", StringComparison.OrdinalIgnoreCase)
+                    ? "WarningBrush"
+                    : "MutedTextBrush";
+        var backgroundKey = verdict.Equals("Valid", StringComparison.OrdinalIgnoreCase)
+            ? "SuccessSoftBrush"
+            : verdict.Equals("Capturing", StringComparison.OrdinalIgnoreCase)
+                ? "AccentSoftBrush"
+                : verdict.Equals("Inconclusive", StringComparison.OrdinalIgnoreCase)
+                    ? "WarningSoftBrush"
+                    : "SurfaceBrush";
+
+        badge.Background = ThemeBrush(backgroundKey);
+        BaselineVerdictText.Foreground = ThemeBrush(foregroundKey);
+    }
 
     private void ClearPremiumCapture()
     {
@@ -547,10 +633,10 @@ public sealed partial class MainWindow
 
         _latencyHealthBadge.Background = ThemeBrush("SurfaceStrongBrush");
         _latencyHealthBadgeText.Foreground = ThemeBrush("MutedTextBrush");
-        _latencyHealthBadgeText.Text = "NOT CAPTURED";
+        _latencyHealthBadgeText.Text = "Not captured";
         _latencyHealthTitleText.Text = "Capture an observation to classify the tail.";
         _latencyHealthSummaryText.Text =
-            "The app will keep the exact p99/p99.9/max values visible and add a semantic severity label plus a compact tail-rate chart.";
+            "The app keeps the exact p99/p99.9/max values visible and adds semantic severity plus a compact tail-rate view.";
 
         DpcP999Text.Foreground = ThemeBrush("TextBrush");
         IsrP999Text.Foreground = ThemeBrush("TextBrush");
@@ -560,7 +646,7 @@ public sealed partial class MainWindow
         ResetTailBar(_threeMillisecondBar, _threeMillisecondValueText);
         if (_tailChartScaleText is not null)
         {
-            _tailChartScaleText.Text = "rate within this capture";
+            _tailChartScaleText.Text = "Auto-scaled event rate";
         }
     }
 
@@ -580,7 +666,12 @@ public sealed partial class MainWindow
 
     private Brush ThemeBrush(string key)
     {
-        var themeKey = RootGrid.ActualTheme == ElementTheme.Dark ? "Dark" : "Light";
+        var themeKey = _accessibilitySettings.HighContrast
+            ? "HighContrast"
+            : RootGrid.ActualTheme == ElementTheme.Dark
+                ? "Dark"
+                : "Light";
+
         if (Application.Current.Resources.ThemeDictionaries.TryGetValue(themeKey, out var themeObject) &&
             themeObject is ResourceDictionary themeDictionary &&
             themeDictionary.TryGetValue(key, out var value) &&
