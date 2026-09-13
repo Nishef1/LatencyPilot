@@ -3,39 +3,38 @@
 Status: **Authoritative completion plan**  
 Last updated: 2026-09-13
 
-LatencyPilot is complete only when it can safely measure a Windows 11 system, identify latency pressure, run narrowly scoped experiments, quantify target and collateral effects, and let the user keep or revert changes with trustworthy recovery.
+LatencyPilot is complete only when it can safely measure a Windows 11 system, identify latency pressure, run narrowly scoped experiments, quantify target and collateral effects, and let the user keep or revert supported changes with trustworthy recovery.
 
-A phase is **closed only when every required checkbox in that phase is complete and its exit gate is satisfied**. Partial implementation does not count. `PROJECT_STATUS.md` is the live execution ledger and owns the detailed current execution ladder.
+A phase closes only when its exit gate is satisfied with current evidence. `PROJECT_STATUS.md` is the live execution ledger; this roadmap defines required direction and scope.
 
-## Final product definition — 100%
+## Product definition — 1.0
 
 LatencyPilot 1.0 must provide:
 
-- read-only hardware, CPU-topology, device, interrupt and driver inventory;
+- read-only hardware/topology/device/interrupt/driver inventory;
 - ETW-based DPC/ISR measurement with per-CPU and per-module attribution;
-- repeatable baseline capture with noise/drift detection;
-- before/after comparison with raw metrics, tail percentiles and explicit uncertainty;
+- quick diagnostic evidence that is clearly distinguished from decision-grade measurement;
+- repeatable baseline capture with sample adequacy, noise and drift checks;
+- before/after comparison with raw metrics, tails and explicit uncertainty;
 - safe, reversible interrupt-affinity/MSI experiments for supported devices;
-- GPU experiment workflow with PresentMon guardrails;
+- GPU workflows with PresentMon target/guardrail evidence where applicable;
 - USB/xHCI and high-polling input analysis;
 - NIC/RSS analysis and supported network experiments;
 - cross-subsystem guardrails;
 - workload profiles without hiding raw metrics/trade-offs;
 - durable experiment journal, crash/reboot recovery and verified rollback;
-- non-elevated WinUI 3 UI with a narrow privileged service boundary;
-- history, diagnostics export and clear Keep/Revert/Inconclusive decisions;
-- signed, self-contained Windows 11 x64 release with install/uninstall and upgrade safety.
+- non-elevated WinUI 3 App with a narrow privileged Service boundary;
+- history, diagnostics and auditable Keep/Revert/Inconclusive decisions;
+- signed/self-contained Windows 11 x64 productization with safe install/upgrade/uninstall.
 
-Out of scope for 1.0 unless separately approved by ADR: generic debloating, registry-cleaner behavior, disabling Windows security, arbitrary service disabling, forced HPET/timer folklore, generic shell execution, undocumented bulk tweak packs.
+Out of scope unless separately approved: generic debloating, registry cleaning, disabling Windows security, arbitrary service disabling, undocumented timer/HPET folklore, generic shell execution, or bulk tweak packs without measurement.
 
-## Phase transition map
-
-This is the required direction after each phase closes. The detailed substeps for the active phase live in `PROJECT_STATUS.md`.
+## Phase map
 
 ```text
 Phase 0 governance
 → Phase 1 build/comparison foundation
-→ Phase 2 trustworthy read-only observation
+→ Phase 2 trustworthy read-only observation + decision baseline
 → Phase 3 safe mutation substrate + GPU interrupt experiment
 → Phase 4 USB/xHCI + input analysis
 → Phase 5 NIC/RSS optimization
@@ -44,189 +43,223 @@ Phase 0 governance
 → 1.0
 ```
 
-No later phase may be used to bypass an earlier phase exit gate. Shared infrastructure implemented early may be reused by later phases, but its existence does not close the later phase.
+Later phases may reuse earlier infrastructure but cannot bypass earlier exit gates.
 
 ---
 
-## Phase 0 — Charter, governance and safety contract
+## Phase 0 — Charter, governance and safety
 
 **State: CLOSED**
 
-- [x] README defines purpose/non-goals.
-- [x] custom personal-use/non-commercial license.
-- [x] contribution/CLA/security policy.
-- [x] `AGENTS.md` engineering contract.
-- [x] `SYSTEM_DESIGN.md` architecture/privilege boundaries.
-- [x] benchmark methodology.
-- [x] GitHub PR/issue templates and CODEOWNERS.
-- [x] roadmap and live status ledger.
+- [x] purpose/non-goals;
+- [x] license/contribution/CLA/security policy;
+- [x] engineering contract in `AGENTS.md`;
+- [x] architecture/privilege boundary;
+- [x] benchmark methodology;
+- [x] roadmap/status tracking and GitHub templates.
 
 ### Exit gate
-A contributor can determine product intent, non-goals, architecture, contribution rules and completion criteria without chat history.
-
-### After Phase 0 closes
-Proceed to Phase 1: buildable solution → comparison-domain invariants → read-only desktop vertical slice → validation/package evidence.
+A contributor can recover product intent, architecture, non-goals, safety boundaries and completion criteria without chat history.
 
 ---
 
-## Phase 1 — Buildable foundation + trustworthy comparison core
+## Phase 1 — Buildable foundation + comparison core
 
 **State: CLOSED**
 
-### 1.1 Toolchain/repository
-- [x] pin .NET 10 SDK;
-- [x] solution/shared build settings;
-- [x] Core, Benchmarking, Protocol, Platform.Windows, Service and App project boundaries established; an early empty Persistence scaffold existed historically and was later removed under the repository YAGNI rule until Phase 3 has a concrete schema/recovery contract;
-- [x] one focused permanent-test project;
-- [x] historical Windows Release CI at Phase 1 closure. Current hosted validation is intentionally **test-only**; App/Service compile, publish/package and release evidence are owner-local.
-
-### 1.2 Domain/comparison foundation
+- [x] .NET 10/C# 14 solution and shared build settings;
+- [x] Core, Benchmarking, Protocol, Platform.Windows, Service and App boundaries;
 - [x] experiment lifecycle and legal transitions;
 - [x] metric direction/sample contracts;
-- [x] explicit verdicts;
-- [x] reject non-finite input;
-- [x] deterministic percentile calculation;
-- [x] minimum-sample and minimum-change policy;
-- [x] guardrail regression cannot be hidden by a local target result;
-- [x] structurally insufficient evidence is `Inconclusive`.
+- [x] deterministic canonical percentile calculation;
+- [x] explicit `Improved`, `Regressed`, `Tradeoff`, `NoMeasurableDifference`, `Inconclusive` verdicts;
+- [x] guardrail regression cannot be hidden by a local target win;
+- [x] first non-mutating desktop vertical slice;
+- [x] no synthetic machine optimization result presented as real evidence.
 
-### 1.3 Read-only app vertical slice
-- [x] normal-user desktop app exists;
-- [x] real OS/process inventory is shown;
-- [x] mutation is explicitly unavailable;
-- [x] no synthetic optimization result is shown as machine evidence.
-
-Phase 1 originally closed with a WPF artifact. ADR 0002 later superseded the UI-framework choice with WinUI 3; historical Phase 1 evidence remains historical rather than being rewritten.
-
-### Exit gate
-Historical Phase 1 evidence showed a successful release build + permanent tests + self-contained x64 artifact, with no device mutation.
-
-### After Phase 1 closes
-Proceed to Phase 2 in this order: authoritative inventory/resource evidence → privileged read-only ETW observation → module/CPU attribution → physical validation → repeated baseline/noise/drift → evidence UX.
+The original Phase 1 UI artifact was historical WPF; ADR 0002 superseded the framework with WinUI 3 without rewriting history.
 
 ---
 
-## Phase 2 — Observation engine: trustworthy Windows baseline
+## Phase 2 — Trustworthy read-only observation and baseline
 
 **State: IN PROGRESS**
 
-### 2.1 Inventory and evidence provenance
-- [x] processor-group-aware CPU package/core/logical-processor/SMT topology implementation;
-- [ ] validate CPU topology on physical Windows 11 hardware;
-- [x] present PnP device inventory with stable instance IDs;
-- [x] relevant driver provider/version/INF metadata;
-- [x] stored interrupt configuration inspection with availability/error provenance;
-- [x] allocated IRQ/resource assignment capture from Configuration Manager with partial/unavailable provenance;
-- [x] optional device-property/resource failures degrade to partial evidence instead of invalidating the entire inventory;
-- [ ] distinguish line/message interrupt evidence where an authoritative Windows source exposes the actual assigned delivery kind; do not infer it from stored MSI configuration or ConfigMgr `IRQ_DES` flags;
-- [ ] physical Windows 11 validation of representative GPU/xHCI/NIC device inventory and allocated resources.
+Phase 2 must establish a measurement substrate strong enough that later mutation decisions are not built on one-shot noise.
 
-Stored registry configuration, allocated resource assignment and runtime behavior are separate evidence levels and must remain separate in code/UI. `MSISupported=1` is stored configuration evidence, not proof that the current assigned interrupt is message-signaled.
+### 2.1 Inventory/provenance
 
-### 2.2 ETW observation
-- [x] controlled privileged ETW observation host in `LatencyPilot.Service`;
-- [x] versioned typed local Named Pipe protocol for Phase 2 observation;
-- [x] fail-closed protocol framing rejects unknown JSON members and malformed/oversized frames;
-- [x] local observation pipe denies network identities, narrows its ACL to interactive/service identities and fail-closes unless the connected client session matches the active console session;
-- [x] abandoned clients cancel active capture work instead of leaving the single observation host occupied;
-- [x] no generic registry/shell/process execution command;
-- [x] controlled ETW session lifecycle;
+- [x] processor-group-aware package/core/logical/SMT topology;
+- [x] present PnP inventory with stable instance IDs;
+- [x] driver provider/version/INF metadata;
+- [x] stored interrupt-configuration inspection with unavailable/error provenance;
+- [x] allocated ConfigMgr IRQ/resource evidence;
+- [x] optional property/resource failures degrade to partial evidence;
+- [x] representative GPU/display, NIC and actual `USBXHCI` device selection;
+- [x] clean/dirty source revision provenance in owner-local builds;
+- [ ] physical topology/device/resource plausibility on target Windows 11 hardware;
+- [ ] authoritative assigned line/message distinction only if Windows evidence actually proves it.
+
+Required semantic boundary:
+
+```text
+stored interrupt configuration
+≠ allocated IRQ/resource assignment
+≠ runtime DPC/ISR behavior
+```
+
+### 2.2 Privileged read-only observation Service
+
+- [x] Windows Service hosts privileged kernel observation;
+- [x] typed/versioned Named Pipe protocol;
+- [x] current observation protocol **v6**;
+- [x] status + kernel-capture commands only;
+- [x] no mutation command or generic shell/registry/process primitive;
+- [x] fail-closed framing/unknown-member behavior;
+- [x] local ACL + active-console-session authorization;
+- [x] disconnect cancellation and bounded operation deadlines;
+- [x] capture `RequestId` correlation;
+- [ ] physical final-candidate Service/ETW/IPC/cleanup/session validation.
+
+Current observation authorization is deliberately not accepted as future mutation authorization.
+
+### 2.3 ETW DPC/ISR evidence
+
+- [x] controlled kernel ETW lifecycle;
 - [x] DPC collection;
 - [x] ISR collection;
-- [x] ETW processor-number attribution and per-processor aggregation;
-- [x] authoritative module/driver attribution;
-- [x] p50/p95/p99/max duration distributions using one documented percentile estimator;
-- [x] p99.9 exposed only when the corresponding distribution has at least 1,000 samples;
-- [x] capture cancellation/timeout/cleanup on failure;
-- [x] bounded aggregate IPC response rather than raw-event transfer;
-- [x] protocol-v5 capture evidence preserves `RequestId` for direct log/evidence correlation;
-- [x] bounded structured App/Service diagnostics, including expected capture-unavailable and session-rejection provenance, without per-event ETW logging;
-- [ ] physical Windows 11 validation of current Service → ETW → IPC behavior, active-session authorization and cleanup.
+- [x] per-processor aggregation;
+- [x] image load/unload/rundown-aware module attribution;
+- [x] ambiguous/missing mappings remain unresolved;
+- [x] bounded module/unresolved contributor lists;
+- [x] p50/p95/p99/max using one canonical estimator;
+- [x] p99.9 withheld until **10,000 samples** under protocol v6;
+- [x] ETW loss/invalid event/image/event-limit provenance;
+- [x] post-capture aggregate logging without raw per-event log I/O;
+- [ ] physical attribution plausibility against an independent observer where practical.
 
-Native routine addresses must remain unresolved unless authoritative kernel image evidence maps them. Already-loaded images require the appropriate kernel image rundown/CAPTURE_STATE behavior rather than future ImageLoad events alone.
+Interpretation contract:
 
-The current Phase 2 observation ACL/session rule is not future mutation authorization. Phase 3 must add mutation-specific authorization before any privileged write command exists. RDP/multi-session observation is not implied by the current active-console rule.
+- DPC `>100 µs` / ISR `>25 µs` are Microsoft driver-duration reference lines;
+- `>1 ms` / `>3 ms` are LatencyPilot local diagnostic buckets;
+- none of these alone is a health/impact verdict;
+- CPU0 concentration is a hypothesis signal, not an automatic fault.
 
-### 2.3 Baseline quality
-- [x] repeated five-window baseline flow implemented in WinUI source with quiet inter-window rendering;
-- [ ] physical Windows 11 runtime validation of the repeated baseline flow;
-- [x] stable repeated-window policy/minimum valid windows in deterministic `baseline-quality-v1`;
-- [x] `baseline-quality-v1` requires exactly five contiguous windows; extra windows cannot silently change the versioned interpretation;
-- [x] contiguous window-number sequence is authoritative; UTC timestamps remain provenance rather than a monotonic-order requirement;
-- [x] empirical window-level p99 noise-floor calculation;
-- [x] early/late inter-window drift detection;
-- [x] invalid/extreme-window handling with explicit reasons and no silent deletion;
-- [x] best-effort low-overhead runtime context captures system CPU busy time, AC/DC source, Battery Saver, active power plan and Windows 11 user-configured power mode outside the authoritative ETW window;
-- [x] power-context changes are surfaced as provenance without silently changing the `baseline-quality-v1` validity formula;
-- [ ] thermal quality warning only if an authoritative low-overhead source is identified and physical evidence shows it is required;
-- [ ] invalid/inconclusive baseline cannot unlock a future optimizer — quality gate exists, optimizer integration does not yet exist.
+### 2.4 Measurement modes
 
-Current `baseline-quality-v1` requires exactly five windows, at least 20 events per metric/window, clean capture integrity, <=30% relative P10-P90 spread, <=20% early/late drift and no >50% extreme-window deviation. These are versioned conservative policy values, not statistical-significance claims.
+#### Quick diagnostic snapshot
 
-### 2.4 UX
-- [x] observation-service health/safety status;
-- [x] short read-only DPC/ISR observation action;
-- [x] DPC/ISR counts and p99 summary plus sample-gated p99.9;
-- [x] ETW loss/invalid/event-limit status;
-- [x] integrity-warning capture cannot be presented as healthy merely because threshold counts are low;
-- [x] documented 100 µs DPC / 25 µs ISR driver-guidance rows are separated from local 1 ms / 3 ms diagnostic buckets;
-- [x] short capture is labeled observation rather than trustworthy baseline;
-- [x] per-CPU latency/interrupt concentration view;
-- [x] bounded top DPC/ISR contributors after module attribution exists;
-- [x] selectable Real-world / Controlled idle / Before-after measurement scenarios with stale-evidence invalidation;
-- [x] runtime CPU/power context summary and power-context-change warning source;
-- [x] repeated-baseline progress, verdict and explicit reasons UI source;
-- [x] manual JSON evidence export source preserves bounded aggregate evidence, correlation ID, measurement scenario, runtime context and bounded environment provenance;
-- [ ] evidence-export/runtime behavior validation on physical WinUI;
-- [ ] validate repeated-baseline progress/verdict/reasons behavior on physical WinUI;
-- [ ] validate configuration vs assigned resource vs runtime evidence labels on physical UI;
-- [ ] finish narrow-window/text-scaling/focus/screen-reader sanity pass on physical WinUI.
+- [x] one five-second snapshot;
+- [x] used for integrity, attribution, concentration, obvious tail events and hypothesis generation;
+- [x] evidence purpose `quick-diagnostic-snapshot`;
+- [x] must not unlock an optimizer verdict;
+- [ ] physical final-candidate quick-snapshot UX/evidence audit.
+
+#### Repeated decision baseline — `baseline-quality-v2`
+
+- [x] exactly five windows;
+- [x] **20 seconds requested per authoritative window**;
+- [x] actual duration must be >=95% of requested duration;
+- [x] >=1,000 DPC events/window and >=1,000 ISR events/window for current p99 stability eligibility;
+- [x] clean capture required;
+- [x] <=30% relative P10–P90 spread;
+- [x] <=20% early/late drift;
+- [x] no >50% extreme-window deviation;
+- [x] no silent window deletion;
+- [x] `WindowNumber` is authoritative sequence, wall-clock UTC is provenance;
+- [x] five-second LatencyPilot/service pre-sequence settle is distinct from workload warm-up;
+- [x] evidence purpose `repeated-decision-baseline`;
+- [x] evidence schema **`latencypilot-evidence-v8`**;
+- [ ] physical Real-world v8/v2 baseline on exact final source;
+- [ ] physical Controlled-idle v8/v2 baseline on exact final source.
+
+Real-world/before-after workloads must already be warmed and repeatable before the decision baseline starts unless startup/loading is intentionally what is being measured.
+
+### 2.5 Evidence/runtime context
+
+- [x] exact source revision when clean build metadata supports it;
+- [x] dirty source refuses to claim exact clean commit provenance;
+- [x] JSON evidence with scenario/environment/topology and bounded aggregates;
+- [x] best-effort system CPU busy context;
+- [x] AC/DC, Battery Saver, active scheme and configured Windows power-mode provenance;
+- [x] SHA-256 after JSON save;
+- [x] strict `scripts/Verify-Evidence.ps1` v8/v2 closure checks;
+- [ ] final physical JSON-visible/hash/source-revision reconciliation.
+
+### 2.6 UX/accessibility
+
+- [x] Service/safety state;
+- [x] quick snapshot and decision baseline are visibly distinct;
+- [x] scenario-specific preparation gate for decision baseline only;
+- [x] Real-world mode keeps issue-reproducing applications open;
+- [x] quick-snapshot interpretation uses diagnostic/reference language rather than global health verdicts;
+- [x] CPU/module contributor and tail-rate views;
+- [x] representative device evidence inspector;
+- [x] keyboard shortcuts `Ctrl+R/O/B/E`;
+- [x] adaptive/high-contrast source resources;
+- [ ] physical Light/Dark/High Contrast, narrow/wide, text scaling, keyboard/focus and screen-reader sanity.
+
+### 2.7 Failure/security closure
+
+- [ ] App close during capture;
+- [ ] Service stop/restart/reconnect;
+- [ ] no stale ETW session after interruption;
+- [ ] partial baseline cannot become Valid;
+- [ ] second-session rejection where practical;
+- [ ] zero-mutation verification.
 
 ### Exit gate
-A user can run a repeatable **read-only** baseline on a real Windows 11 PC and identify CPU/module latency concentration without LatencyPilot changing system configuration.
+On one exact clean final Phase 2 source revision:
 
-### After Phase 2 closes
-Proceed to Phase 3. Do **not** recreate the Service/IPC: Phase 2 already owns that infrastructure. Phase 3 starts by materializing the concrete SQLite persistence project/schema/journal/recovery contract plus mutation-specific authorization, then implements the first reversible GPU interrupt experiment.
+- hosted eight-test contract is green;
+- owner-local App/Service builds and launches;
+- protocol v6 works physically;
+- one clean v8 quick snapshot proves diagnostic/provenance path;
+- one Real-world and one Controlled-idle v8/v2 `5 × 20 s` decision baseline pass strict verification;
+- representative device/attribution/failure/session/accessibility evidence passes;
+- zero mutation is confirmed.
+
+### After Phase 2
+Proceed to Phase 3. Do not add mutation before this gate is physically closed.
 
 ---
 
-## Phase 3 — Safe mutation platform + GPU interrupt optimization
+## Phase 3 — Safe mutation platform + GPU interrupt experiment
 
-**State: NOT STARTED — observation infrastructure already inherited from Phase 2**
+**State: NOT STARTED**
 
-### 3.1 Safety substrate
-- [x] privileged Windows Service exists as the narrow boundary;
-- [x] versioned Named Pipe protocol exists;
-- [x] generic registry/shell/process execution is prohibited by contract and absent from Phase 2 protocol;
-- [ ] create the concrete persistence project with SQLite schema/migrations and durable experiment journal/recovery state;
-- [ ] mutation-specific command authorization/allowlist extension;
-- [ ] Detect → Snapshot → Validate → Journal → Apply → Verify lifecycle;
-- [ ] pending experiment survives interruption;
-- [ ] verified rollback/recovery;
-- [ ] reboot-required/recovery-required states represented explicitly.
+### 3.1 Durable safety substrate
 
-The three checked infrastructure items are inherited prerequisites only; they do not mean Phase 3 has begun mutation work. The persistence project is intentionally not pre-created during Phase 2; it should arrive together with its real durable-state contract.
+- [ ] introduce the real SQLite persistence/journal project and migrations;
+- [ ] mutation-specific authorization and typed allowlist;
+- [ ] Detect → Snapshot → Validate → Journal → Apply → Verify;
+- [ ] interruption/reboot recovery state;
+- [ ] exact original-state rollback and final-state verification;
+- [ ] no generic registry/shell/process primitive.
 
-### 3.2 GPU experiment
-- [ ] GPU applicability detection;
-- [ ] topology-aware CPU candidates;
-- [ ] one-candidate-at-a-time affinity mutation;
+### 3.2 GPU candidate experiment
+
+- [ ] detect supported GPU and current interrupt policy/resources;
+- [ ] preserve default/current state as the control;
+- [ ] topology-aware, physical-core-aware candidate generation;
+- [ ] treat CPU0 concentration as candidate-prior evidence, never a hard exclusion rule;
+- [ ] bounded screening of plausible candidates;
+- [ ] confirm a small finalist set with balanced/interleaved A/B sequences such as ABBA/BAAB;
+- [ ] use decision-grade candidate/control run durations (initial design around 30 seconds/run, versioned when implemented);
+- [ ] verify applied affinity state before measurement;
 - [ ] MSI/MSI-X mutation only where applicability and rollback are authoritative;
-- [ ] ETW target metrics;
-- [ ] PresentMon guardrails where available;
-- [ ] repeat candidate runs;
-- [ ] Keep/Revert decision with raw deltas;
-- [ ] forced-failure rollback exercise on supported physical hardware.
+- [ ] DPC/ISR target metrics;
+- [ ] PresentMon frame-time/CPU/GPU/latency metrics where workload supports them;
+- [ ] USB/network/audio/stability guardrails as applicable;
+- [ ] Keep/Revert based on measured target + guardrail vector;
+- [ ] forced-failure rollback exercise.
 
 ### Exit gate
-A supported physical GPU can be tuned and safely restored on Windows 11, including a forced-failure rollback exercise.
-
-### After Phase 3 closes
-Proceed to Phase 4: first map HID → hub/port → xHCI, then measure host-side input timing and controller runtime behavior, and only then permit reversible xHCI/controller-affinity experiments.
+A supported physical GPU can be tested against its control, a candidate can be kept only on reproducible evidence, and forced failure restores the exact original managed state.
 
 ---
 
-## Phase 4 — USB/xHCI and input latency analysis
+## Phase 4 — USB/xHCI and input analysis
 
 **State: NOT STARTED**
 
@@ -235,55 +268,46 @@ Proceed to Phase 4: first map HID → hub/port → xHCI, then measure host-side 
 - [ ] USB/xHCI ETW correlation;
 - [ ] controller DPC/ISR attribution;
 - [ ] supported reversible controller-affinity experiments;
-- [ ] target metrics plus collateral guardrails;
-- [ ] host-side input timing clearly distinguished from physical end-to-end latency.
+- [ ] target metrics + collateral guardrails;
+- [ ] host-side report timing kept distinct from physical switch-to-photon claims.
 
 ### Exit gate
 At least one high-polling input/controller path can be analyzed and a reversible xHCI experiment compared without overstating measurement capability.
 
-### After Phase 4 closes
-Proceed to Phase 5: NIC capability/RSS inventory → queue/processor distribution → NDIS attribution → controlled local-network benchmark → supported reversible RSS/affinity experiments.
-
 ---
 
-## Phase 5 — NIC/RSS latency optimization
+## Phase 5 — NIC/RSS optimization
 
 **State: NOT STARTED**
 
-- [ ] NIC capabilities/RSS inventory;
+- [ ] NIC capability/RSS inventory;
 - [ ] RSS processor/queue distribution;
 - [ ] NDIS DPC/ISR attribution;
 - [ ] controlled local-network latency/jitter benchmark;
 - [ ] supported RSS/affinity experiments;
 - [ ] throughput/loss/CPU guardrails;
-- [ ] Internet tests remain supplemental.
+- [ ] Internet tests remain supplemental rather than the sole primary truth.
 
 ### Exit gate
-The tool can distinguish a local networking improvement from path noise and revert all supported NIC changes.
-
-### After Phase 5 closes
-Proceed to Phase 6: combine only already-supported subsystem experiments into a bounded candidate search with workload profiles, repeated finalists, trade-off/Pareto handling and global restore semantics.
+A local networking improvement can be separated from path noise and every supported NIC change can be restored.
 
 ---
 
-## Phase 6 — Cross-subsystem optimizer and workload profiles
+## Phase 6 — Cross-subsystem optimizer and profiles
 
 **State: NOT STARTED**
 
 - [ ] Competitive/Gaming, General and Audio-sensitive profiles;
-- [ ] raw metrics always visible;
 - [ ] bounded candidate search/pruning;
 - [ ] repeated finalists;
 - [ ] Pareto/trade-off representation;
-- [ ] never overwrite user-kept state without a new journaled experiment;
-- [ ] global Restore Baseline;
-- [ ] user can opt out by subsystem.
+- [ ] raw metrics always visible;
+- [ ] user opt-out by subsystem;
+- [ ] no overwrite of user-kept state without a new journaled experiment;
+- [ ] global Restore Baseline.
 
 ### Exit gate
-Auto mode completes a bounded multi-subsystem session and every retained change has individual evidence/provenance/rollback state.
-
-### After Phase 6 closes
-Proceed to Phase 7 productization: installer/service lifecycle, signing/provenance, upgrade/uninstall recovery safety, diagnostics, accessibility and representative clean-machine/hardware validation.
+Auto mode completes a bounded multi-subsystem session and every retained change has individual evidence, provenance and rollback state.
 
 ---
 
@@ -291,7 +315,7 @@ Proceed to Phase 7 productization: installer/service lifecycle, signing/provenan
 
 **State: NOT STARTED**
 
-- [ ] installer/uninstaller and service lifecycle;
+- [ ] installer/uninstaller and Service lifecycle;
 - [ ] self-contained Windows 11 x64 package;
 - [ ] signing/release provenance;
 - [ ] safe upgrade of journal/history;
@@ -301,23 +325,24 @@ Proceed to Phase 7 productization: installer/service lifecycle, signing/provenan
 - [ ] no unexplained admin prompts;
 - [ ] clean-machine validation;
 - [ ] reboot/crash/recovery validation;
-- [ ] representative NVIDIA/AMD/USB/NIC paths exercised where hardware is available;
-- [ ] docs match actual capabilities/limitations.
+- [ ] representative NVIDIA/AMD/USB/NIC paths where hardware is available;
+- [ ] documentation matches actual capabilities and limitations.
 
 ### Exit gate
-1.0 installs cleanly, produces a trustworthy baseline, executes supported GPU/USB/NIC workflows, survives interruption, restores managed state and uninstalls without unexplained configuration residue.
-
-### After Phase 7 closes
-Run the final 1.0 release audit against the complete product definition, every phase exit gate, active recovery state, documentation, licensing, signing/provenance and representative physical-hardware evidence. Only then tag 1.0.
+1.0 installs cleanly, produces trustworthy baselines, executes supported GPU/USB/NIC workflows, survives interruption, restores managed state and uninstalls without unexplained residue.
 
 ---
 
 ## Permanent-test rule
 
-Repository-wide permanent automated tests may **never exceed 10** unless the owner explicitly approves the exception and an ADR explains why remaining at 10 would be more harmful. The current suite is intentionally consolidated to **eight** durable contract tests, leaving two slots for higher-blast-radius recovery/mutation risks in later phases. Temporary implementation/debug tests may be created and removed before finalization.
+Permanent automated tests may not exceed **10** without explicit owner approval plus an ADR explaining why staying at 10 would be more harmful. The current suite uses **8** durable test methods.
 
-## Phase-closing rule
+New high-blast-radius mutation/recovery invariants may reuse or replace lower-value slots. Temporary investigative tests may be created, executed and deleted during implementation.
 
-A checkbox is complete only when code/artifact exists on `main` and the evidence required by that checkbox exists. Deterministic correctness contracts may use the hosted **Tests** workflow. Hosted CI is intentionally test-only and is not App/Service compile, publish/package, GUI, release or physical-hardware evidence. Compile/package/runtime-dependent work remains owner-local; hardware-dependent work requires physical Windows 11 evidence. “Implemented but unverified” remains incomplete when the checkbox itself requires runtime or physical evidence. Before closing a subsection, perform the mandatory step-back review defined in `AGENTS.md`.
+Physical hardware validation is separate from the permanent-test count.
 
-After every meaningful stage, reports must include the exact next stage and the stage after that; `PROJECT_STATUS.md` is the authoritative detailed execution ladder.
+## Completion rule
+
+A checked box requires evidence for its exact claim. Source complete does not mean physically validated; a green deterministic test run does not imply WinUI compilation or hardware correctness; local build does not imply release readiness; a diagnostic snapshot does not imply a benchmark verdict.
+
+When all Phase 7 gates pass, perform one final 1.0 audit across product definition, all exit gates, active recovery state, documentation, licensing, signing/provenance and representative physical evidence before tagging 1.0.
