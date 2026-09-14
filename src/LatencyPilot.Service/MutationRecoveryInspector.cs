@@ -100,8 +100,6 @@ internal sealed class MutationRecoveryReadiness
 
 internal sealed class MutationRecoveryInspector : IHostedService
 {
-    internal const string GpuInterruptAffinityKind = "gpu-interrupt-affinity";
-
     private static readonly Action<ILogger, int, Exception?> JournalReady =
         LoggerMessage.Define<int>(
             LogLevel.Information,
@@ -193,7 +191,7 @@ internal sealed class MutationRecoveryInspector : IHostedService
 
     private MutationRecoveryInspection InspectActualState(MutationJournalEntry entry)
     {
-        if (!string.Equals(entry.Kind, GpuInterruptAffinityKind, StringComparison.Ordinal))
+        if (!string.Equals(entry.Kind, GpuInterruptAffinityMutationContract.Kind, StringComparison.Ordinal))
         {
             const string reason = "mutation kind is not supported by startup recovery inspection";
             ActualStateReadFailed(logger, entry.ExperimentId, reason, null);
