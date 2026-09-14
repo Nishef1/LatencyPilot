@@ -17,3 +17,4 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 Write-Host 'Phase 3 physical validation harness smoke passed.'
+exit 0
