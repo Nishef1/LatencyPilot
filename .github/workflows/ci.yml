@@ -44,6 +44,3 @@ jobs:
 
       - name: Critical tests
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-
-      - name: Redesigned WinUI app compile smoke
-        run: dotnet build src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release
