@@ -13,10 +13,19 @@ $appAssets = Join-Path $repoRoot 'src\LatencyPilot.App\obj\project.assets.json'
 $serviceAssets = Join-Path $repoRoot 'src\LatencyPilot.Service\obj\project.assets.json'
 $serviceOutput = Join-Path $repoRoot 'src\LatencyPilot.Service\bin\Debug\net10.0-windows10.0.26100.0\win-x64'
 $installServiceScript = Join-Path $repoRoot 'scripts\Install-Service.ps1'
+$serviceStartupReadinessScript = Join-Path $repoRoot 'scripts\ServiceStartupReadiness.ps1'
+$serviceName = 'LatencyPilot.Observation'
+$serviceLogDirectory = Join-Path (
+    [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData)) 'LatencyPilot\Logs\Service'
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw 'The .NET SDK is not available on PATH. Install the SDK pinned by global.json before running this script.'
 }
+
+if (-not (Test-Path -LiteralPath $serviceStartupReadinessScript -PathType Leaf)) {
+    throw "Service startup readiness helper was not found: $serviceStartupReadinessScript"
+}
+. $serviceStartupReadinessScript
 
 function Test-IsElevated {
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -64,10 +73,36 @@ try {
     }
 
     Write-Host 'Updating the protected LocalSystem observation Service (UAC may prompt)...' -ForegroundColor Yellow
+    $serviceInstallStartedAt = [DateTimeOffset]::UtcNow.AddSeconds(-1)
     $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$installServiceScript`" -SourceServiceDirectory `"$serviceOutput`""
     $installer = Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
     if ($installer.ExitCode -ne 0) {
         throw "Protected Service installation failed with exit code $($installer.ExitCode)."
+    }
+
+    $service = Get-Service -Name $serviceName -ErrorAction Stop
+    if ($service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running) {
+        throw "Protected Service installation returned successfully, but $serviceName is $($service.Status), not Running."
+    }
+    Write-Host "Protected Service state: Running ($serviceName)" -ForegroundColor Green
+
+    try {
+        $readiness = Wait-LatencyPilotServiceStartupReadiness `
+            -LogDirectory $serviceLogDirectory `
+            -NotBeforeUtc $serviceInstallStartedAt `
+            -Timeout ([TimeSpan]::FromSeconds(8))
+
+        if ($readiness.UnresolvedCount -eq 0) {
+            Write-Host 'Mutation journal startup inspection: READY (0 unresolved experiments; mutation remains unavailable).' -ForegroundColor Green
+        }
+        else {
+            Write-Warning "Mutation journal startup inspection completed with $($readiness.UnresolvedCount) unresolved experiment(s). Observation can continue, but mutation must remain blocked until recovery is explicit."
+        }
+        Write-Host "Service readiness evidence: $($readiness.LogPath)" -ForegroundColor DarkGray
+    }
+    catch {
+        Write-Warning "The Service is running, but current mutation-journal startup readiness could not be proven from structured logs: $($_.Exception.Message)"
+        Write-Warning 'The App will still open for read-only diagnosis; do not treat this run as mutation-arming evidence.'
     }
 
     Write-Host 'Starting non-elevated LatencyPilot App...'
