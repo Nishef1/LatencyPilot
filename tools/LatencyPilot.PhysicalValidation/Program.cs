@@ -67,8 +67,8 @@ internal static class PhysicalValidationProgram
         EnsureExactArgumentCount(args, 1);
         EnsureWindows();
 
-        var journal = OpenJournal();
-        var unresolved = journal.GetUnresolved();
+        var unresolved = MutationJournalReadOnlyInspector.GetUnresolved(
+            MutationJournal.GetDefaultDatabasePath());
         Console.WriteLine($"Mutation journal: READY; unresolved={unresolved.Count.ToString(CultureInfo.InvariantCulture)}");
 
         foreach (var entry in unresolved)
