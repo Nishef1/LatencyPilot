@@ -38,29 +38,22 @@ public static class MutationJournalStateMachine
     {
         (MutationJournalState.Prepared, MutationJournalState.Applying) => true,
         (MutationJournalState.Prepared, MutationJournalState.AbortedBeforeApply) => true,
-
         (MutationJournalState.Applying, MutationJournalState.Applied) => true,
         (MutationJournalState.Applying, MutationJournalState.RecoveryRequired) => true,
-
         (MutationJournalState.Applied, MutationJournalState.Measuring) => true,
         (MutationJournalState.Applied, MutationJournalState.Reverting) => true,
         (MutationJournalState.Applied, MutationJournalState.RecoveryRequired) => true,
-
         (MutationJournalState.Measuring, MutationJournalState.AwaitingDecision) => true,
         (MutationJournalState.Measuring, MutationJournalState.Reverting) => true,
         (MutationJournalState.Measuring, MutationJournalState.RecoveryRequired) => true,
-
         (MutationJournalState.AwaitingDecision, MutationJournalState.Kept) => true,
         (MutationJournalState.AwaitingDecision, MutationJournalState.Reverting) => true,
         (MutationJournalState.AwaitingDecision, MutationJournalState.RecoveryRequired) => true,
-
         (MutationJournalState.Reverting, MutationJournalState.Reverted) => true,
         (MutationJournalState.Reverting, MutationJournalState.RecoveryRequired) => true,
-
         // Recovery deliberately resumes only through rollback in v1. A future
         // version may add verified resume semantics after re-reading machine state.
         (MutationJournalState.RecoveryRequired, MutationJournalState.Reverting) => true,
-
         _ => false,
     };
 
@@ -231,12 +224,9 @@ public sealed class MutationJournal
             throw new ArgumentException("ExperimentId must not be empty.", nameof(experimentId));
         }
 
-        if (expectedRevision < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(expectedRevision));
-        }
-
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedRevision);
         MutationJournalStateMachine.EnsureTransition(expectedState, newState);
+
         if (failureReason is { Length: > 2048 })
         {
             throw new ArgumentOutOfRangeException(nameof(failureReason), "Failure reason must be 2048 characters or fewer.");
