@@ -118,6 +118,16 @@ public sealed class LatencyProfileChart : UserControl
                 var x = _labels.Count == 1
                     ? left + plotWidth / 2d
                     : left + plotWidth * index / (_labels.Count - 1d);
+                _canvas.Children.Add(new Line
+                {
+                    X1 = x,
+                    X2 = x,
+                    Y1 = top,
+                    Y2 = top + plotHeight,
+                    Stroke = gridBrush,
+                    StrokeThickness = 1,
+                });
+
                 var label = new TextBlock
                 {
                     Text = _labels[index],
@@ -183,7 +193,7 @@ public sealed class LatencyProfileChart : UserControl
 
         if (line.Points.Count > 1)
         {
-            _canvas.Children.Insert(0, line);
+            _canvas.Children.Add(line);
         }
     }
 
