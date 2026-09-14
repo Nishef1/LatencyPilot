@@ -1,6 +1,6 @@
 # Physical Windows 11 Validation
 
-This runbook closes the read-only Phase 2 measurement substrate on physical Windows 11 hardware. It does **not** authorize mutation.
+This runbook closes the read-only Phase 2 measurement substrate on physical Windows 11 hardware. It does **not** authorize mutation. ADR 0004 permits targeted Phase 3 source implementation to overlap this remaining record, but user-reachable mutation stays unavailable until its separate arming gate also passes.
 
 ## Current contract
 
@@ -13,7 +13,7 @@ Decision baseline:     baseline-quality-v2
                        5 s LatencyPilot/service settle before window 1
                        750 ms inter-window settle
 p99.9 display floor:   10,000 samples per distribution
-Permanent tests:       8 / 10
+Permanent tests:       9 / 10
 ```
 
 ## 1. Preconditions and privilege boundary
@@ -202,7 +202,7 @@ Unproven cleanup or authorization keeps Phase 2 open.
 
 Check Light, Dark, Windows High Contrast, narrow/wide widths, enlarged text scaling, keyboard-only focus order and screen-reader/UI Automation for Service state, scenario, measurement purpose, exact values, runtime context and baseline verdict. Color must not be the only state cue, and a quick snapshot must not be announced as a health verdict.
 
-Phase 2 must not alter interrupt affinity, MSI settings, CPU Sets, power settings, network configuration, device policy, timer settings or unrelated services. Only LatencyPilot installation/Service files and documented diagnostics/evidence artifacts may persist.
+Phase 2 validation must not alter interrupt affinity, MSI settings, CPU Sets, power settings, network configuration, device policy, timer settings or unrelated services. Internal Phase 3 source may exist in the same revision, but it must remain unreachable/unarmed during this runbook. Only LatencyPilot installation/Service files and documented diagnostics/evidence artifacts may persist.
 
 For an installer/portable release candidate, also verify documented Service removal:
 
@@ -233,4 +233,4 @@ Close Phase 2 only when the **same final clean source candidate** has:
 
 Historical short captures under older protocol/schema revisions remain diagnostic history only. They do not satisfy the v2 decision-baseline gate.
 
-After Phase 2 closes, Phase 3 may introduce reversible mutations. No Windows default, community tweak or prior-project assumption is automatically accepted as optimal; control/candidate measurement remains mandatory.
+Phase 2 closure and Phase 3 mutation arming are separate gates. Phase 3 source may continue under ADR 0004, but no user-reachable mutation authority is introduced until the mutation arming gate in `PROJECT_STATUS.md` has its required physical evidence.
