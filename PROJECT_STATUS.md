@@ -91,7 +91,8 @@ Implemented in source:
 - exact original registry value existence/kind/raw bytes are retained;
 - startup Service initializes the journal and re-reads actual stored GPU affinity state for unresolved entries;
 - unresolved stored state is classified as original / candidate / both / diverged / unknown;
-- recovery planning is fail-closed: unknown or externally diverged state requires manual intervention rather than a blind write;
+- recovery planning is fail-closed: unknown, externally diverged state, or a changed target driver environment requires manual intervention rather than a blind write;
+- a pre-write abort is explicitly marked so later recovery does not claim an external candidate-looking state as LatencyPilot-owned;
 - public observation protocol still has only `GetStatus` and `CaptureKernelLatency`; no mutation command is reachable.
 
 ### GPU affinity applicability and candidate generation
@@ -100,6 +101,8 @@ Implemented in source:
 
 - mutation target restricted to a present SetupAPI display adapter;
 - only documented `Interrupt Management\Affinity Policy` values are touched;
+- existing `DevicePolicy`, when present, must use the documented `REG_DWORD` shape;
+- existing `AssignmentSetOverride`, when present, must use documented DWORD/QWORD or <=64-bit binary shape;
 - one processor group only for v1 KAFFINITY writes;
 - CPU0 is not hard-excluded;
 - one logical sibling per physical core is selected using measured pressure plus CPU-set availability;
@@ -111,14 +114,18 @@ Implemented in source:
 
 Implemented but **unarmed and not yet physically validated**:
 
-- `Prepare` captures exact original state and durably journals it before apply;
+- `Prepare` validates current topology/applicability, captures exact original state and durably journals it before apply;
 - no-op candidate requests are rejected;
+- before any write, the exact stored original, driver version and current processor topology are revalidated;
+- after journal transition to `Applying`, the same state is re-read immediately before the registry write to narrow the external-change race;
+- a change detected before LatencyPilot writes is recorded as a pre-write abort and is **not** automatically rolled back as though LatencyPilot owned that external change;
 - candidate write is verified from stored state;
 - device refresh uses SetupAPI `DIF_PROPERTYCHANGE` + `DICS_PROPCHANGE` for the exact display adapter;
 - post-change install flags are inspected for `DI_NEEDRESTART` / `DI_NEEDREBOOT`;
 - devnode state is checked through `CM_Get_DevNode_Status`, including restart-needed problem code 14;
 - inability to establish a healthy in-place restart leaves the experiment unresolved in `RecoveryRequired`;
-- rollback restores exact original values/key absence, verifies stored state, restarts the device and reaches `Reverted` only after the active original state is trusted;
+- rollback refuses a blind write if the display-driver version changed or current stored state matches neither the captured original nor the experiment candidate;
+- otherwise rollback restores exact original values/key absence, verifies stored state, restarts the device and reaches `Reverted` only after the active original state is trusted;
 - failed/incomplete rollback remains unresolved instead of being reported as success.
 
 The code deliberately does **not** use a broad device-restart primitive that could restart unrelated devices sharing function/filter drivers.
@@ -139,10 +146,10 @@ PresentMon API discovery, graphics-device correlation and workload metric captur
 
 ## Current verification evidence
 
-- Hosted Tests for pre-transaction restart head `8086d6bf38c12a2bcb01528355f84c2128723368` completed successfully.
-- Hosted Tests for mutation/recovery source head `cff657aaea4281a54717c7199bbdec105d5a141a` completed successfully.
-- Subsequent recovery-planning source commits require their own exact-head CI result before being called deterministic-green.
-- Hosted Tests remain insufficient evidence for the Service/WinUI runtime because that workflow intentionally does not build or run them.
+- Hosted Tests for exact source head `81650ef1fe8fef41331c0496ce00e9ba69b12894` completed successfully in run `34838323730` / run #514.
+- The permanent suite remains **9/10**.
+- Hosted Tests compile and exercise their deterministic dependency graph, including Platform.Windows; they intentionally do **not** compile/run the Windows Service or WinUI App.
+- Therefore the new Service transaction/recovery source still requires owner-local Windows compilation before it can be treated as build-verified.
 
 No physical GPU mutation, GPU restart, forced-failure rollback or reboot recovery has been performed by this source work.
 
