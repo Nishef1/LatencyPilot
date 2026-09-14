@@ -28,6 +28,8 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBarDragRegion);
         Title = "LatencyPilot";
         VersionText.Text = $"v{GetProductVersion()}";
         BaselineProgressBar.Maximum = BaselineWindowCount;
@@ -411,7 +413,7 @@ public sealed partial class MainWindow : Window
         FormatLargestValue(dpc.P999Microseconds, isr.P999Microseconds);
 
     private static string FormatLargestMaximum(LatencyDistribution dpc, LatencyDistribution isr) =>
-        FormatLargestValue(dpc.MaximumMicroseconds, isr.MaximumMicroseconds);
+        FormatLargestValue(dpc.MaximumMicroseconds, dpc: isr.MaximumMicroseconds);
 
     private static string FormatLargestValue(double? first, double? second)
     {
