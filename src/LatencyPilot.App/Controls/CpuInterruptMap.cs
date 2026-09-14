@@ -9,6 +9,7 @@ public sealed class CpuInterruptMap : UserControl
 {
     private readonly StackPanel _rows = new() { Spacing = 2 };
     private readonly ChartEmptyState _emptyState;
+    private IReadOnlyList<InterruptMapRow> _data = Array.Empty<InterruptMapRow>();
 
     public CpuInterruptMap()
     {
@@ -21,14 +22,29 @@ public sealed class CpuInterruptMap : UserControl
         root.Children.Add(_rows);
         root.Children.Add(_emptyState);
         Content = root;
+        ActualThemeChanged += (_, _) => Render();
         AutomationProperties.SetName(this, "CPU interrupt intensity map");
     }
 
     internal void SetRows(IReadOnlyList<InterruptMapRow> rows, string automationSummary)
     {
-        _rows.Children.Clear();
+        _data = rows;
         AutomationProperties.SetHelpText(this, automationSummary);
-        var visible = rows.Take(8).ToArray();
+        Render();
+    }
+
+    internal void Clear(string message)
+    {
+        _data = Array.Empty<InterruptMapRow>();
+        _emptyState.SetMessage(message);
+        AutomationProperties.SetHelpText(this, message);
+        Render();
+    }
+
+    private void Render()
+    {
+        _rows.Children.Clear();
+        var visible = _data.Take(8).ToArray();
         if (visible.Length == 0)
         {
             _emptyState.Visibility = Visibility.Visible;
@@ -94,29 +110,24 @@ public sealed class CpuInterruptMap : UserControl
         }
     }
 
-    internal void Clear(string message)
-    {
-        _rows.Children.Clear();
-        _emptyState.SetMessage(message);
-        _emptyState.Visibility = Visibility.Visible;
-        AutomationProperties.SetHelpText(this, message);
-    }
-
     private Grid CreateCell(Brush brush, double normalized, string text)
     {
-        var opacity = 0.12d + Math.Clamp(normalized, 0d, 1d) * 0.78d;
+        var intensity = Math.Clamp(normalized, 0d, 1d);
+        var hasActivity = intensity > 0d;
         var cell = new Grid { MinHeight = 14 };
         cell.Children.Add(new Border
         {
             CornerRadius = new CornerRadius(3),
-            Background = brush,
-            Opacity = opacity,
+            Background = hasActivity
+                ? brush
+                : DashboardThemeResources.Brush(this, "ChartTrackBrush"),
+            Opacity = hasActivity ? 0.12d + intensity * 0.78d : 1d,
         });
         cell.Children.Add(new TextBlock
         {
             Text = text,
             FontSize = 10,
-            Foreground = DashboardThemeResources.Brush(this, normalized >= 0.65d ? "OnAccentBrush" : "TextBrush"),
+            Foreground = DashboardThemeResources.Brush(this, intensity >= 0.65d ? "OnAccentBrush" : "TextBrush"),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         });
