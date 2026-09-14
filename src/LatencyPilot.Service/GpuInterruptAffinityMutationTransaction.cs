@@ -33,6 +33,7 @@ internal sealed class GpuInterruptAffinityMutationTransaction
         ValidateCandidateAgainstCurrentTopology(candidate);
 
         var original = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        GpuInterruptAffinityApplicability.EnsureSupportedOriginalState(original);
         if (GpuInterruptAffinityStateComparer.MatchesCandidate(original, candidate))
         {
             throw new InvalidOperationException(
@@ -55,21 +56,10 @@ internal sealed class GpuInterruptAffinityMutationTransaction
 
         try
         {
+            GpuInterruptAffinityApplicability.EnsureSupportedOriginalState(original);
             ValidateCandidateAgainstCurrentTopology(candidate);
             var current = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
-            if (!GpuInterruptAffinityStateComparer.MatchesOriginal(current, original))
-            {
-                AbortPrepared(
-                    prepared,
-                    "Stored GPU affinity state changed after the exact original snapshot was journaled; apply was not attempted.");
-            }
-
-            if (!string.Equals(current.DriverVersion, original.DriverVersion, StringComparison.OrdinalIgnoreCase))
-            {
-                AbortPrepared(
-                    prepared,
-                    "Display-driver version changed after the mutation snapshot was prepared; apply was not attempted.");
-            }
+            EnsurePreparedStateStillCurrent(prepared, original, current);
         }
         catch (MutationPreparedAbortException)
         {
@@ -91,6 +81,17 @@ internal sealed class GpuInterruptAffinityMutationTransaction
 
         try
         {
+            // Registry state is external to the SQLite transaction. Re-read after
+            // the durable state transition and immediately before the write so a
+            // user/driver change in the preflight window is not overwritten.
+            var immediatelyBeforeWrite = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
+            if (!GpuInterruptAffinityStateComparer.MatchesOriginal(immediatelyBeforeWrite, original) ||
+                !DriverVersionMatches(immediatelyBeforeWrite, original))
+            {
+                throw new InvalidOperationException(
+                    "GPU affinity state or driver version changed after preflight; candidate write was refused.");
+            }
+
             GpuInterruptAffinityPolicyStore.Apply(original, candidate);
             var stored = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
             if (!GpuInterruptAffinityStateComparer.MatchesCandidate(stored, candidate))
@@ -216,19 +217,20 @@ internal sealed class GpuInterruptAffinityMutationTransaction
         try
         {
             var current = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
+            if (!DriverVersionMatches(current, original))
+            {
+                return ReturnToRecoveryWithoutWrite(
+                    reverting,
+                    "Rollback refused to restore an old GPU affinity snapshot because the target display-driver version changed.");
+            }
+
             var matchesOriginal = GpuInterruptAffinityStateComparer.MatchesOriginal(current, original);
             var matchesCandidate = GpuInterruptAffinityStateComparer.MatchesCandidate(current, candidate);
             if (!matchesOriginal && !matchesCandidate)
             {
-                var reason =
-                    "Rollback refused to overwrite GPU affinity state because current storage matches neither the journaled original nor the experiment candidate.";
-                var recovery = journal.Transition(
-                    reverting.ExperimentId,
-                    reverting.Revision,
-                    MutationJournalState.Reverting,
-                    MutationJournalState.RecoveryRequired,
-                    reason);
-                return new GpuInterruptAffinityMutationStepResult(recovery, null, false);
+                return ReturnToRecoveryWithoutWrite(
+                    reverting,
+                    "Rollback refused to overwrite GPU affinity state because current storage matches neither the journaled original nor the experiment candidate.");
             }
 
             if (!matchesOriginal)
@@ -271,6 +273,39 @@ internal sealed class GpuInterruptAffinityMutationTransaction
             throw new InvalidOperationException(
                 "GPU affinity rollback failed before a verified active original state was established.",
                 rollbackFailure);
+        }
+    }
+
+    private GpuInterruptAffinityMutationStepResult ReturnToRecoveryWithoutWrite(
+        MutationJournalEntry reverting,
+        string reason)
+    {
+        var recovery = journal.Transition(
+            reverting.ExperimentId,
+            reverting.Revision,
+            MutationJournalState.Reverting,
+            MutationJournalState.RecoveryRequired,
+            BoundFailureReason(reason));
+        return new GpuInterruptAffinityMutationStepResult(recovery, null, false);
+    }
+
+    private void EnsurePreparedStateStillCurrent(
+        MutationJournalEntry prepared,
+        GpuInterruptAffinitySnapshot original,
+        GpuInterruptAffinitySnapshot current)
+    {
+        if (!GpuInterruptAffinityStateComparer.MatchesOriginal(current, original))
+        {
+            AbortPrepared(
+                prepared,
+                "Stored GPU affinity state changed after the exact original snapshot was journaled; apply was not attempted.");
+        }
+
+        if (!DriverVersionMatches(current, original))
+        {
+            AbortPrepared(
+                prepared,
+                "Display-driver version changed after the mutation snapshot was prepared; apply was not attempted.");
         }
     }
 
@@ -377,6 +412,11 @@ internal sealed class GpuInterruptAffinityMutationTransaction
                 "GPU affinity candidate no longer matches current processor topology.");
         }
     }
+
+    private static bool DriverVersionMatches(
+        GpuInterruptAffinitySnapshot current,
+        GpuInterruptAffinitySnapshot original) =>
+        string.Equals(current.DriverVersion, original.DriverVersion, StringComparison.OrdinalIgnoreCase);
 
     private static string FormatFailure(string operation, Exception exception) =>
         BoundFailureReason($"GPU affinity {operation} failed: {exception.GetType().Name}: {exception.Message}");
