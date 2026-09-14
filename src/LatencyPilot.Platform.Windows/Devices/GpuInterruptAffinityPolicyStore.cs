@@ -204,7 +204,7 @@ public static class GpuInterruptAffinityPolicyStore
     private static PnPDeviceSnapshot GetPresentDisplayAdapter(string deviceInstanceId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
-        if (deviceInstanceId.IndexOf('\0') >= 0)
+        if (deviceInstanceId.Contains('\0'))
         {
             throw new ArgumentException("Device instance ID contains an invalid NUL character.", nameof(deviceInstanceId));
         }
