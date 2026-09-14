@@ -42,6 +42,7 @@ public partial class App : Application
             var mainWindow = new MainWindow();
             mainWindow.InitializeWindowChrome();
             mainWindow.InitializeDashboardVisuals();
+            mainWindow.InitializeDashboardCaptureSync();
             _window = mainWindow;
             _window.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
             _window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
