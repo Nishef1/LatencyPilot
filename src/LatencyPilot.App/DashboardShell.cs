@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Foundation;
 
 namespace LatencyPilot.App;
 
@@ -157,7 +158,7 @@ public sealed partial class MainWindow
 
     private void NavigateBaseline_Click(object sender, RoutedEventArgs e) => NavigateDashboard(NavBaselineButton, BaselineAnchor);
 
-    private void NavigateDevices_Click(object sender, RoutedEventArgs e) => NavigateDashboard(NavDevicesButton, LeftRail);
+    private void NavigateDevices_Click(object sender, RoutedEventArgs e) => NavigateDashboard(NavDevicesButton, InspectDeviceEvidenceButton);
 
     private void NavigateEvidence_Click(object sender, RoutedEventArgs e)
     {
@@ -172,6 +173,27 @@ public sealed partial class MainWindow
             button.Style = DesignValue<Style>(ReferenceEquals(button, selected) ? "NavigationItemSelectedStyle" : "NavigationItemStyle");
         }
 
-        target.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
+        ScrollDashboardTo(target);
+    }
+
+    private void ScrollDashboardTo(FrameworkElement target)
+    {
+        try
+        {
+            var point = target.TransformToVisual(DashboardContent).TransformPoint(new Point(0, 0));
+            var inset = DesignValue<double>("Space2");
+            var maximumOffset = Math.Max(0d, DashboardScrollViewer.ScrollableHeight);
+            var offset = Math.Clamp(point.Y - inset, 0d, maximumOffset);
+
+            if (!DashboardScrollViewer.ChangeView(null, offset, null, false))
+            {
+                target.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Layout can still be settling during startup; retain the native fallback.
+            target.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
+        }
     }
 }
