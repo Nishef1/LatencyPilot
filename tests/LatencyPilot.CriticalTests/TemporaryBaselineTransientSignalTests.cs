@@ -1,28 +1,47 @@
-using LatencyPilot.Benchmarking.Baselines;
+using LatencyPilot.Persistence;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
 
 [TestClass]
-public sealed class TemporaryBaselineTransientSignalTests
+public sealed class TemporaryReadOnlyJournalLookupTests
 {
     [TestMethod]
-    public void ValidBaselineCanStillSurfaceTransientTailOutlier()
+    public void ReadOnlyInspectorCanRetrieveExactExperiment()
     {
-        var summary = BaselineTransientSignalAnalyzer.Analyze([
-            new BaselineTransientWindowSignal(1, 0, 0, 290.6, 0, 0, 106.3),
-            new BaselineTransientWindowSignal(2, 0, 0, 331.4, 0, 0, 125.7),
-            new BaselineTransientWindowSignal(3, 1, 1, 11_268.0, 0, 0, 83.9),
-            new BaselineTransientWindowSignal(4, 0, 0, 202.0, 0, 0, 84.4),
-            new BaselineTransientWindowSignal(5, 0, 0, 335.3, 0, 0, 136.8),
-        ]);
+        var directory = Path.Combine(Path.GetTempPath(), $"LatencyPilot-readonly-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var databasePath = Path.Combine(directory, "latencypilot.db");
+        var experimentId = Guid.NewGuid();
 
-        Assert.IsTrue(summary.HasOverOneMillisecondSignal);
-        Assert.IsTrue(summary.HasOverThreeMillisecondSignal);
-        Assert.AreEqual(1, summary.DpcOverOneMillisecondCount);
-        Assert.AreEqual(1, summary.DpcOverThreeMillisecondCount);
-        Assert.AreEqual(3, summary.LargestWindowNumber);
-        Assert.AreEqual("DPC", summary.LargestMetricName);
-        Assert.AreEqual(11_268.0, summary.LargestDurationMicroseconds);
+        try
+        {
+            var journal = new MutationJournal(databasePath);
+            journal.Initialize();
+            _ = journal.CreatePrepared(
+                experimentId,
+                "gpu-interrupt-affinity",
+                "PCI\\VEN_TEST&DEV_TEST",
+                "{\"snapshot\":true}",
+                "{\"candidate\":true}");
+
+            File.SetAttributes(databasePath, File.GetAttributes(databasePath) | FileAttributes.ReadOnly);
+
+            var entry = MutationJournalReadOnlyInspector.TryGet(databasePath, experimentId);
+            Assert.IsNotNull(entry);
+            Assert.AreEqual(experimentId, entry.ExperimentId);
+            Assert.AreEqual(MutationJournalState.Prepared, entry.State);
+            Assert.AreEqual("PCI\\VEN_TEST&DEV_TEST", entry.TargetId);
+            Assert.IsNull(MutationJournalReadOnlyInspector.TryGet(databasePath, Guid.NewGuid()));
+        }
+        finally
+        {
+            if (File.Exists(databasePath))
+            {
+                File.SetAttributes(databasePath, FileAttributes.Normal);
+            }
+
+            Directory.Delete(directory, recursive: true);
+        }
     }
 }
