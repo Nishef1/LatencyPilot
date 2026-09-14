@@ -24,10 +24,12 @@ internal readonly struct DevicePropertyKey(Guid formatId, uint propertyId)
 internal static class DevicePropertyKeys
 {
     private static readonly Guid DriverPackageFormatId = new("a8b865dd-2e3d-4094-ad97-e593a70c75d6");
+    private static readonly Guid DeviceFormatId = new("78c34fc8-104a-4aca-9ea4-524d52996e57");
 
     internal static readonly DevicePropertyKey DriverVersion = new(DriverPackageFormatId, 3);
     internal static readonly DevicePropertyKey DriverInfPath = new(DriverPackageFormatId, 5);
     internal static readonly DevicePropertyKey DriverProvider = new(DriverPackageFormatId, 9);
+    internal static readonly DevicePropertyKey DeviceInstanceId = new(DeviceFormatId, 256);
 }
 
 [StructLayout(LayoutKind.Sequential)]
