@@ -16,8 +16,8 @@ Last updated: 2026-09-14
 - Evidence schema: **`latencypilot-evidence-v8`**
 - Baseline method: **`baseline-quality-v2`**
 - Permanent automated tests: **9 / hard maximum 10**
-- Hosted CI: **test-only**; App/Service compile/runtime/release evidence remains owner-local
-- Current source handoff: **Phase 3 recovery/restart/transaction substrate is implemented but not exposed through IPC and not physically mutation-tested**
+- Normal hosted CI: **test-only**; a one-time temporary Windows Service compile smoke has passed, while App/Service install/runtime/release evidence remains owner-local
+- Current source handoff: **Phase 3 recovery/restart/transaction substrate is implemented and Service-compile-verified, but not exposed through IPC and not physically mutation-tested**
 
 ## Measurement authority
 
@@ -146,10 +146,11 @@ PresentMon API discovery, graphics-device correlation and workload metric captur
 
 ## Current verification evidence
 
-- Hosted Tests for exact source head `81650ef1fe8fef41331c0496ce00e9ba69b12894` completed successfully in run `34838323730` / run #514.
-- The permanent suite remains **9/10**.
-- Hosted Tests compile and exercise their deterministic dependency graph, including Platform.Windows; they intentionally do **not** compile/run the Windows Service or WinUI App.
-- Therefore the new Service transaction/recovery source still requires owner-local Windows compilation before it can be treated as build-verified.
+- A one-time temporary Windows-hosted Service compile smoke on the current Phase 3 Service source succeeded in Tests run `34839998553` / run #535 at workflow commit `3abe4b1678de80a309f1b17acf7c63ec34c49438`, after fixing the `CA1859` analyzer failure in `MutationRecoveryInspector` at source commit `5292dd504cb426bafd714510106eef79104ebb66`.
+- The same run #535 completed the permanent critical suite successfully; the suite remains **9/10**.
+- The temporary Service compile step was removed immediately afterward; normal hosted CI is again test-only at `f96081f5ba5e9dd6b2ec6041e3ec1d6b38a03a63`.
+- Hosted compile evidence proves the Service source compiles on the Windows runner; it does **not** prove WinUI App build, protected Service installation/startup, LocalSystem behavior, named-pipe runtime authorization, journal startup on the target PC, or any physical mutation behavior.
+- Owner-local `./run.ps1` build/install/launch therefore remains mandatory before the physical recovery/restart gate can advance.
 
 No physical GPU mutation, GPU restart, forced-failure rollback or reboot recovery has been performed by this source work.
 
@@ -178,9 +179,10 @@ First objective is **compile/install/launch validation only**, not mutation. Con
 - App header shows the exact clean source revision;
 - Service starts and remains read-only over protocol v6;
 - observation and evidence export still work;
-- Service logs show successful mutation-journal startup inspection with zero unresolved experiments on a clean machine state.
+- `run.ps1` reports the protected Service as `Running`;
+- `run.ps1`/Service logs prove mutation-journal startup inspection with zero unresolved experiments on a clean machine state.
 
-If current Service source does not compile or launch, fix that before any further optimizer work.
+If current App/Service source does not compile, install or launch on the supported owner-local Windows path, fix that before any further optimizer work.
 
 ## After owner-local compile/launch passes
 
