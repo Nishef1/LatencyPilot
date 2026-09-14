@@ -3,7 +3,7 @@ namespace LatencyPilot.Core.Devices;
 public sealed class DeviceRelationshipGraph
 {
     private const int MaximumTraversalDepth = 64;
-    private readonly IReadOnlyDictionary<string, PnPDeviceSnapshot> devicesById;
+    private readonly Dictionary<string, PnPDeviceSnapshot> devicesById;
 
     public DeviceRelationshipGraph(DeviceInventorySnapshot inventory)
     {
