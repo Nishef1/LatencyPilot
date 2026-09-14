@@ -17,7 +17,7 @@ public static class InputDeviceRouteReader
 
     public static UserInputRouteInventory Capture()
     {
-        var inventory = DeviceInventoryReader.Capture();
+        var inventory = DeviceInventoryReader.CapturePresentDevices();
         return Capture(inventory);
     }
 
@@ -70,7 +70,7 @@ public static class InputDeviceRouteReader
             ancestors.Select(static ancestor => ancestor.InstanceId).ToArray());
     }
 
-    private static unsafe IReadOnlyList<RawInputDeviceSnapshot> EnumerateRawInputDevices()
+    private static unsafe RawInputDeviceSnapshot[] EnumerateRawInputDevices()
     {
         var entrySize = checked((uint)Marshal.SizeOf<RawInputDeviceListEntry>());
         uint deviceCount = 0;
