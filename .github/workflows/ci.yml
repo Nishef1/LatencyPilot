@@ -45,5 +45,8 @@ jobs:
       - name: Critical tests
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
 
+      - name: Temporary Phase 3 owner harness compile smoke
+        run: dotnet build tools/LatencyPilot.PhysicalValidation/LatencyPilot.PhysicalValidation.csproj --configuration Release
+
       - name: Premium WinUI dashboard compile smoke
         run: dotnet build src/LatencyPilot.App/LatencyPilot.App.csproj --configuration Release
