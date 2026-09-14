@@ -40,6 +40,7 @@ public static class MutationJournalStateMachine
     {
         (MutationJournalState.Prepared, MutationJournalState.Applying) => true,
         (MutationJournalState.Prepared, MutationJournalState.AbortedBeforeApply) => true,
+        (MutationJournalState.Applying, MutationJournalState.AbortedBeforeApply) => true,
         (MutationJournalState.Applying, MutationJournalState.Applied) => true,
         (MutationJournalState.Applying, MutationJournalState.RecoveryRequired) => true,
         (MutationJournalState.Applied, MutationJournalState.Measuring) => true,
