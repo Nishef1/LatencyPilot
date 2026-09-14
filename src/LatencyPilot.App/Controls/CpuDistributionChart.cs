@@ -112,8 +112,8 @@ public sealed class CpuDistributionChart : UserControl
         }
 
         var slot = plotWidth / bars.Length;
-        var barWidth = Math.Clamp(slot * 0.56d, 2d, 24d);
-        var labelStride = Math.Max(1, (int)Math.Ceiling(18d / Math.Max(1d, slot)));
+        var barWidth = Math.Clamp(slot * 0.56d, 1d, 24d);
+        var labelStride = Math.Max(1, (int)Math.Ceiling(18d / Math.Max(0.25d, slot)));
 
         for (var index = 0; index < bars.Length; index++)
         {
@@ -124,7 +124,7 @@ public sealed class CpuDistributionChart : UserControl
             var rect = new Rectangle
             {
                 Width = barWidth,
-                Height = Math.Max(2d, barHeight),
+                Height = barHeight,
                 RadiusX = Math.Min(3d, barWidth / 2d),
                 RadiusY = Math.Min(3d, barWidth / 2d),
                 Fill = Math.Abs(item.Value - peak) < 0.0001d ? primaryBrush : tertiaryBrush,
