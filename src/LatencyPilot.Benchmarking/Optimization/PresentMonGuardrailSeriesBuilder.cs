@@ -57,7 +57,7 @@ public static class PresentMonGuardrailSeriesBuilder
     }
 
     private static void AddLowerIsBetter(
-        IDictionary<string, MetricSeries> result,
+        Dictionary<string, MetricSeries> result,
         string name,
         IEnumerable<PresentMonWorkloadMetricsSnapshot> windows,
         Func<PresentMonSwapChainMetricsSnapshot, double?> selector)
@@ -75,7 +75,7 @@ public static class PresentMonGuardrailSeriesBuilder
     }
 
     private static void AddHigherIsBetter(
-        IDictionary<string, MetricSeries> result,
+        Dictionary<string, MetricSeries> result,
         string name,
         IEnumerable<PresentMonWorkloadMetricsSnapshot> windows,
         Func<PresentMonSwapChainMetricsSnapshot, double?> selector)
