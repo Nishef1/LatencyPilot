@@ -97,6 +97,28 @@ public sealed record InterruptResourceSnapshot(
         new(InterruptResourceReadStatus.ReadFailed, nativeStatusCode, []);
 }
 
+public enum DeviceParentReadStatus
+{
+    Available,
+    Unavailable,
+    ReadFailed,
+}
+
+public sealed record DeviceParentSnapshot(
+    DeviceParentReadStatus ReadStatus,
+    uint? NativeStatusCode,
+    string? ParentInstanceId)
+{
+    public static DeviceParentSnapshot Available(string parentInstanceId) =>
+        new(DeviceParentReadStatus.Available, null, parentInstanceId);
+
+    public static DeviceParentSnapshot Unavailable(uint nativeStatusCode) =>
+        new(DeviceParentReadStatus.Unavailable, nativeStatusCode, null);
+
+    public static DeviceParentSnapshot ReadFailed(uint? nativeStatusCode = null) =>
+        new(DeviceParentReadStatus.ReadFailed, nativeStatusCode, null);
+}
+
 public sealed record PnPDeviceSnapshot(
     string InstanceId,
     Guid ClassGuid,
@@ -106,7 +128,10 @@ public sealed record PnPDeviceSnapshot(
     string? ServiceName,
     DriverMetadataSnapshot Driver,
     InterruptConfigurationSnapshot InterruptConfiguration,
-    InterruptResourceSnapshot InterruptResources);
+    InterruptResourceSnapshot InterruptResources)
+{
+    public DeviceParentSnapshot Parent { get; init; } = DeviceParentSnapshot.ReadFailed();
+}
 
 public sealed record DeviceInventorySnapshot(
     IReadOnlyList<PnPDeviceSnapshot> Devices,
@@ -121,4 +146,7 @@ public sealed record DeviceInventorySnapshot(
 
     public int DevicesWithAssignedInterruptsCount => Devices.Count(
         static device => device.InterruptResources.HasAssignedInterrupts);
+
+    public int DevicesWithKnownParentCount => Devices.Count(
+        static device => device.Parent.ReadStatus == DeviceParentReadStatus.Available);
 }
