@@ -7,10 +7,46 @@ public static class MutationJournalReadOnlyInspector
 {
     private const int SupportedSchemaVersion = 1;
 
+    public static MutationJournalEntry? TryGet(string databasePath, Guid experimentId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        if (experimentId == Guid.Empty)
+        {
+            return null;
+        }
+
+        using var connection = OpenReadOnly(databasePath);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT * FROM mutation_journal WHERE experiment_id = $experimentId;";
+        command.Parameters.AddWithValue("$experimentId", experimentId.ToString("D"));
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadEntry(reader) : null;
+    }
+
     public static IReadOnlyList<MutationJournalEntry> GetUnresolved(string databasePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
 
+        using var connection = OpenReadOnly(databasePath);
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT * FROM mutation_journal
+            WHERE state NOT IN ('Reverted', 'Kept', 'AbortedBeforeApply')
+            ORDER BY created_utc ASC;
+            """;
+        using var reader = command.ExecuteReader();
+        var entries = new List<MutationJournalEntry>();
+        while (reader.Read())
+        {
+            entries.Add(ReadEntry(reader));
+        }
+
+        return entries;
+    }
+
+    private static SqliteConnection OpenReadOnly(string databasePath)
+    {
         var fullPath = Path.GetFullPath(databasePath);
         if (!File.Exists(fullPath))
         {
@@ -28,32 +64,25 @@ public static class MutationJournalReadOnlyInspector
             DefaultTimeout = 5,
         }.ToString();
 
-        using var connection = new SqliteConnection(connectionString);
-        connection.Open();
-
-        using (var queryOnly = connection.CreateCommand())
+        var connection = new SqliteConnection(connectionString);
+        try
         {
-            queryOnly.CommandText = "PRAGMA query_only = ON;";
-            queryOnly.ExecuteNonQuery();
+            connection.Open();
+
+            using (var queryOnly = connection.CreateCommand())
+            {
+                queryOnly.CommandText = "PRAGMA query_only = ON;";
+                queryOnly.ExecuteNonQuery();
+            }
+
+            ValidateSchema(connection);
+            return connection;
         }
-
-        ValidateSchema(connection);
-
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT * FROM mutation_journal
-            WHERE state NOT IN ('Reverted', 'Kept', 'AbortedBeforeApply')
-            ORDER BY created_utc ASC;
-            """;
-        using var reader = command.ExecuteReader();
-        var entries = new List<MutationJournalEntry>();
-        while (reader.Read())
+        catch
         {
-            entries.Add(ReadEntry(reader));
+            connection.Dispose();
+            throw;
         }
-
-        return entries;
     }
 
     private static void ValidateSchema(SqliteConnection connection)
