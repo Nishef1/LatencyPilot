@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.Globalization;
+using System.Security;
 using System.Security.Principal;
 using LatencyPilot.Core.System;
 using LatencyPilot.Persistence;
@@ -43,6 +45,8 @@ internal static class PhysicalValidationProgram
             InvalidDataException or
             IOException or
             UnauthorizedAccessException or
+            SecurityException or
+            Win32Exception or
             NotSupportedException or
             PlatformNotSupportedException)
         {
@@ -113,9 +117,11 @@ internal static class PhysicalValidationProgram
 
         var deviceInstanceId = options.GetRequiredValue("--device");
         var processorText = options.GetRequiredValue("--processor");
-        if (!byte.TryParse(processorText, NumberStyles.None, CultureInfo.InvariantCulture, out var processorNumber))
+        if (!byte.TryParse(processorText, NumberStyles.None, CultureInfo.InvariantCulture, out var processorNumber) ||
+            processorNumber >= 64)
         {
-            throw new ArgumentException("--processor must be a group-0 logical processor number from 0 through 255.");
+            throw new ArgumentException(
+                "--processor must identify an existing group-0 logical processor from 0 through 63.");
         }
 
         var topology = ProcessorTopologyReader.Capture();
