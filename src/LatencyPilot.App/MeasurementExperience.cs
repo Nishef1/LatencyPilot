@@ -547,6 +547,8 @@ public sealed partial class MainWindow
         bool isPartial,
         MeasurementScenario scenario)
     {
+        PrepareGpuAffinityCandidatePlan(captures, quality, isPartial, scenario);
+
         try
         {
             var evidenceType = isPartial ? "baseline-partial" : "baseline";
