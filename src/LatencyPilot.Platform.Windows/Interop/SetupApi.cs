@@ -222,7 +222,7 @@ internal static partial class SetupApi
     internal static partial bool SetupDiSetClassInstallParams(
         SafeDeviceInfoSetHandle deviceInfoSet,
         ref SpDevInfoData deviceInfoData,
-        ref SpClassInstallHeader classInstallParams,
+        ref SpPropChangeParams classInstallParams,
         uint classInstallParamsSize);
 
     [LibraryImport("setupapi.dll", SetLastError = true)]
