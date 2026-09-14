@@ -7,6 +7,7 @@ internal static partial class ConfigurationManager
     internal const uint Success = 0x00000000;
     internal const uint NoMoreLogConfigurations = 0x0000000E;
     internal const uint NoMoreResourceDescriptors = 0x0000000F;
+    internal const uint BufferSmall = 0x0000001A;
     internal const uint CallNotImplemented = 0x00000034;
 
     internal const uint AllocatedLogConfiguration = 0x00000002;
