@@ -1,17 +1,18 @@
 # LatencyPilot Diagnostics and Logging
 
 Status: **Active diagnostics contract**  
-Last updated: 2026-09-13
+Last updated: 2026-09-14
 
 LatencyPilot uses bounded structured local diagnostics so App, IPC, Service and ETW failures can be reconstructed without turning logging into a second telemetry system or contaminating the measurement hot path.
 
 Current related contracts:
 
 ```text
-Observation protocol:  v6
-Evidence schema:       latencypilot-evidence-v8
+Observation protocol:   v6
+Evidence schema:        latencypilot-evidence-v8
 Quick snapshot purpose: quick-diagnostic-snapshot
-Decision baseline:     baseline-quality-v2
+Decision baseline:      baseline-quality-v2
+Public mutation:        unavailable / unarmed
 ```
 
 ## Log locations
@@ -189,6 +190,7 @@ Log bounded lifecycle/failure evidence such as:
 - expected ETW-start/capture failures with exception type and native error where available;
 - ETW event-loss/invalid/event-limit summaries;
 - rejected local client-session access at the privileged boundary;
+- mutation-journal startup/recovery readiness outcomes while the public mutation surface remains unarmed;
 - unexpected App/Service boundary exceptions;
 - partial inventory failures where user-visible diagnostics are required.
 
@@ -215,7 +217,7 @@ Diagnostics must not become part of the workload being measured.
 
 Never perform synchronous disk I/O from ETW callbacks. Never log one record per DPC/ISR event. Under pathological log pressure, dropping low-value asynchronous diagnostic records is preferable to blocking the observation path and changing the result being measured.
 
-Raw/auditable benchmark evidence is a separate product concern from operational logs. Logs do not replace evidence persistence or the future experiment journal.
+Raw/auditable benchmark evidence is a separate product concern from operational logs. Logs do not replace evidence persistence or the durable experiment journal.
 
 ## Failure handling
 
