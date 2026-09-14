@@ -7,7 +7,7 @@ namespace LatencyPilot.CriticalTests;
 public sealed class Phase3PreWriteAbortTemporaryTests
 {
     [TestMethod]
-    public void Applying_can_terminalize_as_aborted_before_owned_write()
+    public void ApplyingCanTerminalizeAsAbortedBeforeOwnedWrite()
     {
         Assert.IsTrue(MutationJournalStateMachine.CanTransition(
             MutationJournalState.Applying,
