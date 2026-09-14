@@ -61,11 +61,52 @@ public static class DeviceInventoryReader
                     TryReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverProvider),
                     TryReadUnifiedStringProperty(deviceInfoSet, ref deviceInfo, DevicePropertyKeys.DriverInfPath)),
                 ReadInterruptConfiguration(deviceInfoSet, ref deviceInfo),
-                InterruptResourceReader.Capture(deviceInfo.DevInst)));
+                InterruptResourceReader.Capture(deviceInfo.DevInst))
+            {
+                Parent = ReadParent(deviceInfo.DevInst),
+            });
         }
 
         devices.Sort(static (left, right) => StringComparer.OrdinalIgnoreCase.Compare(left.InstanceId, right.InstanceId));
         return new DeviceInventorySnapshot(devices.ToArray(), DateTimeOffset.UtcNow);
+    }
+
+    private static unsafe DeviceParentSnapshot ReadParent(uint deviceInstance)
+    {
+        var parentStatus = ConfigurationManager.CM_Get_Parent(out var parentDeviceInstance, deviceInstance, 0);
+        if (parentStatus != ConfigurationManager.Success)
+        {
+            return DeviceParentSnapshot.Unavailable(parentStatus);
+        }
+
+        var sizeStatus = ConfigurationManager.CM_Get_Device_ID_Size(out var requiredLength, parentDeviceInstance, 0);
+        if (sizeStatus != ConfigurationManager.Success || requiredLength == 0)
+        {
+            return DeviceParentSnapshot.ReadFailed(sizeStatus);
+        }
+
+        var buffer = new char[checked((int)requiredLength + 1)];
+        fixed (char* pointer = buffer)
+        {
+            var idStatus = ConfigurationManager.CM_Get_Device_ID(
+                parentDeviceInstance,
+                pointer,
+                checked((uint)buffer.Length),
+                0);
+            if (idStatus != ConfigurationManager.Success)
+            {
+                return DeviceParentSnapshot.ReadFailed(idStatus);
+            }
+        }
+
+        var terminator = Array.IndexOf(buffer, '\0');
+        var length = terminator >= 0 ? terminator : buffer.Length;
+        if (length == 0)
+        {
+            return DeviceParentSnapshot.ReadFailed();
+        }
+
+        return DeviceParentSnapshot.Available(new string(buffer, 0, length));
     }
 
     private static InterruptConfigurationSnapshot ReadInterruptConfiguration(
