@@ -53,6 +53,12 @@ builder.Services.AddWindowsService(options =>
     options.ServiceName = ServiceBoundary.ServiceName;
 });
 
+// Recovery inspection starts before the pipe host. It initializes the durable
+// journal and re-reads actual state for any unresolved known mutation without
+// applying or reverting anything. Observation remains available even if this
+// inspection fails, while mutation stays fail-closed.
+builder.Services.AddSingleton<MutationRecoveryReadiness>();
+builder.Services.AddHostedService<MutationRecoveryInspector>();
 builder.Services.AddHostedService<ObservationHost>();
 
 var host = builder.Build();
