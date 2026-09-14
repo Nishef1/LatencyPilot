@@ -148,6 +148,7 @@ Do not describe a numerically smaller value as an improvement if the difference 
 ## Code quality
 
 - Target the SDK pinned by `global.json`.
+- Keep NuGet package versions centralized in the repository-root `Directory.Packages.props`; project files should declare package usage without duplicating version numbers.
 - Treat compiler/analyzer warnings as errors where the project is compiled; fix root causes rather than adding broad suppressions.
 - Keep Core and Benchmarking independent of WinUI and direct Windows mutation APIs.
 - Keep raw Windows interop/platform-specific code inside `LatencyPilot.Platform.Windows`, except narrow Service-boundary lifecycle/security calls that belong to the Service.
