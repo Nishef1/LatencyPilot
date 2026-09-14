@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
 using Microsoft.Win32;
 
@@ -140,10 +141,14 @@ public static class GpuInterruptAffinityPolicyStore
 
         if (!original.AffinityPolicyKeyExisted)
         {
-            using var current = interruptManagement.OpenSubKey(AffinityPolicySubKey, writable: false);
-            if (current is not null && current.ValueCount == 0 && current.SubKeyCount == 0)
+            var removeEmptyKey = false;
+            using (var current = interruptManagement.OpenSubKey(AffinityPolicySubKey, writable: false))
             {
-                current.Dispose();
+                removeEmptyKey = current is not null && current.ValueCount == 0 && current.SubKeyCount == 0;
+            }
+
+            if (removeEmptyKey)
+            {
                 interruptManagement.DeleteSubKey(AffinityPolicySubKey, throwOnMissingSubKey: false);
             }
         }
@@ -155,6 +160,7 @@ public static class GpuInterruptAffinityPolicyStore
         string deviceInstanceId,
         GpuInterruptAffinityCandidate candidate)
     {
+        ArgumentNullException.ThrowIfNull(candidate);
         var snapshot = Capture(deviceInstanceId);
         if (!TryDecodeDword(snapshot.DevicePolicy, out var policy) ||
             policy != IrqPolicySpecifiedProcessors ||
@@ -168,6 +174,7 @@ public static class GpuInterruptAffinityPolicyStore
 
     public static bool IsRestored(GpuInterruptAffinitySnapshot original)
     {
+        ArgumentNullException.ThrowIfNull(original);
         var current = Capture(original.DeviceInstanceId);
         return current.AffinityPolicyKeyExisted == original.AffinityPolicyKeyExisted &&
                ValuesEqual(current.DevicePolicy, original.DevicePolicy) &&
@@ -194,7 +201,7 @@ public static class GpuInterruptAffinityPolicyStore
         }
     }
 
-    private static Core.Devices.PnPDeviceSnapshot GetPresentDisplayAdapter(string deviceInstanceId)
+    private static PnPDeviceSnapshot GetPresentDisplayAdapter(string deviceInstanceId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
         if (deviceInstanceId.IndexOf('\0') >= 0)
@@ -220,7 +227,8 @@ public static class GpuInterruptAffinityPolicyStore
 
     private static RegistryValueSnapshot ReadSupportedValue(RegistryKey? key, string valueName)
     {
-        if (key is null || Array.IndexOf(key.GetValueNames(), valueName) < 0)
+        if (key is null || !key.GetValueNames().Any(name =>
+                string.Equals(name, valueName, StringComparison.OrdinalIgnoreCase)))
         {
             return RegistryValueSnapshot.Missing;
         }
@@ -303,7 +311,7 @@ public static class GpuInterruptAffinityPolicyStore
                 return true;
             case RegistryValueKind.Binary when value.Data.Length is > 0 and <= sizeof(ulong):
                 Span<byte> padded = stackalloc byte[sizeof(ulong)];
-                value.Data.CopyTo(padded);
+                value.Data.AsSpan().CopyTo(padded);
                 result = BinaryPrimitives.ReadUInt64LittleEndian(padded);
                 return true;
             default:
