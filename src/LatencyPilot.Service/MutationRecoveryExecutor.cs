@@ -186,7 +186,7 @@ internal sealed class MutationRecoveryExecutor
         };
     }
 
-    private void EnsureStoredOriginalStillCurrent(
+    private static void EnsureStoredOriginalStillCurrent(
         MutationJournalEntry entry,
         GpuInterruptAffinitySnapshot original)
     {
