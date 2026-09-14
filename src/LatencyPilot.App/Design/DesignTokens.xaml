@@ -4,64 +4,82 @@
 
     <!--
         LatencyPilot visual SSOT.
-        Colors, spacing, radii, typography scale, and shared dimensions live here.
+        Colors, spacing, radii, typography scale, chart palette, and shared dimensions live here.
         Screens and component styles consume these keys instead of hard-coding values.
     -->
 
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
-            <SolidColorBrush x:Key="CanvasBrush" Color="#FFF6F7FA" />
-            <SolidColorBrush x:Key="SurfaceBrush" Color="#F2FFFFFF" />
-            <SolidColorBrush x:Key="SurfaceAltBrush" Color="#EAF2F4F8" />
-            <SolidColorBrush x:Key="SurfaceStrongBrush" Color="#F3E9EDF5" />
-            <SolidColorBrush x:Key="PremiumSurfaceBrush" Color="#F7FFFFFF" />
+            <SolidColorBrush x:Key="CanvasBrush" Color="#FFF5F7FB" />
+            <SolidColorBrush x:Key="SurfaceBrush" Color="#EFFFFFFF" />
+            <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FFF4F6FA" />
+            <SolidColorBrush x:Key="SurfaceStrongBrush" Color="#FFEAEFF7" />
+            <SolidColorBrush x:Key="PremiumSurfaceBrush" Color="#F8FFFFFF" />
             <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#FFFFFFFF" />
-            <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FFF1F3F8" />
-            <SolidColorBrush x:Key="TextBrush" Color="#FF151821" />
-            <SolidColorBrush x:Key="MutedTextBrush" Color="#FF667085" />
-            <SolidColorBrush x:Key="SubtleTextBrush" Color="#FF8790A3" />
-            <SolidColorBrush x:Key="BorderBrush" Color="#D8D9DEE8" />
-            <SolidColorBrush x:Key="DividerBrush" Color="#A8DDE2EB" />
-            <SolidColorBrush x:Key="ChartTrackBrush" Color="#FFE3E7EF" />
-            <SolidColorBrush x:Key="AccentBrush" Color="#FF5B5CE2" />
-            <SolidColorBrush x:Key="AccentHoverBrush" Color="#FF4D4ED2" />
-            <SolidColorBrush x:Key="AccentSoftBrush" Color="#FFEEEFFF" />
-            <SolidColorBrush x:Key="AccentSofterBrush" Color="#A8F3F3FF" />
-            <SolidColorBrush x:Key="SuccessBrush" Color="#FF087A5A" />
-            <SolidColorBrush x:Key="SuccessSoftBrush" Color="#FFE7F7F1" />
-            <SolidColorBrush x:Key="WarningBrush" Color="#FF9A5A00" />
-            <SolidColorBrush x:Key="WarningSoftBrush" Color="#FFFFF4DA" />
-            <SolidColorBrush x:Key="ImpactBrush" Color="#FFB54708" />
-            <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FFFFEDDF" />
-            <SolidColorBrush x:Key="DangerBrush" Color="#FFB42318" />
-            <SolidColorBrush x:Key="DangerSoftBrush" Color="#FFFDECEA" />
+            <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FFEFF4FC" />
+            <SolidColorBrush x:Key="NavigationBrush" Color="#CCF8FAFE" />
+            <SolidColorBrush x:Key="NavigationSelectedBrush" Color="#FFE7F0FF" />
+            <SolidColorBrush x:Key="NavigationIconBrush" Color="#FF5E6B83" />
+            <SolidColorBrush x:Key="TextBrush" Color="#FF111827" />
+            <SolidColorBrush x:Key="MutedTextBrush" Color="#FF64748B" />
+            <SolidColorBrush x:Key="SubtleTextBrush" Color="#FF94A0B4" />
+            <SolidColorBrush x:Key="BorderBrush" Color="#CCDCE3EE" />
+            <SolidColorBrush x:Key="DividerBrush" Color="#9CDCE3EE" />
+            <SolidColorBrush x:Key="ChartTrackBrush" Color="#FFE8EDF5" />
+            <SolidColorBrush x:Key="ChartGridBrush" Color="#B8E1E7F0" />
+            <SolidColorBrush x:Key="ChartAccentPrimaryBrush" Color="#FF6658F5" />
+            <SolidColorBrush x:Key="ChartAccentSecondaryBrush" Color="#FF2583F7" />
+            <SolidColorBrush x:Key="ChartAccentTertiaryBrush" Color="#FF60A5FA" />
+            <SolidColorBrush x:Key="ChartWarmBrush" Color="#FFF59E0B" />
+            <SolidColorBrush x:Key="ChartCellBrush" Color="#FF4F8FF7" />
+            <SolidColorBrush x:Key="AccentBrush" Color="#FF2563EB" />
+            <SolidColorBrush x:Key="AccentHoverBrush" Color="#FF1D4ED8" />
+            <SolidColorBrush x:Key="AccentSoftBrush" Color="#FFEAF2FF" />
+            <SolidColorBrush x:Key="AccentSofterBrush" Color="#9CF1F6FF" />
+            <SolidColorBrush x:Key="SuccessBrush" Color="#FF059669" />
+            <SolidColorBrush x:Key="SuccessSoftBrush" Color="#FFE4F8F0" />
+            <SolidColorBrush x:Key="WarningBrush" Color="#FFB36A00" />
+            <SolidColorBrush x:Key="WarningSoftBrush" Color="#FFFFF4D8" />
+            <SolidColorBrush x:Key="ImpactBrush" Color="#FFC05621" />
+            <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FFFFEDE4" />
+            <SolidColorBrush x:Key="DangerBrush" Color="#FFC23B32" />
+            <SolidColorBrush x:Key="DangerSoftBrush" Color="#FFFFECEA" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Dark">
-            <SolidColorBrush x:Key="CanvasBrush" Color="#FF0C0F15" />
-            <SolidColorBrush x:Key="SurfaceBrush" Color="#E8151922" />
-            <SolidColorBrush x:Key="SurfaceAltBrush" Color="#E91B202B" />
-            <SolidColorBrush x:Key="SurfaceStrongBrush" Color="#F1262C38" />
-            <SolidColorBrush x:Key="PremiumSurfaceBrush" Color="#F21A1E28" />
-            <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#FF1D222D" />
-            <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FF242A36" />
-            <SolidColorBrush x:Key="TextBrush" Color="#FFF4F6FA" />
-            <SolidColorBrush x:Key="MutedTextBrush" Color="#FFAEB7C7" />
-            <SolidColorBrush x:Key="SubtleTextBrush" Color="#FF8792A5" />
-            <SolidColorBrush x:Key="BorderBrush" Color="#D6373E4D" />
-            <SolidColorBrush x:Key="DividerBrush" Color="#A83A4252" />
-            <SolidColorBrush x:Key="ChartTrackBrush" Color="#FF2A303C" />
-            <SolidColorBrush x:Key="AccentBrush" Color="#FF9293FF" />
-            <SolidColorBrush x:Key="AccentHoverBrush" Color="#FFA5A6FF" />
-            <SolidColorBrush x:Key="AccentSoftBrush" Color="#FF272844" />
-            <SolidColorBrush x:Key="AccentSofterBrush" Color="#A823243B" />
-            <SolidColorBrush x:Key="SuccessBrush" Color="#FF55D5A7" />
-            <SolidColorBrush x:Key="SuccessSoftBrush" Color="#FF123128" />
-            <SolidColorBrush x:Key="WarningBrush" Color="#FFF0B75A" />
-            <SolidColorBrush x:Key="WarningSoftBrush" Color="#FF352817" />
-            <SolidColorBrush x:Key="ImpactBrush" Color="#FFFF955C" />
-            <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FF3A2318" />
-            <SolidColorBrush x:Key="DangerBrush" Color="#FFFF786F" />
+            <SolidColorBrush x:Key="CanvasBrush" Color="#FF0B0F16" />
+            <SolidColorBrush x:Key="SurfaceBrush" Color="#E8131821" />
+            <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FF171D28" />
+            <SolidColorBrush x:Key="SurfaceStrongBrush" Color="#FF222A38" />
+            <SolidColorBrush x:Key="PremiumSurfaceBrush" Color="#F2181E29" />
+            <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#FF1C2430" />
+            <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FF222C3A" />
+            <SolidColorBrush x:Key="NavigationBrush" Color="#D00F141D" />
+            <SolidColorBrush x:Key="NavigationSelectedBrush" Color="#FF1D3151" />
+            <SolidColorBrush x:Key="NavigationIconBrush" Color="#FFA8B5C9" />
+            <SolidColorBrush x:Key="TextBrush" Color="#FFF5F7FB" />
+            <SolidColorBrush x:Key="MutedTextBrush" Color="#FFB0BAC9" />
+            <SolidColorBrush x:Key="SubtleTextBrush" Color="#FF7E8BA0" />
+            <SolidColorBrush x:Key="BorderBrush" Color="#B83B4556" />
+            <SolidColorBrush x:Key="DividerBrush" Color="#8F3A4658" />
+            <SolidColorBrush x:Key="ChartTrackBrush" Color="#FF293240" />
+            <SolidColorBrush x:Key="ChartGridBrush" Color="#B6323D4E" />
+            <SolidColorBrush x:Key="ChartAccentPrimaryBrush" Color="#FFA59CFF" />
+            <SolidColorBrush x:Key="ChartAccentSecondaryBrush" Color="#FF6CB5FF" />
+            <SolidColorBrush x:Key="ChartAccentTertiaryBrush" Color="#FF7BC4FF" />
+            <SolidColorBrush x:Key="ChartWarmBrush" Color="#FFF3B64A" />
+            <SolidColorBrush x:Key="ChartCellBrush" Color="#FF72ABFF" />
+            <SolidColorBrush x:Key="AccentBrush" Color="#FF72A7FF" />
+            <SolidColorBrush x:Key="AccentHoverBrush" Color="#FF8BB7FF" />
+            <SolidColorBrush x:Key="AccentSoftBrush" Color="#FF1C2D47" />
+            <SolidColorBrush x:Key="AccentSofterBrush" Color="#A81A2940" />
+            <SolidColorBrush x:Key="SuccessBrush" Color="#FF5AD6A7" />
+            <SolidColorBrush x:Key="SuccessSoftBrush" Color="#FF12352A" />
+            <SolidColorBrush x:Key="WarningBrush" Color="#FFF3BE63" />
+            <SolidColorBrush x:Key="WarningSoftBrush" Color="#FF382B18" />
+            <SolidColorBrush x:Key="ImpactBrush" Color="#FFFF9A63" />
+            <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FF3A2419" />
+            <SolidColorBrush x:Key="DangerBrush" Color="#FFFF7B72" />
             <SolidColorBrush x:Key="DangerSoftBrush" Color="#FF3A1C1C" />
         </ResourceDictionary>
 
@@ -73,12 +91,21 @@
             <SolidColorBrush x:Key="PremiumSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="SurfaceHoverBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="NavigationBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="NavigationSelectedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="NavigationIconBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
             <SolidColorBrush x:Key="TextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
             <SolidColorBrush x:Key="MutedTextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
             <SolidColorBrush x:Key="SubtleTextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
             <SolidColorBrush x:Key="BorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
             <SolidColorBrush x:Key="DividerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
             <SolidColorBrush x:Key="ChartTrackBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="ChartGridBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="ChartAccentPrimaryBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="ChartAccentSecondaryBrush" Color="{ThemeResource SystemColorHotlightColor}" />
+            <SolidColorBrush x:Key="ChartAccentTertiaryBrush" Color="{ThemeResource SystemColorHotlightColor}" />
+            <SolidColorBrush x:Key="ChartWarmBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="ChartCellBrush" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="AccentBrush" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="AccentHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="AccentSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
@@ -108,13 +135,16 @@
     <x:Double x:Key="FontBody">14</x:Double>
     <x:Double x:Key="FontSection">16</x:Double>
     <x:Double x:Key="FontHeading">20</x:Double>
-    <x:Double x:Key="FontMetric">28</x:Double>
-    <x:Double x:Key="FontHero">34</x:Double>
+    <x:Double x:Key="FontMetric">30</x:Double>
+    <x:Double x:Key="FontHero">32</x:Double>
 
-    <x:Double x:Key="ControlHeight">38</x:Double>
+    <x:Double x:Key="ControlHeight">40</x:Double>
     <x:Double x:Key="TitleBarHeight">48</x:Double>
-    <x:Double x:Key="ContentMaxWidth">1520</x:Double>
-    <x:Double x:Key="RailWidth">328</x:Double>
+    <x:Double x:Key="ContentMaxWidth">1760</x:Double>
+    <x:Double x:Key="NavigationRailWidth">196</x:Double>
+    <x:Double x:Key="ContextPanelWidth">278</x:Double>
+    <x:Double x:Key="ChartMinHeight">210</x:Double>
+    <x:Double x:Key="DashboardGap">14</x:Double>
 
     <CornerRadius x:Key="RadiusSmall">8</CornerRadius>
     <CornerRadius x:Key="RadiusMedium">12</CornerRadius>
@@ -122,10 +152,10 @@
     <CornerRadius x:Key="RadiusXLarge">20</CornerRadius>
     <CornerRadius x:Key="RadiusPill">999</CornerRadius>
 
-    <Thickness x:Key="PagePadding">30,22,30,40</Thickness>
-    <Thickness x:Key="CardPadding">20</Thickness>
-    <Thickness x:Key="CompactCardPadding">16</Thickness>
+    <Thickness x:Key="PagePadding">18,16,18,28</Thickness>
+    <Thickness x:Key="CardPadding">18</Thickness>
+    <Thickness x:Key="CompactCardPadding">14</Thickness>
     <Thickness x:Key="MetricTilePadding">16,14</Thickness>
-    <Thickness x:Key="ButtonPadding">16,8</Thickness>
+    <Thickness x:Key="ButtonPadding">16,9</Thickness>
     <Thickness x:Key="PillPadding">10,5</Thickness>
 </ResourceDictionary>
