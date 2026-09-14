@@ -90,20 +90,32 @@ internal sealed class GpuInterruptAffinityMutationTransaction
         catch (Exception applyFailure)
         {
             var recovery = TryMarkRecoveryRequired(applying, applyFailure);
+            GpuInterruptAffinityMutationStepResult rollback;
             try
             {
-                _ = RollbackFromRecovery(recovery, original);
-                throw new InvalidOperationException(
-                    "GPU affinity apply failed; the transaction restored the captured original state.",
-                    applyFailure);
+                rollback = RollbackFromRecovery(recovery, original);
             }
-            catch (InvalidOperationException rollbackFailure) when (rollbackFailure.InnerException != applyFailure)
+            catch (Exception rollbackFailure)
             {
                 throw new AggregateException(
                     "GPU affinity apply failed and rollback did not complete cleanly.",
                     applyFailure,
                     rollbackFailure);
             }
+
+            if (rollback.JournalEntry.State != MutationJournalState.Reverted)
+            {
+                throw new AggregateException(
+                    "GPU affinity apply failed and rollback remains unresolved; a restart or recovery pass is still required.",
+                    applyFailure,
+                    new InvalidOperationException(
+                        rollback.JournalEntry.FailureReason ??
+                        "Rollback did not reach the verified Reverted state."));
+            }
+
+            throw new InvalidOperationException(
+                "GPU affinity apply failed; the transaction restored and reactivated the captured original state.",
+                applyFailure);
         }
     }
 
