@@ -44,3 +44,6 @@ jobs:
 
       - name: Critical tests
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+
+      - name: Physical validation harness compile smoke
+        run: dotnet build tools/LatencyPilot.PhysicalValidation/LatencyPilot.PhysicalValidation.csproj --configuration Release
