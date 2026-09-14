@@ -309,7 +309,7 @@ internal static class PhysicalValidationProgram
         Console.WriteLine($"system-restart-required={restart.SystemRestartRequired}");
         Console.WriteLine($"device-started={restart.DeviceStarted}");
         Console.WriteLine($"device-has-problem={restart.DeviceHasProblem}");
-        Console.WriteLine($"device-problem-code={restart.ProblemCode.ToString(CultureInfo.InvariantCulture)}");
+        Console.WriteLine($"device-problem-code={restart.ProblemCode?.ToString(CultureInfo.InvariantCulture) ?? "none"}");
         Console.WriteLine($"device-node-status=0x{restart.DeviceNodeStatusFlags:X8}");
         Console.WriteLine($"device-install-flags=0x{restart.DeviceInstallFlags:X8}");
     }
