@@ -22,7 +22,8 @@ internal static class MutationRecoveryPlanner
 {
     internal static MutationRecoveryPlan Create(
         MutationJournalEntry entry,
-        MutationStoredStateRelation storedStateRelation)
+        MutationStoredStateRelation storedStateRelation,
+        bool targetEnvironmentStable = true)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
@@ -31,6 +32,12 @@ internal static class MutationRecoveryPlanner
             return new MutationRecoveryPlan(
                 MutationRecoveryAction.None,
                 "The mutation journal entry is already terminal.");
+        }
+
+        if (!targetEnvironmentStable)
+        {
+            return Manual(
+                "The target device/driver environment changed after the original snapshot; recovery must not restore old policy blindly.");
         }
 
         if (storedStateRelation == MutationStoredStateRelation.Unknown)
