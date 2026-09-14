@@ -2,12 +2,9 @@ using LatencyPilot.Core.System;
 
 namespace LatencyPilot.Benchmarking.Candidates;
 
-public sealed record ProcessorPressureEvidence(
-    LogicalProcessorId Processor,
-    double PressureScore)
+public sealed record ProcessorPressureEvidence
 {
     public ProcessorPressureEvidence(LogicalProcessorId processor, double pressureScore)
-        : this()
     {
         if (!double.IsFinite(pressureScore) || pressureScore < 0)
         {
@@ -17,6 +14,10 @@ public sealed record ProcessorPressureEvidence(
         Processor = processor;
         PressureScore = pressureScore;
     }
+
+    public LogicalProcessorId Processor { get; }
+
+    public double PressureScore { get; }
 }
 
 public sealed record GpuAffinityCandidate(
