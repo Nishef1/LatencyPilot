@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Security;
+using System.Text.Json;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
 using Microsoft.Extensions.Hosting;
@@ -7,9 +8,19 @@ using Microsoft.Extensions.Logging;
 
 namespace LatencyPilot.Service;
 
+internal enum MutationStoredStateRelation
+{
+    Unknown = 0,
+    MatchesOriginal = 1,
+    MatchesCandidate = 2,
+    MatchesOriginalAndCandidate = 3,
+    Diverged = 4,
+}
+
 internal sealed record MutationRecoveryInspection(
     MutationJournalEntry Entry,
     bool ActualStateRead,
+    MutationStoredStateRelation StoredStateRelation,
     GpuInterruptAffinitySnapshot? GpuInterruptAffinity,
     string? Error);
 
@@ -113,13 +124,19 @@ internal sealed class MutationRecoveryInspector : IHostedService
         LoggerMessage.Define<Guid, string>(
             LogLevel.Error,
             new EventId(2004, nameof(ActualStateReadFailed)),
-            "Startup recovery could not re-read actual machine state for experiment {ExperimentId}: {Reason}.");
+            "Startup recovery could not re-read/classify actual machine state for experiment {ExperimentId}: {Reason}.");
 
     private static readonly Action<ILogger, string, Exception?> JournalUnavailable =
         LoggerMessage.Define<string>(
             LogLevel.Critical,
             new EventId(2005, nameof(JournalUnavailable)),
             "Mutation journal startup inspection failed: {Reason}. Read-only observation can continue, but mutation must remain blocked.");
+
+    private static readonly Action<ILogger, Guid, string, Exception?> StoredStateClassified =
+        LoggerMessage.Define<Guid, string>(
+            LogLevel.Information,
+            new EventId(2006, nameof(StoredStateClassified)),
+            "Startup recovery classified stored state for experiment {ExperimentId} as {StoredStateRelation}.");
 
     private readonly ILogger<MutationRecoveryInspector> logger;
     private readonly MutationRecoveryReadiness readiness;
@@ -180,20 +197,52 @@ internal sealed class MutationRecoveryInspector : IHostedService
         {
             const string reason = "mutation kind is not supported by startup recovery inspection";
             ActualStateReadFailed(logger, entry.ExperimentId, reason, null);
-            return new MutationRecoveryInspection(entry, false, null, reason);
+            return new MutationRecoveryInspection(
+                entry,
+                false,
+                MutationStoredStateRelation.Unknown,
+                null,
+                reason);
         }
 
         try
         {
+            var original = GpuInterruptAffinityJournalCodec.DeserializeOriginal(entry.OriginalStateJson);
+            var candidate = GpuInterruptAffinityJournalCodec.DeserializeCandidate(entry.CandidateStateJson);
+            if (!string.Equals(
+                    original.DeviceInstanceId,
+                    entry.TargetId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    "GPU affinity journal target does not match the original-state device instance ID.");
+            }
+
             var actual = GpuInterruptAffinityPolicyStore.Capture(entry.TargetId);
+            var matchesOriginal = GpuInterruptAffinityStateComparer.MatchesOriginal(actual, original);
+            var matchesCandidate = GpuInterruptAffinityStateComparer.MatchesCandidate(actual, candidate);
+            var relation = (matchesOriginal, matchesCandidate) switch
+            {
+                (true, true) => MutationStoredStateRelation.MatchesOriginalAndCandidate,
+                (true, false) => MutationStoredStateRelation.MatchesOriginal,
+                (false, true) => MutationStoredStateRelation.MatchesCandidate,
+                _ => MutationStoredStateRelation.Diverged,
+            };
+
             ActualGpuStateRead(logger, entry.ExperimentId, entry.TargetId, null);
-            return new MutationRecoveryInspection(entry, true, actual, null);
+            StoredStateClassified(logger, entry.ExperimentId, relation.ToString(), null);
+            return new MutationRecoveryInspection(entry, true, relation, actual, null);
         }
         catch (Exception exception) when (IsRecoverableActualStateFailure(exception))
         {
             var reason = $"{exception.GetType().Name}: {exception.Message}";
             ActualStateReadFailed(logger, entry.ExperimentId, reason, exception);
-            return new MutationRecoveryInspection(entry, false, null, reason);
+            return new MutationRecoveryInspection(
+                entry,
+                false,
+                MutationStoredStateRelation.Unknown,
+                null,
+                reason);
         }
     }
 
@@ -212,5 +261,6 @@ internal sealed class MutationRecoveryInspector : IHostedService
         SecurityException or
         InvalidDataException or
         InvalidOperationException or
-        NotSupportedException;
+        NotSupportedException or
+        JsonException;
 }
