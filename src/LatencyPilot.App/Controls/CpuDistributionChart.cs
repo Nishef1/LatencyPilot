@@ -1,7 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 
 namespace LatencyPilot.App.Controls;
@@ -9,20 +8,15 @@ namespace LatencyPilot.App.Controls;
 public sealed class CpuDistributionChart : UserControl
 {
     private readonly Canvas _canvas = new();
-    private readonly TextBlock _emptyState;
+    private readonly ChartEmptyState _emptyState;
     private IReadOnlyList<ChartBar> _bars = Array.Empty<ChartBar>();
 
     public CpuDistributionChart()
     {
         MinHeight = (double)Application.Current.Resources["ChartPlotMinHeight"];
-        _emptyState = new TextBlock
-        {
-            Text = "Capture evidence to see where interrupt work concentrates.",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-        };
+        _emptyState = new ChartEmptyState(
+            "\uE950",
+            "Capture a quick snapshot to see which logical CPUs handle interrupt work.");
 
         var root = new Grid();
         root.Children.Add(_canvas);
@@ -44,7 +38,7 @@ public sealed class CpuDistributionChart : UserControl
     internal void Clear(string message)
     {
         _bars = Array.Empty<ChartBar>();
-        _emptyState.Text = message;
+        _emptyState.SetMessage(message);
         AutomationProperties.SetHelpText(this, message);
         Render();
     }
@@ -52,7 +46,6 @@ public sealed class CpuDistributionChart : UserControl
     private void Render()
     {
         _canvas.Children.Clear();
-        _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
         if (_bars.Count == 0 || ActualWidth < 150 || ActualHeight < 110)
         {
             _emptyState.Visibility = Visibility.Visible;
