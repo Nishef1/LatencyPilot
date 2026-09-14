@@ -1,4 +1,5 @@
 using LatencyPilot.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -36,6 +37,7 @@ public sealed class TemporaryReadOnlyJournalLookupTests
         }
         finally
         {
+            SqliteConnection.ClearAllPools();
             if (File.Exists(databasePath))
             {
                 File.SetAttributes(databasePath, FileAttributes.Normal);
