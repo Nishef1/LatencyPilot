@@ -1,203 +1,231 @@
 # Phase 3 Physical Validation and Arming Design
 
-Status: Approved direction for implementation
+Status: **Source tranche implemented; owner-local Gate A physical validation remains open**  
 Date: 2026-09-14
 
 ## Goal
 
-Bridge the gap between LatencyPilot's existing unarmed GPU interrupt-affinity mutation source and a safely armable one-click optimizer without weakening the current read-only product boundary.
+Bridge LatencyPilot's unarmed GPU interrupt-affinity mutation substrate to a safely armable one-click optimizer without weakening the read-only product boundary.
 
-The immediate outcome is **not** public mutation. It is a repeatable owner-only way to prove the internal mutation/recovery substrate on physical Windows 11 hardware, followed by a later mutation-specific IPC gate and only then user-facing arming.
+The immediate outcome is **not** public mutation. The repository provides a repeatable owner-only way to prove journaling, restart/recovery, exact-target resource activation and runtime observation on physical Windows 11 hardware. Only after that internal proof may mutation-specific IPC be added and physically validated before product arming.
 
-## Why this change is required
+## Architecture decision
 
-Current source already contains the difficult low-level pieces: exact GPU affinity snapshot/apply/restore, SQLite journaling, restart/reboot-required detection, startup recovery classification, candidate planning and runtime ISR-placement evidence.
+Keep the current architecture:
 
-Two gaps prevent the documented Phase 3 sequence from being executable:
+- non-elevated WinUI 3 App;
+- narrow Windows Service privileged boundary;
+- protocol-v6 read-only Named Pipe surface during Gate A;
+- SQLite durable mutation journal;
+- SetupAPI/Configuration Manager for exact-target device/resource evidence;
+- ETW for runtime DPC/ISR observation;
+- existing narrow GPU-affinity transaction/recovery implementation.
 
-1. the repository asks for physical apply/restart/rollback validation before public mutation IPC exists, but there is no owner-only entrypoint that can invoke the internal transaction safely;
-2. startup recovery classifies unresolved experiments but does not yet execute a selected safe recovery action.
+Do not add a generic registry writer, shell host, process launcher, plugin/DLL execution surface or arbitrary SYSTEM primitive.
 
-There is also a documentation-order contradiction. ADR 0004 correctly requires mutation-specific typed authorization before mutation ships, while some live sequencing text reads as though IPC can be designed only after every physical mutation check. The correct interpretation is a staged gate: validate the internal substrate first, then build the IPC boundary, then validate end-to-end through that boundary, then arm the product UI.
+The evidence hierarchy remains strict:
 
-## Decisions
+```text
+stored interrupt-affinity policy
+!= allocated interrupt resources for the exact devnode
+!= runtime DPC/ISR behavior
+```
 
-### 1. Keep the current architecture
+A registry write, stored-state equality or device refresh alone is never runtime activation proof.
 
-Do not replace WinUI 3, the Windows Service, Named Pipes, SQLite, SetupAPI/ConfigMgr, ETW or the existing GPU affinity transaction.
+## Owner-only physical-validation harness
 
-Microsoft's documented model remains the basis:
-
-- `Interrupt Management\Affinity Policy` with `DevicePolicy` and `AssignmentSetOverride` is the supported affinity configuration surface used by the current implementation;
-- `DIF_PROPERTYCHANGE`/`DICS_PROPCHANGE` is a documented device property/state-change path;
-- restart-required flags and devnode state are evidence that an in-place activation cannot simply be assumed.
-
-A successful registry write is therefore never treated as proof of effective runtime placement.
-
-### 2. Introduce a permanent owner-only physical-validation harness
-
-Create `tools/LatencyPilot.PhysicalValidation` as a narrow console project used only by the repository owner/developer during Phase 3 physical validation.
+`tools/LatencyPilot.PhysicalValidation` is a permanent developer/owner tool used only for Phase 3 physical validation.
 
 It is **not** a product surface:
 
-- it is not referenced by `LatencyPilot.App`;
-- it is not installed or packaged by the release/installer path;
-- it is not reachable over Named Pipes;
-- it is not launched by `run.ps1`;
-- it exposes no arbitrary PowerShell, process execution, registry path/value, DLL/plugin or generic SYSTEM primitive;
-- it remains absent from the normal hosted test contract except for temporary compile/smoke checks that are removed afterward.
+- not referenced or launched by `LatencyPilot.App`;
+- not reachable through public Named Pipes;
+- not launched by `run.ps1`;
+- not included by installer/release packaging;
+- not a generic mutation shell;
+- absent from normal hosted CI after temporary implementation smoke evidence is removed.
 
-The harness may access the Service's internal Phase 3 types through a narrowly scoped friend-assembly relationship. This is preferable to making mutation internals public or adding temporary product IPC solely for hardware testing.
+The harness may use narrowly scoped friend-assembly access to Service internals rather than making mutation APIs public.
 
-### 3. Harness commands are allowlisted and phase-specific
-
-Initial commands:
+### Allowlisted commands
 
 ```text
 inspect
 list-gpus
-prepare-gpu-affinity --device <exact-instance-id> --processor <group-0-logical-cpu>
+plan-gpu-affinity --evidence <baseline.json>
+prepare-gpu-affinity --device <exact-instance-id> --processor <group-0-cpu> --confirm-physical-mutation
 apply --experiment <guid> --confirm-physical-mutation
+verify-gpu-placement --experiment <guid>
 rollback --experiment <guid> --confirm-physical-mutation
 recover --experiment <guid> --confirm-physical-mutation
 ```
 
-Rules:
+Command roles:
 
-- mutation commands require an elevated interactive owner terminal;
-- mutation commands require the explicit `--confirm-physical-mutation` acknowledgement;
-- target validation still occurs inside the existing transaction immediately before any write;
-- `prepare` journals an exact original snapshot but does not write candidate state;
-- only one unresolved experiment may exist;
-- the harness prints the experiment ID, journal state, target, stored-state relation, restart/reboot-required result and recovery disposition;
-- unknown/diverged/driver-changed state is never overwritten automatically;
-- the tool never accepts a raw registry key/value or arbitrary device class.
+- `inspect`: read unresolved journal state and fresh recovery assessment; no device write.
+- `list-gpus`: enumerate exact present display-adapter identity, driver and allocated interrupt resources; no mutation.
+- `plan-gpu-affinity`: read a valid Real-world repeated baseline, reconcile it with current topology/CPU-set metadata and produce the bounded ranked candidate set; no journal/device mutation.
+- `prepare-gpu-affinity`: validate an explicit exact GPU and ranked group-0 CPU, capture exact original state and create the durable unresolved experiment; no candidate policy write yet.
+- `apply`: revalidate target/driver/topology/stored original immediately before the owned write, apply candidate state, verify storage and perform exact-target device refresh/restart handling.
+- `verify-gpu-placement`: read the exact journaled target, require allocated interrupt-affinity evidence for that devnode to match the candidate, then capture clean raw ETW runtime evidence. Service-module ISR correlation is supplementary and may be unavailable; ownership is never guessed.
+- `rollback`: restore the exact captured original state, verify it and establish trusted activation/final state before terminal `Reverted`.
+- `recover`: execute only the rollback-biased action justified by a fresh recovery assessment.
 
-`list-gpus` and `inspect` are read-only and may run without the mutation acknowledgement.
+Mutation-capable commands require Windows, an elevated interactive owner terminal and explicit `--confirm-physical-mutation`. `verify-gpu-placement` is read-only with respect to mutation state but still requires elevation because it performs raw kernel ETW capture.
 
-### 4. Make recovery executable, but rollback-biased
+The tool never accepts a raw registry key/value, arbitrary device class or arbitrary executable command.
 
-Add a Service-internal recovery executor that always re-reads actual machine state at execution time and re-derives the recovery plan before doing anything.
+## Recovery model
+
+`MutationRecoveryAssessment` is the shared fresh-state classifier used by startup inspection and explicit recovery. Normal Service startup **does not** perform hardware recovery writes.
+
+`MutationRecoveryExecutor` always re-reads actual machine state immediately before selecting an action.
 
 Supported actions:
 
 - `None`: no write;
-- `AbortPreparedWithoutApply`: terminalize a still-original `Prepared` entry without touching the device;
-- `FinalizeVerifiedRollback`: when storage is already original, verify/refresh the exact target as needed before reaching a verified rollback terminal state;
-- `RestoreOriginalState`: use the existing exact snapshot/restart/verification rollback path;
-- `ManualInterventionRequired`: refuse automatic action.
+- `AbortPreparedWithoutApply`: terminalize a still-original `Prepared` entry without touching device policy;
+- `FinalizeVerifiedRollback`: when actual storage is already original, verify/refresh the exact target before reaching trusted `Reverted`;
+- `RestoreOriginalState`: use the exact snapshot/restart/verification rollback path;
+- `ManualInterventionRequired`: refuse automatic action and preserve the unresolved record.
 
 Recovery never resumes forward in journal v1.
 
-### 5. Correct pre-write-abort semantics
+Unknown state, external divergence, unreadable authoritative state or changed driver assumptions must never trigger a blind overwrite.
 
-If the transaction has durably entered `Applying` but then proves immediately before the owned registry write that state/topology/driver assumptions changed, it must record a terminal **aborted-before-owned-write** result rather than leaving a known no-write case described as a recovery-required mutation.
+## Proven pre-write-abort semantics
 
-The journal state machine may therefore allow the narrowly used transition:
+If the transaction has durably entered `Applying` but, immediately before the owned registry write, proves that target state/topology/driver assumptions changed, it records a terminal aborted-before-owned-write result:
 
 ```text
 Applying -> AbortedBeforeApply
 ```
 
-Only the Service's pre-write-abort path uses it. If that terminal transition itself fails, the unresolved `Applying` entry remains fail-closed and startup recovery still re-reads actual state.
+That transition is limited to the proven pre-write-abort path. If the terminal journal transition itself fails, the unresolved `Applying` entry remains fail-closed for later fresh-state recovery assessment.
 
-This does not change the conservative rule for a crash in the ambiguous window: an unresolved `Applying` entry is never assumed to have written or not written; recovery classifies actual state first.
+A crash in an ambiguous `Applying` window is never assumed to have written or not written.
 
-### 6. Separate four arming gates
+## Candidate-planning boundary
 
-#### Gate A — Internal substrate physical gate
+The privileged mutation writer does not decide which CPU is "best".
 
-Public protocol remains v6/read-only. On the owner's physical Windows 11 target prove:
+Candidate ranking is evidence-driven and bounded. Gate A uses a valid topology-matched Real-world five-window baseline plus fresh current topology/CPU-set metadata. The planner preserves the documented policy:
 
-1. current-main App + Service build/install/launch;
-2. journal startup readiness;
-3. controlled unresolved entry survives Service restart and is classified correctly;
-4. exact-target restart/reboot-required behavior;
-5. one candidate apply -> stored verification -> restart -> runtime ISR placement observation -> exact rollback;
-6. forced failure/recovery;
-7. final exact-original state and no unresolved journal.
+- measured mean per-window DPC+ISR pressure;
+- one logical sibling per physical core;
+- current CPU-set availability when readable;
+- hybrid efficiency-class representation;
+- one processor group for v1 KAFFINITY;
+- bounded default candidate count;
+- CPU0 is not hard-excluded.
 
-#### Gate B — Mutation IPC implementation gate
+A ranked candidate is a screening hypothesis, not proof of improvement. The Service still independently revalidates any explicit candidate against current machine state before writing.
 
-Only after Gate A passes, design and implement protocol-v7 typed mutation commands and mutation-specific authorization. The command model stays domain-specific, not registry-generic.
+## Four arming gates
 
-#### Gate C — End-to-end IPC physical gate
+### Gate A — internal physical substrate proof
 
-Repeat the safety path through the actual non-elevated App/client -> protected Service boundary. Prove authorization, cancellation, journaling, restart/recovery and rollback through the public mutation protocol.
+Public protocol remains v6/read-only and `MutationAvailable=false`.
 
-#### Gate D — Product arming gate
+On the owner-controlled Windows 11 x64 target prove:
 
-Only after Gate C passes may `MutationAvailable` become true for supported hardware and the WinUI one-click GPU experiment become user reachable.
+1. exact clean current-main App + Service build/install/launch;
+2. journal startup readiness with zero unresolved entries at clean start;
+3. candidate selection from a valid topology-matched Real-world baseline rather than a guessed CPU;
+4. one controlled unresolved entry survives Service restart and is reclassified from fresh actual state;
+5. exact-target restart/reboot-required behavior is recorded without treating incomplete activation as success;
+6. one candidate reaches verified stored state, exact-target **allocated interrupt affinity** matches the candidate, and a clean ETW runtime observation is captured;
+7. service-module ISR correlation is reported when observable and remains explicitly unavailable/not-observed otherwise rather than guessed;
+8. exact original state is restored and trusted;
+9. one controlled forced-failure/recovery path is proven;
+10. final `inspect` reports zero unresolved experiments.
 
-### 7. Candidate planning remains outside the privileged mutation mechanism
+Gate A is hardware evidence, not hosted-CI evidence.
 
-`Benchmarking`/App owns evidence interpretation and candidate ranking. The privileged Service independently validates any requested candidate against current topology and exact target state before applying it.
+### Gate B — mutation IPC implementation
 
-Do not move ranking heuristics into the privileged writer and do not trust a stale App candidate merely because it was valid earlier.
+Only after Gate A passes, design and implement protocol-v7 mutation-specific typed/allowlisted commands and authorization.
 
-### 8. No permanent-test inflation
+No generic registry/shell/process primitive. `MutationAvailable` remains false during Gate B source work.
 
-Permanent automated tests stay at 9/10 unless a genuinely higher-blast-radius invariant requires replacing/merging an existing test or using the final slot.
+### Gate C — physical IPC boundary proof
 
-Use temporary tests/compile smokes for this tranche, remove them before the final source state, and keep physical hardware validation separate from the automated-test count.
+Physically validate the real non-elevated App/client → protected Service mutation path, including authorization, target identity, journal ownership, disconnect/cancellation behavior where applicable, restart/recovery and exact rollback.
 
-## Components
+### Gate D — product arming
 
-### `LatencyPilot.Service`
-
-Add a reusable actual-state assessment path and recovery executor around the existing journal/planner/transaction. Keep all machine writes in the existing narrow GPU-affinity mutation domain.
-
-### `LatencyPilot.Persistence`
-
-Only the state-machine semantic correction is expected: `Applying -> AbortedBeforeApply` for a proven pre-write abort. No schema-v2 migration is required for this tranche.
-
-### `tools/LatencyPilot.PhysicalValidation`
-
-Owner-only executable for inspection and explicit physical mutation validation. It references the Service but is not a shipping dependency.
-
-### Documentation
-
-Add a Phase 3 physical-validation runbook and reconcile `ROADMAP.md`, `SYSTEM_DESIGN.md`, `OPTIMIZER_TARGET_GRAPH.md` and `PROJECT_STATUS.md` around the four-gate model.
+Only after Gate C and the required optimizer target/guardrail path are credible may `MutationAvailable` become true for supported hardware and the user-facing one-click GPU workflow become reachable.
 
 ## Error and safety behavior
 
-- non-Windows or unsupported topology: fail before journal/apply;
+- unsupported OS/topology: fail before journal/apply;
 - non-elevated mutation command: fail before transaction invocation;
 - missing explicit confirmation: fail before transaction invocation;
-- target not a present display adapter: fail before write;
+- target is not the exact present display adapter: fail before write;
+- baseline/topology mismatch during planning: refuse candidate plan;
 - driver/topology/stored-state drift: abort or require recovery, never overwrite blindly;
-- restart/reboot required: keep experiment unresolved until activation/final state can be proven;
-- unknown/diverged state: manual intervention required;
-- recovery failure: retain unresolved state;
-- tool crash: durable journal remains source of truth and Service startup inspection catches unresolved work.
+- restart/reboot required or unhealthy devnode: keep experiment unresolved until trustworthy final state can be established;
+- allocated-affinity mismatch after apply: Gate A placement proof fails; do not call the candidate active based only on registry state;
+- lossy/invalid ETW capture: runtime proof is incomplete;
+- unknown/diverged recovery state: manual intervention required;
+- recovery failure: preserve unresolved state;
+- tool crash: durable journal remains source of truth and Service startup inspection exposes unresolved work.
 
 ## Physical validation record
 
-The runbook must record exact source revision, hosted Tests run, owner-local build result, Windows build, GPU/driver, target instance ID, candidate CPU, original snapshot summary, journal experiment ID/state transitions, restart result, runtime ISR placement evidence, rollback state, Service restart/reboot observations and final unresolved-journal count.
+The Gate A record must retain:
 
-A physical validation claim is invalid without exact clean source provenance.
+- exact clean source revision;
+- successful hosted Tests run for that revision;
+- owner-local App/Service build/install/launch result;
+- Windows edition/build;
+- GPU name, driver and exact instance ID;
+- baseline evidence source revision and ranked candidate set;
+- selected candidate CPU/mask;
+- exact original snapshot summary;
+- every experiment ID and journal transition;
+- exact-target restart/reboot-required evidence;
+- allocated IRQ group/affinity before/after where available;
+- ETW capture integrity and runtime ISR/module evidence;
+- rollback/recovery result;
+- Service restart/reboot observations;
+- final exact-original state and unresolved count.
+
+A physical validation claim without exact clean source provenance is invalid.
+
+## Test and CI boundary
+
+Permanent automated tests remain **9/10** unless a genuinely higher-blast-radius invariant justifies the final slot or replacing/merging an existing test.
+
+Temporary implementation tests/smokes are allowed but must be removed before the final repository state. Normal hosted CI is test-only and cannot establish WinUI launch, LocalSystem Service runtime, hardware restart, allocated-resource activation, ETW placement behavior or mutation safety on real hardware.
 
 ## Explicit non-goals for this tranche
 
-- no protocol v7 yet;
-- no user-facing Optimize GPU button yet;
-- no MSI/MSI-X mutation;
-- no USB/xHCI or NIC mutation;
+- no protocol v7 before Gate A;
+- no user-facing Optimize GPU button before Gate D;
+- no MSI/MSI-X mutation bundled with the first affinity experiment;
+- no USB/xHCI or NIC mutation in this tranche;
 - no generic recovery shell;
 - no auto-resume-forward after crash;
 - no release/installer inclusion of the validation harness;
-- no claim that a specific CPU affinity improves latency before measured comparison.
+- no universal claim that one CPU affinity improves latency;
+- no invented service-module ISR threshold from one machine.
 
-## Completion condition for this tranche
+## Source-tranche completion condition
 
-This source tranche is complete when:
+The source tranche is complete when:
 
-- the owner-only harness and recovery executor exist and compile;
 - pre-write-abort semantics are corrected;
-- normal public protocol remains v6/read-only and `MutationAvailable=false`;
-- the permanent suite remains within the 10-test cap;
-- temporary tests/smokes are removed;
-- docs consistently describe Gate A -> Gate B -> Gate C -> Gate D;
-- `PROJECT_STATUS.md` points next to owner-local Gate A physical validation.
+- rollback-biased recovery assessment/execution exists;
+- the owner-only harness implements the bounded Gate A command surface;
+- candidate planning is baseline/topology driven;
+- exact-target allocated-affinity plus clean ETW verification is available;
+- protocol remains v6/read-only and `MutationAvailable=false`;
+- temporary test/smoke surfaces are gone;
+- permanent suite remains within the 10-test cap;
+- normal CI is test-only;
+- authoritative docs agree on Gate A → B → C → D;
+- `PROJECT_STATUS.md` points next to owner-local Gate A.
 
-The Phase 3 product itself remains **implemented but not closed** until the later physical/IPC/one-click experiment gates pass.
+That source tranche is now implemented. **Phase 3 itself remains open** until physical Gate A, mutation IPC, physical Gate C and product Gate D are completed.
