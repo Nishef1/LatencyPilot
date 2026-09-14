@@ -141,6 +141,8 @@
 
     <Style x:Key="NavigationItemSelectedStyle" TargetType="Button" BasedOn="{StaticResource NavigationItemStyle}">
         <Setter Property="Background" Value="{ThemeResource NavigationSelectedBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource AccentBrush}" />
+        <Setter Property="BorderThickness" Value="3,0,0,0" />
         <Setter Property="Foreground" Value="{ThemeResource AccentBrush}" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
