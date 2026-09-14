@@ -44,7 +44,7 @@ Unless an ADR explicitly changes it:
 - SetupAPI + Configuration Manager for device discovery;
 - CPU Sets / processor topology APIs;
 - Raw Input for input-report measurements;
-- SQLite for durable experiment state when Phase 3 begins;
+- SQLite through `LatencyPilot.Persistence` for the concrete Phase 3 durable mutation journal/recovery state;
 - MSTest + Microsoft.Testing.Platform.
 
 Do not add a second UI framework, persistence engine, IPC stack, DI container, MVVM framework, native component or packaging model without demonstrated need and an ADR where architecture changes.
@@ -58,13 +58,14 @@ LatencyPilot.Core
 LatencyPilot.Benchmarking
 LatencyPilot.Protocol
 LatencyPilot.Platform.Windows
+LatencyPilot.Persistence
 LatencyPilot.Service
 LatencyPilot.App
 ```
 
-`Core` owns domain invariants only. `Benchmarking` owns evidence interpretation. `Protocol` owns typed/versioned IPC contracts. `Platform.Windows` owns raw Windows APIs and interop. `Service` is the narrow privileged boundary. `App` is the normal-user WinUI 3 UX.
+`Core` owns domain invariants only. `Benchmarking` owns evidence interpretation. `Protocol` owns typed/versioned IPC contracts. `Platform.Windows` owns raw Windows APIs and interop. `Persistence` owns the concrete SQLite mutation journal/recovery contract. `Service` is the narrow privileged boundary. `App` is the normal-user WinUI 3 UX.
 
-Phase 3 requires a durable persistence boundary for experiment journaling, recovery state and benchmark history, backed by SQLite. Do not materialize a `LatencyPilot.Persistence` project or placeholder persistence abstraction before that work has a concrete schema/recovery contract; create it when Phase 3 actually starts.
+`LatencyPilot.Persistence` was materialized only when Phase 3 introduced the concrete durable-state schema and recovery contract. Keep that boundary concrete and narrow; do not add a second persistence engine, placeholder repository layer, or speculative storage abstraction merely to reserve future architecture.
 
 Raw P/Invoke, SetupAPI, ConfigMgr, registry paths and privileged implementation details must not leak into Core or Protocol.
 
@@ -72,7 +73,7 @@ Raw P/Invoke, SetupAPI, ConfigMgr, registry paths and privileged implementation 
 
 The desktop application must not require permanent elevation.
 
-Phase 2 service authority is read-only and limited to supported privileged observation. Mutation remains disabled until Phase 3 safety infrastructure exists.
+The public Service/Protocol surface remains read-only and mutation remains unavailable/unarmed. ADR 0004 allows internal Phase 3 mutation-safety and candidate source implementation to overlap remaining Phase 2 physical closure, but no user-reachable mutation command may be added until the arming gate in `PROJECT_STATUS.md` is physically satisfied.
 
 Never expose arbitrary PowerShell, arbitrary process execution, arbitrary registry paths/values, generic run-as-SYSTEM, or user-provided privileged DLL/plugin loading.
 
@@ -150,9 +151,9 @@ For native DPC/ISR routine attribution, an address is not a driver name. Module 
 
 ## 11. Persistence and recovery
 
-Before any mutation is implemented, original state must be durably recorded before apply. Schema changes must preserve active recovery records. Do not rewrite historical benchmark results merely to match a newer interpretation; use versioned interpretation/migration metadata.
+The concrete Phase 3 persistence boundary is now implemented in `LatencyPilot.Persistence`. It must durably record exact original state before any owned write, keep unresolved experiments blocking unsafe follow-on work, preserve compare-and-swap/recovery semantics, and re-read actual machine state before recovery decisions. Schema changes must preserve active recovery records. Do not rewrite historical benchmark results merely to match a newer interpretation; use versioned interpretation/migration metadata.
 
-The Phase 3 persistence implementation should be introduced with its real SQLite schema, migrations, journal/recovery contract and tests needed for the highest-blast-radius recovery risks. Do not keep an empty project or placeholder repository layer in Phase 2 solely to reserve a future namespace.
+Do not introduce another persistence abstraction or engine unless the current concrete SQLite boundary is demonstrably insufficient and an ADR records the architecture change. Internal mutation source can evolve behind this journal, but public mutation remains unarmed until the physical gate in `PROJECT_STATUS.md` is satisfied.
 
 ## 12. UI rules
 
