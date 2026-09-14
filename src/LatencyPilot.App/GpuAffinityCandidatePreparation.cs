@@ -19,6 +19,7 @@ public sealed partial class MainWindow
         bool isPartial,
         MeasurementScenario scenario)
     {
+        ApplyBaselineTransientSignals(captures);
         _latestGpuAffinityCandidates = [];
 
         if (isPartial ||
