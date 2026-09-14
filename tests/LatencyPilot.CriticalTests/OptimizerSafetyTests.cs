@@ -1,6 +1,7 @@
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Benchmarking.Optimization;
+using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.Metrics;
 using LatencyPilot.Core.Results;
 using LatencyPilot.Core.System;
@@ -65,6 +66,33 @@ public sealed class OptimizerSafetyTests
             Policy);
         Assert.IsNull(noWinner.Finalist);
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, noWinner.Recommendation);
+
+        var presentMon = PresentMonGuardrailSeriesBuilder.Create(
+        [
+            PresentMonSnapshot(PresentMonWorkloadCaptureStatus.Available, 10, 120, 4, 7, 0.01),
+            PresentMonSnapshot(PresentMonWorkloadCaptureStatus.Available, 11, 118, 5, 8, 0.02),
+            PresentMonSnapshot(PresentMonWorkloadCaptureStatus.ApiUnavailable, 999, 1, 999, 999, 1),
+        ]);
+
+        CollectionAssert.AreEqual(
+            new[] { 10d, 11d },
+            presentMon[PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric].Samples.ToArray());
+        Assert.AreEqual(
+            MetricDirection.HigherIsBetter,
+            presentMon[PresentMonGuardrailSeriesBuilder.DisplayedFpsMetric].Direction);
+        CollectionAssert.AreEqual(
+            new[] { 120d, 118d },
+            presentMon[PresentMonGuardrailSeriesBuilder.DisplayedFpsMetric].Samples.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { 4d, 5d },
+            presentMon[PresentMonGuardrailSeriesBuilder.GpuLatencyMetric].Samples.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { 7d, 8d },
+            presentMon[PresentMonGuardrailSeriesBuilder.DisplayLatencyMetric].Samples.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { 0.01d, 0.02d },
+            presentMon[PresentMonGuardrailSeriesBuilder.DroppedFrameRatioMetric].Samples.ToArray());
+        Assert.IsFalse(presentMon.ContainsKey(PresentMonGuardrailSeriesBuilder.PresentedFpsMetric));
     }
 
     private static GpuOptimizationMeasurementSet Measurement(double primary, double frameTime) =>
@@ -74,6 +102,39 @@ public sealed class OptimizerSafetyTests
             {
                 ["Frame time"] = Series("Frame time", frameTime),
             });
+
+    private static PresentMonWorkloadMetricsSnapshot PresentMonSnapshot(
+        PresentMonWorkloadCaptureStatus status,
+        double cpuFrameTime,
+        double displayedFps,
+        double gpuLatency,
+        double displayLatency,
+        double droppedFrameRatio) =>
+        new(
+            status,
+            42,
+            1_000,
+            new PresentMonApiVersionSnapshot(3, 4, 0),
+            [
+                new PresentMonSwapChainMetricsSnapshot(
+                    1,
+                    null,
+                    displayedFps,
+                    cpuFrameTime,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    droppedFrameRatio,
+                    gpuLatency,
+                    displayLatency),
+            ],
+            [],
+            "PresentMonAPI2.dll",
+            null,
+            status == PresentMonWorkloadCaptureStatus.Available ? null : "not available",
+            DateTimeOffset.UnixEpoch);
 
     private static GpuAffinityCandidate Candidate(int core, byte cpu, double pressure) =>
         new(core, new LogicalProcessorId(0, cpu), 0, true, pressure);
