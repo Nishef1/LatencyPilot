@@ -14,6 +14,7 @@ internal static partial class ConfigurationManager
     internal const uint ResourceTypeIrq = 0x00000004;
     internal const uint DeviceNodeStarted = 0x00000008;
     internal const uint DeviceNodeHasProblem = 0x00000400;
+    internal const uint ProblemNeedRestart = 14;
 
     [LibraryImport("cfgmgr32.dll")]
     internal static partial uint CM_Get_Parent(
