@@ -120,8 +120,8 @@ Decision baseline:    baseline-quality-v2
                       >=95% actual/request duration
                       >=1,000 DPC and >=1,000 ISR events/window
 p99.9:                >=10,000 samples/distribution
-Mutation:             unavailable/unar​med
-Permanent tests:      8/10
+Mutation:             unavailable/unarmed
+Permanent tests:      9/10
 ```
 
 ### 2.1 Inventory and evidence provenance
@@ -270,11 +270,13 @@ Optimize GPU
 - [x] explicit Prepared/Applying/Applied/Measuring/AwaitingDecision/Reverting/Reverted/Kept/RecoveryRequired/AbortedBeforeApply states;
 - [x] recovery-required state can only proceed toward rollback in journal v1;
 - [x] generic experiment state machine no longer allows a post-apply `Aborted` terminal shortcut;
-- [ ] Service startup initializes journal and re-reads actual machine state for unresolved recovery;
+- [x] Service startup initializes the journal and re-reads/classifies actual stored state for unresolved known GPU-affinity experiments;
+- [x] fail-closed recovery planner distinguishes original/candidate/diverged/unknown stored state and refuses blind automatic writes on divergence/unknown state;
 - [ ] mutation-specific typed protocol commands + authorization/allowlist;
-- [ ] interrupted/pending experiments survive Service restart/reboot end to end;
+- [ ] interrupted/pending experiments survive Service restart/reboot end to end on physical hardware;
 - [ ] verified forced rollback/recovery on physical hardware;
-- [ ] explicit reboot-required handling where a device cannot safely restart in place.
+- [x] source-level reboot-required detection keeps an experiment unresolved rather than claiming activation;
+- [ ] physical reboot-required recovery proof.
 
 ### 3.2 First reversible GPU experiment
 
@@ -285,14 +287,17 @@ Optimize GPU
 - [x] topology-aware physical-core candidate generation with one SMT sibling selected by measured pressure;
 - [x] CPU0 is not hard-excluded;
 - [x] bounded candidate count defaults to four;
-- [ ] integrate baseline per-CPU evidence into automatic candidate pressure scoring;
-- [ ] device property-change/restart path with restart-required fallback and recovery proof;
-- [ ] verify runtime/effective interrupt placement after restart rather than treating registry equality as runtime proof;
-- [ ] mutation commands remain unarmed until journal/recovery/restart safety passes owner-local validation;
+- [x] baseline per-CPU DPC+ISR evidence feeds per-window-normalized automatic candidate pressure scoring;
+- [x] source-level exact-target `DIF_PROPERTYCHANGE` / `DICS_PROPCHANGE` restart path with `DI_NEEDRESTART` / `DI_NEEDREBOOT` and devnode-status handling;
+- [ ] physical exact-target restart/reboot-required validation;
+- [x] source-level runtime ISR-placement evidence analyzer keeps stored registry verification distinct from observed runtime placement;
+- [ ] integrate and physically validate runtime/effective interrupt placement in the experiment loop;
+- [x] journaled source transaction prepares before apply, verifies stored candidate/original state, and keeps incomplete rollback unresolved;
+- [x] mutation commands remain unarmed until journal/recovery/restart safety passes owner-local validation;
 - [ ] candidate screening loop;
 - [ ] finalist confirmation using balanced/interleaved A/B ordering such as ABBA/BAAB;
-- [ ] ETW DPC/ISR target metrics;
-- [ ] PresentMon frame-time / CPU-GPU busy-wait / GPU-display latency / dropped-frame metrics where applicable;
+- [ ] ETW DPC/ISR target metrics integrated into the mutation experiment;
+- [ ] PresentMon frame-time / CPU-GPU busy-wait / GPU-display latency / dropped-frame metrics integrated where applicable;
 - [ ] relevant USB/network/audio/stability guardrails;
 - [ ] explicit Improved/Regressed/Tradeoff/NoMeasurableDifference/Inconclusive decision;
 - [ ] Keep/Revert with raw deltas and provenance;
@@ -314,9 +319,10 @@ Proceed to Phase 4: reuse the same one-click experiment engine for HID/xHCI anal
 
 ## Phase 4 — USB/xHCI and input-latency analysis
 
-**State: NOT STARTED**
+**State: SOURCE DISCOVERY STARTED; MEASUREMENT/EXPERIMENT LOOP NOT STARTED**
 
-- [ ] HID → port/hub → xHCI mapping;
+- [x] Raw Input device identities can be resolved to stable PnP ancestry/active input routes;
+- [ ] complete HID → port/hub → xHCI mapping;
 - [ ] Raw Input report interval/jitter/missing/coalesced/burst analysis;
 - [ ] USB/xHCI ETW correlation;
 - [ ] controller DPC/ISR attribution;
@@ -410,6 +416,6 @@ Run the final 1.0 audit against the full product definition, every phase exit ga
 
 Repository-wide permanent automated tests may not exceed **10** unless the owner explicitly approves an exception and an ADR explains why remaining at 10 would be more harmful.
 
-Current count: **8**.
+Current count: **9**.
 
 Test count is not a quality target. Consolidate scenario matrices inside durable high-value tests. Temporary implementation/debug tests may be created, run and deleted before finalization. Hardware validation is separate from this cap.
