@@ -13,17 +13,7 @@ public sealed record ActivePathComponent<T>(
     ActivePathDiscoveryStatus Status,
     T? Value,
     string? Error)
-    where T : class
-{
-    public static ActivePathComponent<T> Available(T value) =>
-        new(ActivePathDiscoveryStatus.Available, value, null);
-
-    public static ActivePathComponent<T> Unavailable(string reason) =>
-        new(ActivePathDiscoveryStatus.Unavailable, null, reason);
-
-    public static ActivePathComponent<T> Failed(string error) =>
-        new(ActivePathDiscoveryStatus.Failed, null, error);
-}
+    where T : class;
 
 public sealed record UserSessionActivePathSnapshot(
     ActivePathComponent<ProcessorCpuSetSnapshot> CpuSets,
