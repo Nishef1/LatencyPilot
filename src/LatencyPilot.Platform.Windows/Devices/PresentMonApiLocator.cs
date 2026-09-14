@@ -10,17 +10,17 @@ internal static class PresentMonApiLocator
             return File.Exists(fullPath) ? fullPath : null;
         }
 
-        var candidates = new List<string>
-        {
-            Path.Combine(AppContext.BaseDirectory, "PresentMon", "PresentMonAPI2.dll"),
-        };
-
         var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        if (!string.IsNullOrWhiteSpace(programFiles))
+        if (string.IsNullOrWhiteSpace(programFiles))
         {
-            candidates.Add(Path.Combine(programFiles, "Intel", "PresentMon", "PresentMonAPI2.dll"));
-            candidates.Add(Path.Combine(programFiles, "Intel", "PresentMon", "SDK", "PresentMonAPI2.dll"));
+            return null;
         }
+
+        string[] candidates =
+        [
+            Path.Combine(programFiles, "Intel", "PresentMon", "PresentMonAPI2.dll"),
+            Path.Combine(programFiles, "Intel", "PresentMon", "SDK", "PresentMonAPI2.dll"),
+        ];
 
         return candidates.FirstOrDefault(File.Exists);
     }
