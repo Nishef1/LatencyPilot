@@ -7,25 +7,19 @@ namespace LatencyPilot.App.Controls;
 public sealed class ModuleContributionChart : UserControl
 {
     private readonly StackPanel _rows = new() { Spacing = 9 };
-    private readonly TextBlock _emptyState;
+    private readonly ChartEmptyState _emptyState;
 
     public ModuleContributionChart()
     {
         MinHeight = (double)Application.Current.Resources["ChartPlotMinHeight"];
-        _emptyState = new TextBlock
-        {
-            Text = "Capture evidence to rank kernel modules by observed time.",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-        };
+        _emptyState = new ChartEmptyState(
+            "\uE8A5",
+            "Capture a quick snapshot to rank observed kernel modules by inclusive time.");
 
         var root = new Grid();
         root.Children.Add(_rows);
         root.Children.Add(_emptyState);
         Content = root;
-        ActualThemeChanged += (_, _) => _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
         AutomationProperties.SetName(this, "Top modules by observed kernel time chart");
     }
 
@@ -107,8 +101,7 @@ public sealed class ModuleContributionChart : UserControl
     internal void Clear(string message)
     {
         _rows.Children.Clear();
-        _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
-        _emptyState.Text = message;
+        _emptyState.SetMessage(message);
         _emptyState.Visibility = Visibility.Visible;
         AutomationProperties.SetHelpText(this, message);
     }
