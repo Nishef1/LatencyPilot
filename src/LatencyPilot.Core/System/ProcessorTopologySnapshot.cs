@@ -36,4 +36,20 @@ public sealed record ProcessorTopologySnapshot(
         .Count();
 
     public int SmtCoreCount => Cores.Count(static core => core.IsSmt);
+
+    public IReadOnlyList<byte> EfficiencyClasses => Cores
+        .Select(static core => core.EfficiencyClass)
+        .Distinct()
+        .Order()
+        .ToArray();
+
+    public bool HasHeterogeneousCores => EfficiencyClasses.Count > 1;
+
+    public byte? HighestPerformanceEfficiencyClass => Cores.Count == 0
+        ? null
+        : Cores.Max(static core => core.EfficiencyClass);
+
+    public byte? LowestPerformanceEfficiencyClass => Cores.Count == 0
+        ? null
+        : Cores.Min(static core => core.EfficiencyClass);
 }
