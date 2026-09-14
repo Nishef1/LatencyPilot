@@ -13,6 +13,25 @@ internal static partial class ConfigurationManager
     internal const uint ResourceTypeIrq = 0x00000004;
 
     [LibraryImport("cfgmgr32.dll")]
+    internal static partial uint CM_Get_Parent(
+        out uint parentDeviceInstance,
+        uint deviceInstance,
+        uint flags);
+
+    [LibraryImport("cfgmgr32.dll")]
+    internal static partial uint CM_Get_Device_ID_Size(
+        out uint length,
+        uint deviceInstance,
+        uint flags);
+
+    [LibraryImport("cfgmgr32.dll", EntryPoint = "CM_Get_Device_IDW", StringMarshalling = StringMarshalling.Utf16)]
+    internal static unsafe partial uint CM_Get_Device_ID(
+        uint deviceInstance,
+        char* buffer,
+        uint bufferLength,
+        uint flags);
+
+    [LibraryImport("cfgmgr32.dll")]
     internal static partial uint CM_Get_First_Log_Conf(
         out nint logConfiguration,
         uint deviceInstance,
