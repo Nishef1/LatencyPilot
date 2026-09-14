@@ -27,11 +27,16 @@ public static class UserSessionActivePathReader
     {
         try
         {
-            return ActivePathComponent<T>.Available(capture());
+            return new ActivePathComponent<T>(
+                ActivePathDiscoveryStatus.Available,
+                capture(),
+                null);
         }
         catch (Exception exception) when (IsRecoverableDiscoveryException(exception))
         {
-            return ActivePathComponent<T>.Failed(
+            return new ActivePathComponent<T>(
+                ActivePathDiscoveryStatus.Failed,
+                null,
                 $"{exception.GetType().Name}: {exception.Message}");
         }
     }
