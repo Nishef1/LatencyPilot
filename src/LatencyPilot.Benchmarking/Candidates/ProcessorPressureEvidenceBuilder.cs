@@ -9,15 +9,8 @@ public sealed record ProcessorInterruptCountEvidence
         int dpcCount,
         int isrCount)
     {
-        if (dpcCount < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(dpcCount));
-        }
-
-        if (isrCount < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(isrCount));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(dpcCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(isrCount);
 
         Processor = processor;
         DpcCount = dpcCount;
