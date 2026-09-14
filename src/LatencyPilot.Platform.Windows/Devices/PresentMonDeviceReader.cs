@@ -110,7 +110,7 @@ public static class PresentMonDeviceReader
         }
     }
 
-    private static IReadOnlyList<PresentMonGraphicsDeviceSnapshot> ReadGraphicsDevices(nint rootPointer)
+    private static PresentMonGraphicsDeviceSnapshot[] ReadGraphicsDevices(nint rootPointer)
     {
         var root = Marshal.PtrToStructure<PresentMonIntrospectionRoot>(rootPointer);
         if (root.Devices == 0)
