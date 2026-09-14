@@ -19,5 +19,6 @@
     <ProjectReference Include="../LatencyPilot.Benchmarking/LatencyPilot.Benchmarking.csproj" />
     <ProjectReference Include="../LatencyPilot.Protocol/LatencyPilot.Protocol.csproj" />
     <ProjectReference Include="../LatencyPilot.Platform.Windows/LatencyPilot.Platform.Windows.csproj" />
+    <ProjectReference Include="../LatencyPilot.Persistence/LatencyPilot.Persistence.csproj" />
   </ItemGroup>
 </Project>
