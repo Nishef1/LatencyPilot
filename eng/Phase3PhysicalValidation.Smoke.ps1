@@ -3,9 +3,12 @@ $ErrorActionPreference = 'Stop'
 
 $project = Join-Path $PSScriptRoot '..\tools\LatencyPilot.PhysicalValidation\LatencyPilot.PhysicalValidation.csproj'
 
-& dotnet run --project $project --configuration Release -- inspect
+$inspectOutput = (& dotnet run --project $project --configuration Release -- inspect | Out-String)
 if ($LASTEXITCODE -ne 0) {
-    throw "Physical validation harness inspect command failed with exit code $LASTEXITCODE."
+    throw "Physical validation harness inspect command failed with exit code $LASTEXITCODE.`n$inspectOutput"
+}
+if ($inspectOutput -notmatch 'Mutation journal: READY') {
+    throw "Physical validation harness inspect did not report journal readiness.`n$inspectOutput"
 }
 
 & dotnet run --project $project --configuration Release -- apply --experiment 00000000-0000-0000-0000-000000000001
