@@ -31,7 +31,7 @@ internal sealed class MutationRecoveryReadiness
     private readonly object sync = new();
     private bool journalInitialized;
     private string? initializationError;
-    private IReadOnlyList<MutationRecoveryInspection> unresolved = [];
+    private MutationRecoveryInspection[] unresolved = [];
 
     public bool JournalInitialized
     {
@@ -72,7 +72,7 @@ internal sealed class MutationRecoveryReadiness
         {
             lock (sync)
             {
-                return !journalInitialized || unresolved.Count != 0;
+                return !journalInitialized || unresolved.Length != 0;
             }
         }
     }
