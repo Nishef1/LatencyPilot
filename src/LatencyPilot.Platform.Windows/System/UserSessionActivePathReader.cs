@@ -8,13 +8,16 @@ namespace LatencyPilot.Platform.Windows.System;
 
 public static class UserSessionActivePathReader
 {
-    public static UserSessionActivePathSnapshot Capture()
+    public static UserSessionActivePathSnapshot Capture(
+        string? presentMonApiPath = null,
+        string? presentMonControlPipeName = null)
     {
         var capturedAt = DateTimeOffset.UtcNow;
         return new UserSessionActivePathSnapshot(
             CaptureComponent(ProcessorCpuSetReader.Capture),
             CaptureComponent(GraphicsAdapterReader.Capture),
             CaptureComponent(DefaultAudioRouteReader.CaptureDefaultRenderRoutes),
+            PresentMonDeviceReader.Capture(presentMonApiPath, presentMonControlPipeName),
             capturedAt);
     }
 
