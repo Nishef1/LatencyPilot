@@ -1,7 +1,7 @@
 # LatencyPilot Product Roadmap
 
 Status: **Authoritative completion plan**  
-Last updated: 2026-09-13
+Last updated: 2026-09-14
 
 LatencyPilot is complete only when it can safely measure a Windows 11 system, identify latency pressure, run narrowly scoped experiments, quantify target and collateral effects, and let the user keep or revert supported changes with trustworthy recovery.
 
@@ -42,7 +42,7 @@ Phase 0 governance
 → 1.0
 ```
 
-No later phase may bypass an earlier phase exit gate. Shared infrastructure implemented early may be reused later, but its existence does not close the later phase.
+Phase closure remains evidence-gated, but ADR 0004 allows later-phase **source implementation** to overlap remaining diagnostic/product-polish validation once the prerequisite measurement substrate has produced a valid targeted Real-world baseline. Overlap never arms mutation early and never counts as closing an unfinished phase.
 
 ---
 
@@ -107,7 +107,7 @@ Proceed to Phase 2: authoritative inventory/resource evidence → privileged rea
 
 ## Phase 2 — Trustworthy read-only Windows observation
 
-**State: IN PROGRESS**
+**State: PHYSICAL CLOSURE IN PROGRESS; TARGETED PHASE 3 SOURCE WORK ALLOWED BY ADR 0004**
 
 Current contract:
 
@@ -120,21 +120,21 @@ Decision baseline:    baseline-quality-v2
                       >=95% actual/request duration
                       >=1,000 DPC and >=1,000 ISR events/window
 p99.9:                >=10,000 samples/distribution
-Mutation:             unavailable
+Mutation:             unavailable/unar​med
 Permanent tests:      8/10
 ```
 
 ### 2.1 Inventory and evidence provenance
 
 - [x] processor-group-aware package/core/logical-processor/SMT topology implementation;
-- [ ] physical topology validation on target Windows 11 hardware;
+- [x] physical topology observed on the owner's Windows 11 8C/16T target during evidence capture;
 - [x] present PnP inventory with stable instance IDs;
 - [x] driver provider/version/INF metadata;
 - [x] stored interrupt configuration with availability/error provenance;
 - [x] allocated IRQ/resource capture through Configuration Manager;
 - [x] optional per-device failures degrade to partial evidence rather than erasing the device;
 - [x] representative GPU/display, network and actual `USBXHCI` evidence surfaces;
-- [ ] physical representative GPU/NIC/xHCI validation;
+- [ ] physical representative GPU/NIC/xHCI inspector validation;
 - [ ] authoritative line-vs-message assigned-interrupt distinction only if Windows exposes it through a trustworthy assigned-resource source; do not infer it from stored MSI configuration or raw ConfigMgr flags.
 
 Canonical semantic boundary:
@@ -167,7 +167,7 @@ stored interrupt configuration
 - [x] p99.9 only at >=10,000 samples for that distribution;
 - [x] capture integrity includes ETW loss, invalid latency/image events and event-limit state;
 - [x] unique capture `RequestId` retained through logs/protocol/evidence;
-- [ ] physical Service → ETW → IPC validation on the final frozen candidate;
+- [x] physical Service → ETW → IPC path produced clean evidence on the owner's target;
 - [ ] active-session rejection validation with a second local session where practical;
 - [ ] attribution plausibility against an independent observer where practical.
 
@@ -200,9 +200,9 @@ Microsoft's 100 µs DPC and 25 µs ISR values are driver-duration guidance refer
 - [x] contiguous `WindowNumber` is authoritative sequence; wall-clock timestamps are provenance;
 - [x] best-effort runtime CPU/power context retained as provenance without silently changing the versioned formula;
 - [x] partial/short/lossy/undersampled/noisy/drifted sequence cannot become Valid;
-- [ ] physical Real-world valid decision baseline on final candidate;
-- [ ] physical Controlled-idle valid decision baseline on final candidate;
-- [ ] verify low-observer-activity sequencing on physical compositor/workload;
+- [x] physical Real-world valid decision baseline on clean revision `a4b4ff36c875982d5a263665860853462d0b055b`;
+- [ ] physical Controlled-idle valid decision baseline (diagnostic Phase 2 context; not a blocker for Phase 3 source implementation under ADR 0004);
+- [x] low-observer-activity sequence produced a valid Real-world baseline on the target workload;
 - [ ] thermal warning only if a trustworthy low-overhead source is identified and physical evidence shows it changes decisions.
 
 `Valid` means repeatable enough for the current comparison method. It does not mean “the machine is healthy”.
@@ -226,6 +226,7 @@ Microsoft's 100 µs DPC and 25 µs ISR values are driver-duration guidance refer
 - [x] adaptive narrow/wide layout source;
 - [x] representative device-evidence inspector;
 - [x] clean/dirty source provenance surfaced in header;
+- [x] baseline progress percentage/phase/ETA with low-frequency redraw;
 - [ ] physical JSON-vs-visible-evidence/SHA/source-revision audit;
 - [ ] physical warning/sample-insufficient/scenario/readiness state validation;
 - [ ] physical narrow-window/text-scaling/keyboard/screen-reader sanity;
@@ -233,51 +234,63 @@ Microsoft's 100 µs DPC and 25 µs ISR values are driver-duration guidance refer
 
 ### Phase 2 exit gate
 
-A user on a physical Windows 11 PC can:
+Phase 2 still closes only after the remaining read-only physical checks are reconciled. ADR 0004 changes **development sequencing**, not the meaning of Phase 2 completion.
 
-1. run LatencyPilot non-elevated against the protected read-only Service;
-2. capture a clean evidence-v8 quick snapshot;
-3. produce valid Real-world and Controlled-idle five × 20-second baseline-v2 artifacts on the same exact clean source candidate;
-4. identify CPU/module concentration without LatencyPilot changing system configuration;
-5. verify evidence provenance/hash and exercise failure/cleanup/session/accessibility checks.
-
-Phase 2 does **not** close from CI, VM evidence or historical five-second captures alone.
+The Real-world baseline is now authoritative evidence for targeted GPU optimizer development. Controlled idle remains useful context but is not required to start Phase 3 source implementation.
 
 ### After Phase 2
 
-Proceed to Phase 3. Reuse the Service/IPC infrastructure; do not rebuild it as a second system.
+Finish the remaining read-only physical record while Phase 3 safety/candidate source work proceeds. Do not arm mutation merely because code exists.
 
 ---
 
-## Phase 3 — Safe mutation platform + GPU interrupt experiment
+## Phase 3 — Safe mutation platform + one-click GPU interrupt experiment
 
-**State: NOT STARTED — read-only infrastructure inherited from Phase 2**
+**State: IN PROGRESS — SAFETY/CANDIDATE SOURCE IMPLEMENTATION; MUTATION NOT ARMED**
+
+Primary product target:
+
+```text
+Optimize GPU
+→ automatic preflight/baseline
+→ bounded candidates
+→ journaled apply/verify/measure/revert
+→ finalist confirmation
+→ Keep best or restore exact original state
+```
 
 ### 3.1 Safety substrate
 
 - [x] narrow privileged Service exists;
 - [x] typed/versioned Named Pipe infrastructure exists;
 - [x] generic privileged shell/registry/process execution is prohibited and absent;
-- [ ] create concrete Persistence project with SQLite schema/migrations;
-- [ ] durable exact-state snapshot and pending/closed journal records;
-- [ ] mutation-specific command authorization/allowlist;
-- [ ] Detect → Snapshot → Validate → Journal → Apply → Verify lifecycle;
-- [ ] recovery re-reads actual machine state before action;
-- [ ] interrupted/pending experiments survive restart/reboot;
-- [ ] verified rollback/recovery;
-- [ ] explicit recovery-required/reboot-required states.
-
-The checked infrastructure items are inherited prerequisites, not evidence that mutation work is complete.
+- [x] concrete `LatencyPilot.Persistence` project added with Microsoft.Data.Sqlite 10.0.12;
+- [x] schema-v1 durable mutation journal with atomic transactions and compare-and-swap revisions;
+- [x] unresolved journal blocks creation of another mutation experiment;
+- [x] explicit Prepared/Applying/Applied/Measuring/AwaitingDecision/Reverting/Reverted/Kept/RecoveryRequired/AbortedBeforeApply states;
+- [x] recovery-required state can only proceed toward rollback in journal v1;
+- [x] generic experiment state machine no longer allows a post-apply `Aborted` terminal shortcut;
+- [ ] Service startup initializes journal and re-reads actual machine state for unresolved recovery;
+- [ ] mutation-specific typed protocol commands + authorization/allowlist;
+- [ ] interrupted/pending experiments survive Service restart/reboot end to end;
+- [ ] verified forced rollback/recovery on physical hardware;
+- [ ] explicit reboot-required handling where a device cannot safely restart in place.
 
 ### 3.2 First reversible GPU experiment
 
-- [ ] GPU applicability detection;
-- [ ] exact current/default state preserved as control;
-- [ ] topology-aware physical-core candidate generation;
-- [ ] bounded candidate screening;
+- [x] source-level exact stored-state snapshot for GPU `DevicePolicy` and `AssignmentSetOverride`, including missing values and original registry kinds/bytes;
+- [x] source-level apply/restore adapter restricted to present SetupAPI display adapters and `CurrentControlSet` affinity-policy values;
+- [x] source-level stored-state verification after apply and restore;
+- [x] one-processor-group v1 applicability boundary for KAFFINITY writes;
+- [x] topology-aware physical-core candidate generation with one SMT sibling selected by measured pressure;
+- [x] CPU0 is not hard-excluded;
+- [x] bounded candidate count defaults to four;
+- [ ] integrate baseline per-CPU evidence into automatic candidate pressure scoring;
+- [ ] device property-change/restart path with restart-required fallback and recovery proof;
+- [ ] verify runtime/effective interrupt placement after restart rather than treating registry equality as runtime proof;
+- [ ] mutation commands remain unarmed until journal/recovery/restart safety passes owner-local validation;
+- [ ] candidate screening loop;
 - [ ] finalist confirmation using balanced/interleaved A/B ordering such as ABBA/BAAB;
-- [ ] one candidate applied at a time;
-- [ ] MSI/MSI-X mutation only where applicability, actual state verification and rollback are authoritative;
 - [ ] ETW DPC/ISR target metrics;
 - [ ] PresentMon frame-time / CPU-GPU busy-wait / GPU-display latency / dropped-frame metrics where applicable;
 - [ ] relevant USB/network/audio/stability guardrails;
@@ -285,15 +298,17 @@ The checked infrastructure items are inherited prerequisites, not evidence that 
 - [ ] Keep/Revert with raw deltas and provenance;
 - [ ] forced-failure rollback on supported physical hardware.
 
+MSI/MSI-X is deliberately not bundled into the first affinity mutation. It becomes a separate supported experiment only after its applicability, actual state and rollback are authoritative.
+
 Do not assume CPU0 avoidance, Windows default affinity, a community tweak or another machine's winner is universally correct.
 
 ### Phase 3 exit gate
 
-A supported physical GPU can be tuned through at least one narrow experiment and safely restored, including a forced-failure rollback exercise.
+A supported physical GPU can be tuned through one **one-click, bounded, journaled** experiment and safely restored, including a forced-failure rollback exercise. A result must be backed by target metrics and relevant guardrails, not merely by a registry write.
 
 ### After Phase 3
 
-Proceed to Phase 4: map HID → hub/port → xHCI → runtime evidence before allowing reversible controller-affinity experiments.
+Proceed to Phase 4: reuse the same one-click experiment engine for HID/xHCI analysis and reversible controller-affinity experiments.
 
 ---
 
