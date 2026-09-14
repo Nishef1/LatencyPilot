@@ -133,6 +133,14 @@ internal sealed class GpuInterruptAffinityMutationTransaction
                 return new GpuInterruptAffinityMutationStepResult(recovery, restart, false);
             }
 
+            var afterRestart = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
+            if (!DriverVersionMatches(afterRestart, original) ||
+                !GpuInterruptAffinityStateComparer.MatchesCandidate(afterRestart, candidate))
+            {
+                throw new InvalidOperationException(
+                    "GPU affinity candidate state or display-driver version changed during device restart; apply cannot be trusted.");
+            }
+
             var applied = journal.Transition(
                 applying.ExperimentId,
                 applying.Revision,
@@ -276,6 +284,14 @@ internal sealed class GpuInterruptAffinityMutationTransaction
                     MutationJournalState.RecoveryRequired,
                     reason);
                 return new GpuInterruptAffinityMutationStepResult(recovery, restart, true);
+            }
+
+            var afterRestart = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
+            if (!DriverVersionMatches(afterRestart, original) ||
+                !GpuInterruptAffinityStateComparer.MatchesOriginal(afterRestart, original))
+            {
+                throw new InvalidOperationException(
+                    "GPU affinity original state or display-driver version changed during device restart; rollback cannot be trusted.");
             }
 
             var reverted = journal.Transition(

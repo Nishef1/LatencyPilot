@@ -139,6 +139,46 @@ public sealed class CriticalPathTests
         AssertVerdict("clear primary regression", 100, 120, ExperimentVerdict.Regressed);
         AssertVerdict("improvement plus guardrail regression", 100, 80, ExperimentVerdict.Tradeoff, guardrailBaseline: 10, guardrailCandidate: 12);
         AssertVerdict("neutral primary plus guardrail regression", 100, 99, ExperimentVerdict.Regressed, guardrailBaseline: 10, guardrailCandidate: 12);
+        foreach (var invalidValue in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+        {
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+                (Policy with { MinimumRelativeChange = invalidValue }).Validate());
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+                (Policy with { GuardrailRegressionLimit = invalidValue }).Validate());
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+                (Policy with { EvaluationPercentile = invalidValue }).Validate());
+        }
+
+        AssertVerdict("primary and guardrail regression", 100, 120, ExperimentVerdict.Regressed, guardrailBaseline: 10, guardrailCandidate: 12);
+        var baseline = Series("DPC p99", 100);
+        var regression = Series("DPC p99", 120);
+        Assert.AreEqual(ExperimentVerdict.Inconclusive, BenchmarkComparer.Compare(
+            baseline,
+            regression,
+            [(Series("USB jitter", 10), Series("USB jitter", 12, count: 5))],
+            Policy).Verdict);
+        Assert.ThrowsExactly<ArgumentException>(() => BenchmarkComparer.Compare(
+            baseline,
+            regression,
+            [(Series("USB jitter", 10), new MetricSeries("USB jitter", MetricDirection.HigherIsBetter, Enumerable.Repeat(12d, 20)))],
+            Policy));
+
+        var overflowPairs = new[]
+        {
+            (Series("overflow", double.Epsilon), Series("overflow", double.MaxValue)),
+            (Series("overflow", -double.MaxValue), Series("overflow", double.MaxValue)),
+            (
+                new MetricSeries("overflow", MetricDirection.LowerIsBetter, [-double.MaxValue, double.MaxValue]),
+                new MetricSeries("overflow", MetricDirection.LowerIsBetter, [-double.MaxValue, double.MaxValue]))
+        };
+        var overflowPolicy = Policy with { MinimumSamples = 2, EvaluationPercentile = 0.5 };
+        foreach (var (overflowBaseline, overflowCandidate) in overflowPairs)
+        {
+            Assert.AreEqual(ExperimentVerdict.Inconclusive, BenchmarkComparer.Compare(
+                overflowBaseline, overflowCandidate, policy: overflowPolicy).Verdict);
+            Assert.AreEqual(ExperimentVerdict.Inconclusive, BenchmarkComparer.Compare(
+                baseline, regression, [(overflowBaseline, overflowCandidate)], overflowPolicy).Verdict);
+        }
     }
 
     [TestMethod]

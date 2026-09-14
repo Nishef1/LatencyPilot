@@ -13,17 +13,17 @@ public sealed record ComparisonPolicy(
             throw new ArgumentOutOfRangeException(nameof(MinimumSamples));
         }
 
-        if (MinimumRelativeChange is <= 0 or >= 1)
+        if (!double.IsFinite(MinimumRelativeChange) || MinimumRelativeChange is <= 0 or >= 1)
         {
             throw new ArgumentOutOfRangeException(nameof(MinimumRelativeChange));
         }
 
-        if (GuardrailRegressionLimit is <= 0 or >= 1)
+        if (!double.IsFinite(GuardrailRegressionLimit) || GuardrailRegressionLimit is <= 0 or >= 1)
         {
             throw new ArgumentOutOfRangeException(nameof(GuardrailRegressionLimit));
         }
 
-        if (EvaluationPercentile is <= 0 or > 1)
+        if (!double.IsFinite(EvaluationPercentile) || EvaluationPercentile is <= 0 or > 1)
         {
             throw new ArgumentOutOfRangeException(nameof(EvaluationPercentile));
         }

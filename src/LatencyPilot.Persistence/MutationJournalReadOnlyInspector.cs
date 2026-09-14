@@ -7,6 +7,43 @@ public static class MutationJournalReadOnlyInspector
 {
     private const int SupportedSchemaVersion = 1;
 
+    public static void EnsureSafeForUninstall(string databasePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+
+        using var connection = OpenReadOnly(databasePath);
+        using (var integrity = connection.CreateCommand())
+        {
+            integrity.CommandText = "PRAGMA quick_check;";
+            if (!string.Equals(integrity.ExecuteScalar() as string, "ok", StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("The mutation journal failed its integrity check. Keep the recovery tools installed.");
+            }
+        }
+
+        using var command = connection.CreateCommand();
+        // Name every required column so an empty but malformed table cannot pass.
+        command.CommandText =
+            """
+            SELECT experiment_id, kind, target_id, original_state_json, candidate_state_json,
+                   state, created_utc, updated_utc, failure_reason, revision
+            FROM mutation_journal;
+            """;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var entry = ReadEntry(reader);
+            var storedState = reader.GetString(reader.GetOrdinal("state"));
+            // Kept is terminal for experimentation, but still owns a machine change.
+            if (entry.State is not (MutationJournalState.Reverted or MutationJournalState.AbortedBeforeApply) ||
+                !string.Equals(storedState, entry.State.ToString(), StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Experiment {entry.ExperimentId:D} is {storedState}. Restore and verify all managed changes before uninstalling.");
+            }
+        }
+    }
+
     public static MutationJournalEntry? TryGet(string databasePath, Guid experimentId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);

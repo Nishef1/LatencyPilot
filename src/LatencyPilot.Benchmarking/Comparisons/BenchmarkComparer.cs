@@ -26,21 +26,20 @@ public static class BenchmarkComparer
 
         var baselineValue = Percentiles.Calculate(baseline.Samples, policy.EvaluationPercentile);
         var candidateValue = Percentiles.Calculate(candidate.Samples, policy.EvaluationPercentile);
+        if (!double.IsFinite(baselineValue) || !double.IsFinite(candidateValue))
+        {
+            return Inconclusive("Primary metric percentile is non-finite; numerical evidence cannot be compared.");
+        }
+
         if (baselineValue == 0)
         {
             return Inconclusive("Primary baseline percentile is zero; relative change is undefined.");
         }
 
         var relativeImprovement = CalculateImprovement(baseline.Direction, baselineValue, candidateValue);
-        if (relativeImprovement <= -policy.MinimumRelativeChange)
+        if (!double.IsFinite(relativeImprovement))
         {
-            return new ComparisonResult(
-                ExperimentVerdict.Regressed,
-                baselineValue,
-                candidateValue,
-                relativeImprovement,
-                [],
-                "Primary metric regressed beyond the configured threshold.");
+            return Inconclusive("Primary relative change is non-finite; numerical evidence cannot be compared.");
         }
 
         var regressedGuardrails = new List<string>();
@@ -54,6 +53,11 @@ public static class BenchmarkComparer
 
             var guardrailBaselineValue = Percentiles.Calculate(guardrailBaseline.Samples, policy.EvaluationPercentile);
             var guardrailCandidateValue = Percentiles.Calculate(guardrailCandidate.Samples, policy.EvaluationPercentile);
+            if (!double.IsFinite(guardrailBaselineValue) || !double.IsFinite(guardrailCandidateValue))
+            {
+                return Inconclusive($"Guardrail '{guardrailBaseline.Name}' has a non-finite percentile.");
+            }
+
             if (guardrailBaselineValue == 0)
             {
                 return Inconclusive($"Guardrail '{guardrailBaseline.Name}' has a zero baseline percentile.");
@@ -63,11 +67,26 @@ public static class BenchmarkComparer
                 guardrailBaseline.Direction,
                 guardrailBaselineValue,
                 guardrailCandidateValue);
+            if (!double.IsFinite(guardrailImprovement))
+            {
+                return Inconclusive($"Guardrail '{guardrailBaseline.Name}' has a non-finite relative change.");
+            }
 
             if (guardrailImprovement <= -policy.GuardrailRegressionLimit)
             {
                 regressedGuardrails.Add(guardrailBaseline.Name);
             }
+        }
+
+        if (relativeImprovement <= -policy.MinimumRelativeChange)
+        {
+            return new ComparisonResult(
+                ExperimentVerdict.Regressed,
+                baselineValue,
+                candidateValue,
+                relativeImprovement,
+                regressedGuardrails,
+                "Primary metric regressed beyond the configured threshold.");
         }
 
         if (Math.Abs(relativeImprovement) < policy.MinimumRelativeChange)

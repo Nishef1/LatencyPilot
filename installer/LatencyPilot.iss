@@ -58,10 +58,29 @@ Name: "{autodesktop}\LatencyPilot"; Filename: "{app}\App\LatencyPilot.exe"; Work
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Install-Service.ps1"""; StatusMsg: "Installing the read-only observation service..."; Flags: runhidden waituntilterminated
 Filename: "{app}\App\LatencyPilot.exe"; Description: "Launch LatencyPilot"; WorkingDir: "{app}\App"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
-[UninstallRun]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Uninstall-Service.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveObservationService"
-
 [Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    if not Exec(
+      ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\Uninstall-Service.ps1') + '"',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    begin
+      SuppressibleMsgBox('The Service removal safety check could not start. LatencyPilot will remain installed.', mbError, MB_OK, IDOK);
+      Abort;
+    end;
+    if ResultCode <> 0 then
+    begin
+      SuppressibleMsgBox('LatencyPilot could not safely remove its Service. Restore and verify all managed changes, and ensure the mutation journal is readable before retrying. The recovery tools will remain installed.', mbError, MB_OK, IDOK);
+      Abort;
+    end;
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;

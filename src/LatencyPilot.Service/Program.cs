@@ -1,3 +1,4 @@
+using LatencyPilot.Persistence;
 using LatencyPilot.Service;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -5,6 +6,36 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+
+if (args.Length > 0 && args[0] == "--check-uninstall")
+{
+    if (args.Length != 1)
+    {
+        Console.Error.WriteLine("The uninstall check accepts no additional arguments.");
+        return 2;
+    }
+
+    try
+    {
+        // Run before host/logging initialization: inspection must not create or
+        // repair a missing journal and must never start observation or mutation.
+        MutationJournalReadOnlyInspector.EnsureSafeForUninstall(MutationJournal.GetDefaultDatabasePath());
+        Console.WriteLine("LATENCYPILOT_UNINSTALL_SAFE_V1");
+        return 0;
+    }
+    catch (Exception exception) when (exception is
+        IOException or
+        UnauthorizedAccessException or
+        System.Security.SecurityException or
+        InvalidOperationException or
+        FormatException or
+        OverflowException or
+        Microsoft.Data.Sqlite.SqliteException)
+    {
+        Console.Error.WriteLine($"Uninstall blocked: {exception.Message}");
+        return 1;
+    }
+}
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -76,3 +107,4 @@ if (fileLoggingStartupFailure is not null)
 }
 
 await host.RunAsync();
+return 0;
