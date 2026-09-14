@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace LatencyPilot.Persistence;
@@ -69,6 +71,7 @@ public static class MutationJournalStateMachine
 public sealed class MutationJournal
 {
     private const int SchemaVersion = 1;
+    private const int MaximumJsonPayloadBytes = 128 * 1024;
     private readonly string connectionString;
 
     public MutationJournal(string databasePath)
@@ -383,9 +386,32 @@ public sealed class MutationJournal
     private static void ValidateJsonPayload(string value, string parameterName)
     {
         ValidateNonEmpty(value, parameterName);
-        if (value.Length > 128 * 1024)
+        var byteCount = Encoding.UTF8.GetByteCount(value);
+        if (byteCount > MaximumJsonPayloadBytes)
         {
-            throw new ArgumentOutOfRangeException(parameterName, "Journal JSON payload must be 128 KiB or smaller.");
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                $"Journal JSON payload must be {MaximumJsonPayloadBytes} UTF-8 bytes or smaller.");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(
+                value,
+                new JsonDocumentOptions
+                {
+                    AllowTrailingCommas = false,
+                    CommentHandling = JsonCommentHandling.Disallow,
+                    MaxDepth = 64,
+                });
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new ArgumentException("Journal JSON payload root must be an object.", parameterName);
+            }
+        }
+        catch (JsonException exception)
+        {
+            throw new ArgumentException("Journal JSON payload must contain valid JSON.", parameterName, exception);
         }
     }
 }
