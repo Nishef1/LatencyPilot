@@ -7,7 +7,7 @@ namespace LatencyPilot.CriticalTests;
 public sealed class TemporaryBaselineTransientSignalTests
 {
     [TestMethod]
-    public void Valid_baseline_can_still_surface_transient_tail_outlier()
+    public void ValidBaselineCanStillSurfaceTransientTailOutlier()
     {
         var summary = BaselineTransientSignalAnalyzer.Analyze([
             new BaselineTransientWindowSignal(1, 0, 0, 290.6, 0, 0, 106.3),
