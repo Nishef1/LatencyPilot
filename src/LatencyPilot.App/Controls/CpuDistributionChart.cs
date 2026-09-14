@@ -87,7 +87,7 @@ public sealed class CpuDistributionChart : UserControl
 
             var tick = new TextBlock
             {
-                Text = $"{maximum * (1d - ratio):0}%",
+                Text = FormatAxisPercentage(maximum * (1d - ratio), maximum),
                 FontSize = 10,
                 Foreground = mutedBrush,
             };
@@ -151,4 +151,7 @@ public sealed class CpuDistributionChart : UserControl
             _canvas.Children.Add(label);
         }
     }
+
+    private static string FormatAxisPercentage(double value, double maximum) =>
+        maximum < 10d ? $"{value:0.0}%" : $"{value:0}%";
 }
