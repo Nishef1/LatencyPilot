@@ -1,30 +1,9 @@
-using System.ComponentModel;
 using System.Security;
-using System.Text.Json;
 using LatencyPilot.Persistence;
-using LatencyPilot.Platform.Windows.Devices;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace LatencyPilot.Service;
-
-internal enum MutationStoredStateRelation
-{
-    Unknown = 0,
-    MatchesOriginal = 1,
-    MatchesCandidate = 2,
-    MatchesOriginalAndCandidate = 3,
-    Diverged = 4,
-}
-
-internal sealed record MutationRecoveryInspection(
-    MutationJournalEntry Entry,
-    bool ActualStateRead,
-    bool TargetEnvironmentStable,
-    MutationStoredStateRelation StoredStateRelation,
-    MutationRecoveryPlan RecoveryPlan,
-    GpuInterruptAffinitySnapshot? GpuInterruptAffinity,
-    string? Error);
 
 internal sealed class MutationRecoveryReadiness
 {
@@ -175,7 +154,34 @@ internal sealed class MutationRecoveryInspector : IHostedService
                     entry.State.ToString(),
                     entry.TargetId,
                     null);
-                inspections.Add(InspectActualState(entry));
+
+                var inspection = MutationRecoveryAssessment.Inspect(entry);
+                inspections.Add(inspection);
+
+                if (inspection.ActualStateRead)
+                {
+                    ActualGpuStateRead(logger, entry.ExperimentId, entry.TargetId, null);
+                    StoredStateClassified(
+                        logger,
+                        entry.ExperimentId,
+                        inspection.StoredStateRelation.ToString(),
+                        null);
+                }
+                else
+                {
+                    ActualStateReadFailed(
+                        logger,
+                        entry.ExperimentId,
+                        inspection.Error ?? "actual state is unavailable",
+                        null);
+                }
+
+                RecoveryPlanSelected(
+                    logger,
+                    entry.ExperimentId,
+                    inspection.RecoveryPlan.Action.ToString(),
+                    inspection.RecoveryPlan.Reason,
+                    null);
             }
 
             readiness.SetReady(inspections);
@@ -197,88 +203,6 @@ internal sealed class MutationRecoveryInspector : IHostedService
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    private MutationRecoveryInspection InspectActualState(MutationJournalEntry entry)
-    {
-        if (!string.Equals(entry.Kind, GpuInterruptAffinityMutationContract.Kind, StringComparison.Ordinal))
-        {
-            const string reason = "mutation kind is not supported by startup recovery inspection";
-            ActualStateReadFailed(logger, entry.ExperimentId, reason, null);
-            var plan = MutationRecoveryPlanner.Create(
-                entry,
-                MutationStoredStateRelation.Unknown,
-                targetEnvironmentStable: false);
-            RecoveryPlanSelected(logger, entry.ExperimentId, plan.Action.ToString(), plan.Reason, null);
-            return new MutationRecoveryInspection(
-                entry,
-                false,
-                false,
-                MutationStoredStateRelation.Unknown,
-                plan,
-                null,
-                reason);
-        }
-
-        try
-        {
-            var original = GpuInterruptAffinityJournalCodec.DeserializeOriginal(entry.OriginalStateJson);
-            var candidate = GpuInterruptAffinityJournalCodec.DeserializeCandidate(entry.CandidateStateJson);
-            if (!string.Equals(
-                    original.DeviceInstanceId,
-                    entry.TargetId,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidDataException(
-                    "GPU affinity journal target does not match the original-state device instance ID.");
-            }
-
-            var actual = GpuInterruptAffinityPolicyStore.Capture(entry.TargetId);
-            var matchesOriginal = GpuInterruptAffinityStateComparer.MatchesOriginal(actual, original);
-            var matchesCandidate = GpuInterruptAffinityStateComparer.MatchesCandidate(actual, candidate);
-            var relation = (matchesOriginal, matchesCandidate) switch
-            {
-                (true, true) => MutationStoredStateRelation.MatchesOriginalAndCandidate,
-                (true, false) => MutationStoredStateRelation.MatchesOriginal,
-                (false, true) => MutationStoredStateRelation.MatchesCandidate,
-                _ => MutationStoredStateRelation.Diverged,
-            };
-            var targetEnvironmentStable = string.Equals(
-                actual.DriverVersion,
-                original.DriverVersion,
-                StringComparison.OrdinalIgnoreCase);
-            var plan = MutationRecoveryPlanner.Create(entry, relation, targetEnvironmentStable);
-
-            ActualGpuStateRead(logger, entry.ExperimentId, entry.TargetId, null);
-            StoredStateClassified(logger, entry.ExperimentId, relation.ToString(), null);
-            RecoveryPlanSelected(logger, entry.ExperimentId, plan.Action.ToString(), plan.Reason, null);
-            return new MutationRecoveryInspection(
-                entry,
-                true,
-                targetEnvironmentStable,
-                relation,
-                plan,
-                actual,
-                null);
-        }
-        catch (Exception exception) when (IsRecoverableActualStateFailure(exception))
-        {
-            var reason = $"{exception.GetType().Name}: {exception.Message}";
-            ActualStateReadFailed(logger, entry.ExperimentId, reason, exception);
-            var plan = MutationRecoveryPlanner.Create(
-                entry,
-                MutationStoredStateRelation.Unknown,
-                targetEnvironmentStable: false);
-            RecoveryPlanSelected(logger, entry.ExperimentId, plan.Action.ToString(), plan.Reason, null);
-            return new MutationRecoveryInspection(
-                entry,
-                false,
-                false,
-                MutationStoredStateRelation.Unknown,
-                plan,
-                null,
-                reason);
-        }
-    }
-
     private static bool IsRecoverableStartupFailure(Exception exception) =>
         exception is IOException or
         UnauthorizedAccessException or
@@ -286,14 +210,4 @@ internal sealed class MutationRecoveryInspector : IHostedService
         InvalidDataException or
         InvalidOperationException or
         Microsoft.Data.Sqlite.SqliteException;
-
-    private static bool IsRecoverableActualStateFailure(Exception exception) =>
-        exception is Win32Exception or
-        IOException or
-        UnauthorizedAccessException or
-        SecurityException or
-        InvalidDataException or
-        InvalidOperationException or
-        NotSupportedException or
-        JsonException;
 }
