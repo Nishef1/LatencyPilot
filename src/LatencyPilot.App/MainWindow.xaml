@@ -1,7 +1,8 @@
 <Window
     x:Class="LatencyPilot.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:LatencyPilot.App.Controls">
 
     <Grid x:Name="RootGrid"
           Background="{ThemeResource CanvasBrush}"
@@ -11,11 +12,11 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Native custom title-bar drag region. System caption buttons occupy the right inset. -->
+        <!-- Native title bar: product identity left, safety state right. -->
         <Grid x:Name="AppTitleBarDragRegion"
               Height="{StaticResource TitleBarHeight}"
               Background="Transparent">
-            <Grid Margin="18,0,148,0">
+            <Grid Margin="16,0,148,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -23,645 +24,766 @@
 
                 <StackPanel Orientation="Horizontal"
                             VerticalAlignment="Center"
-                            Spacing="10">
-                    <Border Width="22"
-                            Height="22"
-                            CornerRadius="7"
+                            Spacing="9">
+                    <Border Width="28"
+                            Height="28"
+                            CornerRadius="9"
                             Background="{ThemeResource AccentSoftBrush}">
-                        <Border Width="8"
-                                Height="8"
-                                CornerRadius="4"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Background="{ThemeResource AccentBrush}" />
+                        <FontIcon Glyph="&#xE9D2;"
+                                  FontSize="15"
+                                  Foreground="{ThemeResource AccentBrush}"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
                     </Border>
-                    <TextBlock Text="LatencyPilot"
-                               VerticalAlignment="Center"
-                               FontSize="13"
-                               FontWeight="SemiBold"
-                               Foreground="{ThemeResource TextBrush}" />
-                    <Border Style="{StaticResource PillBorderStyle}"
-                            Padding="8,3">
+                    <StackPanel VerticalAlignment="Center" Spacing="0">
+                        <TextBlock Text="LatencyPilot"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextBrush}" />
                         <TextBlock x:Name="VersionText"
                                    Text="v—"
-                                   FontSize="10"
-                                   Foreground="{ThemeResource MutedTextBrush}" />
-                    </Border>
+                                   FontSize="9"
+                                   Foreground="{ThemeResource SubtleTextBrush}" />
+                    </StackPanel>
                 </StackPanel>
 
-                <StackPanel Grid.Column="1"
-                            Orientation="Horizontal"
-                            VerticalAlignment="Center"
-                            Spacing="8">
-                    <Border Style="{StaticResource PillBorderStyle}"
-                            Background="{ThemeResource SuccessSoftBrush}">
-                        <StackPanel Orientation="Horizontal" Spacing="7">
-                            <Border Width="7"
-                                    Height="7"
-                                    CornerRadius="4"
-                                    Background="{ThemeResource SuccessBrush}" />
-                            <TextBlock Text="Observation only"
-                                       FontSize="11"
-                                       FontWeight="SemiBold"
-                                       Foreground="{ThemeResource SuccessBrush}" />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
+                <Border Grid.Column="1"
+                        Style="{StaticResource PillBorderStyle}"
+                        Background="{ThemeResource SuccessSoftBrush}"
+                        VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Border Width="7"
+                                Height="7"
+                                CornerRadius="4"
+                                Background="{ThemeResource SuccessBrush}" />
+                        <TextBlock Text="Observation only"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource SuccessBrush}" />
+                    </StackPanel>
+                </Border>
             </Grid>
         </Grid>
 
-        <ScrollViewer Grid.Row="1"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled">
-            <Grid MaxWidth="{StaticResource ContentMaxWidth}"
-                  Padding="{StaticResource PagePadding}"
-                  HorizontalAlignment="Center">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="20" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="22" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="NavigationColumn"
+                                  Width="{StaticResource NavigationRailWidth}" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-                <!-- Hero / action hierarchy -->
-                <Grid Grid.Row="0" ColumnSpacing="28">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="ShellLayoutStates">
+                    <VisualState x:Name="CompactShell">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="0" />
+                        </VisualState.StateTriggers>
+                        <VisualState.Setters>
+                            <Setter Target="NavigationColumn.Width" Value="64" />
+                            <Setter Target="NavOverviewLabel.Visibility" Value="Collapsed" />
+                            <Setter Target="NavMeasureLabel.Visibility" Value="Collapsed" />
+                            <Setter Target="NavBaselineLabel.Visibility" Value="Collapsed" />
+                            <Setter Target="NavDevicesLabel.Visibility" Value="Collapsed" />
+                            <Setter Target="NavFooterText.Visibility" Value="Collapsed" />
+                        </VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="WideShell">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="1120" />
+                        </VisualState.StateTriggers>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
 
-                    <StackPanel Spacing="7" MaxWidth="760">
-                        <TextBlock Text="LATENCY HEALTH"
-                                   FontSize="11"
-                                   FontWeight="SemiBold"
-                                   CharacterSpacing="110"
-                                   Foreground="{ThemeResource AccentBrush}" />
-                        <TextBlock Text="Measure what Windows is really doing."
-                                   Style="{StaticResource HeroTitleTextStyle}" />
-                        <TextBlock Text="Capture trustworthy DPC/ISR evidence, find where interrupt work concentrates, and build a repeatable baseline before making any optimization decision."
-                                   Style="{StaticResource MutedBodyTextStyle}"
-                                   FontSize="14"
-                                   MaxWidth="720" />
+            <!-- Section navigation, not fake pages: each button scrolls to a real dashboard section. -->
+            <Border Grid.Column="0"
+                    Style="{StaticResource NavigationRailStyle}">
+                <Grid Padding="10,12,10,14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Spacing="8">
+                        <Button Style="{StaticResource NavigationItemSelectedStyle}"
+                                Click="NavigateOverview_Click"
+                                ToolTipService.ToolTip="Overview">
+                            <StackPanel Orientation="Horizontal" Spacing="11">
+                                <FontIcon Glyph="&#xE80F;" FontSize="16" />
+                                <TextBlock x:Name="NavOverviewLabel" Text="Overview" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource NavigationItemStyle}"
+                                Click="NavigateMeasure_Click"
+                                ToolTipService.ToolTip="Measurements">
+                            <StackPanel Orientation="Horizontal" Spacing="11">
+                                <FontIcon Glyph="&#xE9D2;" FontSize="16" />
+                                <TextBlock x:Name="NavMeasureLabel" Text="Measurements" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource NavigationItemStyle}"
+                                Click="NavigateBaseline_Click"
+                                ToolTipService.ToolTip="Baseline">
+                            <StackPanel Orientation="Horizontal" Spacing="11">
+                                <FontIcon Glyph="&#xE81E;" FontSize="16" />
+                                <TextBlock x:Name="NavBaselineLabel" Text="Baseline" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource NavigationItemStyle}"
+                                Click="NavigateDevices_Click"
+                                ToolTipService.ToolTip="Devices">
+                            <StackPanel Orientation="Horizontal" Spacing="11">
+                                <FontIcon Glyph="&#xE950;" FontSize="16" />
+                                <TextBlock x:Name="NavDevicesLabel" Text="Devices" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
 
-                    <StackPanel Grid.Column="1"
-                                Orientation="Horizontal"
-                                VerticalAlignment="Bottom"
-                                Spacing="8">
-                        <Button x:Name="CaptureObservationButton"
-                                IsEnabled="False"
-                                Click="CaptureObservationButton_Click"
-                                Style="{StaticResource SecondaryButtonStyle}"
-                                Content="Quick snapshot · 5 s"
-                                ToolTipService.ToolTip="Capture a five-second diagnostic snapshot (Ctrl+O)"
-                                AutomationProperties.AcceleratorKey="Ctrl+O">
-                            <Button.KeyboardAccelerators>
-                                <KeyboardAccelerator Modifiers="Control" Key="O" />
-                            </Button.KeyboardAccelerators>
-                        </Button>
-                        <Button x:Name="CaptureBaselineButton"
-                                IsEnabled="False"
-                                Click="CaptureBaselineButton_Click"
-                                Style="{StaticResource PrimaryButtonStyle}"
-                                Content="Build baseline · ~2 min"
-                                ToolTipService.ToolTip="Settle LatencyPilot for five seconds, then build five repeated 20-second windows (Ctrl+B)"
-                                AutomationProperties.AcceleratorKey="Ctrl+B">
-                            <Button.KeyboardAccelerators>
-                                <KeyboardAccelerator Modifiers="Control" Key="B" />
-                            </Button.KeyboardAccelerators>
-                        </Button>
-                        <Button x:Name="ExportEvidenceButton"
-                                IsEnabled="False"
-                                Click="ExportEvidenceButton_Click"
-                                Style="{StaticResource QuietButtonStyle}"
-                                Content="Export JSON"
-                                ToolTipService.ToolTip="Export the latest completed aggregate evidence as JSON (Ctrl+E)"
-                                AutomationProperties.AcceleratorKey="Ctrl+E">
-                            <Button.KeyboardAccelerators>
-                                <KeyboardAccelerator Modifiers="Control" Key="E" />
-                            </Button.KeyboardAccelerators>
-                        </Button>
+                    <StackPanel Grid.Row="2" Spacing="8">
+                        <Border Padding="10"
+                                CornerRadius="{StaticResource RadiusMedium}"
+                                Background="{ThemeResource SurfaceAltBrush}">
+                            <StackPanel Spacing="5">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <Border x:Name="ServiceStatusDot"
+                                            Width="8"
+                                            Height="8"
+                                            CornerRadius="4"
+                                            VerticalAlignment="Center"
+                                            Background="{ThemeResource AccentBrush}" />
+                                    <TextBlock x:Name="ServiceStatusBadgeText"
+                                               Text="Checking service"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{ThemeResource TextBrush}" />
+                                </StackPanel>
+                                <TextBlock x:Name="ServiceStatusText"
+                                           Text="Checking the local observation service…"
+                                           MaxLines="2"
+                                           TextTrimming="CharacterEllipsis"
+                                           FontSize="9"
+                                           TextWrapping="Wrap"
+                                           Foreground="{ThemeResource MutedTextBrush}" />
+                                <Button x:Name="RefreshServiceButton"
+                                        Click="RefreshServiceButton_Click"
+                                        Style="{StaticResource QuietButtonStyle}"
+                                        HorizontalAlignment="Left"
+                                        Content="Refresh"
+                                        ToolTipService.ToolTip="Refresh service status (Ctrl+R)"
+                                        AutomationProperties.AcceleratorKey="Ctrl+R">
+                                    <Button.KeyboardAccelerators>
+                                        <KeyboardAccelerator Modifiers="Control" Key="R" />
+                                    </Button.KeyboardAccelerators>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock x:Name="NavFooterText"
+                                   Text="Native read-only evidence"
+                                   Margin="6,0"
+                                   FontSize="10"
+                                   Foreground="{ThemeResource SubtleTextBrush}" />
                     </StackPanel>
                 </Grid>
+            </Border>
 
-                <!-- Compact service / safety state. -->
-                <Border Grid.Row="2"
-                        Style="{StaticResource SubtleCardStyle}"
-                        Padding="16,12">
-                    <Grid ColumnSpacing="14">
+            <ScrollViewer x:Name="DashboardScrollViewer"
+                          Grid.Column="1"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="DashboardContent"
+                            MaxWidth="{StaticResource ContentMaxWidth}"
+                            Padding="{StaticResource PagePadding}"
+                            HorizontalAlignment="Center"
+                            Spacing="{StaticResource DashboardGap}">
+
+                    <!-- Dashboard header -->
+                    <Grid x:Name="OverviewAnchor" ColumnSpacing="18">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-
-                        <Border Width="34"
-                                Height="34"
-                                CornerRadius="11"
-                                Background="{ThemeResource SurfaceRaisedBrush}">
-                            <Border x:Name="ServiceStatusDot"
-                                    Width="9"
-                                    Height="9"
-                                    CornerRadius="5"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    Background="{ThemeResource AccentBrush}" />
-                        </Border>
-
-                        <StackPanel Grid.Column="1"
-                                    VerticalAlignment="Center"
-                                    Spacing="1">
-                            <TextBlock x:Name="ServiceStatusBadgeText"
-                                       Text="Checking service"
-                                       FontSize="12"
-                                       FontWeight="SemiBold"
-                                       Foreground="{ThemeResource TextBrush}" />
-                            <TextBlock x:Name="ServiceStatusText"
-                                       Text="Checking the local observation service…"
-                                       FontSize="11"
-                                       TextWrapping="Wrap"
-                                       Foreground="{ThemeResource MutedTextBrush}" />
+                        <StackPanel Spacing="4">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Border Style="{StaticResource IconTileStyle}">
+                                    <FontIcon Glyph="&#xE9D2;"
+                                              FontSize="20"
+                                              Foreground="{ThemeResource AccentBrush}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Spacing="1">
+                                    <TextBlock Text="Latency health"
+                                               Style="{StaticResource HeroTitleTextStyle}" />
+                                    <TextBlock Text="See where Windows interrupt work concentrates, then build evidence you can trust."
+                                               Style="{StaticResource MutedBodyTextStyle}" />
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
 
-                        <StackPanel Grid.Column="2"
+                        <StackPanel Grid.Column="1"
                                     Orientation="Horizontal"
                                     VerticalAlignment="Center"
-                                    Spacing="10">
-                            <TextBlock Text="No system settings are changed"
-                                       VerticalAlignment="Center"
-                                       FontSize="11"
-                                       Foreground="{ThemeResource SubtleTextBrush}" />
-                            <Button x:Name="RefreshServiceButton"
-                                    Click="RefreshServiceButton_Click"
-                                    Style="{StaticResource QuietButtonStyle}"
-                                    Content="Refresh"
-                                    ToolTipService.ToolTip="Refresh service status (Ctrl+R)"
-                                    AutomationProperties.AcceleratorKey="Ctrl+R">
+                                    Spacing="8">
+                            <Button x:Name="CaptureObservationButton"
+                                    IsEnabled="False"
+                                    Click="CaptureObservationButton_Click"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    Content="Quick snapshot · 5 s"
+                                    ToolTipService.ToolTip="Capture a five-second diagnostic snapshot (Ctrl+O)"
+                                    AutomationProperties.AcceleratorKey="Ctrl+O">
                                 <Button.KeyboardAccelerators>
-                                    <KeyboardAccelerator Modifiers="Control" Key="R" />
+                                    <KeyboardAccelerator Modifiers="Control" Key="O" />
+                                </Button.KeyboardAccelerators>
+                            </Button>
+                            <Button x:Name="CaptureBaselineButton"
+                                    IsEnabled="False"
+                                    Click="CaptureBaselineButton_Click"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Content="Build baseline · ~2 min"
+                                    ToolTipService.ToolTip="Build five repeated 20-second windows after preparation is confirmed (Ctrl+B)"
+                                    AutomationProperties.AcceleratorKey="Ctrl+B">
+                                <Button.KeyboardAccelerators>
+                                    <KeyboardAccelerator Modifiers="Control" Key="B" />
+                                </Button.KeyboardAccelerators>
+                            </Button>
+                            <Button x:Name="ExportEvidenceButton"
+                                    IsEnabled="False"
+                                    Click="ExportEvidenceButton_Click"
+                                    Style="{StaticResource QuietButtonStyle}"
+                                    Content="Export JSON"
+                                    ToolTipService.ToolTip="Export the latest completed aggregate evidence as JSON (Ctrl+E)"
+                                    AutomationProperties.AcceleratorKey="Ctrl+E">
+                                <Button.KeyboardAccelerators>
+                                    <KeyboardAccelerator Modifiers="Control" Key="E" />
                                 </Button.KeyboardAccelerators>
                             </Button>
                         </StackPanel>
                     </Grid>
-                </Border>
 
-                <Grid x:Name="MainWorkspace"
-                      Grid.Row="4"
-                      ColumnSpacing="18">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition x:Name="MainLeftColumn" Width="328" />
-                        <ColumnDefinition x:Name="MainRightColumn" Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+                    <!-- High-value summary, no wall of numbers. -->
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
 
-                    <VisualStateManager.VisualStateGroups>
-                        <VisualStateGroup x:Name="WorkspaceLayoutStates">
-                            <VisualState x:Name="NarrowWorkspace">
-                                <VisualState.StateTriggers>
-                                    <AdaptiveTrigger MinWindowWidth="0" />
-                                </VisualState.StateTriggers>
-                                <VisualState.Setters>
-                                    <Setter Target="MainLeftColumn.Width" Value="*" />
-                                    <Setter Target="MainRightColumn.Width" Value="0" />
-                                    <Setter Target="LeftRail.(Grid.Column)" Value="0" />
-                                    <Setter Target="LeftRail.(Grid.Row)" Value="0" />
-                                    <Setter Target="ObservationCard.(Grid.Column)" Value="0" />
-                                    <Setter Target="ObservationCard.(Grid.Row)" Value="1" />
-                                    <Setter Target="ObservationCard.Margin" Value="0,18,0,0" />
-                                </VisualState.Setters>
-                            </VisualState>
-                            <VisualState x:Name="WideWorkspace">
-                                <VisualState.StateTriggers>
-                                    <AdaptiveTrigger MinWindowWidth="1120" />
-                                </VisualState.StateTriggers>
-                            </VisualState>
-                        </VisualStateGroup>
-                    </VisualStateManager.VisualStateGroups>
-
-                    <!-- Machine context: compact, useful, secondary. -->
-                    <StackPanel x:Name="LeftRail"
-                                Grid.Column="0"
-                                Spacing="12">
-                        <Border Style="{StaticResource CardStyle}">
-                            <StackPanel Spacing="16">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3">
-                                        <TextBlock Text="This PC"
-                                                   Style="{StaticResource SubsectionTitleTextStyle}" />
-                                        <TextBlock Text="Measurement context"
-                                                   Style="{StaticResource CaptionTextStyle}" />
-                                    </StackPanel>
-                                    <Border Grid.Column="1"
-                                            Style="{StaticResource PillBorderStyle}"
-                                            VerticalAlignment="Top">
-                                        <TextBlock Text="LOCAL"
-                                                   FontSize="9"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{ThemeResource MutedTextBrush}" />
-                                    </Border>
-                                </Grid>
-
-                                <StackPanel Spacing="4">
-                                    <TextBlock Text="Operating system"
-                                               Style="{StaticResource MetricLabelTextStyle}" />
-                                    <TextBlock x:Name="OperatingSystemText"
-                                               FontSize="13"
-                                               FontWeight="SemiBold"
-                                               TextWrapping="Wrap"
-                                               Foreground="{ThemeResource TextBrush}" />
-                                </StackPanel>
-
-                                <Grid ColumnSpacing="8" RowSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-
-                                    <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource MetricTileStyle}">
-                                        <StackPanel Spacing="2">
-                                            <TextBlock Text="Logical CPUs" Style="{StaticResource MetricLabelTextStyle}" />
-                                            <TextBlock x:Name="HardwareLogicalProcessorCountText" Text="—" FontSize="23" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource MetricTileStyle}">
-                                        <StackPanel Spacing="2">
-                                            <TextBlock Text="Physical cores" Style="{StaticResource MetricLabelTextStyle}" />
-                                            <TextBlock x:Name="PhysicalCoreCountText" Text="—" FontSize="23" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource MetricTileStyle}">
-                                        <StackPanel Spacing="2">
-                                            <TextBlock Text="SMT cores" Style="{StaticResource MetricLabelTextStyle}" />
-                                            <TextBlock x:Name="SmtCoreCountText" Text="—" FontSize="23" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource MetricTileStyle}">
-                                        <StackPanel Spacing="2">
-                                            <TextBlock Text="PnP devices" Style="{StaticResource MetricLabelTextStyle}" />
-                                            <TextBlock x:Name="PresentDeviceCountText" Text="—" FontSize="23" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
-
-                                <Border Height="1" Background="{ThemeResource DividerBrush}" />
-
-                                <Grid ColumnSpacing="14" RowSpacing="10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-
-                                    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
-                                        <TextBlock Text="Packages / groups" Style="{StaticResource MetricLabelTextStyle}" />
-                                        <StackPanel Orientation="Horizontal" Spacing="5">
-                                            <TextBlock x:Name="PackageCountText" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                            <TextBlock Text="/" Foreground="{ThemeResource SubtleTextBrush}" />
-                                            <TextBlock x:Name="ProcessorGroupCountText" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                        </StackPanel>
-                                    </StackPanel>
-                                    <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
-                                        <TextBlock Text="OS / process" Style="{StaticResource MetricLabelTextStyle}" />
-                                        <StackPanel Orientation="Horizontal" Spacing="5">
-                                            <TextBlock x:Name="OsArchitectureText" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                            <TextBlock Text="/" Foreground="{ThemeResource SubtleTextBrush}" />
-                                            <TextBlock x:Name="ProcessArchitectureText" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                        </StackPanel>
-                                    </StackPanel>
-                                    <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2">
-                                        <TextBlock Text="Processors available to app" Style="{StaticResource MetricLabelTextStyle}" />
-                                        <TextBlock x:Name="ProcessAvailableProcessorCountText" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Style="{StaticResource SubtleCardStyle}">
-                            <StackPanel Spacing="5">
-                                <StackPanel Orientation="Horizontal" Spacing="7">
-                                    <Border Width="7" Height="7" CornerRadius="4" VerticalAlignment="Center" Background="{ThemeResource SuccessBrush}" />
-                                    <TextBlock Text="Read-only boundary"
-                                               FontSize="12"
-                                               FontWeight="SemiBold"
-                                               Foreground="{ThemeResource TextBrush}" />
-                                </StackPanel>
-                                <TextBlock Text="LatencyPilot is measuring only. MSI, affinity, power, network, and device-policy mutation remain disabled."
-                                           Style="{StaticResource CaptionTextStyle}" />
-                            </StackPanel>
-                        </Border>
-
-                        <StackPanel Spacing="4" Padding="4,0">
-                            <TextBlock x:Name="TopologyStatusText"
-                                       Style="{StaticResource CaptionTextStyle}" />
-                            <TextBlock x:Name="DeviceInventoryStatusText"
-                                       Style="{StaticResource CaptionTextStyle}" />
-                        </StackPanel>
-                    </StackPanel>
-
-                    <!-- Main evidence workspace. Child remains a StackPanel for dynamic scenario/snapshot cards. -->
-                    <Border x:Name="ObservationCard"
-                            Grid.Column="1"
-                            Style="{StaticResource CardStyle}"
-                            Padding="22">
-                        <StackPanel Spacing="18">
-                            <!-- index 0: dynamic MeasurementScenario card is inserted immediately after this header. -->
-                            <Grid ColumnSpacing="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Spacing="4">
-                                    <TextBlock Text="Kernel latency"
-                                               Style="{StaticResource SectionTitleTextStyle}" />
-                                    <TextBlock Text="Decision-grade evidence from ETW DPC/ISR capture, attribution, and repeated stability windows."
-                                               Style="{StaticResource MutedBodyTextStyle}" />
-                                </StackPanel>
-                                <Border Grid.Column="1"
-                                        Style="{StaticResource PillBorderStyle}"
-                                        Background="{ThemeResource AccentSoftBrush}"
-                                        VerticalAlignment="Center">
-                                    <TextBlock Text="5 × 20 s baseline"
-                                               FontSize="10"
-                                               FontWeight="SemiBold"
-                                               Foreground="{ThemeResource AccentBrush}" />
-                                </Border>
-                            </Grid>
-
-                            <!-- index 1 before dynamic insertion: capture state -->
-                            <Border Style="{StaticResource SubtleCardStyle}"
-                                    Padding="15,12">
-                                <StackPanel Spacing="3">
-                                    <TextBlock x:Name="KernelCaptureStatusText"
-                                               Text="No observation has been captured yet."
-                                               FontSize="13"
-                                               FontWeight="SemiBold"
-                                               TextWrapping="Wrap"
-                                               Foreground="{ThemeResource TextBrush}" />
-                                    <TextBlock Text="Use Quick snapshot for diagnosis; use Build baseline for comparison-quality stability evidence."
-                                               Style="{StaticResource CaptionTextStyle}" />
-                                </StackPanel>
-                            </Border>
-
-                            <!-- index 2 before dynamic insertion: primary metrics -->
-                            <Grid ColumnSpacing="9">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-
-                                <Border Grid.Column="0" Style="{StaticResource MetricTileStyle}">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="DPC events" Style="{StaticResource MetricLabelTextStyle}" />
-                                        <TextBlock x:Name="DpcCountText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
-                                        <TextBlock x:Name="DpcP99Text" Text="—" Style="{StaticResource CaptionTextStyle}" />
-                                    </StackPanel>
-                                </Border>
-                                <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="DPC p99.9" Style="{StaticResource MetricLabelTextStyle}" />
-                                        <TextBlock x:Name="DpcP999Text" Text="—" Style="{StaticResource MetricValueTextStyle}" />
-                                        <TextBlock Text="tail latency" Style="{StaticResource CaptionTextStyle}" />
-                                    </StackPanel>
-                                </Border>
-                                <Border Grid.Column="2" Style="{StaticResource MetricTileStyle}">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="ISR events" Style="{StaticResource MetricLabelTextStyle}" />
-                                        <TextBlock x:Name="IsrCountText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
-                                        <TextBlock x:Name="IsrP99Text" Text="—" Style="{StaticResource CaptionTextStyle}" />
-                                    </StackPanel>
-                                </Border>
-                                <Border Grid.Column="3" Style="{StaticResource MetricTileStyle}">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="ISR p99.9" Style="{StaticResource MetricLabelTextStyle}" />
-                                        <TextBlock x:Name="IsrP999Text" Text="—" Style="{StaticResource MetricValueTextStyle}" />
-                                        <TextBlock Text="tail latency" Style="{StaticResource CaptionTextStyle}" />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-
-                            <!-- PremiumObservationUi inserts Snapshot evidence at index 3. -->
-                            <Border Style="{StaticResource SubtleCardStyle}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="7">
-                                        <TextBlock Text="Driver attribution"
-                                                   Style="{StaticResource SubsectionTitleTextStyle}" />
-                                        <ProgressBar x:Name="ModuleCoverageBar"
-                                                     Minimum="0"
-                                                     Maximum="100"
-                                                     Value="0"
-                                                     Height="5"
-                                                     AutomationProperties.Name="Resolved driver attribution coverage" />
-                                        <TextBlock x:Name="ModuleAttributionCoverageText"
-                                                   Text="—"
-                                                   Style="{StaticResource CaptionTextStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1"
-                                                MinWidth="110"
-                                                VerticalAlignment="Center"
-                                                Spacing="2">
-                                        <TextBlock Text="CPUs observed" Style="{StaticResource MetricLabelTextStyle}" />
-                                        <TextBlock x:Name="ObservedProcessorCountText"
-                                                   Text="—"
-                                                   FontSize="25"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{ThemeResource TextBrush}" />
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
+                        <Border Grid.Column="0" Style="{StaticResource DashboardMetricStyle}">
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-
-                                <Border Grid.Column="0"
-                                        Style="{StaticResource SubtleCardStyle}"
-                                        Background="{ThemeResource PremiumSurfaceBrush}"
-                                        BorderBrush="{ThemeResource DividerBrush}"
-                                        BorderThickness="1">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Text="Top modules" Style="{StaticResource SubsectionTitleTextStyle}" />
-                                        <TextBlock x:Name="TopModuleText"
-                                                   Text="No observation yet."
-                                                   Style="{StaticResource CaptionTextStyle}" />
-                                        <ListView x:Name="TopModulesList"
-                                                  Style="{StaticResource EvidenceListStyle}"
-                                                  MinHeight="64"
-                                                  MaxHeight="250"
-                                                  IsItemClickEnabled="False"
-                                                  SelectionMode="None"
-                                                  AutomationProperties.Name="Top observed kernel modules">
-                                            <ListView.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Grid Padding="0,7" ColumnSpacing="10">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <StackPanel Spacing="2">
-                                                            <TextBlock Text="{Binding Name}" Foreground="{ThemeResource TextBrush}" TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="{Binding EventSummary}" Style="{StaticResource CaptionTextStyle}" />
-                                                        </StackPanel>
-                                                        <TextBlock Grid.Column="1"
-                                                                   Text="{Binding DurationSummary}"
-                                                                   VerticalAlignment="Center"
-                                                                   Style="{StaticResource CaptionTextStyle}" />
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ListView.ItemTemplate>
-                                        </ListView>
-                                    </StackPanel>
+                                <Border Width="42" Height="42" CornerRadius="21" Background="{ThemeResource AccentSoftBrush}" VerticalAlignment="Top">
+                                    <FontIcon Glyph="&#xE9D2;" FontSize="18" Foreground="{ThemeResource ChartAccentPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
-
-                                <Border Grid.Column="1"
-                                        Style="{StaticResource SubtleCardStyle}"
-                                        Background="{ThemeResource PremiumSurfaceBrush}"
-                                        BorderBrush="{ThemeResource DividerBrush}"
-                                        BorderThickness="1">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Text="CPU concentration" Style="{StaticResource SubsectionTitleTextStyle}" />
-                                        <TextBlock Text="Ranked by observed DPC + ISR event count" Style="{StaticResource CaptionTextStyle}" />
-                                        <ListView x:Name="TopProcessorsList"
-                                                  Style="{StaticResource EvidenceListStyle}"
-                                                  MinHeight="64"
-                                                  MaxHeight="250"
-                                                  IsItemClickEnabled="False"
-                                                  SelectionMode="None"
-                                                  AutomationProperties.Name="Observed CPU concentration">
-                                            <ListView.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Grid Padding="0,7" ColumnSpacing="10">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <StackPanel Spacing="2">
-                                                            <TextBlock Text="{Binding Name}" Foreground="{ThemeResource TextBrush}" />
-                                                            <TextBlock Text="{Binding EventSummary}" Style="{StaticResource CaptionTextStyle}" />
-                                                        </StackPanel>
-                                                        <TextBlock Grid.Column="1"
-                                                                   Text="{Binding TailSummary}"
-                                                                   VerticalAlignment="Center"
-                                                                   Style="{StaticResource CaptionTextStyle}" />
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ListView.ItemTemplate>
-                                        </ListView>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-
-                            <Border Padding="14,10"
-                                    CornerRadius="{StaticResource RadiusMedium}"
-                                    Background="{ThemeResource AccentSofterBrush}">
-                                <StackPanel Spacing="3">
-                                    <TextBlock x:Name="ObservationQualityText"
-                                               Text="Quality evidence will appear after capture."
-                                               Style="{StaticResource MutedBodyTextStyle}" />
-                                    <TextBlock x:Name="EvidenceExportStatusText"
-                                               Text="Complete an observation or repeated baseline to enable JSON evidence export."
-                                               Style="{StaticResource CaptionTextStyle}"
-                                               AutomationProperties.Name="Evidence export status" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="DPC p99" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock x:Name="DpcP99SummaryText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
+                                    <TextBlock x:Name="DpcP99SummaryDetailText" Text="Latest capture" Style="{StaticResource CaptionTextStyle}" />
                                 </StackPanel>
-                            </Border>
+                            </Grid>
+                        </Border>
 
-                            <Border Padding="18"
-                                    CornerRadius="{StaticResource RadiusLarge}"
-                                    Background="{ThemeResource AccentSoftBrush}"
-                                    BorderBrush="{ThemeResource DividerBrush}"
-                                    BorderThickness="1">
-                                <StackPanel Spacing="11">
-                                    <Grid ColumnSpacing="12">
+                        <Border Grid.Column="1" Style="{StaticResource DashboardMetricStyle}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="42" Height="42" CornerRadius="21" Background="{ThemeResource AccentSoftBrush}" VerticalAlignment="Top">
+                                    <FontIcon Glyph="&#xE9D2;" FontSize="18" Foreground="{ThemeResource ChartAccentSecondaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="ISR p99" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock x:Name="IsrP99SummaryText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
+                                    <TextBlock x:Name="IsrP99SummaryDetailText" Text="Latest capture" Style="{StaticResource CaptionTextStyle}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="2" Style="{StaticResource DashboardMetricStyle}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="42" Height="42" CornerRadius="21" Background="{ThemeResource WarningSoftBrush}" VerticalAlignment="Top">
+                                    <FontIcon Glyph="&#xE9D2;" FontSize="18" Foreground="{ThemeResource ChartWarmBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="CPU concentration" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock x:Name="CpuConcentrationSummaryText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
+                                    <TextBlock x:Name="CpuConcentrationSummaryDetailText" Text="Busiest observed CPU" Style="{StaticResource CaptionTextStyle}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="3" Style="{StaticResource DashboardMetricStyle}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="42" Height="42" CornerRadius="21" Background="{ThemeResource SuccessSoftBrush}" VerticalAlignment="Top">
+                                    <FontIcon Glyph="&#xE73E;" FontSize="18" Foreground="{ThemeResource SuccessBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="Last baseline" Style="{StaticResource MetricLabelTextStyle}" />
+                                    <TextBlock x:Name="BaselineSummaryText" Text="Not captured" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                    <TextBlock x:Name="BaselineSummaryDetailText" Text="Build one for comparison" Style="{StaticResource CaptionTextStyle}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <!-- Machine context + real visual evidence. -->
+                    <Grid x:Name="MainWorkspace" ColumnSpacing="14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition x:Name="MainLeftColumn" Width="{StaticResource ContextPanelWidth}" />
+                            <ColumnDefinition x:Name="MainRightColumn" Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="WorkspaceLayoutStates">
+                                <VisualState x:Name="NarrowWorkspace">
+                                    <VisualState.StateTriggers>
+                                        <AdaptiveTrigger MinWindowWidth="0" />
+                                    </VisualState.StateTriggers>
+                                    <VisualState.Setters>
+                                        <Setter Target="MainLeftColumn.Width" Value="*" />
+                                        <Setter Target="MainRightColumn.Width" Value="0" />
+                                        <Setter Target="LeftRail.(Grid.Column)" Value="0" />
+                                        <Setter Target="LeftRail.(Grid.Row)" Value="0" />
+                                        <Setter Target="EvidenceWorkspace.(Grid.Column)" Value="0" />
+                                        <Setter Target="EvidenceWorkspace.(Grid.Row)" Value="1" />
+                                        <Setter Target="EvidenceWorkspace.Margin" Value="0,14,0,0" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="WideWorkspace">
+                                    <VisualState.StateTriggers>
+                                        <AdaptiveTrigger MinWindowWidth="1180" />
+                                    </VisualState.StateTriggers>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+
+                        <StackPanel x:Name="LeftRail"
+                                    Grid.Column="0"
+                                    Spacing="12">
+                            <Border Style="{StaticResource DashboardCardStyle}">
+                                <StackPanel Spacing="14">
+                                    <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Repeated decision baseline"
-                                                       Style="{StaticResource SubsectionTitleTextStyle}" />
-                                            <TextBlock Text="Five 20-second windows quantify normal noise and drift before any candidate can be compared fairly."
-                                                       Style="{StaticResource CaptionTextStyle}" />
-                                        </StackPanel>
-                                        <Border Grid.Column="1"
-                                                Style="{StaticResource PillBorderStyle}"
-                                                Background="{ThemeResource SurfaceRaisedBrush}"
-                                                VerticalAlignment="Center">
-                                            <TextBlock x:Name="BaselineVerdictText"
-                                                       Text="Not captured"
-                                                       FontSize="11"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="{ThemeResource TextBrush}" />
+                                        <TextBlock Text="This PC" Style="{StaticResource SectionTitleTextStyle}" />
+                                        <Border Grid.Column="1" Style="{StaticResource PillBorderStyle}" VerticalAlignment="Center">
+                                            <TextBlock Text="LOCAL" FontSize="9" FontWeight="SemiBold" Foreground="{ThemeResource MutedTextBrush}" />
                                         </Border>
                                     </Grid>
 
-                                    <ProgressBar x:Name="BaselineProgressBar"
-                                                 Minimum="0"
-                                                 Maximum="5"
-                                                 Value="0"
-                                                 Height="5"
-                                                 AutomationProperties.Name="Baseline capture progress" />
-                                    <TextBlock x:Name="BaselineStatusText"
-                                               Text="Build a repeated baseline to measure normal inter-window variation."
-                                               FontSize="12"
-                                               TextWrapping="Wrap"
-                                               Foreground="{ThemeResource TextBrush}" />
-                                    <TextBlock x:Name="BaselineMetricsText"
-                                               Text="No baseline metrics yet."
-                                               Style="{StaticResource MutedBodyTextStyle}" />
-                                    <TextBlock x:Name="BaselineReasonsText"
-                                               Text="Duration, capture integrity, sample adequacy, noise and drift reasons will appear here."
-                                               Style="{StaticResource CaptionTextStyle}" />
-                                    <ListView x:Name="BaselineWindowsList"
-                                              Style="{StaticResource EvidenceListStyle}"
-                                              MaxHeight="230"
-                                              IsItemClickEnabled="False"
-                                              SelectionMode="None"
-                                              AutomationProperties.Name="Baseline capture windows">
-                                        <ListView.ItemTemplate>
-                                            <DataTemplate>
-                                                <Grid Padding="0,6" ColumnSpacing="10">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                                    <TextBlock Grid.Column="1" Text="{Binding IntegritySummary}" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource MutedTextBrush}" />
-                                                    <TextBlock Grid.Column="2" Text="{Binding DpcSummary}" Style="{StaticResource CaptionTextStyle}" />
-                                                    <TextBlock Grid.Column="3" Text="{Binding IsrSummary}" Style="{StaticResource CaptionTextStyle}" />
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ListView.ItemTemplate>
-                                    </ListView>
+                                    <Border Height="92"
+                                            CornerRadius="{StaticResource RadiusMedium}"
+                                            Background="{ThemeResource AccentSoftBrush}">
+                                        <Grid>
+                                            <FontIcon Glyph="&#xE7F8;"
+                                                      FontSize="42"
+                                                      Foreground="{ThemeResource AccentBrush}"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+
+                                    <StackPanel Spacing="3">
+                                        <TextBlock x:Name="OperatingSystemText"
+                                                   FontSize="14"
+                                                   FontWeight="SemiBold"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{ThemeResource TextBrush}" />
+                                        <TextBlock Text="Windows measurement context" Style="{StaticResource CaptionTextStyle}" />
+                                    </StackPanel>
+
+                                    <Grid ColumnSpacing="12" RowSpacing="11">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
+                                            <TextBlock Text="Logical CPUs" Style="{StaticResource MetricLabelTextStyle}" />
+                                            <TextBlock x:Name="HardwareLogicalProcessorCountText" Text="—" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="Physical cores" Style="{StaticResource MetricLabelTextStyle}" />
+                                            <TextBlock x:Name="PhysicalCoreCountText" Text="—" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2">
+                                            <TextBlock Text="SMT cores" Style="{StaticResource MetricLabelTextStyle}" />
+                                            <TextBlock x:Name="SmtCoreCountText" Text="—" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="Present devices" Style="{StaticResource MetricLabelTextStyle}" />
+                                            <TextBlock x:Name="PresentDeviceCountText" Text="—" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Border Height="1" Background="{ThemeResource DividerBrush}" />
+
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="Graphics" Style="{StaticResource MetricLabelTextStyle}" />
+                                        <TextBlock x:Name="PrimaryGpuText" Text="Detecting display adapter…" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{ThemeResource TextBrush}" />
+                                        <TextBlock x:Name="PrimaryGpuDriverText" Text="" Style="{StaticResource CaptionTextStyle}" />
+                                    </StackPanel>
+
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="Packages / groups" Style="{StaticResource MetricLabelTextStyle}" />
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock x:Name="PackageCountText" Text="—" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                <TextBlock Text="/" Foreground="{ThemeResource SubtleTextBrush}" />
+                                                <TextBlock x:Name="ProcessorGroupCountText" Text="—" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="OS / process" Style="{StaticResource MetricLabelTextStyle}" />
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock x:Name="OsArchitectureText" Text="—" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                <TextBlock Text="/" Foreground="{ThemeResource SubtleTextBrush}" />
+                                                <TextBlock x:Name="ProcessArchitectureText" Text="—" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Grid>
+                                    <StackPanel Visibility="Collapsed">
+                                        <TextBlock x:Name="ProcessAvailableProcessorCountText" />
+                                        <TextBlock x:Name="TopologyStatusText" />
+                                        <TextBlock x:Name="DeviceInventoryStatusText" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
+                            <!-- DeviceEvidenceUi inserts the read-only device card here at index 1. -->
                         </StackPanel>
-                    </Border>
-                </Grid>
-            </Grid>
-        </ScrollViewer>
+
+                        <StackPanel x:Name="EvidenceWorkspace"
+                                    Grid.Column="1"
+                                    Spacing="12">
+                            <Grid x:Name="MeasureAnchor" ColumnSpacing="12" RowSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.25*" />
+                                    <ColumnDefinition Width="1*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource ChartCardStyle}">
+                                    <StackPanel Spacing="10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="Latency profile" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                <TextBlock x:Name="LatencyChartSubtitleText" Text="Latest DPC / ISR percentile shape" Style="{StaticResource CaptionTextStyle}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                                    <Border Width="7" Height="7" CornerRadius="4" Background="{ThemeResource ChartAccentPrimaryBrush}" />
+                                                    <TextBlock Text="DPC" Style="{StaticResource CaptionTextStyle}" />
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                                    <Border Width="7" Height="7" CornerRadius="4" Background="{ThemeResource ChartAccentSecondaryBrush}" />
+                                                    <TextBlock Text="ISR" Style="{StaticResource CaptionTextStyle}" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
+                                        <controls:LatencyProfileChart x:Name="LatencyProfileChart" Height="188" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource ChartCardStyle}">
+                                    <StackPanel Spacing="10">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="CPU interrupt distribution" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                            <TextBlock Text="Share of observed DPC + ISR events" Style="{StaticResource CaptionTextStyle}" />
+                                        </StackPanel>
+                                        <controls:CpuDistributionChart x:Name="CpuDistributionChart" Height="188" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource ChartCardStyle}">
+                                    <StackPanel Spacing="10">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="Top modules by kernel time" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                            <TextBlock Text="Inclusive observed DPC / ISR duration" Style="{StaticResource CaptionTextStyle}" />
+                                        </StackPanel>
+                                        <controls:ModuleContributionChart x:Name="ModuleContributionChart" Height="176" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource ChartCardStyle}">
+                                    <StackPanel Spacing="10">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="CPU interrupt map" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                            <TextBlock Text="DPC and ISR share by busiest processors" Style="{StaticResource CaptionTextStyle}" />
+                                        </StackPanel>
+                                        <controls:CpuInterruptMap x:Name="CpuInterruptMap" Height="176" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <!-- Compact baseline preparation + recent snapshot -->
+                            <Grid x:Name="BaselineAnchor" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.2*" />
+                                    <ColumnDefinition Width="1*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" Style="{StaticResource DashboardCardStyle}">
+                                    <StackPanel Spacing="10">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="Baseline preparation" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                <TextBlock Text="Two confirmations unlock the repeated baseline." Style="{StaticResource CaptionTextStyle}" />
+                                            </StackPanel>
+                                            <ComboBox x:Name="DashboardScenarioComboBox"
+                                                      Grid.Column="1"
+                                                      MinWidth="176"
+                                                      VerticalAlignment="Center" />
+                                        </Grid>
+                                        <Grid x:Name="BaselinePreparationHost" />
+                                        <ProgressBar x:Name="BaselineProgressBar"
+                                                     Minimum="0"
+                                                     Maximum="5"
+                                                     Value="0"
+                                                     Height="5"
+                                                     AutomationProperties.Name="Baseline capture progress" />
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="BaselineStatusText"
+                                                       Text="Confirm preparation to unlock the repeated baseline."
+                                                       FontSize="11"
+                                                       MaxLines="2"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{ThemeResource MutedTextBrush}" />
+                                            <Border Grid.Column="1"
+                                                    Style="{StaticResource PillBorderStyle}"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock x:Name="BaselineVerdictText"
+                                                           Text="Not captured"
+                                                           FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{ThemeResource TextBrush}" />
+                                            </Border>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="1" Style="{StaticResource DashboardCardStyle}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="7">
+                                            <TextBlock Text="Recent snapshot" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                            <TextBlock x:Name="RecentSnapshotStatusText"
+                                                       Text="No snapshot captured yet"
+                                                       FontSize="14"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{ThemeResource TextBrush}" />
+                                            <TextBlock x:Name="RecentSnapshotSummaryText"
+                                                       Text="Take a quick snapshot to reveal the current tail, CPU concentration, and dominant modules."
+                                                       MaxLines="3"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Style="{StaticResource CaptionTextStyle}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1"
+                                                Click="CaptureObservationButton_Click"
+                                                Style="{StaticResource QuietButtonStyle}"
+                                                VerticalAlignment="Bottom"
+                                                Content="Take snapshot" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+
+                            <!-- Exact evidence remains available without dominating the primary UX. -->
+                            <Expander Header="Exact evidence &amp; measurement context"
+                                      HorizontalAlignment="Stretch"
+                                      IsExpanded="False">
+                                <Border x:Name="ObservationCard"
+                                        Style="{StaticResource DashboardCardStyle}"
+                                        Margin="0,8,0,0">
+                                    <StackPanel Spacing="14">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="Exact evidence" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                <TextBlock Text="Raw counts, attribution coverage, baseline windows and capture-quality context." Style="{StaticResource CaptionTextStyle}" />
+                                            </StackPanel>
+                                            <TextBlock x:Name="KernelCaptureStatusText"
+                                                       Grid.Column="1"
+                                                       MaxWidth="420"
+                                                       Text="No observation has been captured yet."
+                                                       TextAlignment="Right"
+                                                       Style="{StaticResource CaptionTextStyle}" />
+                                        </Grid>
+
+                                        <Grid ColumnSpacing="8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0" Style="{StaticResource MetricTileStyle}">
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="DPC events" Style="{StaticResource MetricLabelTextStyle}" />
+                                                    <TextBlock x:Name="DpcCountText" Text="—" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                    <TextBlock x:Name="DpcP99Text" Text="—" Style="{StaticResource CaptionTextStyle}" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="DPC p99.9" Style="{StaticResource MetricLabelTextStyle}" />
+                                                    <TextBlock x:Name="DpcP999Text" Text="—" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Grid.Column="2" Style="{StaticResource MetricTileStyle}">
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="ISR events" Style="{StaticResource MetricLabelTextStyle}" />
+                                                    <TextBlock x:Name="IsrCountText" Text="—" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                    <TextBlock x:Name="IsrP99Text" Text="—" Style="{StaticResource CaptionTextStyle}" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Grid.Column="3" Style="{StaticResource MetricTileStyle}">
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="ISR p99.9" Style="{StaticResource MetricLabelTextStyle}" />
+                                                    <TextBlock x:Name="IsrP999Text" Text="—" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="6">
+                                                <TextBlock Text="Driver attribution" Style="{StaticResource MetricLabelTextStyle}" />
+                                                <ProgressBar x:Name="ModuleCoverageBar" Minimum="0" Maximum="100" Value="0" Height="5" />
+                                                <TextBlock x:Name="ModuleAttributionCoverageText" Text="—" Style="{StaticResource CaptionTextStyle}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" MinWidth="100" Spacing="2">
+                                                <TextBlock Text="CPUs observed" Style="{StaticResource MetricLabelTextStyle}" />
+                                                <TextBlock x:Name="ObservedProcessorCountText" Text="—" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="6">
+                                                <TextBlock Text="Top modules" Style="{StaticResource MetricLabelTextStyle}" />
+                                                <TextBlock x:Name="TopModuleText" Text="No observation yet." Style="{StaticResource CaptionTextStyle}" />
+                                                <ListView x:Name="TopModulesList" Style="{StaticResource EvidenceListStyle}" MaxHeight="220" SelectionMode="None">
+                                                    <ListView.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Padding="0,5" ColumnSpacing="8">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel Spacing="1">
+                                                                    <TextBlock Text="{Binding Name}" Foreground="{ThemeResource TextBrush}" />
+                                                                    <TextBlock Text="{Binding EventSummary}" Style="{StaticResource CaptionTextStyle}" />
+                                                                </StackPanel>
+                                                                <TextBlock Grid.Column="1" Text="{Binding DurationSummary}" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ListView.ItemTemplate>
+                                                </ListView>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Spacing="6">
+                                                <TextBlock Text="CPU concentration" Style="{StaticResource MetricLabelTextStyle}" />
+                                                <ListView x:Name="TopProcessorsList" Style="{StaticResource EvidenceListStyle}" MaxHeight="220" SelectionMode="None">
+                                                    <ListView.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Padding="0,5" ColumnSpacing="8">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel Spacing="1">
+                                                                    <TextBlock Text="{Binding Name}" Foreground="{ThemeResource TextBrush}" />
+                                                                    <TextBlock Text="{Binding EventSummary}" Style="{StaticResource CaptionTextStyle}" />
+                                                                </StackPanel>
+                                                                <TextBlock Grid.Column="1" Text="{Binding TailSummary}" Style="{StaticResource CaptionTextStyle}" VerticalAlignment="Center" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ListView.ItemTemplate>
+                                                </ListView>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <TextBlock x:Name="ObservationQualityText" Text="Quality evidence will appear after capture." Style="{StaticResource CaptionTextStyle}" />
+                                        <TextBlock x:Name="EvidenceExportStatusText" Text="Complete an observation or repeated baseline to enable JSON evidence export." Style="{StaticResource CaptionTextStyle}" />
+                                        <TextBlock x:Name="BaselineMetricsText" Text="No baseline metrics yet." Style="{StaticResource CaptionTextStyle}" />
+                                        <TextBlock x:Name="BaselineReasonsText" Text="Duration, capture integrity, sample adequacy, noise and drift reasons will appear here." Style="{StaticResource CaptionTextStyle}" />
+                                        <ListView x:Name="BaselineWindowsList" Style="{StaticResource EvidenceListStyle}" MaxHeight="210" SelectionMode="None">
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Padding="0,5" ColumnSpacing="8">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding IntegritySummary}" Style="{StaticResource CaptionTextStyle}" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding DpcSummary}" Style="{StaticResource CaptionTextStyle}" />
+                                                        <TextBlock Grid.Column="3" Text="{Binding IsrSummary}" Style="{StaticResource CaptionTextStyle}" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                    </StackPanel>
+                                </Border>
+                            </Expander>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
     </Grid>
 </Window>
