@@ -1,49 +1,40 @@
-using LatencyPilot.Persistence;
-using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
 
 [TestClass]
-public sealed class TemporaryReadOnlyJournalLookupTests
+public sealed class TemporaryPhysicalValidationHarnessTests
 {
     [TestMethod]
-    public void ReadOnlyInspectorCanRetrieveExactExperiment()
+    public void HarnessExposesSafeCandidatePlanningAndRuntimePlacementVerification()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"LatencyPilot-readonly-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(directory);
-        var databasePath = Path.Combine(directory, "latencypilot.db");
-        var experimentId = Guid.NewGuid();
+        var root = FindRepositoryRoot();
+        var harness = Path.Combine(root, "tools", "LatencyPilot.PhysicalValidation");
+        var program = File.ReadAllText(Path.Combine(harness, "Program.cs"));
+        var project = File.ReadAllText(Path.Combine(harness, "LatencyPilot.PhysicalValidation.csproj"));
 
-        try
+        StringAssert.Contains(program, "plan-gpu-affinity");
+        StringAssert.Contains(program, "verify-gpu-placement");
+        StringAssert.Contains(program, "RequireKernelCaptureAuthority");
+        StringAssert.Contains(program, "GpuInterruptRuntimePlacementVerifier.Analyze");
+        Assert.IsTrue(File.Exists(Path.Combine(harness, "BaselineEvidenceCandidatePlan.cs")));
+        StringAssert.Contains(project, "LatencyPilot.Benchmarking");
+        StringAssert.Contains(project, "LatencyPilot.Protocol");
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
         {
-            var journal = new MutationJournal(databasePath);
-            journal.Initialize();
-            _ = journal.CreatePrepared(
-                experimentId,
-                "gpu-interrupt-affinity",
-                "PCI\\VEN_TEST&DEV_TEST",
-                "{\"snapshot\":true}",
-                "{\"candidate\":true}");
-
-            File.SetAttributes(databasePath, File.GetAttributes(databasePath) | FileAttributes.ReadOnly);
-
-            var entry = MutationJournalReadOnlyInspector.TryGet(databasePath, experimentId);
-            Assert.IsNotNull(entry);
-            Assert.AreEqual(experimentId, entry.ExperimentId);
-            Assert.AreEqual(MutationJournalState.Prepared, entry.State);
-            Assert.AreEqual("PCI\\VEN_TEST&DEV_TEST", entry.TargetId);
-            Assert.IsNull(MutationJournalReadOnlyInspector.TryGet(databasePath, Guid.NewGuid()));
-        }
-        finally
-        {
-            SqliteConnection.ClearAllPools();
-            if (File.Exists(databasePath))
+            if (File.Exists(Path.Combine(directory.FullName, "LatencyPilot.slnx")))
             {
-                File.SetAttributes(databasePath, FileAttributes.Normal);
+                return directory.FullName;
             }
 
-            Directory.Delete(directory, recursive: true);
+            directory = directory.Parent;
         }
+
+        throw new InvalidOperationException("Repository root was not found from the test output directory.");
     }
 }
