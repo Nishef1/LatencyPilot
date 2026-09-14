@@ -57,6 +57,7 @@ builder.Services.AddWindowsService(options =>
 // journal and re-reads actual state for any unresolved known mutation without
 // applying or reverting anything. Observation remains available even if this
 // inspection fails, while mutation stays fail-closed.
+builder.Services.Configure<HostOptions>(options => options.ServicesStartConcurrently = false);
 builder.Services.AddSingleton<MutationRecoveryReadiness>();
 builder.Services.AddHostedService<MutationRecoveryInspector>();
 builder.Services.AddHostedService<ObservationHost>();
