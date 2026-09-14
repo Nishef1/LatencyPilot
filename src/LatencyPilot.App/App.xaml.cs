@@ -39,7 +39,9 @@ public partial class App : Application
     {
         try
         {
-            _window = new MainWindow();
+            var mainWindow = new MainWindow();
+            mainWindow.InitializeWindowChrome();
+            _window = mainWindow;
             _window.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
             _window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
             _window.Activate();
