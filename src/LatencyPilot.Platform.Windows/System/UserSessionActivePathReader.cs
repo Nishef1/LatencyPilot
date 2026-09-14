@@ -17,6 +17,7 @@ public static class UserSessionActivePathReader
             CaptureComponent(ProcessorCpuSetReader.Capture),
             CaptureComponent(GraphicsAdapterReader.Capture),
             CaptureComponent(DefaultAudioRouteReader.CaptureDefaultRenderRoutes),
+            CaptureComponent(InputDeviceRouteReader.Capture),
             PresentMonDeviceReader.Capture(presentMonApiPath, presentMonControlPipeName),
             capturedAt);
     }
