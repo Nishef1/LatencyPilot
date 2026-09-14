@@ -11,7 +11,7 @@ public sealed class ModuleContributionChart : UserControl
 
     public ModuleContributionChart()
     {
-        MinHeight = 170;
+        MinHeight = (double)Application.Current.Resources["ChartPlotMinHeight"];
         _emptyState = new TextBlock
         {
             Text = "Capture evidence to rank kernel modules by observed time.",
@@ -25,6 +25,7 @@ public sealed class ModuleContributionChart : UserControl
         root.Children.Add(_rows);
         root.Children.Add(_emptyState);
         Content = root;
+        ActualThemeChanged += (_, _) => _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
         AutomationProperties.SetName(this, "Top modules by observed kernel time chart");
     }
 
@@ -106,6 +107,7 @@ public sealed class ModuleContributionChart : UserControl
     internal void Clear(string message)
     {
         _rows.Children.Clear();
+        _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
         _emptyState.Text = message;
         _emptyState.Visibility = Visibility.Visible;
         AutomationProperties.SetHelpText(this, message);

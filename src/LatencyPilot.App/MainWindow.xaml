@@ -5,7 +5,8 @@
     xmlns:controls="using:LatencyPilot.App.Controls">
 
     <Grid x:Name="RootGrid"
-          Background="{ThemeResource CanvasBrush}"
+          Background="{ThemeResource ShellBackdropBrush}"
+          RequestedTheme="Light"
           Loaded="RootGrid_Loaded">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -25,25 +26,25 @@
                 <StackPanel Orientation="Horizontal"
                             VerticalAlignment="Center"
                             Spacing="9">
-                    <Border Width="28"
-                            Height="28"
-                            CornerRadius="9"
+                    <Border Width="40"
+                            Height="40"
+                            CornerRadius="10"
                             Background="{ThemeResource AccentSoftBrush}">
                         <FontIcon Glyph="&#xE9D2;"
-                                  FontSize="15"
+                                  FontSize="21"
                                   Foreground="{ThemeResource AccentBrush}"
                                   HorizontalAlignment="Center"
                                   VerticalAlignment="Center" />
                     </Border>
                     <StackPanel VerticalAlignment="Center" Spacing="0">
                         <TextBlock Text="LatencyPilot"
-                                   FontSize="13"
+                                   FontSize="17"
                                    FontWeight="SemiBold"
                                    Foreground="{ThemeResource TextBrush}" />
                         <TextBlock x:Name="VersionText"
                                    Text="v—"
-                                   FontSize="9"
-                                   Foreground="{ThemeResource SubtleTextBrush}" />
+                                   FontSize="11"
+                                   Foreground="{ThemeResource MutedTextBrush}" />
                     </StackPanel>
                 </StackPanel>
 
@@ -72,33 +73,11 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <VisualStateManager.VisualStateGroups>
-                <VisualStateGroup x:Name="ShellLayoutStates">
-                    <VisualState x:Name="CompactShell">
-                        <VisualState.StateTriggers>
-                            <AdaptiveTrigger MinWindowWidth="0" />
-                        </VisualState.StateTriggers>
-                        <VisualState.Setters>
-                            <Setter Target="NavigationColumn.Width" Value="64" />
-                            <Setter Target="NavOverviewLabel.Visibility" Value="Collapsed" />
-                            <Setter Target="NavMeasureLabel.Visibility" Value="Collapsed" />
-                            <Setter Target="NavBaselineLabel.Visibility" Value="Collapsed" />
-                            <Setter Target="NavDevicesLabel.Visibility" Value="Collapsed" />
-                            <Setter Target="NavFooterText.Visibility" Value="Collapsed" />
-                        </VisualState.Setters>
-                    </VisualState>
-                    <VisualState x:Name="WideShell">
-                        <VisualState.StateTriggers>
-                            <AdaptiveTrigger MinWindowWidth="1120" />
-                        </VisualState.StateTriggers>
-                    </VisualState>
-                </VisualStateGroup>
-            </VisualStateManager.VisualStateGroups>
 
             <!-- Section navigation, not fake pages: each button scrolls to a real dashboard section. -->
             <Border Grid.Column="0"
                     Style="{StaticResource NavigationRailStyle}">
-                <Grid Padding="10,12,10,14">
+                <Grid Padding="8,22,8,14">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
@@ -107,6 +86,8 @@
 
                     <StackPanel Spacing="8">
                         <Button Style="{StaticResource NavigationItemSelectedStyle}"
+                                x:Name="NavOverviewButton"
+                                AutomationProperties.Name="Overview"
                                 Click="NavigateOverview_Click"
                                 ToolTipService.ToolTip="Overview">
                             <StackPanel Orientation="Horizontal" Spacing="11">
@@ -115,6 +96,8 @@
                             </StackPanel>
                         </Button>
                         <Button Style="{StaticResource NavigationItemStyle}"
+                                x:Name="NavMeasureButton"
+                                AutomationProperties.Name="Measurements"
                                 Click="NavigateMeasure_Click"
                                 ToolTipService.ToolTip="Measurements">
                             <StackPanel Orientation="Horizontal" Spacing="11">
@@ -123,6 +106,8 @@
                             </StackPanel>
                         </Button>
                         <Button Style="{StaticResource NavigationItemStyle}"
+                                x:Name="NavBaselineButton"
+                                AutomationProperties.Name="Baseline"
                                 Click="NavigateBaseline_Click"
                                 ToolTipService.ToolTip="Baseline">
                             <StackPanel Orientation="Horizontal" Spacing="11">
@@ -131,17 +116,27 @@
                             </StackPanel>
                         </Button>
                         <Button Style="{StaticResource NavigationItemStyle}"
+                                x:Name="NavDevicesButton"
+                                AutomationProperties.Name="Devices"
                                 Click="NavigateDevices_Click"
-                                ToolTipService.ToolTip="Devices">
+                                ToolTipService.ToolTip="Read-only device and driver evidence">
                             <StackPanel Orientation="Horizontal" Spacing="11">
                                 <FontIcon Glyph="&#xE950;" FontSize="16" />
                                 <TextBlock x:Name="NavDevicesLabel" Text="Devices" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
+                        <Button x:Name="NavEvidenceButton" Style="{StaticResource NavigationItemStyle}"
+                                Click="NavigateEvidence_Click" AutomationProperties.Name="Evidence"
+                                ToolTipService.ToolTip="Exact evidence and export details">
+                            <StackPanel Orientation="Horizontal" Spacing="11">
+                                <FontIcon Glyph="&#xE8A5;" FontSize="16" />
+                                <TextBlock x:Name="NavEvidenceLabel" Text="Evidence" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
 
                     <StackPanel Grid.Row="2" Spacing="8">
-                        <Border Padding="10"
+                        <Border x:Name="ServiceStatusCard" Padding="10"
                                 CornerRadius="{StaticResource RadiusMedium}"
                                 Background="{ThemeResource SurfaceAltBrush}">
                             <StackPanel Spacing="5">
@@ -178,201 +173,45 @@
                                 </Button>
                             </StackPanel>
                         </Border>
-                        <TextBlock x:Name="NavFooterText"
-                                   Text="Native read-only evidence"
-                                   Margin="6,0"
-                                   FontSize="10"
-                                   Foreground="{ThemeResource SubtleTextBrush}" />
+                        <Button x:Name="AppearanceButton" Style="{StaticResource NavigationItemStyle}"
+                                AutomationProperties.Name="Appearance" ToolTipService.ToolTip="Appearance">
+                            <StackPanel Orientation="Horizontal" Spacing="11">
+                                <FontIcon Glyph="&#xE708;" FontSize="18" />
+                                <TextBlock x:Name="AppearanceLabel" Text="Appearance" />
+                            </StackPanel>
+                            <Button.Flyout>
+                                <MenuFlyout>
+                                    <RadioMenuFlyoutItem Text="Light" Tag="Light" GroupName="Appearance" Click="Appearance_Click" IsChecked="True" />
+                                    <RadioMenuFlyoutItem Text="Dark" Tag="Dark" GroupName="Appearance" Click="Appearance_Click" />
+                                    <RadioMenuFlyoutItem Text="Use Windows setting" Tag="Default" GroupName="Appearance" Click="Appearance_Click" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
                     </StackPanel>
                 </Grid>
             </Border>
 
+            <Border Grid.Column="1" Margin="{StaticResource WorkspaceMargin}"
+                    Background="{ThemeResource WorkspaceBrush}"
+                    BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1"
+                    CornerRadius="{StaticResource RadiusLarge}">
             <ScrollViewer x:Name="DashboardScrollViewer"
-                          Grid.Column="1"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
-                <StackPanel x:Name="DashboardContent"
+                <Grid x:Name="DashboardContent"
                             MaxWidth="{StaticResource ContentMaxWidth}"
                             Padding="{StaticResource PagePadding}"
-                            HorizontalAlignment="Center"
-                            Spacing="{StaticResource DashboardGap}">
-
-                    <!-- Dashboard header -->
-                    <Grid x:Name="OverviewAnchor" ColumnSpacing="18">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Spacing="4">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <Border Style="{StaticResource IconTileStyle}">
-                                    <FontIcon Glyph="&#xE9D2;"
-                                              FontSize="20"
-                                              Foreground="{ThemeResource AccentBrush}"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center" />
-                                </Border>
-                                <StackPanel Spacing="1">
-                                    <TextBlock Text="Latency health"
-                                               Style="{StaticResource HeroTitleTextStyle}" />
-                                    <TextBlock Text="See where Windows interrupt work concentrates, then build evidence you can trust."
-                                               Style="{StaticResource MutedBodyTextStyle}" />
-                                </StackPanel>
-                            </StackPanel>
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="1"
-                                    Orientation="Horizontal"
-                                    VerticalAlignment="Center"
-                                    Spacing="8">
-                            <Button x:Name="CaptureObservationButton"
-                                    IsEnabled="False"
-                                    Click="CaptureObservationButton_Click"
-                                    Style="{StaticResource PrimaryButtonStyle}"
-                                    Content="Quick snapshot · 5 s"
-                                    ToolTipService.ToolTip="Capture a five-second diagnostic snapshot (Ctrl+O)"
-                                    AutomationProperties.AcceleratorKey="Ctrl+O">
-                                <Button.KeyboardAccelerators>
-                                    <KeyboardAccelerator Modifiers="Control" Key="O" />
-                                </Button.KeyboardAccelerators>
-                            </Button>
-                            <Button x:Name="CaptureBaselineButton"
-                                    IsEnabled="False"
-                                    Click="CaptureBaselineButton_Click"
-                                    Style="{StaticResource SecondaryButtonStyle}"
-                                    Content="Build baseline · ~2 min"
-                                    ToolTipService.ToolTip="Build five repeated 20-second windows after preparation is confirmed (Ctrl+B)"
-                                    AutomationProperties.AcceleratorKey="Ctrl+B">
-                                <Button.KeyboardAccelerators>
-                                    <KeyboardAccelerator Modifiers="Control" Key="B" />
-                                </Button.KeyboardAccelerators>
-                            </Button>
-                            <Button x:Name="ExportEvidenceButton"
-                                    IsEnabled="False"
-                                    Click="ExportEvidenceButton_Click"
-                                    Style="{StaticResource QuietButtonStyle}"
-                                    Content="Export JSON"
-                                    ToolTipService.ToolTip="Export the latest completed aggregate evidence as JSON (Ctrl+E)"
-                                    AutomationProperties.AcceleratorKey="Ctrl+E">
-                                <Button.KeyboardAccelerators>
-                                    <KeyboardAccelerator Modifiers="Control" Key="E" />
-                                </Button.KeyboardAccelerators>
-                            </Button>
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- High-value summary, no wall of numbers. -->
-                    <Grid ColumnSpacing="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-
-                        <Border Grid.Column="0" Style="{StaticResource DashboardMetricStyle}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Border Width="42" Height="42" CornerRadius="21" Background="{ThemeResource AccentSoftBrush}" VerticalAlignment="Top">
-                                    <FontIcon Glyph="&#xE9D2;" FontSize="18" Foreground="{ThemeResource ChartAccentPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <StackPanel Grid.Column="1" Spacing="2">
-                                    <TextBlock Text="DPC p99" Style="{StaticResource MetricLabelTextStyle}" />
-                                    <TextBlock x:Name="DpcP99SummaryText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
-                                    <TextBlock x:Name="DpcP99SummaryDetailText" Text="Latest capture" Style="{StaticResource CaptionTextStyle}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <Border Grid.Column="1" Style="{StaticResource DashboardMetricStyle}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Border Width="42" Height="42" CornerRadius="21" Background="{ThemeResource AccentSoftBrush}" VerticalAlignment="Top">
-                                    <FontIcon Glyph="&#xE9D2;" FontSize="18" Foreground="{ThemeResource ChartAccentSecondaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <StackPanel Grid.Column="1" Spacing="2">
-                                    <TextBlock Text="ISR p99" Style="{StaticResource MetricLabelTextStyle}" />
-                                    <TextBlock x:Name="IsrP99SummaryText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
-                                    <TextBlock x:Name="IsrP99SummaryDetailText" Text="Latest capture" Style="{StaticResource CaptionTextStyle}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <Border Grid.Column="2" Style="{StaticResource DashboardMetricStyle}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Border Width="42" Height="42" CornerRadius="21" Background="{ThemeResource WarningSoftBrush}" VerticalAlignment="Top">
-                                    <FontIcon Glyph="&#xE9D2;" FontSize="18" Foreground="{ThemeResource ChartWarmBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <StackPanel Grid.Column="1" Spacing="2">
-                                    <TextBlock Text="CPU concentration" Style="{StaticResource MetricLabelTextStyle}" />
-                                    <TextBlock x:Name="CpuConcentrationSummaryText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
-                                    <TextBlock x:Name="CpuConcentrationSummaryDetailText" Text="Busiest observed CPU" Style="{StaticResource CaptionTextStyle}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <Border Grid.Column="3" Style="{StaticResource DashboardMetricStyle}">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Border Width="42" Height="42" CornerRadius="21" Background="{ThemeResource SuccessSoftBrush}" VerticalAlignment="Top">
-                                    <FontIcon Glyph="&#xE73E;" FontSize="18" Foreground="{ThemeResource SuccessBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <StackPanel Grid.Column="1" Spacing="2">
-                                    <TextBlock Text="Last baseline" Style="{StaticResource MetricLabelTextStyle}" />
-                                    <TextBlock x:Name="BaselineSummaryText" Text="Not captured" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                    <TextBlock x:Name="BaselineSummaryDetailText" Text="Build one for comparison" Style="{StaticResource CaptionTextStyle}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                    </Grid>
-
-                    <!-- Machine context + real visual evidence. -->
-                    <Grid x:Name="MainWorkspace" ColumnSpacing="14">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition x:Name="MainLeftColumn" Width="{StaticResource ContextPanelWidth}" />
-                            <ColumnDefinition x:Name="MainRightColumn" Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <VisualStateManager.VisualStateGroups>
-                            <VisualStateGroup x:Name="WorkspaceLayoutStates">
-                                <VisualState x:Name="NarrowWorkspace">
-                                    <VisualState.StateTriggers>
-                                        <AdaptiveTrigger MinWindowWidth="0" />
-                                    </VisualState.StateTriggers>
-                                    <VisualState.Setters>
-                                        <Setter Target="MainLeftColumn.Width" Value="*" />
-                                        <Setter Target="MainRightColumn.Width" Value="0" />
-                                        <Setter Target="LeftRail.(Grid.Column)" Value="0" />
-                                        <Setter Target="LeftRail.(Grid.Row)" Value="0" />
-                                        <Setter Target="EvidenceWorkspace.(Grid.Column)" Value="0" />
-                                        <Setter Target="EvidenceWorkspace.(Grid.Row)" Value="1" />
-                                        <Setter Target="EvidenceWorkspace.Margin" Value="0,14,0,0" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                                <VisualState x:Name="WideWorkspace">
-                                    <VisualState.StateTriggers>
-                                        <AdaptiveTrigger MinWindowWidth="1180" />
-                                    </VisualState.StateTriggers>
-                                </VisualState>
-                            </VisualStateGroup>
-                        </VisualStateManager.VisualStateGroups>
+                            HorizontalAlignment="Stretch"
+                            ColumnSpacing="{StaticResource DashboardGap}"
+                            RowSpacing="{StaticResource DashboardGap}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition x:Name="ContextColumn" Width="{StaticResource ContextPanelWidth}" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
                         <StackPanel x:Name="LeftRail"
                                     Grid.Column="0"
@@ -390,11 +229,12 @@
                                         </Border>
                                     </Grid>
 
-                                    <Border Height="92"
+                                    <Border Height="{StaticResource SystemArtworkHeight}"
                                             CornerRadius="{StaticResource RadiusMedium}"
                                             Background="{ThemeResource AccentSoftBrush}">
                                         <Grid>
-                                            <FontIcon Glyph="&#xE7F8;"
+                                            <Image x:Name="SystemArtwork" Stretch="UniformToFill" AutomationProperties.AccessibilityView="Raw" />
+                                            <FontIcon x:Name="SystemArtworkFallback" Glyph="&#xE7F8;"
                                                       FontSize="42"
                                                       Foreground="{ThemeResource AccentBrush}"
                                                       HorizontalAlignment="Center"
@@ -408,7 +248,7 @@
                                                    FontWeight="SemiBold"
                                                    TextWrapping="Wrap"
                                                    Foreground="{ThemeResource TextBrush}" />
-                                        <TextBlock Text="Windows measurement context" Style="{StaticResource CaptionTextStyle}" />
+                                        <TextBlock Text="Local system · read-only inventory" Style="{StaticResource CaptionTextStyle}" />
                                     </StackPanel>
 
                                     <Grid ColumnSpacing="12" RowSpacing="11">
@@ -475,12 +315,204 @@
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
-                            <!-- DeviceEvidenceUi inserts the read-only device card here at index 1. -->
+                            <Border Style="{StaticResource DashboardCardStyle}">
+                                <StackPanel Spacing="14">
+                                    <TextBlock Text="Device evidence" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                    <Grid ColumnSpacing="10" RowSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <FontIcon Glyph="&#xE7F4;" FontSize="16" Foreground="{ThemeResource NavigationIconBrush}" />
+                                        <TextBlock Grid.Column="1" Text="Display adapter" Style="{StaticResource CaptionTextStyle}" />
+                                        <TextBlock x:Name="DisplayEvidenceText" Grid.Column="2" Text="—" Style="{StaticResource CaptionTextStyle}" />
+                                        <FontIcon Grid.Row="1" Glyph="&#xE968;" FontSize="16" Foreground="{ThemeResource NavigationIconBrush}" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="Network adapter" Style="{StaticResource CaptionTextStyle}" />
+                                        <TextBlock x:Name="NetworkEvidenceText" Grid.Row="1" Grid.Column="2" Text="—" Style="{StaticResource CaptionTextStyle}" />
+                                        <FontIcon Grid.Row="2" Glyph="&#xE88E;" FontSize="16" Foreground="{ThemeResource NavigationIconBrush}" />
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="USB / xHCI" Style="{StaticResource CaptionTextStyle}" />
+                                        <TextBlock x:Name="UsbEvidenceText" Grid.Row="2" Grid.Column="2" Text="—" Style="{StaticResource CaptionTextStyle}" />
+                                    </Grid>
+                                    <Button x:Name="InspectDeviceEvidenceButton" Content="View device evidence  →"
+                                            Click="InspectDeviceEvidenceButton_Click" Style="{StaticResource QuietButtonStyle}"
+                                            HorizontalAlignment="Stretch" AutomationProperties.Name="Inspect read-only device evidence" />
+                                    <TextBlock x:Name="DeviceEvidenceStatusText" Text="Inspect driver and interrupt details."
+                                               MaxLines="2" TextTrimming="CharacterEllipsis" Style="{StaticResource CaptionTextStyle}" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <StackPanel x:Name="EvidenceWorkspace"
                                     Grid.Column="1"
-                                    Spacing="12">
+                                    Spacing="{StaticResource DashboardGap}">
+                            <!-- Dashboard header -->
+                            <Grid x:Name="OverviewAnchor" ColumnSpacing="16" RowSpacing="12" MinHeight="68">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition x:Name="HeaderActionsColumn" Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="4">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Border Style="{StaticResource IconTileStyle}">
+                                            <Path Data="M0,17 L7,17 L13,2 L21,31 L28,10 L33,17 L39,17" Stroke="{ThemeResource AccentBrush}" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Stretch="Uniform" Width="27" Height="26" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <StackPanel Spacing="1">
+                                            <TextBlock Text="Latency health"
+                                                       Style="{StaticResource HeroTitleTextStyle}" />
+                                            <TextBlock Text="Understand interrupt activity. Build evidence you can trust."
+                                                       Style="{StaticResource MutedBodyTextStyle}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel x:Name="HeaderActions" Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center"
+                                            Spacing="8">
+                                    <Button x:Name="CaptureObservationButton"
+                                            IsEnabled="False"
+                                            Click="CaptureObservationButton_Click"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            AutomationProperties.Name="Quick snapshot · 5 s"
+                                            ToolTipService.ToolTip="Capture a five-second diagnostic snapshot (Ctrl+O)"
+                                            AutomationProperties.AcceleratorKey="Ctrl+O">
+                                        <Button.KeyboardAccelerators>
+                                            <KeyboardAccelerator Modifiers="Control" Key="O" />
+                                        </Button.KeyboardAccelerators>
+                                        <StackPanel Orientation="Horizontal" Spacing="9">
+                                        <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                        <TextBlock Text="Quick snapshot · 5 s" />
+                                    </StackPanel>
+                                </Button>
+                                    <Button x:Name="CaptureBaselineButton"
+                                            IsEnabled="False"
+                                            Click="CaptureBaselineButton_Click"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            AutomationProperties.Name="Build baseline · ~2 min"
+                                            ToolTipService.ToolTip="Build five repeated 20-second windows after preparation is confirmed (Ctrl+B)"
+                                            AutomationProperties.AcceleratorKey="Ctrl+B">
+                                        <Button.KeyboardAccelerators>
+                                            <KeyboardAccelerator Modifiers="Control" Key="B" />
+                                        </Button.KeyboardAccelerators>
+                                        <StackPanel Orientation="Horizontal" Spacing="9">
+                                        <FontIcon Glyph="&#xE81E;" FontSize="14" />
+                                        <TextBlock Text="Build baseline · ~2 min" />
+                                    </StackPanel>
+                                </Button>
+                                    <Button x:Name="ExportEvidenceButton"
+                                            IsEnabled="False"
+                                            Click="ExportEvidenceButton_Click"
+                                            Style="{StaticResource QuietButtonStyle}"
+                                            AutomationProperties.Name="Export JSON"
+                                            ToolTipService.ToolTip="Export the latest completed aggregate evidence as JSON (Ctrl+E)"
+                                            AutomationProperties.AcceleratorKey="Ctrl+E">
+                                        <Button.KeyboardAccelerators>
+                                            <KeyboardAccelerator Modifiers="Control" Key="E" />
+                                        </Button.KeyboardAccelerators>
+                                        <StackPanel Orientation="Horizontal" Spacing="9">
+                                        <FontIcon Glyph="&#xE898;" FontSize="14" />
+                                        <TextBlock Text="Export JSON" />
+                                    </StackPanel>
+                                </Button>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Latest evidence; unavailable metrics remain empty. -->
+                            <Grid x:Name="SummaryGrid" ColumnSpacing="12" RowSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Border Grid.Column="0" Style="{StaticResource DashboardMetricStyle}">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock Text="DPC p99 (tail latency)" Style="{StaticResource MetricLabelTextStyle}" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Style="{StaticResource MetricIconStyle}" Background="{ThemeResource ChartPrimarySoftBrush}">
+                                                <Path Data="M0,17 L7,17 L13,2 L21,31 L28,10 L33,17 L39,17" Stroke="{ThemeResource ChartAccentPrimaryBrush}" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Stretch="Uniform" Width="27" Height="26" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock x:Name="DpcP99SummaryText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
+                                                <TextBlock x:Name="DpcP99SummaryDetailText" Text="Awaiting evidence" Style="{StaticResource CaptionTextStyle}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="1" Style="{StaticResource DashboardMetricStyle}">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock Text="ISR p99 (tail latency)" Style="{StaticResource MetricLabelTextStyle}" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Style="{StaticResource MetricIconStyle}" Background="{ThemeResource AccentSoftBrush}">
+                                                <Path Data="M0,17 L7,17 L13,2 L21,31 L28,10 L33,17 L39,17" Stroke="{ThemeResource ChartAccentSecondaryBrush}" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Stretch="Uniform" Width="27" Height="26" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock x:Name="IsrP99SummaryText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
+                                                <TextBlock x:Name="IsrP99SummaryDetailText" Text="Awaiting evidence" Style="{StaticResource CaptionTextStyle}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="2" Style="{StaticResource DashboardMetricStyle}">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock Text="CPU concentration" Style="{StaticResource MetricLabelTextStyle}" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Style="{StaticResource MetricIconStyle}" Background="{ThemeResource ChartWarmSoftBrush}">
+                                                <FontIcon Glyph="&#xE9D9;" FontSize="22" Foreground="{ThemeResource ChartWarmBrush}" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock x:Name="CpuConcentrationSummaryText" Text="—" Style="{StaticResource MetricValueTextStyle}" />
+                                                <TextBlock x:Name="CpuConcentrationSummaryDetailText" Text="Awaiting evidence" Style="{StaticResource CaptionTextStyle}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="3" Style="{StaticResource DashboardMetricStyle}">
+                                    <StackPanel Spacing="12">
+                                        <TextBlock Text="Last baseline" Style="{StaticResource MetricLabelTextStyle}" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Style="{StaticResource MetricIconStyle}" Background="{ThemeResource SurfaceAltBrush}">
+                                                <FontIcon x:Name="BaselineSummaryIcon" Glyph="&#xE823;" FontSize="22" Foreground="{ThemeResource MutedTextBrush}" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock x:Name="BaselineSummaryText" Text="Not captured" FontSize="{StaticResource FontHeading}" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" TextWrapping="Wrap" />
+                                                <TextBlock x:Name="BaselineSummaryDetailText" Text="Awaiting evidence" Style="{StaticResource CaptionTextStyle}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
                             <Grid x:Name="MeasureAnchor" ColumnSpacing="12" RowSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="1.25*" />
@@ -513,7 +545,7 @@
                                                 </StackPanel>
                                             </StackPanel>
                                         </Grid>
-                                        <controls:LatencyProfileChart x:Name="LatencyProfileChart" Height="188" />
+                                        <controls:LatencyProfileChart x:Name="LatencyProfileChart" Height="{StaticResource ChartPlotHeight}" />
                                     </StackPanel>
                                 </Border>
 
@@ -523,7 +555,7 @@
                                             <TextBlock Text="CPU interrupt distribution" Style="{StaticResource SubsectionTitleTextStyle}" />
                                             <TextBlock Text="Share of observed DPC + ISR events" Style="{StaticResource CaptionTextStyle}" />
                                         </StackPanel>
-                                        <controls:CpuDistributionChart x:Name="CpuDistributionChart" Height="188" />
+                                        <controls:CpuDistributionChart x:Name="CpuDistributionChart" Height="{StaticResource ChartPlotHeight}" />
                                     </StackPanel>
                                 </Border>
 
@@ -533,7 +565,7 @@
                                             <TextBlock Text="Top modules by kernel time" Style="{StaticResource SubsectionTitleTextStyle}" />
                                             <TextBlock Text="Inclusive observed DPC / ISR duration" Style="{StaticResource CaptionTextStyle}" />
                                         </StackPanel>
-                                        <controls:ModuleContributionChart x:Name="ModuleContributionChart" Height="176" />
+                                        <controls:ModuleContributionChart x:Name="ModuleContributionChart" Height="{StaticResource ChartCompactPlotHeight}" />
                                     </StackPanel>
                                 </Border>
 
@@ -543,13 +575,17 @@
                                             <TextBlock Text="CPU interrupt map" Style="{StaticResource SubsectionTitleTextStyle}" />
                                             <TextBlock Text="DPC and ISR share by busiest processors" Style="{StaticResource CaptionTextStyle}" />
                                         </StackPanel>
-                                        <controls:CpuInterruptMap x:Name="CpuInterruptMap" Height="176" />
+                                        <controls:CpuInterruptMap x:Name="CpuInterruptMap" Height="{StaticResource ChartCompactPlotHeight}" />
                                     </StackPanel>
                                 </Border>
                             </Grid>
 
                             <!-- Compact baseline preparation + recent snapshot -->
-                            <Grid x:Name="BaselineAnchor" ColumnSpacing="12">
+                            <Grid x:Name="BaselineAnchor" ColumnSpacing="12" RowSpacing="12">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="1.2*" />
                                     <ColumnDefinition Width="1*" />
@@ -564,7 +600,7 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Spacing="2">
                                                 <TextBlock Text="Baseline preparation" Style="{StaticResource SubsectionTitleTextStyle}" />
-                                                <TextBlock Text="Two confirmations unlock the repeated baseline." Style="{StaticResource CaptionTextStyle}" />
+                                                <TextBlock Text="Prepare for five repeated windows." Style="{StaticResource CaptionTextStyle}" />
                                             </StackPanel>
                                             <ComboBox x:Name="DashboardScenarioComboBox"
                                                       Grid.Column="1"
@@ -632,7 +668,7 @@
                             </Grid>
 
                             <!-- Exact evidence remains available without dominating the primary UX. -->
-                            <Expander Header="Exact evidence &amp; measurement context"
+                            <Expander x:Name="EvidenceDetails" Header="Exact evidence &amp; measurement context"
                                       HorizontalAlignment="Stretch"
                                       IsExpanded="False">
                                 <Border x:Name="ObservationCard"
@@ -781,9 +817,9 @@
                                 </Border>
                             </Expander>
                         </StackPanel>
-                    </Grid>
-                </StackPanel>
+                </Grid>
             </ScrollViewer>
+            </Border>
         </Grid>
     </Grid>
 </Window>

@@ -28,6 +28,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        InitializeDashboardShell();
         Title = "LatencyPilot";
         VersionText.Text = $"v{GetProductVersion()}";
         BaselineProgressBar.Maximum = BaselineWindowCount;
@@ -484,12 +485,17 @@ public sealed partial class MainWindow : Window
         {
             var inventory = await Task.Run(() => DeviceInventoryReader.CapturePresentDevices());
             PresentDeviceCountText.Text = inventory.PresentDeviceCount.ToString(CultureInfo.InvariantCulture);
+            RenderDashboardDeviceContext(inventory);
             DeviceInventoryStatusText.Text = "Present devices captured through SetupAPI using stable device instance IDs.";
         }
         catch (Exception exception)
         {
             Logger.Error(exception, "Device inventory capture failed.");
             PresentDeviceCountText.Text = "Unavailable";
+            PrimaryGpuText.Text = "Display adapter unavailable";
+            DisplayEvidenceText.Text = "Unknown";
+            NetworkEvidenceText.Text = "Unknown";
+            UsbEvidenceText.Text = "Unknown";
             DeviceInventoryStatusText.Text = "Device inventory failed. See the diagnostics log for details.";
         }
     }

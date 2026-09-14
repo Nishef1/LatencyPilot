@@ -1,5 +1,4 @@
 using LatencyPilot.App.Services;
-using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -46,67 +45,21 @@ public sealed partial class MainWindow
 
     private void RebuildMeasurementReadinessCard()
     {
-        if (_measurementScenarioCard?.Child is not StackPanel scenarioStack)
-        {
-            return;
-        }
-
-        if (_measurementReadinessCard is not null &&
-            _measurementReadinessCard.Parent is Panel oldParent)
-        {
-            oldParent.Children.Remove(_measurementReadinessCard);
-        }
+        // This host owns preparation from construction onward, including before Loaded.
+        // Reparenting via FrameworkElement.Parent is unreliable before the tree is loaded.
+        BaselinePreparationHost.Children.Clear();
 
         RebindMeasurementScenarioSource();
 
         var card = new Border
         {
-            Padding = new Thickness(14),
-            CornerRadius = new CornerRadius(12),
-            Background = ThemeBrush("SurfaceBrush"),
-            BorderBrush = ThemeBrush("BorderBrush"),
-            BorderThickness = new Thickness(1),
+            Padding = new Thickness(0),
+            BorderThickness = new Thickness(0),
         };
         _measurementReadinessCard = card;
 
         var root = new StackPanel { Spacing = 8 };
         card.Child = root;
-
-        var header = new Grid { ColumnSpacing = 10 };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(new TextBlock
-        {
-            Text = "Decision-baseline preparation",
-            FontSize = 13,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = ThemeBrush("TextBrush"),
-        });
-
-        var badge = new Border
-        {
-            Padding = new Thickness(8, 3, 8, 3),
-            CornerRadius = new CornerRadius(9),
-            Background = ThemeBrush("AccentSoftBrush"),
-        };
-        badge.Child = new TextBlock
-        {
-            Text = "2 checks",
-            FontSize = 10,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = ThemeBrush("AccentBrush"),
-        };
-        Grid.SetColumn(badge, 1);
-        header.Children.Add(badge);
-        root.Children.Add(header);
-
-        root.Children.Add(new TextBlock
-        {
-            Text = "These checks gate the five × 20-second repeated baseline. The 5-second quick snapshot remains available for diagnostics, but it cannot establish stability or an optimization verdict.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = ThemeBrush("MutedTextBrush"),
-        });
 
         _measurementContextReadyCheckBox = new CheckBox
         {
@@ -138,8 +91,7 @@ public sealed partial class MainWindow
 
         UpdateMeasurementReadinessContent();
 
-        var insertionIndex = Math.Max(0, scenarioStack.Children.Count - 1);
-        scenarioStack.Children.Insert(insertionIndex, card);
+        BaselinePreparationHost.Children.Add(card);
         UpdateMeasurementReadinessState();
     }
 
@@ -203,19 +155,19 @@ public sealed partial class MainWindow
                 "Controlled idle is intentionally quiet. Close unnecessary applications; normal background Windows activity does not invalidate the run by itself.",
                 "Keep user activity and power conditions stable for the full decision baseline so inter-window variation reflects the machine rather than a changing workload."),
             MeasurementScenario.BeforeAfter => (
-                "The same apps or game are already warmed and ready to reproduce the same workload before and after the change.",
-                "I will reproduce the same scene or workload and keep power/background activity as similar as practical on both sides.",
+                "The same app or game is warmed for both sides.",
+                "The same scene, power state and background load will be reproduced.",
                 "The five-second LatencyPilot settle period is not workload warm-up. Finish loading, shader compilation, startup transitions or other one-time work before starting the baseline unless those transitions are intentionally the workload being tested.",
                 "Before/after evidence is comparable only when the foreground workload, power conditions and background state are reproduced closely enough on both sides."),
             _ => (
-                "The apps or game that reproduce the issue are open, warmed and at a repeatable point before I start the baseline.",
-                "I will keep the workload pattern and background activity as consistent as practical through all five 20-second windows.",
+                "The real workload is warmed and at a repeatable point.",
+                "The workload and background activity will stay consistent.",
                 "For a real-world run, keep the applications that are part of the problem. Do not close them merely to improve the numbers. Finish one-time startup/loading work first unless it is intentionally what you are measuring.",
                 "Other applications may remain open. Repeatability matters more than artificially making the machine idle; use the same scene, action loop or workload pattern through the full sequence."),
         };
 
-        _measurementContextReadyCheckBox.Content = contextText;
-        _measurementConsistencyReadyCheckBox.Content = consistencyText;
+        _measurementContextReadyCheckBox.Content = new TextBlock { Text = contextText, TextWrapping = TextWrapping.Wrap, FontSize = 12 };
+        _measurementConsistencyReadyCheckBox.Content = new TextBlock { Text = consistencyText, TextWrapping = TextWrapping.Wrap, FontSize = 12 };
         AutomationProperties.SetHelpText(_measurementContextReadyCheckBox, contextHelp);
         AutomationProperties.SetHelpText(_measurementConsistencyReadyCheckBox, consistencyHelp);
     }
@@ -254,25 +206,25 @@ public sealed partial class MainWindow
 
             if (_measurementBusy)
             {
-                _measurementReadinessStatusText.Text = "Measurement in progress. Preparation choices are frozen until capture completes.";
+                _measurementReadinessStatusText.Text = "Capture in progress · preparation locked.";
                 _measurementReadinessStatusText.Foreground = ThemeBrush("AccentBrush");
             }
             else if (!prepared)
             {
                 _measurementReadinessStatusText.Text =
-                    "Decision baseline locked until both checks are confirmed. The 5-second quick snapshot remains available for diagnostic evidence only.";
+                    $"Preparation {(_measurementContextAcknowledged ? 1 : 0) + (_measurementConsistencyAcknowledged ? 1 : 0)}/2 · confirm both checks to unlock baseline.";
                 _measurementReadinessStatusText.Foreground = ThemeBrush("MutedTextBrush");
             }
             else if (!serviceConnected)
             {
                 _measurementReadinessStatusText.Text =
-                    "Preparation confirmed. Decision baseline will unlock when the read-only observation service is connected.";
+                    "Prepared · waiting for the observation service.";
                 _measurementReadinessStatusText.Foreground = ThemeBrush("AccentBrush");
             }
             else
             {
                 _measurementReadinessStatusText.Text =
-                    "Ready for the five × 20-second decision baseline. Keep the confirmed conditions stable for the full sequence.";
+                    "Prepared · ready for five 20-second windows.";
                 _measurementReadinessStatusText.Foreground = ThemeBrush("SuccessBrush");
             }
         }

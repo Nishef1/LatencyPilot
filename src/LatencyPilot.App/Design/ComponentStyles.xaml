@@ -42,8 +42,10 @@
     </Style>
 
     <Style x:Key="MetricLabelTextStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="{StaticResource FontCaption}" />
-        <Setter Property="Foreground" Value="{ThemeResource MutedTextBrush}" />
+        <Setter Property="FontSize" Value="{StaticResource FontBodySmall}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{ThemeResource TextBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
     <Style x:Key="MetricValueTextStyle" TargetType="TextBlock">
@@ -69,7 +71,7 @@
     </Style>
 
     <Style x:Key="ChartCardStyle" TargetType="Border">
-        <Setter Property="Padding" Value="16" />
+        <Setter Property="Padding" Value="{StaticResource ChartCardPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}" />
         <Setter Property="Background" Value="{ThemeResource PremiumSurfaceBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
@@ -93,12 +95,19 @@
     </Style>
 
     <Style x:Key="DashboardMetricStyle" TargetType="Border">
-        <Setter Property="Padding" Value="16,15" />
+        <Setter Property="Padding" Value="{StaticResource CardPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}" />
         <Setter Property="Background" Value="{ThemeResource PremiumSurfaceBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="MinHeight" Value="118" />
+        <Setter Property="MinHeight" Value="{StaticResource MetricCardMinHeight}" />
+    </Style>
+
+    <Style x:Key="MetricIconStyle" TargetType="Border">
+        <Setter Property="Width" Value="{StaticResource MetricIconSize}" />
+        <Setter Property="Height" Value="{StaticResource MetricIconSize}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
     <Style x:Key="IconTileStyle" TargetType="Border">
@@ -115,16 +124,14 @@
     </Style>
 
     <Style x:Key="NavigationRailStyle" TargetType="Border">
-        <Setter Property="Width" Value="{StaticResource NavigationRailWidth}" />
         <Setter Property="Background" Value="{ThemeResource NavigationBrush}" />
-        <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
-        <Setter Property="BorderThickness" Value="0,0,1,0" />
     </Style>
 
     <Style x:Key="NavigationItemStyle" TargetType="Button">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="MinHeight" Value="42" />
-        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="Padding" Value="{StaticResource NavigationItemPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
@@ -146,6 +153,9 @@
     </Style>
 
     <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource AccentSofterBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource TextBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="MinHeight" Value="{StaticResource ControlHeight}" />
         <Setter Property="Padding" Value="{StaticResource ButtonPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
@@ -153,6 +163,7 @@
     </Style>
 
     <Style x:Key="QuietButtonStyle" TargetType="Button">
+        <Setter Property="Foreground" Value="{ThemeResource MutedTextBrush}" />
         <Setter Property="MinHeight" Value="34" />
         <Setter Property="Padding" Value="12,6" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />

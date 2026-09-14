@@ -7,7 +7,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Windows.Foundation;
 
 namespace LatencyPilot.App;
 
@@ -75,7 +74,6 @@ public sealed partial class MainWindow
                 UpdateDashboardBaselineVisuals();
             }));
 
-        _ = RefreshPrimaryGpuContextAsync();
     }
 
     private void DashboardScenarioComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -164,144 +162,19 @@ public sealed partial class MainWindow
             _snapshotEvidenceCard.Visibility = Visibility.Collapsed;
         }
 
-        if (_measurementReadinessCard is not null)
-        {
-            if (_measurementReadinessCard.Parent is Panel oldParent)
-            {
-                oldParent.Children.Remove(_measurementReadinessCard);
-            }
-
-            if (!BaselinePreparationHost.Children.Contains(_measurementReadinessCard))
-            {
-                BaselinePreparationHost.Children.Clear();
-                BaselinePreparationHost.Children.Add(_measurementReadinessCard);
-            }
-
-            _measurementReadinessCard.Padding = new Thickness(0);
-            _measurementReadinessCard.BorderThickness = new Thickness(0);
-            _measurementReadinessCard.Background = null;
-            if (_measurementReadinessCard.Child is StackPanel readinessStack)
-            {
-                readinessStack.Spacing = 6;
-                if (readinessStack.Children.Count > 0)
-                {
-                    readinessStack.Children[0].Visibility = Visibility.Collapsed;
-                }
-                if (readinessStack.Children.Count > 1)
-                {
-                    readinessStack.Children[1].Visibility = Visibility.Collapsed;
-                }
-            }
-        }
-
-        ApplyCompactReadinessCopy();
-        CompactDeviceEvidenceCard();
     }
 
-    private void ApplyCompactReadinessCopy()
+    private void RenderDashboardDeviceContext(LatencyPilot.Core.Devices.DeviceInventorySnapshot inventory)
     {
-        if (_measurementContextReadyCheckBox is null || _measurementConsistencyReadyCheckBox is null)
-        {
-            return;
-        }
-
-        (_measurementContextReadyCheckBox.Content, _measurementConsistencyReadyCheckBox.Content) =
-            SelectedMeasurementScenario switch
-            {
-                MeasurementScenario.IdleBaseline => (
-                    "Unnecessary apps are closed and the PC will stay idle",
-                    "Power and user activity will stay steady for all five windows"),
-                MeasurementScenario.BeforeAfter => (
-                    "The same app or game is warmed for both sides",
-                    "The same scene, power state, and background load will be reproduced"),
-                _ => (
-                    "The real workload is warmed and at a repeatable point",
-                    "The workload pattern and background activity will stay consistent"),
-            };
-
-        _measurementContextReadyCheckBox.FontSize = 11;
-        _measurementConsistencyReadyCheckBox.FontSize = 11;
-        if (_measurementReadinessStatusText is not null)
-        {
-            _measurementReadinessStatusText.FontSize = 10;
-            _measurementReadinessStatusText.MaxLines = 2;
-            _measurementReadinessStatusText.TextTrimming = TextTrimming.CharacterEllipsis;
-        }
-    }
-
-    private void CompactDeviceEvidenceCard()
-    {
-        if (_inspectDeviceEvidenceButton is null)
-        {
-            return;
-        }
-
-        var card = FindAncestorBorder(_inspectDeviceEvidenceButton);
-        if (card?.Child is not StackPanel stack)
-        {
-            return;
-        }
-
-        card.Padding = new Thickness(14);
-        card.CornerRadius = new CornerRadius(16);
-        card.Background = ThemeBrush("PremiumSurfaceBrush");
-        card.BorderBrush = ThemeBrush("BorderBrush");
-        card.BorderThickness = new Thickness(1);
-        stack.Spacing = 7;
-        if (stack.Children.Count > 1)
-        {
-            stack.Children[1].Visibility = Visibility.Collapsed;
-        }
-
-        _inspectDeviceEvidenceButton.Content = "View device evidence";
-        if (_deviceEvidenceStatusText is not null)
-        {
-            _deviceEvidenceStatusText.MaxLines = 2;
-            _deviceEvidenceStatusText.TextTrimming = TextTrimming.CharacterEllipsis;
-        }
-    }
-
-    private static Border? FindAncestorBorder(DependencyObject start)
-    {
-        DependencyObject? current = start;
-        while (current is not null)
-        {
-            if (current is Border border)
-            {
-                return border;
-            }
-            current = VisualTreeHelper.GetParent(current);
-        }
-        return null;
-    }
-
-    private async Task RefreshPrimaryGpuContextAsync()
-    {
-        try
-        {
-            var inventory = await Task.Run(DeviceInventoryReader.CapturePresentDevices);
-            var display = RepresentativeDeviceEvidenceSelector.Select(inventory)
-                .FirstOrDefault(static item => item.Kind == RepresentativeDeviceKind.DisplayAdapter)
-                ?.Device;
-
-            if (display is null)
-            {
-                PrimaryGpuText.Text = "Display adapter unavailable";
-                PrimaryGpuDriverText.Text = string.Empty;
-                return;
-            }
-
-            PrimaryGpuText.Text = display.DisplayName;
-            PrimaryGpuDriverText.Text = string.IsNullOrWhiteSpace(display.Driver.Version)
-                ? "Driver metadata unavailable"
-                : $"Driver {display.Driver.Version}";
-        }
-        catch (Exception exception)
-        {
-            Logger.Warning(exception, "Dashboard GPU context could not be refreshed.");
-            PrimaryGpuText.Text = "Display adapter unavailable";
-            PrimaryGpuDriverText.Text = string.Empty;
-        }
+        var devices = RepresentativeDeviceEvidenceSelector.Select(inventory);
+        var display = devices.FirstOrDefault(static item => item.Kind == RepresentativeDeviceKind.DisplayAdapter)?.Device;
+        PrimaryGpuText.Text = display?.DisplayName ?? "Display adapter unavailable";
+        PrimaryGpuDriverText.Text = string.IsNullOrWhiteSpace(display?.Driver.Version)
+            ? "Driver metadata unavailable"
+            : $"Driver {display.Driver.Version}";
+        DisplayEvidenceText.Text = display is null ? "Not found" : "Detected";
+        NetworkEvidenceText.Text = devices.Any(static item => item.Kind == RepresentativeDeviceKind.NetworkAdapter) ? "Detected" : "Not found";
+        UsbEvidenceText.Text = devices.Any(static item => item.Kind == RepresentativeDeviceKind.XhciController) ? "Detected" : "Not found";
     }
 
     private void RenderDashboardCapture(KernelLatencyCaptureResponse capture)
@@ -427,6 +300,13 @@ public sealed partial class MainWindow
     {
         var verdict = BaselineVerdictText.Text ?? "Not captured";
         BaselineSummaryText.Text = verdict;
+        BaselineStatusText.Visibility = verdict == "Not captured" ? Visibility.Collapsed : Visibility.Visible;
+        BaselineSummaryIcon.Glyph = verdict switch
+        {
+            "Valid" => "\uE73E",
+            "Inconclusive" => "\uE7BA",
+            _ => "\uE823",
+        };
         BaselineSummaryText.Foreground = ThemeBrush(verdict.Equals("Valid", StringComparison.OrdinalIgnoreCase)
             ? "SuccessBrush"
             : verdict.Equals("Capturing", StringComparison.OrdinalIgnoreCase)
@@ -437,7 +317,7 @@ public sealed partial class MainWindow
         BaselineSummaryDetailText.Text = verdict switch
         {
             "Valid" => "Repeatable evidence ready",
-            "Capturing" => $"Window {BaselineProgressBar.Value:0} of {BaselineProgressBar.Maximum:0}",
+            "Capturing" => $"{BaselineProgressBar.Value:0}% complete",
             "Inconclusive" => "Repeat before comparing",
             _ => "Build one for comparison",
         };
@@ -496,25 +376,4 @@ public sealed partial class MainWindow
             : null;
     }
 
-    private void NavigateOverview_Click(object sender, RoutedEventArgs e) => ScrollDashboardTo(OverviewAnchor);
-
-    private void NavigateMeasure_Click(object sender, RoutedEventArgs e) => ScrollDashboardTo(MeasureAnchor);
-
-    private void NavigateBaseline_Click(object sender, RoutedEventArgs e) => ScrollDashboardTo(BaselineAnchor);
-
-    private void NavigateDevices_Click(object sender, RoutedEventArgs e) => ScrollDashboardTo(LeftRail);
-
-    private void ScrollDashboardTo(FrameworkElement target)
-    {
-        try
-        {
-            var transform = target.TransformToVisual(DashboardContent);
-            var point = transform.TransformPoint(new Point(0, 0));
-            DashboardScrollViewer.ChangeView(null, Math.Max(0d, point.Y - 8d), null, disableAnimation: false);
-        }
-        catch (InvalidOperationException)
-        {
-            // Layout can still be settling during startup; section navigation remains non-destructive.
-        }
-    }
 }

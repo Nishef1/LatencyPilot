@@ -22,7 +22,13 @@ internal static class DashboardThemeResources
                 ? "Dark"
                 : "Light";
 
-        if (Application.Current.Resources.ThemeDictionaries.TryGetValue(themeKey, out var themeObject) &&
+        return FindThemeBrush(Application.Current.Resources, themeKey, key)
+            ?? throw new InvalidOperationException($"Dashboard brush '{key}' is unavailable.");
+    }
+
+    private static Brush? FindThemeBrush(ResourceDictionary resources, string themeKey, string key)
+    {
+        if (resources.ThemeDictionaries.TryGetValue(themeKey, out var themeObject) &&
             themeObject is ResourceDictionary themeDictionary &&
             themeDictionary.TryGetValue(key, out var value) &&
             value is Brush brush)
@@ -30,12 +36,16 @@ internal static class DashboardThemeResources
             return brush;
         }
 
-        if (Application.Current.Resources.TryGetValue(key, out var fallback) && fallback is Brush fallbackBrush)
+        // Tokens live in merged dictionaries. Resolve the owner's theme before any
+        // application-level lookup, which can otherwise return the Windows theme.
+        foreach (var dictionary in resources.MergedDictionaries.Reverse())
         {
-            return fallbackBrush;
+            if (FindThemeBrush(dictionary, themeKey, key) is { } mergedBrush)
+            {
+                return mergedBrush;
+            }
         }
-
-        throw new InvalidOperationException($"Dashboard brush '{key}' is unavailable.");
+        return null;
     }
 
     private static bool IsHighContrast()

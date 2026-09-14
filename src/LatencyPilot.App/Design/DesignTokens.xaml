@@ -10,31 +10,40 @@
 
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
-            <SolidColorBrush x:Key="CanvasBrush" Color="#FFF5F7FB" />
+            <LinearGradientBrush x:Key="ShellBackdropBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#FFF3F8FD" Offset="0" />
+                <GradientStop Color="#FFE7F0FE" Offset="0.5" />
+                <GradientStop Color="#FFEEF0FC" Offset="1" />
+            </LinearGradientBrush>
+            <SolidColorBrush x:Key="WorkspaceBrush" Color="#A8FFFFFF" />
+            <SolidColorBrush x:Key="ChartPrimarySoftBrush" Color="#FFEDE6FF" />
+            <SolidColorBrush x:Key="ChartWarmSoftBrush" Color="#FFFFF1E2" />
+            <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="CanvasBrush" Color="#FFF0F5FC" />
             <SolidColorBrush x:Key="SurfaceBrush" Color="#EFFFFFFF" />
-            <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FFF4F6FA" />
+            <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FFF3F7FD" />
             <SolidColorBrush x:Key="SurfaceStrongBrush" Color="#FFEAEFF7" />
-            <SolidColorBrush x:Key="PremiumSurfaceBrush" Color="#F8FFFFFF" />
+            <SolidColorBrush x:Key="PremiumSurfaceBrush" Color="#F5FFFFFF" />
             <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FFEFF4FC" />
-            <SolidColorBrush x:Key="NavigationBrush" Color="#CCF8FAFE" />
-            <SolidColorBrush x:Key="NavigationSelectedBrush" Color="#FFE7F0FF" />
-            <SolidColorBrush x:Key="NavigationIconBrush" Color="#FF5E6B83" />
-            <SolidColorBrush x:Key="TextBrush" Color="#FF111827" />
-            <SolidColorBrush x:Key="MutedTextBrush" Color="#FF64748B" />
-            <SolidColorBrush x:Key="SubtleTextBrush" Color="#FF94A0B4" />
-            <SolidColorBrush x:Key="BorderBrush" Color="#CCDCE3EE" />
-            <SolidColorBrush x:Key="DividerBrush" Color="#9CDCE3EE" />
+            <SolidColorBrush x:Key="NavigationBrush" Color="#00FFFFFF" />
+            <SolidColorBrush x:Key="NavigationSelectedBrush" Color="#FFDDEAFF" />
+            <SolidColorBrush x:Key="NavigationIconBrush" Color="#FF576E98" />
+            <SolidColorBrush x:Key="TextBrush" Color="#FF101B32" />
+            <SolidColorBrush x:Key="MutedTextBrush" Color="#FF52688E" />
+            <SolidColorBrush x:Key="SubtleTextBrush" Color="#FF697EA0" />
+            <SolidColorBrush x:Key="BorderBrush" Color="#B8DEE7F4" />
+            <SolidColorBrush x:Key="DividerBrush" Color="#B8E1E9F4" />
             <SolidColorBrush x:Key="ChartTrackBrush" Color="#FFE8EDF5" />
-            <SolidColorBrush x:Key="ChartGridBrush" Color="#B8E1E7F0" />
-            <SolidColorBrush x:Key="ChartAccentPrimaryBrush" Color="#FF6658F5" />
-            <SolidColorBrush x:Key="ChartAccentSecondaryBrush" Color="#FF2583F7" />
-            <SolidColorBrush x:Key="ChartAccentTertiaryBrush" Color="#FF60A5FA" />
-            <SolidColorBrush x:Key="ChartWarmBrush" Color="#FFF59E0B" />
+            <SolidColorBrush x:Key="ChartGridBrush" Color="#FFE9EFF7" />
+            <SolidColorBrush x:Key="ChartAccentPrimaryBrush" Color="#FF7849FF" />
+            <SolidColorBrush x:Key="ChartAccentSecondaryBrush" Color="#FF187BFF" />
+            <SolidColorBrush x:Key="ChartAccentTertiaryBrush" Color="#FF99C7FF" />
+            <SolidColorBrush x:Key="ChartWarmBrush" Color="#FFF59A28" />
             <SolidColorBrush x:Key="ChartCellBrush" Color="#FF4F8FF7" />
-            <SolidColorBrush x:Key="AccentBrush" Color="#FF2563EB" />
-            <SolidColorBrush x:Key="AccentHoverBrush" Color="#FF1D4ED8" />
-            <SolidColorBrush x:Key="AccentSoftBrush" Color="#FFEAF2FF" />
+            <SolidColorBrush x:Key="AccentBrush" Color="#FF0875FF" />
+            <SolidColorBrush x:Key="AccentHoverBrush" Color="#FF0064DF" />
+            <SolidColorBrush x:Key="AccentSoftBrush" Color="#FFE5F0FF" />
             <SolidColorBrush x:Key="AccentSofterBrush" Color="#9CF1F6FF" />
             <SolidColorBrush x:Key="SuccessBrush" Color="#FF059669" />
             <SolidColorBrush x:Key="SuccessSoftBrush" Color="#FFE4F8F0" />
@@ -44,9 +53,28 @@
             <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FFFFEDE4" />
             <SolidColorBrush x:Key="DangerBrush" Color="#FFC23B32" />
             <SolidColorBrush x:Key="DangerSoftBrush" Color="#FFFFECEA" />
-        </ResourceDictionary>
+                    <!-- Keep native interaction states on the product accent, including hover/press. -->
+            <StaticResource x:Key="AccentButtonBackground" ResourceKey="AccentBrush" />
+            <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="AccentHoverBrush" />
+            <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="AccentHoverBrush" />
+            <StaticResource x:Key="AccentButtonForeground" ResourceKey="OnAccentBrush" />
+            <StaticResource x:Key="AccentButtonForegroundPointerOver" ResourceKey="OnAccentBrush" />
+            <StaticResource x:Key="AccentButtonForegroundPressed" ResourceKey="OnAccentBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="AccentBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="AccentHoverBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="AccentHoverBrush" />
+</ResourceDictionary>
 
         <ResourceDictionary x:Key="Dark">
+            <LinearGradientBrush x:Key="ShellBackdropBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#FF101724" Offset="0" />
+                <GradientStop Color="#FF142136" Offset="0.5" />
+                <GradientStop Color="#FF171C30" Offset="1" />
+            </LinearGradientBrush>
+            <SolidColorBrush x:Key="WorkspaceBrush" Color="#B0101724" />
+            <SolidColorBrush x:Key="ChartPrimarySoftBrush" Color="#FF2B2444" />
+            <SolidColorBrush x:Key="ChartWarmSoftBrush" Color="#FF3A2B1E" />
+            <SolidColorBrush x:Key="OnAccentBrush" Color="#FF081426" />
             <SolidColorBrush x:Key="CanvasBrush" Color="#FF0B0F16" />
             <SolidColorBrush x:Key="SurfaceBrush" Color="#E8131821" />
             <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FF171D28" />
@@ -54,10 +82,10 @@
             <SolidColorBrush x:Key="PremiumSurfaceBrush" Color="#F2181E29" />
             <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#FF1C2430" />
             <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FF222C3A" />
-            <SolidColorBrush x:Key="NavigationBrush" Color="#D00F141D" />
+            <SolidColorBrush x:Key="NavigationBrush" Color="#000F141D" />
             <SolidColorBrush x:Key="NavigationSelectedBrush" Color="#FF1D3151" />
             <SolidColorBrush x:Key="NavigationIconBrush" Color="#FFA8B5C9" />
-            <SolidColorBrush x:Key="TextBrush" Color="#FFF5F7FB" />
+            <SolidColorBrush x:Key="TextBrush" Color="#FFF0F5FC" />
             <SolidColorBrush x:Key="MutedTextBrush" Color="#FFB0BAC9" />
             <SolidColorBrush x:Key="SubtleTextBrush" Color="#FF7E8BA0" />
             <SolidColorBrush x:Key="BorderBrush" Color="#B83B4556" />
@@ -81,9 +109,24 @@
             <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FF3A2419" />
             <SolidColorBrush x:Key="DangerBrush" Color="#FFFF7B72" />
             <SolidColorBrush x:Key="DangerSoftBrush" Color="#FF3A1C1C" />
-        </ResourceDictionary>
+                    <!-- Keep native interaction states on the product accent, including hover/press. -->
+            <StaticResource x:Key="AccentButtonBackground" ResourceKey="AccentBrush" />
+            <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="AccentHoverBrush" />
+            <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="AccentHoverBrush" />
+            <StaticResource x:Key="AccentButtonForeground" ResourceKey="OnAccentBrush" />
+            <StaticResource x:Key="AccentButtonForegroundPointerOver" ResourceKey="OnAccentBrush" />
+            <StaticResource x:Key="AccentButtonForegroundPressed" ResourceKey="OnAccentBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="AccentBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="AccentHoverBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="AccentHoverBrush" />
+</ResourceDictionary>
 
         <ResourceDictionary x:Key="HighContrast">
+            <SolidColorBrush x:Key="ShellBackdropBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="WorkspaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="ChartPrimarySoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="ChartWarmSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="OnAccentBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
             <SolidColorBrush x:Key="CanvasBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="SurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="SurfaceAltBrush" Color="{ThemeResource SystemColorWindowColor}" />
@@ -118,7 +161,17 @@
             <SolidColorBrush x:Key="ImpactSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="DangerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
             <SolidColorBrush x:Key="DangerSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
-        </ResourceDictionary>
+                    <!-- Keep native interaction states on the product accent, including hover/press. -->
+            <StaticResource x:Key="AccentButtonBackground" ResourceKey="AccentBrush" />
+            <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="AccentHoverBrush" />
+            <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="AccentHoverBrush" />
+            <StaticResource x:Key="AccentButtonForeground" ResourceKey="OnAccentBrush" />
+            <StaticResource x:Key="AccentButtonForegroundPointerOver" ResourceKey="OnAccentBrush" />
+            <StaticResource x:Key="AccentButtonForegroundPressed" ResourceKey="OnAccentBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="AccentBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="AccentHoverBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="AccentHoverBrush" />
+</ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
     <x:Double x:Key="Space1">4</x:Double>
@@ -130,8 +183,8 @@
     <x:Double x:Key="Space7">32</x:Double>
     <x:Double x:Key="Space8">40</x:Double>
 
-    <x:Double x:Key="FontCaption">11</x:Double>
-    <x:Double x:Key="FontBodySmall">12</x:Double>
+    <x:Double x:Key="FontCaption">12</x:Double>
+    <x:Double x:Key="FontBodySmall">13</x:Double>
     <x:Double x:Key="FontBody">14</x:Double>
     <x:Double x:Key="FontSection">16</x:Double>
     <x:Double x:Key="FontHeading">20</x:Double>
@@ -139,21 +192,41 @@
     <x:Double x:Key="FontHero">32</x:Double>
 
     <x:Double x:Key="ControlHeight">40</x:Double>
-    <x:Double x:Key="TitleBarHeight">48</x:Double>
+    <x:Double x:Key="TitleBarHeight">64</x:Double>
+    <x:Double x:Key="InitialWindowWidth">1664</x:Double>
+    <x:Double x:Key="InitialWindowHeight">936</x:Double>
     <x:Double x:Key="ContentMaxWidth">1760</x:Double>
-    <x:Double x:Key="NavigationRailWidth">196</x:Double>
-    <x:Double x:Key="ContextPanelWidth">278</x:Double>
+    <GridLength x:Key="NavigationRailWidth">176</GridLength>
+    <GridLength x:Key="ContextPanelWidth">244</GridLength>
     <x:Double x:Key="ChartMinHeight">210</x:Double>
     <x:Double x:Key="DashboardGap">14</x:Double>
 
+    <!-- Layout thresholds are effective content widths, independent of display scaling. -->
+    <GridLength x:Key="NavigationCompactWidth">64</GridLength>
+    <x:Double x:Key="NavigationExpandedThreshold">1460</x:Double>
+    <x:Double x:Key="ContextVisibleThreshold">1220</x:Double>
+    <x:Double x:Key="HeaderInlineThreshold">1050</x:Double>
+    <x:Double x:Key="MetricsFourColumnThreshold">940</x:Double>
+    <x:Double x:Key="ChartsTwoColumnThreshold">740</x:Double>
+    <x:Double x:Key="PreparationTwoColumnThreshold">1060</x:Double>
+    <x:Double x:Key="SystemArtworkHeight">132</x:Double>
+    <x:Double x:Key="ChartPlotHeight">168</x:Double>
+    <x:Double x:Key="ChartCompactPlotHeight">144</x:Double>
+    <x:Double x:Key="ChartPlotMinHeight">120</x:Double>
+    <x:Double x:Key="MetricCardMinHeight">132</x:Double>
+    <x:Double x:Key="MetricIconSize">48</x:Double>
+    <Thickness x:Key="WorkspaceMargin">0,4,14,14</Thickness>
+    <Thickness x:Key="ChartCardPadding">16,14</Thickness>
+    <Thickness x:Key="NavigationItemPadding">12,10</Thickness>
+
     <CornerRadius x:Key="RadiusSmall">8</CornerRadius>
     <CornerRadius x:Key="RadiusMedium">12</CornerRadius>
-    <CornerRadius x:Key="RadiusLarge">16</CornerRadius>
+    <CornerRadius x:Key="RadiusLarge">12</CornerRadius>
     <CornerRadius x:Key="RadiusXLarge">20</CornerRadius>
     <CornerRadius x:Key="RadiusPill">999</CornerRadius>
 
-    <Thickness x:Key="PagePadding">18,16,18,28</Thickness>
-    <Thickness x:Key="CardPadding">18</Thickness>
+    <Thickness x:Key="PagePadding">12,14,12,18</Thickness>
+    <Thickness x:Key="CardPadding">16</Thickness>
     <Thickness x:Key="CompactCardPadding">14</Thickness>
     <Thickness x:Key="MetricTilePadding">16,14</Thickness>
     <Thickness x:Key="ButtonPadding">16,9</Thickness>

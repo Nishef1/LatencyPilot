@@ -7,12 +7,12 @@ namespace LatencyPilot.App.Controls;
 
 public sealed class CpuInterruptMap : UserControl
 {
-    private readonly StackPanel _rows = new() { Spacing = 5 };
+    private readonly StackPanel _rows = new() { Spacing = 2 };
     private readonly TextBlock _emptyState;
 
     public CpuInterruptMap()
     {
-        MinHeight = 170;
+        MinHeight = (double)Application.Current.Resources["ChartPlotMinHeight"];
         _emptyState = new TextBlock
         {
             Text = "Capture evidence to compare DPC and ISR intensity by processor.",
@@ -26,6 +26,7 @@ public sealed class CpuInterruptMap : UserControl
         root.Children.Add(_rows);
         root.Children.Add(_emptyState);
         Content = root;
+        ActualThemeChanged += (_, _) => _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
         AutomationProperties.SetName(this, "CPU interrupt intensity map");
     }
 
@@ -33,7 +34,7 @@ public sealed class CpuInterruptMap : UserControl
     {
         _rows.Children.Clear();
         AutomationProperties.SetHelpText(this, automationSummary);
-        var visible = rows.Take(9).ToArray();
+        var visible = rows.Take(8).ToArray();
         if (visible.Length == 0)
         {
             _emptyState.Visibility = Visibility.Visible;
@@ -41,7 +42,7 @@ public sealed class CpuInterruptMap : UserControl
         }
 
         _emptyState.Visibility = Visibility.Collapsed;
-        var header = new Grid { ColumnSpacing = 8, Margin = new Thickness(0, 0, 0, 4) };
+        var header = new Grid { ColumnSpacing = 8 };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(62) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -102,27 +103,30 @@ public sealed class CpuInterruptMap : UserControl
     internal void Clear(string message)
     {
         _rows.Children.Clear();
+        _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
         _emptyState.Text = message;
         _emptyState.Visibility = Visibility.Visible;
         AutomationProperties.SetHelpText(this, message);
     }
 
-    private static Border CreateCell(Brush brush, double normalized, string text)
+    private Grid CreateCell(Brush brush, double normalized, string text)
     {
         var opacity = 0.12d + Math.Clamp(normalized, 0d, 1d) * 0.78d;
-        return new Border
+        var cell = new Grid { MinHeight = 14 };
+        cell.Children.Add(new Border
         {
-            Height = 20,
-            CornerRadius = new CornerRadius(5),
+            CornerRadius = new CornerRadius(3),
             Background = brush,
             Opacity = opacity,
-            Child = new TextBlock
-            {
-                Text = text,
-                FontSize = 10,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
-        };
+        });
+        cell.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontSize = 10,
+            Foreground = DashboardThemeResources.Brush(this, normalized >= 0.65d ? "OnAccentBrush" : "TextBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        return cell;
     }
 }

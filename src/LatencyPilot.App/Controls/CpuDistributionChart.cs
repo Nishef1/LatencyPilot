@@ -14,7 +14,7 @@ public sealed class CpuDistributionChart : UserControl
 
     public CpuDistributionChart()
     {
-        MinHeight = 180;
+        MinHeight = (double)Application.Current.Resources["ChartPlotMinHeight"];
         _emptyState = new TextBlock
         {
             Text = "Capture evidence to see where interrupt work concentrates.",
@@ -52,6 +52,7 @@ public sealed class CpuDistributionChart : UserControl
     private void Render()
     {
         _canvas.Children.Clear();
+        _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
         if (_bars.Count == 0 || ActualWidth < 150 || ActualHeight < 110)
         {
             _emptyState.Visibility = Visibility.Visible;

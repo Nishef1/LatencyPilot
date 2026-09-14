@@ -17,7 +17,7 @@ public sealed class LatencyProfileChart : UserControl
 
     public LatencyProfileChart()
     {
-        MinHeight = 180;
+        MinHeight = (double)Application.Current.Resources["ChartPlotMinHeight"];
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
 
@@ -66,6 +66,7 @@ public sealed class LatencyProfileChart : UserControl
     private void Render()
     {
         _canvas.Children.Clear();
+        _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
         var values = _primary.Concat(_secondary)
             .Where(point => point.Value is not null && double.IsFinite(point.Value.Value))
             .Select(point => point.Value!.Value)

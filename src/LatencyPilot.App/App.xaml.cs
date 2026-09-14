@@ -45,7 +45,7 @@ public partial class App : Application
             mainWindow.InitializeDashboardCaptureSync();
             _window = mainWindow;
             _window.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
-            _window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
+            mainWindow.SetInitialWindowSize();
             _window.Activate();
             Log.Information("Main window activated.");
         }

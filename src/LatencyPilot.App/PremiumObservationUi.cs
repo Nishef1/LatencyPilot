@@ -64,7 +64,6 @@ public sealed partial class MainWindow
         try
         {
             SystemBackdrop = new MicaBackdrop();
-            RootGrid.Background = null;
         }
         catch (Exception exception)
         {
@@ -621,27 +620,5 @@ public sealed partial class MainWindow
         }
     }
 
-    private Brush ThemeBrush(string key)
-    {
-        var themeKey = _accessibilitySettings.HighContrast
-            ? "HighContrast"
-            : RootGrid.ActualTheme == ElementTheme.Dark
-                ? "Dark"
-                : "Light";
-
-        if (Application.Current.Resources.ThemeDictionaries.TryGetValue(themeKey, out var themeObject) &&
-            themeObject is ResourceDictionary themeDictionary &&
-            themeDictionary.TryGetValue(key, out var value) &&
-            value is Brush brush)
-        {
-            return brush;
-        }
-
-        if (Application.Current.Resources.TryGetValue(key, out var fallback) && fallback is Brush fallbackBrush)
-        {
-            return fallbackBrush;
-        }
-
-        throw new InvalidOperationException($"Theme brush '{key}' is unavailable.");
-    }
+    private Brush ThemeBrush(string key) => DashboardThemeResources.Brush(RootGrid, key);
 }

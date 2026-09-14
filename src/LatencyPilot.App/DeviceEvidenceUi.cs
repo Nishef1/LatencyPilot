@@ -9,100 +9,17 @@ namespace LatencyPilot.App;
 
 public sealed partial class MainWindow
 {
-    private Button? _inspectDeviceEvidenceButton;
-    private TextBlock? _deviceEvidenceStatusText;
-
-    private void InitializeDeviceEvidenceUi()
-    {
-        var card = new Border
-        {
-            Padding = new Thickness(18),
-            CornerRadius = new CornerRadius(18),
-            Background = ThemeBrush("SurfaceBrush"),
-            BorderBrush = ThemeBrush("BorderBrush"),
-            BorderThickness = new Thickness(1),
-        };
-
-        var root = new StackPanel { Spacing = 10 };
-        card.Child = root;
-
-        var heading = new Grid { ColumnSpacing = 10 };
-        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        heading.Children.Add(new TextBlock
-        {
-            Text = "Device evidence",
-            FontSize = 15,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = ThemeBrush("TextBrush"),
-        });
-
-        var readOnlyBadge = new Border
-        {
-            Padding = new Thickness(8, 2, 8, 2),
-            CornerRadius = new CornerRadius(9),
-            Background = ThemeBrush("SuccessSoftBrush"),
-        };
-        readOnlyBadge.Child = new TextBlock
-        {
-            Text = "READ ONLY",
-            FontSize = 9,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = ThemeBrush("SuccessBrush"),
-        };
-        Grid.SetColumn(readOnlyBadge, 1);
-        heading.Children.Add(readOnlyBadge);
-        root.Children.Add(heading);
-
-        root.Children.Add(new TextBlock
-        {
-            Text = "Inspect representative display, network and xHCI devices without changing configuration. Stored MSI/affinity settings, allocated IRQ resources and runtime DPC/ISR behavior remain separate evidence layers.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = ThemeBrush("MutedTextBrush"),
-        });
-
-        _inspectDeviceEvidenceButton = new Button
-        {
-            Content = "Inspect device evidence",
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
-        _inspectDeviceEvidenceButton.Click += InspectDeviceEvidenceButton_Click;
-        AutomationProperties.SetName(_inspectDeviceEvidenceButton, "Inspect read-only device evidence");
-        AutomationProperties.SetHelpText(
-            _inspectDeviceEvidenceButton,
-            "Read driver metadata, stored interrupt configuration and allocated IRQ resources for representative devices.");
-        root.Children.Add(_inspectDeviceEvidenceButton);
-
-        _deviceEvidenceStatusText = new TextBlock
-        {
-            Text = "No detailed device evidence has been inspected yet.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = ThemeBrush("MutedTextBrush"),
-        };
-        AutomationProperties.SetName(_deviceEvidenceStatusText, "Device evidence status");
-        root.Children.Add(_deviceEvidenceStatusText);
-
-        LeftRail.Children.Insert(Math.Min(1, LeftRail.Children.Count), card);
-    }
-
     private async void InspectDeviceEvidenceButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_inspectDeviceEvidenceButton is null || _deviceEvidenceStatusText is null)
-        {
-            return;
-        }
-
-        _inspectDeviceEvidenceButton.IsEnabled = false;
-        _deviceEvidenceStatusText.Text = "Reading present PnP devices and interrupt evidence…";
+        InspectDeviceEvidenceButton.IsEnabled = false;
+        DeviceEvidenceStatusText.Text = "Reading present PnP devices and interrupt evidence…";
 
         try
         {
             var inventory = await Task.Run(DeviceInventoryReader.CapturePresentDevices);
             var representativeDevices = RepresentativeDeviceEvidenceSelector.Select(inventory);
 
-            _deviceEvidenceStatusText.Text = string.Create(
+            DeviceEvidenceStatusText.Text = string.Create(
                 CultureInfo.InvariantCulture,
                 $"{inventory.PresentDeviceCount:N0} present · {inventory.DevicesWithDriverMetadataCount:N0} with driver metadata · {inventory.DevicesWithReadableInterruptConfigurationCount:N0} with readable stored interrupt configuration · {inventory.DevicesWithAssignedInterruptsCount:N0} with allocated IRQ resources.");
 
@@ -111,11 +28,11 @@ public sealed partial class MainWindow
         catch (Exception exception)
         {
             Logger.Error(exception, "Detailed device evidence inspection failed.");
-            _deviceEvidenceStatusText.Text = "Detailed device evidence could not be read. See the diagnostics log for details.";
+            DeviceEvidenceStatusText.Text = "Detailed device evidence could not be read. See the diagnostics log for details.";
         }
         finally
         {
-            _inspectDeviceEvidenceButton.IsEnabled = true;
+            InspectDeviceEvidenceButton.IsEnabled = true;
         }
     }
 

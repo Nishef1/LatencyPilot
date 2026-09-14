@@ -27,11 +27,9 @@ public sealed partial class MainWindow
 
     private void InitializeMeasurementExperience()
     {
-        CaptureObservationButton.Content = "Quick snapshot · 5 s";
         ToolTipService.SetToolTip(
             CaptureObservationButton,
             "Capture a five-second diagnostic snapshot for attribution and integrity checks (Ctrl+O). It is not a benchmark verdict.");
-        CaptureBaselineButton.Content = "Build baseline · ~2 min";
         ToolTipService.SetToolTip(
             CaptureBaselineButton,
             "Settle LatencyPilot for five seconds, then capture five repeated 20-second windows for baseline stability (Ctrl+B). The workload itself should already be warmed/repeatable when applicable.");
