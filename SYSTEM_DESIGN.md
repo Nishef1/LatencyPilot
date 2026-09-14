@@ -1,7 +1,7 @@
 # LatencyPilot System Design
 
 Status: **Authoritative architecture baseline**  
-Last updated: 2026-09-13
+Last updated: 2026-09-14
 
 `ROADMAP.md` defines required product/phase outcomes. `PROJECT_STATUS.md` records current evidence and the execution ladder. ADRs record accepted architecture changes.
 
@@ -29,7 +29,7 @@ Detect applicability
 → Close journal
 ```
 
-Phase 2 deliberately stops before mutation. Its job is to establish a trustworthy read-only measurement substrate that every later decision depends on.
+Phase 2 establishes the trustworthy read-only measurement substrate. ADR 0004 permits targeted Phase 3 safety/candidate **source implementation** to overlap remaining Phase 2 physical closure after the required measurement evidence exists. That overlap never arms mutation and never changes a phase exit gate.
 
 ## 2. Supported target
 
@@ -57,14 +57,16 @@ Unless an ADR changes it:
 - typed/versioned local Named Pipes;
 - ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`;
 - PresentMon for graphics/frame telemetry where applicable;
-- SetupAPI + Configuration Manager for PnP/resource evidence;
+- SetupAPI + Configuration Manager for PnP/resource evidence and exact-target refresh;
 - documented processor-topology / CPU-set APIs;
-- Raw Input for host-observable input timing;
-- SQLite only when Phase 3 introduces the real durable experiment journal/recovery schema;
+- Raw Input for host-observable input timing when that phase is implemented;
+- concrete SQLite journal/recovery state through `LatencyPilot.Persistence` / `Microsoft.Data.Sqlite`;
 - MSTest + Microsoft.Testing.Platform for the capped permanent suite;
-- bounded structured local diagnostics.
+- bounded structured local diagnostics with Serilog.
 
-Native C++ is not a baseline dependency. Add it only if profiling proves a real need and an ADR records the boundary.
+NuGet package versions are centrally owned by the repository-root `Directory.Packages.props`.
+
+Native C++ is not a baseline dependency. Add a native component only if profiling or an authoritative vendor SDK creates a concrete need and an ADR records the boundary.
 
 ## 4. High-level architecture
 
@@ -79,25 +81,28 @@ Native C++ is not a baseline dependency. Add it only if profiling proves a real 
 ┌────────────────────────────────────────────┐
 │ LatencyPilot.Service                       │
 │ privileged boundary                        │
-│ Phase 2: read-only kernel observation      │
-│ Phase 3+: narrow verified mutation         │
-└───────────────────┬────────────────────────┘
-                    ▼
-┌────────────────────────────────────────────┐
-│ LatencyPilot.Platform.Windows              │
-│ ETW / SetupAPI / CM / topology             │
-│ later: affinity/MSI/Raw Input/RSS/etc.     │
-└───────────────────┬────────────────────────┘
-                    ▼
-              Windows 11 / hardware
+│ public IPC: read-only observation          │
+│ internal Phase 3 mutation substrate        │
+│ remains unarmed                            │
+└──────────────┬─────────────────┬───────────┘
+               │                 │
+               ▼                 ▼
+┌──────────────────────────┐  ┌──────────────────────────┐
+│ Platform.Windows         │  │ Persistence              │
+│ ETW / SetupAPI / CM      │  │ SQLite mutation journal  │
+│ topology / device APIs   │  │ + recovery state         │
+└──────────────┬───────────┘  └──────────────────────────┘
+               ▼
+         Windows 11 / hardware
 
 Pure/shared layers:
 Benchmarking → Core
 Platform.Windows → Core
 Protocol = standalone typed IPC contract
+Persistence = concrete durable state boundary
 ```
 
-Phase 3 adds the concrete persistence boundary only when real SQLite journal/recovery state is implemented. There is intentionally no empty Phase 2 persistence project.
+There is intentionally no generic repository abstraction between the Service and the concrete mutation journal. Add one only when it solves an existing requirement rather than reserving hypothetical architecture.
 
 ## 5. Project responsibilities
 
@@ -113,7 +118,7 @@ Canonical percentile estimator, metric series, repeated-baseline quality, noise/
 
 Typed/versioned IPC commands, DTOs and errors only. Never a generic privileged execution surface.
 
-Current Phase 2 contract:
+Current public contract:
 
 ```text
 ProtocolVersion.Current = 6
@@ -124,23 +129,23 @@ MutationAvailable = false
 
 ### `LatencyPilot.Platform.Windows`
 
-Windows-specific mechanisms: topology, inventory, ETW, SetupAPI/CM, resource/configuration evidence and later narrow affinity/MSI/Raw Input/USB/RSS/PresentMon adapters.
+Windows-specific mechanisms: topology, inventory, ETW, SetupAPI/CM, resource/configuration evidence, GPU interrupt-affinity state/applicability, exact-target device refresh, runtime placement evidence and PresentMon integration.
 
-Windows-specific semantics should not leak into pure Core/Benchmarking layers.
+Windows-specific semantics must not leak into pure Core/Benchmarking layers.
 
-### Future Phase 3 persistence boundary
+### `LatencyPilot.Persistence`
 
-SQLite migrations, exact original-state snapshots, pending/closed journal entries, recovery state and experiment history. Create this boundary together with the concrete durable-state contract, not as placeholder scaffolding.
+Concrete Phase 3 SQLite boundary for mutation journal/recovery state. It owns the durable schema, compare-and-swap revisions, unresolved-state blocking and persisted experiment lifecycle needed for recovery. It is not a generic application repository layer.
 
 ### `LatencyPilot.Service`
 
-Privileged boundary. During Phase 2 it hosts privileged read-only observation only. During Phase 3 it may gain mutation authority only with mutation-specific authorization, durable journal/recovery, validation, applied-state verification and rollback.
+Privileged boundary. The public protocol currently hosts read-only observation only. Phase 3 internal source may prepare/apply/revert narrowly supported changes only behind the durable journal and fail-closed recovery logic, while user-reachable mutation remains unavailable until the physical arming gate closes.
 
 The Service never becomes a generic scripting host.
 
 ### `LatencyPilot.App`
 
-Normal-user WinUI experience. Local non-privileged inventory may call `Platform.Windows` directly. Privileged observation/mutation crosses typed Protocol to the Service. Repeated-baseline interpretation belongs in deterministic Benchmarking rather than duplicated UI logic.
+Normal-user WinUI experience. Local non-privileged inventory may call `Platform.Windows` directly. Privileged observation and future armed mutation cross the typed Protocol to the Service. Repeated-baseline interpretation belongs in deterministic Benchmarking rather than duplicated UI logic.
 
 ## 6. Dependency direction
 
@@ -149,7 +154,8 @@ Core                 ← no project dependency
 Benchmarking         → Core
 Protocol             ← standalone
 Platform.Windows     → Core
-Service              → Core + Benchmarking + Protocol + Platform.Windows
+Persistence          ← no LatencyPilot project dependency
+Service              → Core + Benchmarking + Protocol + Platform.Windows + Persistence
 App                  → Core + Benchmarking + Protocol + Platform.Windows
 CriticalTests        → only projects needed by durable critical scenarios
 ```
@@ -196,9 +202,7 @@ A stored configuration hint is not proof of active interrupt delivery mode. Unav
 
 A raw DPC/ISR routine address is not a driver identity until authoritative kernel image evidence maps it to a valid image range/lifetime. Missing or ambiguous mappings remain unresolved.
 
-## 9. Phase 2 measurement modes
-
-Phase 2 has two intentionally different measurement products.
+## 9. Measurement modes
 
 ### 9.1 Quick diagnostic snapshot
 
@@ -323,7 +327,7 @@ ETW loss is a validity concern. Loss/invalid/event-limit provenance must remain 
 
 ## 14. IPC and privilege contract
 
-Phase 2 protocol-v6 IPC is local, typed, versioned and observation-only.
+Protocol-v6 public IPC is local, typed, versioned and observation-only.
 
 - no arbitrary command names;
 - no shell/process execution primitive;
@@ -339,7 +343,7 @@ Phase 2 protocol-v6 IPC is local, typed, versioned and observation-only.
 - successful capture carries the enclosing `RequestId` for log/evidence correlation;
 - protocol/version mismatch fails closed.
 
-The current observation ACL/session check is **not** future mutation authorization. Phase 3 must add mutation-specific authorization without weakening the read-only contract.
+The current observation ACL/session check is **not** mutation authorization. Mutation-specific typed/allowlisted authorization is designed only after the physical arming gate succeeds; it must not weaken the observation contract.
 
 ## 15. Evidence schema v8
 
@@ -386,7 +390,7 @@ See `docs/DIAGNOSTICS.md`.
 
 ## 18. Mutation interface contract
 
-Future mutation mechanisms expose narrow operations such as:
+Internal Phase 3 mechanisms expose narrow operations conceptually equivalent to:
 
 ```text
 IsApplicable(target)
@@ -398,25 +402,29 @@ Verify(expected, actual)
 Revert(snapshot)
 ```
 
-No IPC mutation command accepts arbitrary registry paths, PowerShell or arbitrary process command lines.
+The current public Protocol intentionally exposes none of those operations. When mutation IPC is eventually introduced, it must remain typed and allowlisted; no command accepts arbitrary registry paths, PowerShell or arbitrary process command lines.
 
 ## 19. Persistence and recovery
 
-Before the first real mutation ships:
+The concrete Phase 3 persistence project and schema-v1 mutation journal now exist. Current durable invariants include:
 
-1. create the concrete Phase 3 persistence project with real SQLite schema/migrations;
-2. persist exact original state before apply;
-3. journal the pending mutation before changing Windows state;
-4. survive App/Service/Windows interruption;
-5. on recovery, re-read actual machine state before acting;
-6. do not blindly overwrite external changes;
-7. verify final kept/reverted state before closing the journal.
+1. exact original state is persisted before an owned write;
+2. journal transitions use explicit state and compare-and-swap revision checks;
+3. an unresolved experiment blocks another experiment;
+4. startup recovery re-reads actual machine state rather than trusting stale intent;
+5. unknown or externally diverged state fails closed instead of being blindly overwritten;
+6. failed/incomplete rollback remains unresolved;
+7. final kept/reverted state must be verified before journal closure.
+
+Schema evolution must preserve active recovery records. Do not add a second storage engine or generic repository abstraction merely to make the architecture look layered.
 
 ## 20. Phase 3 GPU experiment direction
 
 The first mutation workflow must not assume that default Windows affinity, CPU0 avoidance, a community tweak or another machine's result is universally optimal.
 
-Required structure:
+Already implemented source includes GPU applicability/candidate generation, exact stored-state snapshot/apply/revert logic, exact-target SetupAPI refresh/restart checks, startup recovery classification and runtime GPU ISR processor-placement evidence. These remain unarmed until physical validation.
+
+Required end-to-end structure remains:
 
 1. preserve current/default state as a control;
 2. generate topology-aware physical-core candidates;
@@ -430,22 +438,23 @@ PresentMon metrics are guardrails/targets where they actually observe the releva
 
 ## 21. Permanent test strategy
 
-**Hard maximum: 10 permanent automated tests repository-wide.** Current count: **8**.
+**Hard maximum: 10 permanent automated tests repository-wide.** Current count: **9**.
 
 Permanent tests protect high-blast-radius contracts, not files or coverage percentages. Scenario matrices should be consolidated into durable tests where practical.
 
 Current high-value contracts include:
 
-- experiment-state legality;
+- experiment-state legality plus durable journal/recovery transitions;
 - comparison/guardrail semantics;
 - `baseline-quality-v2` duration/sample/integrity/noise/drift/sequence behavior;
 - finite metric requirements;
 - canonical percentile estimator;
 - fail-closed protocol framing and v6 p99.9 round trip;
 - read-only protocol command surface;
-- real Windows read-only inventory/topology/runtime-context invariants.
+- real Windows read-only inventory/topology/runtime-context invariants;
+- bounded GPU-affinity candidate planning.
 
-Temporary implementation/debug tests may be created/run/deleted. If a future parser/recovery/mutation risk is more important, merge or replace a lower-value permanent test rather than casually exceeding the cap.
+Temporary implementation/debug tests may be created/run/deleted. If a future recovery/mutation risk is more important, merge or replace a lower-value permanent test rather than casually exceeding the cap.
 
 Hardware validation is separate from this cap.
 
@@ -481,19 +490,10 @@ Do not add a second UI toolkit or speculative MVVM/DI/navigation framework solel
 
 ## 24. Completion discipline
 
-Source implementation does not close Phase 2. Closure requires the same final clean revision to have:
+Source implementation does not close a phase or arm mutation.
 
-- green deterministic Tests;
-- owner-local App/Service compile/run;
-- evidence-v8 quick snapshot integrity/provenance;
-- valid Real-world five × 20-second baseline-v2;
-- valid Controlled-idle five × 20-second baseline-v2;
-- representative GPU/NIC/xHCI evidence;
-- attribution plausibility;
-- disconnect/failure/stale-ETW cleanup;
-- active-console authorization sanity;
-- accessibility/responsive sanity;
-- zero-mutation confirmation;
-- JSON/SHA/source-revision reconciliation.
+Phase 2 still requires its remaining physical read-only checks, including Controlled-idle evidence, representative device inspection, attribution/session/cleanup sanity, accessibility/responsive validation, JSON/SHA/source-revision reconciliation and proof of zero unrelated mutation.
 
-Only after that exit gate closes may Phase 3 introduce persistent mutation authority.
+The Phase 3 mutation arming gate additionally requires owner-local current-main compile/launch, recovery inspection/classification, exact-target restart/reboot-required validation, candidate apply/runtime verification/exact rollback on supported hardware, and a forced-failure recovery exercise.
+
+Only after those physical requirements pass may mutation-specific public IPC/authorization be introduced. `PROJECT_STATUS.md` owns the exact current sequence and should be consulted instead of duplicating a volatile checklist here.
