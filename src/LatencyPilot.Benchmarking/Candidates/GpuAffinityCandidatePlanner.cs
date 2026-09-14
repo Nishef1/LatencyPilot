@@ -34,6 +34,13 @@ public static class GpuAffinityCandidatePlanner
     public static IReadOnlyList<GpuAffinityCandidate> Create(
         ProcessorTopologySnapshot topology,
         IEnumerable<ProcessorPressureEvidence> pressureEvidence,
+        int maximumCandidates = DefaultMaximumCandidates) =>
+        Create(topology, pressureEvidence, cpuSets: null, maximumCandidates);
+
+    public static IReadOnlyList<GpuAffinityCandidate> Create(
+        ProcessorTopologySnapshot topology,
+        IEnumerable<ProcessorPressureEvidence> pressureEvidence,
+        ProcessorCpuSetSnapshot? cpuSets,
         int maximumCandidates = DefaultMaximumCandidates)
     {
         ArgumentNullException.ThrowIfNull(topology);
@@ -58,7 +65,7 @@ public static class GpuAffinityCandidatePlanner
                 static group => group.Key,
                 static group => group.Average(static item => item.PressureScore));
 
-        var candidates = new List<GpuAffinityCandidate>(topology.PhysicalCoreCount);
+        var rankedCandidates = new List<RankedGpuAffinityCandidate>(topology.PhysicalCoreCount);
         foreach (var core in topology.Cores)
         {
             if (core.LogicalProcessors.Count == 0)
@@ -70,27 +77,33 @@ public static class GpuAffinityCandidatePlanner
                 .Select(processor => new
                 {
                     Processor = processor,
+                    AvailabilityRank = GetAvailabilityRank(cpuSets, processor),
                     Pressure = pressureByProcessor.TryGetValue(processor, out var score)
                         ? score
                         : double.PositiveInfinity,
                 })
-                .OrderBy(static item => item.Pressure)
+                .OrderBy(static item => item.AvailabilityRank)
+                .ThenBy(static item => item.Pressure)
                 .ThenBy(static item => item.Processor.Group)
                 .ThenBy(static item => item.Processor.Number)
                 .First();
 
-            candidates.Add(new GpuAffinityCandidate(
-                core.Index,
-                bestLogical.Processor,
-                core.EfficiencyClass,
-                core.IsSmt,
-                bestLogical.Pressure));
+            rankedCandidates.Add(new RankedGpuAffinityCandidate(
+                new GpuAffinityCandidate(
+                    core.Index,
+                    bestLogical.Processor,
+                    core.EfficiencyClass,
+                    core.IsSmt,
+                    bestLogical.Pressure),
+                bestLogical.AvailabilityRank));
         }
 
-        var ordered = candidates
-            .OrderBy(static candidate => candidate.ObservedPressureScore)
-            .ThenByDescending(static candidate => candidate.EfficiencyClass)
-            .ThenBy(static candidate => candidate.PhysicalCoreIndex)
+        var ordered = rankedCandidates
+            .OrderBy(static ranked => ranked.AvailabilityRank)
+            .ThenBy(static ranked => ranked.Candidate.ObservedPressureScore)
+            .ThenByDescending(static ranked => ranked.Candidate.EfficiencyClass)
+            .ThenBy(static ranked => ranked.Candidate.PhysicalCoreIndex)
+            .Select(static ranked => ranked.Candidate)
             .ToArray();
 
         if (!topology.HasHeterogeneousCores)
@@ -101,7 +114,7 @@ public static class GpuAffinityCandidatePlanner
         // On hybrid CPUs, do not silently assume either the fastest class or the
         // most-efficient class is always best for interrupt work. Ensure that the
         // bounded screening set represents distinct efficiency classes first, then
-        // fill the remaining slots from the globally lowest-pressure physical cores.
+        // fill the remaining slots from the globally safest/lowest-pressure cores.
         var selected = new List<GpuAffinityCandidate>(maximumCandidates);
         foreach (var efficiencyClass in topology.EfficiencyClasses.OrderDescending())
         {
@@ -133,4 +146,44 @@ public static class GpuAffinityCandidatePlanner
 
         return selected.ToArray();
     }
+
+    private static int GetAvailabilityRank(
+        ProcessorCpuSetSnapshot? cpuSets,
+        LogicalProcessorId processor)
+    {
+        if (cpuSets is null)
+        {
+            return 0;
+        }
+
+        var cpuSet = cpuSets.TryGet(processor);
+        if (cpuSet is null)
+        {
+            return 4;
+        }
+
+        // Allocated/real-time CPUs may belong to a workload with stronger ownership
+        // semantics than our experiment. A parked CPU is not forbidden, but an
+        // already-active, unallocated sibling is a safer first candidate.
+        if (cpuSet.RealTime)
+        {
+            return 3;
+        }
+
+        if (cpuSet.Allocated && !cpuSet.AllocatedToCurrentProcess)
+        {
+            return 3;
+        }
+
+        if (cpuSet.Parked)
+        {
+            return 2;
+        }
+
+        return cpuSet.Allocated ? 1 : 0;
+    }
+
+    private readonly record struct RankedGpuAffinityCandidate(
+        GpuAffinityCandidate Candidate,
+        int AvailabilityRank);
 }
