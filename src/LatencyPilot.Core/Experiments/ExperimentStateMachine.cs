@@ -8,12 +8,13 @@ public static class ExperimentStateMachine
         (ExperimentState.Planned, ExperimentState.Aborted) => true,
         (ExperimentState.MeasuringBaseline, ExperimentState.CandidateApplied) => true,
         (ExperimentState.MeasuringBaseline, ExperimentState.Aborted) => true,
+
+        // Once a candidate has changed machine state, "abort" is no longer a safe
+        // terminal action. The experiment must move through verified rollback or Keep.
         (ExperimentState.CandidateApplied, ExperimentState.MeasuringCandidate) => true,
         (ExperimentState.CandidateApplied, ExperimentState.Reverted) => true,
-        (ExperimentState.CandidateApplied, ExperimentState.Aborted) => true,
         (ExperimentState.MeasuringCandidate, ExperimentState.AwaitingDecision) => true,
         (ExperimentState.MeasuringCandidate, ExperimentState.Reverted) => true,
-        (ExperimentState.MeasuringCandidate, ExperimentState.Aborted) => true,
         (ExperimentState.AwaitingDecision, ExperimentState.Kept) => true,
         (ExperimentState.AwaitingDecision, ExperimentState.Reverted) => true,
         _ => false
