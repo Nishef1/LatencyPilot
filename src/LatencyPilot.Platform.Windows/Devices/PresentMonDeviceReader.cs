@@ -15,7 +15,7 @@ public static class PresentMonDeviceReader
         string? controlPipeName = null)
     {
         var capturedAt = DateTimeOffset.UtcNow;
-        var resolvedPath = ResolveApiPath(apiPath);
+        var resolvedPath = PresentMonApiLocator.Resolve(apiPath);
         if (resolvedPath is null)
         {
             return new PresentMonDeviceInventory(
@@ -23,7 +23,7 @@ public static class PresentMonDeviceReader
                 [],
                 null,
                 null,
-                "PresentMonAPI2.dll was not found in a trusted LatencyPilot or installed PresentMon location.",
+                "PresentMonAPI2.dll was not found in a trusted installed or LatencyPilot-controlled location.",
                 capturedAt);
         }
 
@@ -81,6 +81,7 @@ public static class PresentMonDeviceReader
             BadImageFormatException or
             DllNotFoundException or
             EntryPointNotFoundException or
+            FileLoadException or
             InvalidDataException)
         {
             return new PresentMonDeviceInventory(
@@ -189,28 +190,6 @@ public static class PresentMonDeviceReader
     private static T GetDelegate<T>(nint library, string exportName)
         where T : Delegate =>
         Marshal.GetDelegateForFunctionPointer<T>(NativeLibrary.GetExport(library, exportName));
-
-    private static string? ResolveApiPath(string? explicitPath)
-    {
-        if (!string.IsNullOrWhiteSpace(explicitPath))
-        {
-            var fullPath = Path.GetFullPath(explicitPath);
-            return File.Exists(fullPath) ? fullPath : null;
-        }
-
-        var candidates = new List<string>
-        {
-            Path.Combine(AppContext.BaseDirectory, "PresentMon", "PresentMonAPI2.dll"),
-        };
-
-        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        if (!string.IsNullOrWhiteSpace(programFiles))
-        {
-            candidates.Add(Path.Combine(programFiles, "Intel", "PresentMon", "PresentMonAPI2.dll"));
-        }
-
-        return candidates.FirstOrDefault(File.Exists);
-    }
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct PresentMonIntrospectionRoot
