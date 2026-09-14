@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security;
 using System.Security.Principal;
 using LatencyPilot.Core.Devices;
+using LatencyPilot.Core.Observation;
 using LatencyPilot.Core.System;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
