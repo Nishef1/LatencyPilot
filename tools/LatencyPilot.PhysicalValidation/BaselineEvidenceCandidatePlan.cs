@@ -131,7 +131,7 @@ internal static class BaselineEvidenceCandidatePlan
         }
     }
 
-    private static IReadOnlyList<IReadOnlyList<ProcessorInterruptCountEvidence>> ReadProcessorWindows(
+    private static List<IReadOnlyList<ProcessorInterruptCountEvidence>> ReadProcessorWindows(
         JsonElement root,
         BaselineWindowEvidence[] windows,
         ProcessorTopologySnapshot topology)
