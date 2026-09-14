@@ -31,6 +31,15 @@ internal static partial class ConfigurationManager
         uint bufferLength,
         uint flags);
 
+    [LibraryImport("cfgmgr32.dll", EntryPoint = "CM_Get_Device_Interface_PropertyW", StringMarshalling = StringMarshalling.Utf16)]
+    internal static unsafe partial uint CM_Get_Device_Interface_Property(
+        string deviceInterface,
+        in DevicePropertyKey propertyKey,
+        out uint propertyType,
+        byte* propertyBuffer,
+        ref uint propertyBufferSize,
+        uint flags);
+
     [LibraryImport("cfgmgr32.dll")]
     internal static partial uint CM_Get_First_Log_Conf(
         out nint logConfiguration,
