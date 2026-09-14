@@ -6,15 +6,19 @@ This runbook is the owner-local Gate A procedure for LatencyPilot's first revers
 
 Use only on the supported owner-controlled Windows 11 x64 machine. The validation harness lives at `tools/LatencyPilot.PhysicalValidation`; it is a developer/owner tool, not a product surface, installer payload, App feature, Named Pipe command or `run.ps1` dependency.
 
-A registry write, stored-value equality or successful device refresh is not proof of effective interrupt placement. Keep these evidence levels separate:
+Keep these evidence levels separate:
 
 ```text
-stored interrupt configuration
-!= allocated resource state
-!= runtime DPC/ISR behavior
+stored interrupt-affinity policy
+!= exact-target PnP allocated interrupt resources
+!= runtime ETW DPC/ISR observation
 ```
 
-Stop immediately on unknown/diverged state, changed driver assumptions, unexpected target identity, failed rollback verification or a recovery plan that requires manual intervention. Do not delete or edit the SQLite journal to make validation pass.
+The allocated resource layer is important: Windows Configuration Manager exposes the **allocated configuration** currently assigned to a specific devnode, including interrupt group/affinity data. Gate A therefore does not treat a registry write or a device refresh alone as activation proof.
+
+Runtime ETW attribution is also kept conservative. On some graphics stacks, hardware ISR work can resolve to a graphics-kernel module such as `dxgkrnl.sys` rather than the display miniport service module. Absence of service-module ISR samples is recorded as a limitation; LatencyPilot must not invent device ownership from that absence. Exact-target allocated affinity and clean ETW observation remain independently visible.
+
+Stop immediately on unknown/diverged state, changed driver assumptions, unexpected target identity, failed allocated-affinity verification, failed rollback verification or a recovery plan that requires manual intervention. Do not delete or edit the SQLite journal to make validation pass.
 
 ## Record before starting
 
@@ -24,11 +28,13 @@ Record all of the following in the physical validation evidence:
 - green hosted Tests run for that exact revision;
 - Windows edition/build;
 - GPU name, driver version and exact device instance ID;
-- chosen group-0 logical processor;
+- baseline evidence file/source revision used for candidate ranking;
+- ranked candidate set and chosen group-0 logical processor;
 - original GPU affinity snapshot summary;
 - every experiment ID and journal state transition;
 - restart result and restart/reboot-required flags;
-- runtime ISR placement evidence;
+- exact-target allocated IRQ group/affinity before/after where available;
+- ETW capture integrity and runtime ISR/module evidence;
 - rollback/recovery result;
 - Service restart/reboot observations;
 - final unresolved-journal count.
@@ -57,13 +63,27 @@ dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.Physic
 dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.PhysicalValidation.csproj --configuration Release -- list-gpus
 ```
 
-`inspect` must report journal readiness. On a clean starting state, unresolved count must be zero. `list-gpus` supplies the exact present display-adapter instance ID and driver identity used by the later steps.
+`inspect` must report journal readiness. On a clean starting state, unresolved count must be zero. `list-gpus` supplies the exact present display-adapter instance ID, driver identity and current allocated interrupt-resource evidence used by later steps.
 
 If an unresolved experiment already exists, do not start another one. Inspect its stored-state relation and recovery disposition first.
 
-## 3. Prepare one bounded experiment
+## 3. Derive the bounded candidate set from valid evidence
 
-Open an elevated interactive owner terminal. Choose one existing group-0 logical processor in the current topology; v1 supports only a single processor group and an x64 KAFFINITY-representable CPU (0-63).
+Do not guess an apparently idle CPU from one screenshot or hard-exclude CPU 0. Use the valid Real-world five-window baseline plus **fresh current topology/CPU-set metadata**:
+
+```powershell
+dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.PhysicalValidation.csproj --configuration Release -- plan-gpu-affinity --evidence '<path-to-LatencyPilot-baseline.json>'
+```
+
+This command is read-only. It rejects evidence that does not match the current evidence schema/protocol/baseline method, is not a valid `RealWorld` decision baseline, no longer matches the current processor-topology shape, contains duplicate/missing processor evidence, or has per-processor counts inconsistent with its baseline windows.
+
+The planner then reuses LatencyPilot's bounded candidate policy: measured mean per-window DPC+ISR share, one logical sibling per physical core, current CPU-set availability when readable, hybrid efficiency-class representation, one processor group and at most four default candidates.
+
+Record the evidence source revision and the full ranked set. Choose **one** candidate from that set for the first physical experiment. Candidate ranking is screening guidance, not proof that a processor will improve latency.
+
+## 4. Prepare one bounded experiment
+
+Open an elevated interactive owner terminal. Use the exact display-adapter instance ID from `list-gpus` and one processor from the ranked plan:
 
 ```powershell
 dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.PhysicalValidation.csproj --configuration Release -- prepare-gpu-affinity --device '<exact-instance-id>' --processor <cpu> --confirm-physical-mutation
@@ -71,7 +91,7 @@ dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.Physic
 
 Record the experiment GUID, target, candidate mask, original snapshot summary and journal state. `prepare-gpu-affinity` must journal the exact original state but must not write the candidate device policy.
 
-## 4. Prove unresolved-state survival and classification
+## 5. Prove unresolved-state survival and classification
 
 Before applying the candidate, restart the LatencyPilot Service using the normal protected Service lifecycle. Re-run `inspect` and confirm that the same experiment survives and is classified from current machine state rather than stale intent.
 
@@ -79,7 +99,7 @@ For a still-original prepared entry, the relation/recovery disposition must be c
 
 This step proves durable journal/recovery inspection across Service restart; it does not prove mutation activation.
 
-## 5. Apply and record exact-target restart behavior
+## 6. Apply and record exact-target restart behavior
 
 From the elevated owner terminal:
 
@@ -98,15 +118,34 @@ Record:
 
 If the command leaves the experiment in `RecoveryRequired`, returns a non-success result, or Windows reports reboot/restart required, do not describe the candidate as active. Preserve the journal and follow the recovery/reboot path. Never bypass the unresolved state.
 
-## 6. Prove runtime ISR placement separately
+## 7. Independently verify allocated affinity and runtime observation
 
-After candidate storage/restart is in a trusted active state, capture runtime ETW evidence using the existing LatencyPilot observation path under a representative repeatable workload. Reconcile GPU-driver ISR execution with the candidate processor using the existing runtime-placement analysis.
+After candidate storage/restart is in a trusted active state, put the same representative workload into its warmed/repeatable state. From an elevated owner terminal run:
 
-Record target-CPU ISR count, off-target ISR count and unresolved attribution. Do not invent a pass threshold from one machine. The requirement here is evidence that stored configuration and observed runtime placement are independently visible and can be reconciled.
+```powershell
+dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.PhysicalValidation.csproj --configuration Release -- verify-gpu-placement --experiment <guid>
+```
+
+This command is read-only with respect to device/journal state, but elevation is required for raw kernel ETW capture. It performs two independent checks:
+
+1. re-enumerates the **exact journaled display-adapter devnode** and requires its currently allocated interrupt resources to be readable and confined to the candidate processor group/mask;
+2. captures a 20-second raw kernel DPC/ISR observation and records ETW integrity plus best-effort service-module ISR correlation.
+
+`allocated-affinity-match=false` is a hard stop: stored policy/restart did not produce independently observable allocated affinity for the exact target.
+
+The ETW capture must also have clean capture integrity. If the display service module has resolvable ISR events, record target/off-target counts. If it has none but graphics ISR activity resolves elsewhere (for example through the graphics-kernel stack), record `service-module-correlation=not-observed` rather than inventing ownership. Gate A does **not** manufacture a service-module pass threshold from one machine.
+
+The evidence claim for this step is therefore precise:
+
+```text
+exact target allocated affinity matches candidate
+AND clean runtime ETW observation exists
+AND any service-module ISR correlation is reported as observed/unavailable, never guessed
+```
 
 A successful registry write or device restart alone does not satisfy this step.
 
-## 7. Exact rollback
+## 8. Exact rollback
 
 From the elevated owner terminal:
 
@@ -116,9 +155,17 @@ dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.Physic
 
 Record the terminal state and exact-target restart evidence. The experiment counts as reverted only if the original stored state is verified and activation/final-state evidence is trusted. If rollback cannot be proven, the journal must remain unresolved.
 
-Re-run `inspect` and verify that the experiment is terminal and there is no unresolved residue.
+Re-run:
 
-## 8. Forced-failure and recovery exercise
+```powershell
+dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.PhysicalValidation.csproj --configuration Release -- inspect
+
+dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.PhysicalValidation.csproj --configuration Release -- list-gpus
+```
+
+Verify that the experiment is terminal, there is no unresolved residue, and allocated-resource observations are recorded after restoration.
+
+## 9. Forced-failure and recovery exercise
 
 Gate A also requires one deliberate failure/recovery exercise on supported hardware. The exercise must fail through a controlled, documented condition; do not corrupt arbitrary registry state or introduce an unrelated system tweak.
 
@@ -136,27 +183,29 @@ dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.Physic
 
 Unknown/diverged/driver-changed state is a manual-intervention result, not permission for a blind write. Recovery in journal v1 is rollback-biased and never resumes forward automatically.
 
-## 9. Reboot-required path
+## 10. Reboot-required path
 
-If physical testing naturally reaches a reboot-required state, preserve the unresolved journal, reboot normally, confirm the Service starts, run `inspect`, re-read actual stored state and complete only the recovery action justified by the fresh assessment.
+If physical testing naturally reaches a reboot-required state, preserve the unresolved journal, reboot normally, confirm the Service starts, run `inspect`, re-read actual stored/allocated state and complete only the recovery action justified by the fresh assessment.
 
 Do not force a reboot solely to manufacture a passing result if the supported hardware does not naturally require one. In that case record the reboot-required path as not exercised on this hardware; do not mark that physical obligation complete.
 
-## 10. Final closure checks for Gate A
+## 11. Final closure checks for Gate A
 
 Gate A passes only when the recorded evidence proves all of these on the exact clean revision:
 
 1. normal App + Service build/install/launch is healthy;
 2. journal startup readiness is healthy;
-3. unresolved state survives Service restart and is correctly reclassified;
-4. exact-target restart/reboot-required behavior is understood on the tested hardware;
-5. candidate apply, stored verification, restart, runtime ISR observation and exact rollback are proven;
-6. forced failure/recovery is proven;
-7. exact original state is restored and `inspect` reports zero unresolved experiments.
+3. candidate selection came from a valid topology-matched Real-world baseline, not a guessed CPU;
+4. unresolved state survives Service restart and is correctly reclassified;
+5. exact-target restart/reboot-required behavior is understood on the tested hardware;
+6. candidate apply and stored verification are followed by an exact-target **allocated interrupt affinity** match and a clean runtime ETW observation;
+7. service-module ISR correlation is recorded when observable and its absence is not replaced with guessed ownership;
+8. forced failure/recovery is proven;
+9. exact original state is restored and `inspect` reports zero unresolved experiments.
 
 Passing Gate A authorizes the next **source-development** stage: Gate B, mutation-specific typed/allowlisted IPC. It does not make mutation user reachable.
 
-The later sequence is:
+The later sequence remains:
 
 ```text
 Gate A — internal physical substrate proof
