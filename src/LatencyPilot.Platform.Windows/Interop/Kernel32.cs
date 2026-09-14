@@ -38,6 +38,18 @@ internal static partial class Kernel32
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
+    internal static unsafe partial bool GetSystemCpuSetInformation(
+        byte* information,
+        uint bufferLength,
+        out uint returnedLength,
+        nint process,
+        uint flags);
+
+    [LibraryImport("kernel32.dll")]
+    internal static partial nint GetCurrentProcess();
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool GetSystemTimes(
         out NativeFileTime idleTime,
         out NativeFileTime kernelTime,
