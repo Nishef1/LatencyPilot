@@ -2,264 +2,194 @@
 
 This file is the live execution ledger for `ROADMAP.md`. Current source/runtime evidence owns actual state; plans and historical chat do not.
 
-Last updated: 2026-09-13
+Last updated: 2026-09-14
 
 ## Overall
 
 - Product version: **0.0.2 pre-alpha**
-- Product completion: **Phases 0–1 closed; Phase 2 physical closure open**
-- Mutation capability: **None by design**
+- Product completion: **Phases 0–1 closed; Phase 2 physical closure open; Phase 3 safety/candidate source implementation in progress under ADR 0004**
+- User-visible mutation capability: **Unavailable / unarmed**
 - Supported target: **Windows 11 x64, active local interactive desktop session**
 - Desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
-- Privileged boundary: **read-only Windows Service; mutation commands do not exist**
+- Privileged boundary: **Windows Service; public protocol remains read-only**
 - Observation protocol: **v6** (`LatencyPilot.Observation.v6`)
 - Evidence schema: **`latencypilot-evidence-v8`**
-- Quick observation purpose: **`quick-diagnostic-snapshot`**
-- Repeated baseline purpose: **`repeated-decision-baseline`**
 - Baseline method: **`baseline-quality-v2`**
-- Permanent automated tests: **8 / hard maximum 10**
+- Permanent automated tests: **9 / hard maximum 10**
 - Hosted CI: **test-only**; App/Service compile/runtime/release evidence remains owner-local
-- Current stage: **Phase 2 source/methodology hardening is frozen pending exact-revision CI plus owner-local physical closure**
+- Current source handoff: **Phase 3 recovery/restart/transaction substrate is implemented but not exposed through IPC and not physically mutation-tested**
 
-## Why the Phase 2 methodology changed
+## Measurement authority
 
-Earlier 0.0.2 builds used five-second captures for both quick diagnosis and repeated baseline evidence. Physical runs proved useful parts of the observation path — App → Service → ETW, RequestId correlation, attribution and source provenance — but a step-back review found that one short duration was serving two different jobs.
-
-The current contract separates them:
+The current measurement contract remains:
 
 ```text
 Quick diagnostic snapshot
   1 × 5 s
   integrity / attribution / concentration / hypothesis generation
-  never a health or optimization verdict
+  never a health or optimizer verdict
 
 Repeated decision baseline — baseline-quality-v2
   workload already warmed/repeatable when applicable
   5 s LatencyPilot/service settle
   5 × 20 s authoritative windows
   750 ms inter-window settle
-  duration + integrity + sample + noise + drift gates
+  >=95% actual/request duration
+  >=1,000 DPC and >=1,000 ISR events/window
+  clean capture integrity
+  noise + drift gates
+
+p99.9
+  shown only with >=10,000 samples for that distribution
 ```
 
-This restores the original product principle: measurement quality must be established before later mutation/Keep/Revert decisions are allowed.
+`Valid` means repeatable enough for the current comparison method. It does not mean the machine is globally healthy or optimally configured.
 
-## Current measurement contract
+## Phase 2 — physical closure remains open
 
-### Quick diagnostic snapshot
+Source-complete read-only capabilities include:
 
-- one five-second DPC/ISR capture;
-- explicit `quick-diagnostic-snapshot` purpose in evidence-v8;
-- capture integrity, module attribution, CPU concentration and local tail/reference context;
-- no stability, health, improvement, regression or optimizer claim.
-
-### Repeated decision baseline — `baseline-quality-v2`
-
-Every authoritative window requires:
-
-- requested duration >=20,000 ms;
-- actual duration >=95% of request;
-- clean ETW/capture integrity;
-- >=1,000 DPC events;
-- >=1,000 ISR events;
-- finite positive DPC/ISR p99.
-
-Exactly five contiguous windows are required. For both DPC p99 and ISR p99:
-
-- P10–P90 relative spread <=30%;
-- relative drift between early and late windows <=20%;
-- no >50% extreme-window deviation;
-- no silent deletion of inconvenient windows.
-
-`Valid` means repeatable enough for the current comparison method. It does **not** mean the machine is globally healthy or optimally configured.
-
-### p99.9 adequacy
-
-Protocol v6 exposes p99.9 only when that individual distribution has at least **10,000 samples**. This is an adequacy floor, not a confidence guarantee.
-
-## Phase 2 source state — FROZEN FOR PHYSICAL VALIDATION
-
-### Inventory/provenance
-
-Implemented:
-
-- processor-group-aware CPU topology;
-- stable present PnP IDs;
-- driver provider/version/INF metadata;
-- stored interrupt configuration with availability/error provenance;
-- allocated ConfigMgr IRQ/resource evidence;
-- partial-evidence behavior for optional device/resource failures;
-- representative GPU/display, NIC and actual `USBXHCI` evidence inspector;
-- clean/dirty source revision provenance through `BUILD_INFO.txt` and the App header.
-
-Semantic boundary remains:
-
-```text
-stored interrupt configuration
-≠ allocated IRQ/resource assignment
-≠ runtime DPC/ISR behavior
-```
-
-### Privileged read-only observation
-
-Implemented:
-
-- protected Windows Service observation host;
-- typed/bounded/fail-closed protocol v6;
-- status + kernel observation commands only;
-- `MutationAvailable=false`;
-- no generic shell/process/registry mutation primitive;
-- network identities denied and active-console client-session authorization;
-- disconnect/deadline/Service-stop cancellation;
-- bounded ETW session lifecycle and cleanup;
-- DPC/ISR duration/count collection;
-- per-processor aggregation;
-- authoritative image-lifetime/rundown-aware module attribution;
-- unresolved addresses remain unresolved;
-- bounded module/unresolved lists;
-- capture-integrity provenance;
-- RequestId correlation across App/Service/evidence;
-- p50/p95/p99/max plus >=10,000-sample p99.9.
-
-Interpretation remains deliberately narrow:
-
-- DPC >100 µs / ISR >25 µs are Microsoft driver-duration guidance references;
-- >1 ms / >3 ms are LatencyPilot local diagnostic buckets;
-- CPU0 concentration is evidence/hypothesis, not a fault classification.
-
-### Baseline and evidence
-
-Implemented:
-
-- workload-preparation checks for repeated decision baselines;
-- five-second LatencyPilot/service pre-sequence settle;
-- five 20-second authoritative windows;
-- lightweight inter-window UI activity only;
-- `baseline-quality-v2` duration/sample/integrity/noise/drift contract;
+- processor-group-aware topology and CPU sets;
+- present PnP inventory with stable IDs and driver metadata;
+- stored interrupt configuration kept distinct from allocated IRQ/resources and runtime DPC/ISR behavior;
+- representative GPU/display, NIC and actual `USBXHCI` evidence surfaces;
+- protected local Windows Service observation host;
+- bounded/fail-closed Named Pipe protocol v6 with active-console-session authorization;
+- ETW DPC/ISR collection, per-processor aggregation and image-lifetime-aware module attribution;
+- explicit unresolved attribution rather than guessed ownership;
 - Real-world / Controlled idle / Before-after scenario provenance;
-- stale evidence invalidation when scenario changes;
-- best-effort runtime CPU/power provenance;
-- evidence-v8 explicit purpose field;
-- capture/window/runtime-window alignment validation;
-- unique RequestIds and exact clean source revision where available;
-- SHA-256 after evidence save;
-- independent `scripts/Verify-Evidence.ps1` verification;
-- strict `-RequireCleanCapture` and `-RequireValidBaseline` gates.
+- evidence-v8 with RequestIds, source revision, runtime CPU/power context and SHA-256;
+- keyboard/high-contrast/adaptive evidence UX.
 
-### UX hardening
+Physical evidence already includes a valid Real-world five-window decision baseline on clean revision `a4b4ff36c875982d5a263665860853462d0b055b`. Under ADR 0004 this is sufficient to allow targeted Phase 3 source work, but it does **not** close Phase 2.
+
+Remaining Phase 2 physical obligations include:
+
+1. valid Controlled-idle five-window baseline;
+2. representative GPU/NIC/xHCI inspector sanity;
+3. attribution plausibility against an independent observer where practical;
+4. App-close/Service-restart/stale-ETW cleanup and active-session rejection checks;
+5. Light/Dark/High Contrast, narrow/text-scaling, keyboard and UI Automation/screen-reader sanity;
+6. JSON-visible-data/SHA/source-revision reconciliation;
+7. proof that read-only validation performs zero unrelated system mutation.
+
+## Phase 3 — current source state
+
+ADR 0004 permits safety/candidate **source implementation** to overlap the remaining Phase 2 physical record. Mutation stays unavailable until the arming gate is physically proven.
+
+### Durable safety substrate
 
 Implemented in source:
 
-- quick action labeled **Quick snapshot · 5 s**;
-- repeated action labeled **Build baseline · ~2 min**;
-- snapshot card uses diagnostic/reference language instead of a transient “latency health” verdict;
-- p99.9 insufficient-sample state uses the protocol-v6 10,000-sample floor;
-- no Microsoft guidance reference is presented as a global pass/fail score;
-- runtime context and evidence purpose remain explicit;
-- keyboard paths `Ctrl+R`, `Ctrl+O`, `Ctrl+B`, `Ctrl+E`;
-- High Contrast/theme/accessibility metadata and adaptive layout source;
-- representative device-evidence inspector;
-- static XAML and runtime copy agree on five × 20-second baseline timing.
+- concrete SQLite persistence project;
+- schema-v1 mutation journal with atomic transactions and compare-and-swap revisions;
+- unresolved journal blocks another experiment;
+- explicit `Prepared → Applying → Applied → Measuring → AwaitingDecision` and rollback/recovery states;
+- recovery from `RecoveryRequired` is biased toward rollback, not forward resume;
+- journal payloads are bounded valid JSON objects;
+- versioned GPU-affinity journal payload codec stores exact original snapshot and candidate;
+- exact original registry value existence/kind/raw bytes are retained;
+- startup Service initializes the journal and re-reads actual stored GPU affinity state for unresolved entries;
+- unresolved stored state is classified as original / candidate / both / diverged / unknown;
+- recovery planning is fail-closed: unknown or externally diverged state requires manual intervention rather than a blind write;
+- public observation protocol still has only `GetStatus` and `CaptureKernelLatency`; no mutation command is reachable.
 
-No new permanent test was added during this hardening pass. Count remains **8/10**.
+### GPU affinity applicability and candidate generation
 
-## Automated evidence policy
+Implemented in source:
 
-Hosted **Tests** intentionally exercises the permanent deterministic suite only. It does not build or run the WinUI App, build/run the Windows Service, start ETW, launch the GUI, package a release or validate physical hardware.
+- mutation target restricted to a present SetupAPI display adapter;
+- only documented `Interrupt Management\Affinity Policy` values are touched;
+- one processor group only for v1 KAFFINITY writes;
+- CPU0 is not hard-excluded;
+- one logical sibling per physical core is selected using measured pressure plus CPU-set availability;
+- hybrid efficiency classes are represented in the bounded screening set;
+- candidate count defaults to four;
+- baseline per-CPU DPC+ISR event shares are converted into per-window-normalized pressure evidence and fed into candidate planning.
 
-Therefore:
+### Apply/restart/revert source path
 
-```text
-hosted Tests
-→ deterministic Core/Benchmarking/Protocol/Platform.Windows contracts
+Implemented but **unarmed and not yet physically validated**:
 
-owner-local Windows
-→ App/Service compile + runtime + ETW + physical UX/security validation
+- `Prepare` captures exact original state and durably journals it before apply;
+- no-op candidate requests are rejected;
+- candidate write is verified from stored state;
+- device refresh uses SetupAPI `DIF_PROPERTYCHANGE` + `DICS_PROPCHANGE` for the exact display adapter;
+- post-change install flags are inspected for `DI_NEEDRESTART` / `DI_NEEDREBOOT`;
+- devnode state is checked through `CM_Get_DevNode_Status`, including restart-needed problem code 14;
+- inability to establish a healthy in-place restart leaves the experiment unresolved in `RecoveryRequired`;
+- rollback restores exact original values/key absence, verifies stored state, restarts the device and reaches `Reverted` only after the active original state is trusted;
+- failed/incomplete rollback remains unresolved instead of being reported as success.
 
-owner-local release path
-→ publish/package/launch-smoke/checksums/release
-```
+The code deliberately does **not** use a broad device-restart primitive that could restart unrelated devices sharing function/filter drivers.
 
-Rapid source commits can cancel superseded workflow runs. The physical candidate must use a completed successful Tests run for the exact revision being built.
+### Runtime-effect verification
 
-## Historical physical evidence — DIAGNOSTIC ONLY
+Implemented as source evidence, not yet integrated into an armed experiment:
 
-The owner has physically launched earlier 0.0.2 revisions on Windows 11 and exported clean short Real-world observations. Those runs established that the observation path can work on the target machine and repeatedly exposed a graphics-stack/CPU0 concentration hypothesis.
+- stored registry equality is not treated as runtime proof;
+- the raw ETW capture can resolve GPU-driver ISR events by the display adapter's driver service/module name;
+- observed ISR execution is counted on the candidate CPU versus off-target CPUs;
+- unresolved attribution stays explicitly unresolved;
+- no arbitrary pass threshold has been invented before physical data establishes an adequate rule.
 
-One preserved earlier evidence artifact from clean revision `1ffaf4ab5ad5cffc8526097bf675c4efecbb5ee0` had:
+### PresentMon
 
-- RequestId `fad7475c-3ea6-40e4-aae3-f94c048c4fac`;
-- SHA-256 `8090962e42ff2ff974cfb32ca5ccf00b7c6dd77879eaf429652dffa246f170d9`;
-- zero ETW loss and zero invalid latency/image events;
-- no event-limit hit;
-- DPC p99 about `131.434 µs`, max `153.9 µs`;
-- ISR p99 about `65.414 µs`, max `81.5 µs`;
-- strong CPU0 concentration;
-- NVIDIA/DirectX graphics-stack dominance in the cited reference exceedances;
-- no >1 ms DPC/ISR events in that capture.
+PresentMon API discovery, graphics-device correlation and workload metric capture exist in source. Available workload metrics include frame/FPS plus optional CPU/GPU busy/wait, GPU/display latency and dropped-frame evidence where the installed PresentMon API exposes them. These are not yet wired into the candidate screening/finalist orchestration.
 
-These old five-second captures strengthen a hypothesis and prove historical observation-path behavior. They do **not** satisfy current evidence-v8 / baseline-quality-v2 closure and do not prove that GPU affinity should be changed.
+## Current verification evidence
 
-## Physical Phase 2 closure — OPEN
+- Hosted Tests for pre-transaction restart head `8086d6bf38c12a2bcb01528355f84c2128723368` completed successfully.
+- Hosted Tests for mutation/recovery source head `cff657aaea4281a54717c7199bbdec105d5a141a` completed successfully.
+- Subsequent recovery-planning source commits require their own exact-head CI result before being called deterministic-green.
+- Hosted Tests remain insufficient evidence for the Service/WinUI runtime because that workflow intentionally does not build or run them.
 
-All following evidence must come from the **same final clean source revision**:
+No physical GPU mutation, GPU restart, forced-failure rollback or reboot recovery has been performed by this source work.
 
-1. completed green hosted eight-test workflow for the exact revision;
-2. owner-local `run.ps1` build/install/launch success;
-3. App header shows exact source revision and Service reports connected/read-only;
-4. one clean five-second Real-world quick snapshot exported as evidence-v8 and verified;
-5. one valid warmed/repeatable Real-world five × 20-second baseline-v2, exported and strictly verified;
-6. one valid Controlled-idle five × 20-second baseline-v2, exported and strictly verified;
-7. representative GPU/NIC/xHCI evidence and broad attribution plausibility;
-8. App-close/Service-restart/stale-ETW recovery checks;
-9. active-console authorization sanity;
-10. Light/Dark/High Contrast, responsive/text-scaling, keyboard and UI Automation/screen-reader sanity;
-11. JSON-visible-data/SHA/source-revision reconciliation;
-12. zero unrelated system mutation.
+## Mutation arming gate — still CLOSED
 
-Do not close Phase 2 from CI, VM evidence or historical five-second observations alone.
+Do not add/enable user-reachable mutation commands until all of the following are true on the supported owner-local Windows path:
+
+1. current exact clean `main` builds and launches App + Service successfully;
+2. startup journal/recovery inspection works with no unresolved entry;
+3. a deliberately constructed unresolved test entry survives Service restart and is correctly classified from actual machine state;
+4. exact-target `DICS_PROPCHANGE` restart behavior is physically verified and reboot-required behavior is handled without pretending activation succeeded;
+5. candidate apply → stored verification → restart → runtime evidence → exact rollback is proven on supported physical hardware;
+6. a forced-failure exercise proves rollback/recovery rather than only the happy path;
+7. only then may mutation-specific typed/allowlisted IPC be introduced and protocol/readiness semantics versioned.
 
 ## Exact next owner-local sequence
 
-After the final exact revision has green Tests:
+After the latest exact `main` revision has a completed green Tests run:
 
 ```powershell
 .\run.ps1
 ```
 
-Then:
+First objective is **compile/install/launch validation only**, not mutation. Confirm:
 
-1. confirm the exact revision in the App header and read-only Service status;
-2. Real-world quick snapshot → export → `Verify-Evidence.ps1 -RequireCleanCapture`;
-3. warm the Real-world workload to the intended repeatable point;
-4. Real-world baseline → export → `-RequireCleanCapture -RequireValidBaseline`;
-5. Controlled-idle baseline → export → the same strict verifier gates;
-6. finish device/plausibility, failure/recovery/session and accessibility checks;
-7. reconcile the full Phase 2 exit gate.
+- App header shows the exact clean source revision;
+- Service starts and remains read-only over protocol v6;
+- observation and evidence export still work;
+- Service logs show successful mutation-journal startup inspection with zero unresolved experiments on a clean machine state.
 
-## After Phase 2
+If current Service source does not compile or launch, fix that before any further optimizer work.
 
-Phase 3 starts with safety infrastructure, not random tweaks:
+## After owner-local compile/launch passes
+
+Proceed in this order:
 
 ```text
-Concrete SQLite persistence/journal/recovery schema
-→ mutation-specific authorization/allowlist
-→ Detect applicability
-→ Snapshot exact original state
-→ Validate candidate
-→ Journal pending experiment
-→ Apply one narrow change
-→ Verify actual applied state
-→ Measure control/candidate
-→ Compare target + guardrails
-→ Keep or Revert
-→ Verify final state
+physical startup/recovery inspection
+→ controlled unresolved-journal recovery classification
+→ physical exact-target device restart/reboot-required validation
+→ forced apply/rollback failure exercise while IPC remains unarmed
+→ reconcile runtime ISR placement evidence
+→ only then design typed mutation IPC/authorization
+→ bounded candidate screening
+→ PresentMon + ETW target/guardrail integration
+→ balanced finalist confirmation (for example ABBA/BAAB)
+→ Keep best or restore exact original state
 ```
 
-The first GPU experiment retains current/default state as a control, generates topology-aware physical-core candidates, screens candidates in bounded fashion and confirms finalists with balanced/interleaved repeated A/B ordering such as ABBA/BAAB. PresentMon frame/CPU/GPU/latency metrics become guardrails/targets where they actually observe the relevant graphics workload.
-
-Later direction remains:
-
-- Phase 4 — USB/xHCI + host-observable input timing;
-- Phase 5 — NIC/RSS optimization;
-- Phase 6 — bounded cross-subsystem optimizer/profiles/Pareto/Restore Baseline;
-- Phase 7 — productization/release hardening.
+Later phases remain USB/xHCI, NIC/RSS, bounded cross-subsystem optimization/profiles/Pareto/Restore Baseline, then release hardening.
