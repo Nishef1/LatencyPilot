@@ -8,6 +8,7 @@ public sealed class ModuleContributionChart : UserControl
 {
     private readonly StackPanel _rows = new() { Spacing = 9 };
     private readonly ChartEmptyState _emptyState;
+    private IReadOnlyList<ChartBar> _bars = Array.Empty<ChartBar>();
 
     public ModuleContributionChart()
     {
@@ -20,14 +21,29 @@ public sealed class ModuleContributionChart : UserControl
         root.Children.Add(_rows);
         root.Children.Add(_emptyState);
         Content = root;
+        ActualThemeChanged += (_, _) => Render();
         AutomationProperties.SetName(this, "Top modules by observed kernel time chart");
     }
 
     internal void SetBars(IReadOnlyList<ChartBar> bars, string automationSummary)
     {
-        _rows.Children.Clear();
+        _bars = bars;
         AutomationProperties.SetHelpText(this, automationSummary);
-        var visible = bars.Take(6).ToArray();
+        Render();
+    }
+
+    internal void Clear(string message)
+    {
+        _bars = Array.Empty<ChartBar>();
+        _emptyState.SetMessage(message);
+        AutomationProperties.SetHelpText(this, message);
+        Render();
+    }
+
+    private void Render()
+    {
+        _rows.Children.Clear();
+        var visible = _bars.Take(6).ToArray();
         if (visible.Length == 0)
         {
             _emptyState.Visibility = Visibility.Visible;
@@ -61,13 +77,15 @@ public sealed class ModuleContributionChart : UserControl
             };
             row.Children.Add(label);
 
+            var fill = Math.Max(0d, item.Value);
+            var remainder = Math.Max(0d, maximum - fill);
             var barHost = new Grid
             {
                 Height = 12,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            barHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0.001d, item.Value), GridUnitType.Star) });
-            barHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0.001d, maximum - item.Value), GridUnitType.Star) });
+            barHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(fill, GridUnitType.Star) });
+            barHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(remainder, GridUnitType.Star) });
             barHost.Children.Add(new Border
             {
                 CornerRadius = new CornerRadius(6),
@@ -96,13 +114,5 @@ public sealed class ModuleContributionChart : UserControl
             row.Children.Add(value);
             _rows.Children.Add(row);
         }
-    }
-
-    internal void Clear(string message)
-    {
-        _rows.Children.Clear();
-        _emptyState.SetMessage(message);
-        _emptyState.Visibility = Visibility.Visible;
-        AutomationProperties.SetHelpText(this, message);
     }
 }
