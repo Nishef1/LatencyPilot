@@ -21,6 +21,7 @@ internal sealed record MutationRecoveryInspection(
     MutationJournalEntry Entry,
     bool ActualStateRead,
     MutationStoredStateRelation StoredStateRelation,
+    MutationRecoveryPlan RecoveryPlan,
     GpuInterruptAffinitySnapshot? GpuInterruptAffinity,
     string? Error);
 
@@ -136,6 +137,12 @@ internal sealed class MutationRecoveryInspector : IHostedService
             new EventId(2006, nameof(StoredStateClassified)),
             "Startup recovery classified stored state for experiment {ExperimentId} as {StoredStateRelation}.");
 
+    private static readonly Action<ILogger, Guid, string, string, Exception?> RecoveryPlanSelected =
+        LoggerMessage.Define<Guid, string, string>(
+            LogLevel.Warning,
+            new EventId(2007, nameof(RecoveryPlanSelected)),
+            "Startup recovery plan for experiment {ExperimentId}: {RecoveryAction}. {RecoveryReason}");
+
     private readonly ILogger<MutationRecoveryInspector> logger;
     private readonly MutationRecoveryReadiness readiness;
 
@@ -195,10 +202,13 @@ internal sealed class MutationRecoveryInspector : IHostedService
         {
             const string reason = "mutation kind is not supported by startup recovery inspection";
             ActualStateReadFailed(logger, entry.ExperimentId, reason, null);
+            var plan = MutationRecoveryPlanner.Create(entry, MutationStoredStateRelation.Unknown);
+            RecoveryPlanSelected(logger, entry.ExperimentId, plan.Action.ToString(), plan.Reason, null);
             return new MutationRecoveryInspection(
                 entry,
                 false,
                 MutationStoredStateRelation.Unknown,
+                plan,
                 null,
                 reason);
         }
@@ -226,19 +236,24 @@ internal sealed class MutationRecoveryInspector : IHostedService
                 (false, true) => MutationStoredStateRelation.MatchesCandidate,
                 _ => MutationStoredStateRelation.Diverged,
             };
+            var plan = MutationRecoveryPlanner.Create(entry, relation);
 
             ActualGpuStateRead(logger, entry.ExperimentId, entry.TargetId, null);
             StoredStateClassified(logger, entry.ExperimentId, relation.ToString(), null);
-            return new MutationRecoveryInspection(entry, true, relation, actual, null);
+            RecoveryPlanSelected(logger, entry.ExperimentId, plan.Action.ToString(), plan.Reason, null);
+            return new MutationRecoveryInspection(entry, true, relation, plan, actual, null);
         }
         catch (Exception exception) when (IsRecoverableActualStateFailure(exception))
         {
             var reason = $"{exception.GetType().Name}: {exception.Message}";
             ActualStateReadFailed(logger, entry.ExperimentId, reason, exception);
+            var plan = MutationRecoveryPlanner.Create(entry, MutationStoredStateRelation.Unknown);
+            RecoveryPlanSelected(logger, entry.ExperimentId, plan.Action.ToString(), plan.Reason, null);
             return new MutationRecoveryInspection(
                 entry,
                 false,
                 MutationStoredStateRelation.Unknown,
+                plan,
                 null,
                 reason);
         }
