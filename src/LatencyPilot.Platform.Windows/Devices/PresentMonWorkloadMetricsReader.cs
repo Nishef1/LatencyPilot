@@ -621,8 +621,8 @@ public static class PresentMonWorkloadMetricsReader
 
     private enum NativeStat
     {
-        None = 0,
         Average = 1,
+        NewestPoint = 12,
     }
 
     private enum QueryValueKind
@@ -638,7 +638,7 @@ public static class PresentMonWorkloadMetricsReader
         string DisplayName)
     {
         internal static readonly QueryMetric SwapChainAddress =
-            new(NativeMetric.SwapChainAddress, NativeStat.None, QueryValueKind.UInt64, "Swap-chain address");
+            new(NativeMetric.SwapChainAddress, NativeStat.NewestPoint, QueryValueKind.UInt64, "Swap-chain address");
         internal static readonly QueryMetric PresentedFps =
             new(NativeMetric.PresentedFps, NativeStat.Average, QueryValueKind.Double, "Presented FPS");
         internal static readonly QueryMetric DisplayedFps =
