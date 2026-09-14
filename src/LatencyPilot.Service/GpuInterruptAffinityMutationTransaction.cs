@@ -92,7 +92,7 @@ internal sealed class GpuInterruptAffinityMutationTransaction
             var recovery = TryMarkRecoveryRequired(applying, applyFailure);
             try
             {
-                var rollback = RollbackFromRecovery(recovery, original);
+                _ = RollbackFromRecovery(recovery, original);
                 throw new InvalidOperationException(
                     "GPU affinity apply failed; the transaction restored the captured original state.",
                     applyFailure);
