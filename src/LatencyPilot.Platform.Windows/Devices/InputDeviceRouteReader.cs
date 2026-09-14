@@ -240,9 +240,9 @@ public static class InputDeviceRouteReader
         }
 
         return new HidIdentity(
-            checked((ushort)info.Hid.VendorId),
-            checked((ushort)info.Hid.ProductId),
-            checked((ushort)info.Hid.VersionNumber),
+            info.Hid.VendorId,
+            info.Hid.ProductId,
+            info.Hid.VersionNumber,
             info.Hid.UsagePage,
             info.Hid.Usage);
     }
@@ -301,9 +301,9 @@ public static class InputDeviceRouteReader
     }
 
     private sealed record HidIdentity(
-        ushort VendorId,
-        ushort ProductId,
-        ushort VersionNumber,
+        uint VendorId,
+        uint ProductId,
+        uint VersionNumber,
         ushort UsagePage,
         ushort Usage);
 }
