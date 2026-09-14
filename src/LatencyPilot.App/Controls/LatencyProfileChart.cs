@@ -10,7 +10,7 @@ namespace LatencyPilot.App.Controls;
 public sealed class LatencyProfileChart : UserControl
 {
     private readonly Canvas _canvas = new();
-    private readonly TextBlock _emptyState;
+    private readonly ChartEmptyState _emptyState;
     private IReadOnlyList<ChartPoint> _primary = Array.Empty<ChartPoint>();
     private IReadOnlyList<ChartPoint> _secondary = Array.Empty<ChartPoint>();
     private IReadOnlyList<string> _labels = Array.Empty<string>();
@@ -21,14 +21,9 @@ public sealed class LatencyProfileChart : UserControl
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
 
-        _emptyState = new TextBlock
-        {
-            Text = "Capture evidence to reveal the latency profile.",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-        };
+        _emptyState = new ChartEmptyState(
+            "\uE9D2",
+            "Capture a quick snapshot to reveal the DPC and ISR tail profile.");
 
         var root = new Grid();
         root.Children.Add(_canvas);
@@ -58,7 +53,7 @@ public sealed class LatencyProfileChart : UserControl
         _primary = Array.Empty<ChartPoint>();
         _secondary = Array.Empty<ChartPoint>();
         _labels = Array.Empty<string>();
-        _emptyState.Text = message;
+        _emptyState.SetMessage(message);
         AutomationProperties.SetHelpText(this, message);
         Render();
     }
@@ -66,7 +61,6 @@ public sealed class LatencyProfileChart : UserControl
     private void Render()
     {
         _canvas.Children.Clear();
-        _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
         var values = _primary.Concat(_secondary)
             .Where(point => point.Value is not null && double.IsFinite(point.Value.Value))
             .Select(point => point.Value!.Value)
