@@ -18,6 +18,24 @@ public sealed class OptimizerSafetyTests
         GuardrailRegressionLimit: 0.05,
         EvaluationPercentile: 0.99);
 
+    private static readonly GpuConfirmationOrder[] ExpectedConfirmationSchedule =
+    [
+        GpuConfirmationOrder.Original,
+        GpuConfirmationOrder.Candidate,
+        GpuConfirmationOrder.Candidate,
+        GpuConfirmationOrder.Original,
+        GpuConfirmationOrder.Candidate,
+        GpuConfirmationOrder.Original,
+        GpuConfirmationOrder.Original,
+        GpuConfirmationOrder.Candidate,
+    ];
+
+    private static readonly double[] ExpectedCpuFrameTimes = [10d, 11d];
+    private static readonly double[] ExpectedDisplayedFps = [120d, 118d];
+    private static readonly double[] ExpectedGpuLatency = [4d, 5d];
+    private static readonly double[] ExpectedDisplayLatency = [7d, 8d];
+    private static readonly double[] ExpectedDroppedFrameRatio = [0.01d, 0.02d];
+
     [TestMethod]
     public void GoDecisionContractRejectsTradeoffsAndBalancesFinalConfirmation()
     {
@@ -47,17 +65,7 @@ public sealed class OptimizerSafetyTests
         Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, screening.Recommendation);
 
         CollectionAssert.AreEqual(
-            new[]
-            {
-                GpuConfirmationOrder.Original,
-                GpuConfirmationOrder.Candidate,
-                GpuConfirmationOrder.Candidate,
-                GpuConfirmationOrder.Original,
-                GpuConfirmationOrder.Candidate,
-                GpuConfirmationOrder.Original,
-                GpuConfirmationOrder.Original,
-                GpuConfirmationOrder.Candidate,
-            },
+            ExpectedConfirmationSchedule,
             GpuOptimizationDecisionEngine.CreateBalancedConfirmationSchedule().ToArray());
 
         var noWinner = GpuOptimizationDecisionEngine.Screen(
@@ -75,22 +83,22 @@ public sealed class OptimizerSafetyTests
         ]);
 
         CollectionAssert.AreEqual(
-            new[] { 10d, 11d },
+            ExpectedCpuFrameTimes,
             presentMon[PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric].Samples.ToArray());
         Assert.AreEqual(
             MetricDirection.HigherIsBetter,
             presentMon[PresentMonGuardrailSeriesBuilder.DisplayedFpsMetric].Direction);
         CollectionAssert.AreEqual(
-            new[] { 120d, 118d },
+            ExpectedDisplayedFps,
             presentMon[PresentMonGuardrailSeriesBuilder.DisplayedFpsMetric].Samples.ToArray());
         CollectionAssert.AreEqual(
-            new[] { 4d, 5d },
+            ExpectedGpuLatency,
             presentMon[PresentMonGuardrailSeriesBuilder.GpuLatencyMetric].Samples.ToArray());
         CollectionAssert.AreEqual(
-            new[] { 7d, 8d },
+            ExpectedDisplayLatency,
             presentMon[PresentMonGuardrailSeriesBuilder.DisplayLatencyMetric].Samples.ToArray());
         CollectionAssert.AreEqual(
-            new[] { 0.01d, 0.02d },
+            ExpectedDroppedFrameRatio,
             presentMon[PresentMonGuardrailSeriesBuilder.DroppedFrameRatioMetric].Samples.ToArray());
         Assert.IsFalse(presentMon.ContainsKey(PresentMonGuardrailSeriesBuilder.PresentedFpsMetric));
     }
