@@ -139,7 +139,7 @@ Concrete Phase 3 SQLite boundary for mutation journal/recovery state. It owns th
 
 ### `LatencyPilot.Service`
 
-Privileged boundary. The public protocol currently hosts read-only observation only. Phase 3 internal source may prepare/apply/revert narrowly supported changes only behind the durable journal and fail-closed recovery logic, while user-reachable mutation remains unavailable until the physical arming gate closes.
+Privileged boundary. The public protocol currently hosts read-only observation only. Phase 3 internal source may prepare/apply/revert narrowly supported changes only behind the durable journal and fail-closed recovery logic. The owner-only validation harness may access those internals for Gate A, but it is not a product surface. User-reachable mutation remains unavailable through Gate A, Gate B implementation and Gate C validation; it is armed only at Gate D.
 
 The Service never becomes a generic scripting host.
 
@@ -343,7 +343,16 @@ Protocol-v6 public IPC is local, typed, versioned and observation-only.
 - successful capture carries the enclosing `RequestId` for log/evidence correlation;
 - protocol/version mismatch fails closed.
 
-The current observation ACL/session check is **not** mutation authorization. Mutation-specific typed/allowlisted authorization is designed only after the physical arming gate succeeds; it must not weaken the observation contract.
+The current observation ACL/session check is **not** mutation authorization. Phase 3 therefore uses four separate gates:
+
+```text
+Gate A  owner-only internal physical substrate proof; protocol v6 stays read-only
+Gate B  mutation-specific typed/allowlisted IPC + mutation authorization source
+Gate C  physical proof of the real client/App → Service mutation boundary
+Gate D  user-facing product arming
+```
+
+Gate B must not weaken the observation contract or expose arbitrary privileged execution. `MutationAvailable` remains false through Gate B and becomes eligible to change only after Gate C succeeds and the supported workflow is ready for Gate D.
 
 ## 15. Evidence schema v8
 
@@ -402,7 +411,7 @@ Verify(expected, actual)
 Revert(snapshot)
 ```
 
-The current public Protocol intentionally exposes none of those operations. When mutation IPC is eventually introduced, it must remain typed and allowlisted; no command accepts arbitrary registry paths, PowerShell or arbitrary process command lines.
+The current public Protocol intentionally exposes none of those operations. Gate A validates them only through the owner-only non-shipping harness. After Gate A succeeds, Gate B may introduce mutation-specific typed/allowlisted IPC and authorization; no command may accept arbitrary registry paths, PowerShell or arbitrary process command lines. That IPC remains unarmed for product use until its real boundary passes Gate C.
 
 ## 19. Persistence and recovery
 
@@ -422,7 +431,7 @@ Schema evolution must preserve active recovery records. Do not add a second stor
 
 The first mutation workflow must not assume that default Windows affinity, CPU0 avoidance, a community tweak or another machine's result is universally optimal.
 
-Already implemented source includes GPU applicability/candidate generation, exact stored-state snapshot/apply/revert logic, exact-target SetupAPI refresh/restart checks, startup recovery classification and runtime GPU ISR processor-placement evidence. These remain unarmed until physical validation.
+Already implemented source includes GPU applicability/candidate generation, exact stored-state snapshot/apply/revert logic, exact-target SetupAPI refresh/restart checks, startup recovery classification, explicit rollback-biased recovery execution, the owner-only Gate A harness and runtime GPU ISR processor-placement evidence. Product mutation remains unarmed.
 
 Required end-to-end structure remains:
 
@@ -470,6 +479,8 @@ owner-local Windows → App/Service compile + runtime + physical validation
 owner-local release path → publish/package/launch smoke/checksums/release
 ```
 
+Temporary hosted compile/smoke checks may prove a narrow source/tool property while implementing a tranche, but they are removed afterward and never substitute for owner-local hardware evidence.
+
 A physical claim must identify the exact clean source revision used to build/run the App and the exact evidence artifact/hash.
 
 ## 23. UI contract
@@ -494,6 +505,11 @@ Source implementation does not close a phase or arm mutation.
 
 Phase 2 still requires its remaining physical read-only checks, including Controlled-idle evidence, representative device inspection, attribution/session/cleanup sanity, accessibility/responsive validation, JSON/SHA/source-revision reconciliation and proof of zero unrelated mutation.
 
-The Phase 3 mutation arming gate additionally requires owner-local current-main compile/launch, recovery inspection/classification, exact-target restart/reboot-required validation, candidate apply/runtime verification/exact rollback on supported hardware, and a forced-failure recovery exercise.
+Phase 3 advances through four separate gates:
 
-Only after those physical requirements pass may mutation-specific public IPC/authorization be introduced. `PROJECT_STATUS.md` owns the exact current sequence and should be consulted instead of duplicating a volatile checklist here.
+1. **Gate A — internal physical substrate proof:** owner-local current-main App/Service compile/launch, journal/recovery inspection, controlled unresolved classification, exact-target restart/reboot-required behavior, candidate apply/runtime evidence/exact rollback and a forced-failure recovery exercise while protocol v6 remains read-only.
+2. **Gate B — typed mutation IPC implementation:** add only mutation-specific typed/allowlisted commands and authorization; keep the product unarmed.
+3. **Gate C — physical IPC boundary proof:** validate the real client/App → Service mutation path, authorization, journal ownership and recovery/rollback on supported hardware.
+4. **Gate D — product arming:** make the supported one-click workflow user reachable only after Gate C and the required target/guardrail orchestration are credible.
+
+Passing Gate A authorizes Gate B source work, not public mutation. `PROJECT_STATUS.md` owns the exact current sequence and should be consulted instead of duplicating a volatile checklist here.

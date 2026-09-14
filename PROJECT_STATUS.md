@@ -7,7 +7,7 @@ Last updated: 2026-09-14
 ## Overall
 
 - Product version: **0.0.2 pre-alpha**
-- Product completion: **Phases 0–1 closed; Phase 2 physical closure open; Phase 3 safety/candidate source implementation in progress under ADR 0004**
+- Product completion: **Phases 0–1 closed; Phase 2 physical closure open; Phase 3 Gate A source/harness preparation complete and owner-local physical validation next**
 - User-visible mutation capability: **Unavailable / unarmed**
 - Supported target: **Windows 11 x64, active local interactive desktop session**
 - Desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
@@ -16,8 +16,8 @@ Last updated: 2026-09-14
 - Evidence schema: **`latencypilot-evidence-v8`**
 - Baseline method: **`baseline-quality-v2`**
 - Permanent automated tests: **9 / hard maximum 10**
-- Normal hosted CI: **test-only**; a one-time temporary Windows Service compile smoke has passed, while App/Service install/runtime/release evidence remains owner-local
-- Current source handoff: **Phase 3 recovery/restart/transaction substrate is implemented and Service-compile-verified, but not exposed through IPC and not physically mutation-tested**
+- Normal hosted CI: **test-only**; temporary Phase 3 compile/smoke/test surfaces were removed after evidence
+- Current source handoff: **rollback-biased recovery and the owner-only non-shipping Gate A harness are implemented and hosted-compile/smoke-verified; no mutation IPC or physical mutation is yet proven**
 
 ## Measurement authority
 
@@ -75,7 +75,7 @@ Remaining Phase 2 physical obligations include:
 
 ## Phase 3 — current source state
 
-ADR 0004 permits safety/candidate **source implementation** to overlap the remaining Phase 2 physical record. Mutation stays unavailable until the arming gate is physically proven.
+ADR 0004 permits safety/candidate **source implementation** to overlap the remaining Phase 2 physical record. Mutation stays unavailable until the arming gates are satisfied.
 
 ### Durable safety substrate
 
@@ -85,14 +85,17 @@ Implemented in source:
 - schema-v1 mutation journal with atomic transactions and compare-and-swap revisions;
 - unresolved journal blocks another experiment;
 - explicit `Prepared → Applying → Applied → Measuring → AwaitingDecision` and rollback/recovery states;
+- proven pre-write aborts can terminalize as `AbortedBeforeApply` without claiming ownership of an external change;
 - recovery from `RecoveryRequired` is biased toward rollback, not forward resume;
 - journal payloads are bounded valid JSON objects;
 - versioned GPU-affinity journal payload codec stores exact original snapshot and candidate;
 - exact original registry value existence/kind/raw bytes are retained;
 - startup Service initializes the journal and re-reads actual stored GPU affinity state for unresolved entries;
+- shared `MutationRecoveryAssessment` re-reads actual machine state for explicit recovery decisions;
 - unresolved stored state is classified as original / candidate / both / diverged / unknown;
 - recovery planning is fail-closed: unknown, externally diverged state, or a changed target driver environment requires manual intervention rather than a blind write;
-- a pre-write abort is explicitly marked so later recovery does not claim an external candidate-looking state as LatencyPilot-owned;
+- `MutationRecoveryExecutor` performs explicit rollback-biased recovery and never turns Service startup into an automatic hardware write path;
+- owner-only `tools/LatencyPilot.PhysicalValidation` exposes only the bounded internal validation commands needed for Gate A and requires elevation plus explicit acknowledgement before state-changing commands;
 - public observation protocol still has only `GetStatus` and `CaptureKernelLatency`; no mutation command is reachable.
 
 ### GPU affinity applicability and candidate generation
@@ -146,31 +149,52 @@ PresentMon API discovery, graphics-device correlation and workload metric captur
 
 ## Current verification evidence
 
-- A one-time temporary Windows-hosted Service compile smoke on the current Phase 3 Service source succeeded in Tests run `34839998553` / run #535 at workflow commit `3abe4b1678de80a309f1b17acf7c63ec34c49438`, after fixing the `CA1859` analyzer failure in `MutationRecoveryInspector` at source commit `5292dd504cb426bafd714510106eef79104ebb66`.
-- The same run #535 completed the permanent critical suite successfully; the suite remains **9/10**.
-- The temporary Service compile step was removed immediately afterward; normal hosted CI is again test-only at `f96081f5ba5e9dd6b2ec6041e3ec1d6b38a03a63`.
-- Hosted compile evidence proves the Service source compiles on the Windows runner; it does **not** prove WinUI App build, protected Service installation/startup, LocalSystem behavior, named-pipe runtime authorization, journal startup on the target PC, or any physical mutation behavior.
-- Owner-local `./run.ps1` build/install/launch therefore remains mandatory before the physical recovery/restart gate can advance.
+- Earlier Service compile evidence: Tests run `34839998553` / run #535 succeeded after the `CA1859` analyzer fix at `5292dd504cb426bafd714510106eef79104ebb66`.
+- Pre-write-abort TDD: run `34843429491` / #541 failed on the missing `Applying → AbortedBeforeApply` transition; run `34843775832` / #543 succeeded after the semantic fix.
+- Recovery-executor TDD: run `34844029007` / #545 failed because `MutationRecoveryExecutor` did not yet exist; run `34844530778` / #549 succeeded after the rollback-biased executor was implemented and Service compiled through the temporary test reference.
+- Owner-harness TDD/smoke: run `34844759935` / #551 failed because the validation project did not yet exist. A later temporary smoke exposed a real `Program.cs` compile error in run `34845073158` / #554; the nullable problem-code formatting was fixed at `ad1d18507d8438fab2d482e53f93aee5d093336d`.
+- Tests run `34846180666` / #561 on `f1e5feabae7c6d75c98b56a34da0abaa146be476` then completed successfully with both the temporary Phase 3 harness smoke and the critical suite green.
+- Temporary Phase 3 test/smoke/Service-reference surfaces were removed in cleanup commit `aea84e6eb865c5624327b7a45b6cfe78795679dd`.
+- Normal test-only Tests run `34846559881` / #562 on that cleanup commit completed successfully. The permanent suite is back to **9/10**.
+
+Hosted evidence proves narrow source/tool contracts and deterministic tests. It does **not** prove WinUI App build, protected Service installation/startup, LocalSystem runtime behavior, named-pipe mutation authorization, hardware restart behavior, effective ISR placement or any physical mutation result.
 
 No physical GPU mutation, GPU restart, forced-failure rollback or reboot recovery has been performed by this source work.
 
-## Mutation arming gate — still CLOSED
+## Phase 3 arming gates — Gate A is next; B/C/D remain closed
 
-Do not add/enable user-reachable mutation commands until all of the following are true on the supported owner-local Windows path:
+### Gate A — internal physical substrate proof — NOT YET PASSED
+
+Use the owner-only harness while public protocol v6 stays read-only. Gate A requires, on the supported owner-local Windows path:
 
 1. current exact clean `main` builds and launches App + Service successfully;
-2. startup journal/recovery inspection works with no unresolved entry;
-3. a deliberately constructed unresolved test entry survives Service restart and is correctly classified from actual machine state;
+2. startup journal/recovery inspection is healthy with zero unresolved entries at the clean start;
+3. a controlled unresolved entry survives Service restart and is correctly reclassified from actual machine state;
 4. exact-target `DICS_PROPCHANGE` restart behavior is physically verified and reboot-required behavior is handled without pretending activation succeeded;
-5. candidate apply → stored verification → restart → runtime evidence → exact rollback is proven on supported physical hardware;
-6. a forced-failure exercise proves rollback/recovery rather than only the happy path;
-7. only then may mutation-specific typed/allowlisted IPC be introduced and protocol/readiness semantics versioned.
+5. one bounded candidate apply → stored verification → restart → runtime ISR evidence → exact rollback cycle is proven;
+6. a deliberate supported failure proves rollback/recovery rather than only the happy path;
+7. final actual state is the exact original and `inspect` reports zero unresolved entries.
+
+### Gate B — typed mutation IPC implementation — BLOCKED BY GATE A
+
+After Gate A passes, add only mutation-specific typed/allowlisted IPC and mutation-specific authorization. No arbitrary registry, shell, process or generic privileged primitive. Keep product mutation unarmed and `MutationAvailable=false`.
+
+### Gate C — physical IPC boundary proof — BLOCKED BY GATE B
+
+Physically validate the real client/App → Service mutation path on supported hardware, including authorization, target identity, journal ownership, restart/recovery and exact rollback.
+
+### Gate D — product arming — BLOCKED BY GATE C
+
+Only after Gate C and the required optimizer target/guardrail path are credible may the supported one-click mutation workflow become user reachable.
+
+Phase 2 physical closure remains a separate obligation; Phase 3 progress does not silently close it.
 
 ## Exact next owner-local sequence
 
 After the latest exact `main` revision has a completed green Tests run:
 
 ```powershell
+git pull
 .\run.ps1
 ```
 
@@ -182,23 +206,33 @@ First objective is **compile/install/launch validation only**, not mutation. Con
 - `run.ps1` reports the protected Service as `Running`;
 - `run.ps1`/Service logs prove mutation-journal startup inspection with zero unresolved experiments on a clean machine state.
 
-If current App/Service source does not compile, install or launch on the supported owner-local Windows path, fix that before any further optimizer work.
+If current App/Service source does not compile, install or launch on the supported owner-local Windows path, fix that before any physical Gate A mutation step.
 
-## After owner-local compile/launch passes
+Then execute `docs/PHASE3_PHYSICAL_VALIDATION.md` exactly. The Gate A sequence is:
+
+```text
+read-only harness inspect + exact GPU identity
+→ prepare one bounded journaled experiment
+→ prove unresolved-state survival/reclassification across Service restart
+→ apply one candidate and record exact-target restart/reboot-required evidence
+→ reconcile stored state with runtime GPU ISR placement evidence
+→ restore exact original state and prove terminal rollback
+→ run one controlled forced-failure/recovery exercise
+→ finish with zero unresolved experiments
+```
+
+## After Gate A passes
 
 Proceed in this order:
 
 ```text
-physical startup/recovery inspection
-→ controlled unresolved-journal recovery classification
-→ physical exact-target device restart/reboot-required validation
-→ forced apply/rollback failure exercise while IPC remains unarmed
-→ reconcile runtime ISR placement evidence
-→ only then design typed mutation IPC/authorization
+Gate B — mutation-specific typed/allowlisted IPC + authorization
+→ Gate C — physical end-to-end client/App → Service mutation proof
 → bounded candidate screening
 → PresentMon + ETW target/guardrail integration
 → balanced finalist confirmation (for example ABBA/BAAB)
-→ Keep best or restore exact original state
+→ Gate D — arm the supported one-click workflow
+→ Keep best or restore exact original
 ```
 
 Later phases remain USB/xHCI, NIC/RSS, bounded cross-subsystem optimization/profiles/Pareto/Restore Baseline, then release hardening.

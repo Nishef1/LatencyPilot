@@ -272,6 +272,9 @@ Optimize GPU
 - [x] generic experiment state machine no longer allows a post-apply `Aborted` terminal shortcut;
 - [x] Service startup initializes the journal and re-reads/classifies actual stored state for unresolved known GPU-affinity experiments;
 - [x] fail-closed recovery planner distinguishes original/candidate/diverged/unknown stored state and refuses blind automatic writes on divergence/unknown state;
+- [x] shared recovery assessment re-reads actual state immediately before explicit recovery decisions;
+- [x] rollback-biased recovery executor exists internally and refuses unknown/diverged/driver-changed state;
+- [x] owner-only non-shipping physical-validation harness exists without exposing mutation through product IPC;
 - [ ] mutation-specific typed protocol commands + authorization/allowlist;
 - [ ] interrupted/pending experiments survive Service restart/reboot end to end on physical hardware;
 - [ ] verified forced rollback/recovery on physical hardware;
@@ -307,9 +310,34 @@ MSI/MSI-X is deliberately not bundled into the first affinity mutation. It becom
 
 Do not assume CPU0 avoidance, Windows default affinity, a community tweak or another machine's winner is universally correct.
 
+### 3.3 Mutation arming gates
+
+Phase 3 mutation crosses four distinct gates. They are intentionally separate so internal hardware validation, privileged IPC and user-facing product arming cannot be conflated.
+
+```text
+Gate A — internal physical substrate proof
+  owner-only harness; protocol v6 remains read-only
+  prove journal/recovery, exact-target restart/reboot handling,
+  candidate apply/runtime evidence/exact rollback and forced failure recovery
+
+Gate B — typed mutation IPC implementation
+  add only mutation-specific typed/allowlisted commands and authorization
+  MutationAvailable remains false; no user-facing arming
+
+Gate C — physical IPC boundary proof
+  validate the real App/client → Service mutation path on supported hardware
+  prove authorization, journal ownership, apply/recovery/rollback end to end
+
+Gate D — product arming
+  expose the supported one-click workflow only after Gate C and required
+  target/guardrail orchestration are physically credible
+```
+
+Passing Gate A authorizes Gate B **source development**; it does not authorize public mutation. Passing Gate B without Gate C evidence does not authorize `MutationAvailable=true`. Phase 2 physical closure remains an independent obligation.
+
 ### Phase 3 exit gate
 
-A supported physical GPU can be tuned through one **one-click, bounded, journaled** experiment and safely restored, including a forced-failure rollback exercise. A result must be backed by target metrics and relevant guardrails, not merely by a registry write.
+A supported physical GPU can be tuned through one **one-click, bounded, journaled** experiment and safely restored, including a forced-failure rollback exercise. A result must be backed by target metrics and relevant guardrails, not merely by a registry write. The user-facing workflow is armed only after the Gate A → B → C → D sequence has been satisfied.
 
 ### After Phase 3
 

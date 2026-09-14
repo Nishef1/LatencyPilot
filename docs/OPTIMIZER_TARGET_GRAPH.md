@@ -257,22 +257,23 @@ Already present in source and therefore **not** future scaffolding:
 - exact original/candidate stored-state apply/revert path;
 - exact-target SetupAPI device refresh/restart checks;
 - startup recovery classification;
+- rollback-biased explicit recovery execution;
+- owner-only non-shipping Phase 3 physical-validation harness;
 - runtime GPU ISR processor-placement verification.
 
 Immediate remaining sequence:
 
-1. physically validate current Service startup/recovery and exact-target restart/reboot-required behavior while IPC stays read-only;
-2. exercise forced apply/rollback failure and prove exact recovery on supported hardware;
-3. reconcile runtime ISR-placement evidence with stored candidate state;
-4. only then design mutation-specific typed/allowlisted IPC/authorization;
-5. wire bounded GPU candidate screening and balanced finalist confirmation using ETW + applicable PresentMon target/guardrail metrics;
-6. finish active-path/shared-device guardrails needed by that GPU experiment;
-7. proceed to Raw Input + USB topology/ETW and xHCI experiments;
-8. add active NIC/RSS topology and controlled-network experiments;
-9. add Wi-Fi/Bluetooth runtime-state and dependency-aware observation;
-10. combine only physically proven per-domain experiments into bounded one-click orchestration.
+1. **Gate A:** owner-local physical validation of startup/recovery, unresolved-state survival/classification, exact-target restart/reboot-required behavior, one bounded apply/runtime-evidence/exact-rollback cycle and forced-failure recovery while protocol v6 stays read-only;
+2. **Gate B:** implement mutation-specific typed/allowlisted IPC and mutation authorization while keeping `MutationAvailable=false` and the UI unarmed;
+3. **Gate C:** physically validate the real client/App → Service mutation path, including authorization, journal ownership, restart/recovery and exact rollback;
+4. wire bounded GPU candidate screening and balanced finalist confirmation using ETW + applicable PresentMon target/guardrail metrics, plus the active-path/shared-device guardrails needed by that workflow;
+5. **Gate D:** arm the supported user-facing one-click workflow only after Gate C and the required optimizer target/guardrail path are credible;
+6. proceed to Raw Input + USB topology/ETW and xHCI experiments;
+7. add active NIC/RSS topology and controlled-network experiments;
+8. add Wi-Fi/Bluetooth runtime-state and dependency-aware observation;
+9. combine only physically proven per-domain experiments into bounded one-click orchestration.
 
-`PROJECT_STATUS.md` owns the exact current execution ladder and physical blockers.
+Until Gate A evidence exists, Gate B/C/D and candidate-screening product work are sequencing targets, not current execution work. `PROJECT_STATUS.md` owns the exact current execution ladder and physical blockers.
 
 ## 12. Primary references
 
