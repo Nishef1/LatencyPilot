@@ -353,7 +353,7 @@ internal sealed class GpuInterruptAffinityMutationTransaction
             applying.ExperimentId,
             applying.Revision,
             MutationJournalState.Applying,
-            MutationJournalState.RecoveryRequired,
+            MutationJournalState.AbortedBeforeApply,
             boundedReason);
         throw new MutationPreWriteAbortException(boundedReason, innerException);
     }
@@ -416,7 +416,7 @@ internal sealed class GpuInterruptAffinityMutationTransaction
         if (requiredState is not null && entry.State != requiredState.Value)
         {
             throw new InvalidOperationException(
-                $"GPU affinity mutation journal entry {experimentId:D} is {entry.State}; expected {requiredState.Value}.");
+                $"GPU affinity mutation journal entry {experimentId:D} is {entry.State}; expected {requiredState.Value}." );
         }
 
         return entry;
