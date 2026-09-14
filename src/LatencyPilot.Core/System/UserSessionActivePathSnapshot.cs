@@ -29,6 +29,7 @@ public sealed record UserSessionActivePathSnapshot(
     ActivePathComponent<ProcessorCpuSetSnapshot> CpuSets,
     ActivePathComponent<GraphicsAdapterInventory> GraphicsAdapters,
     ActivePathComponent<DefaultAudioRouteInventory> DefaultAudioRoutes,
+    PresentMonDeviceInventory PresentMonDevices,
     DateTimeOffset CapturedAtUtc)
 {
     public bool HasMultipleHardwareGraphicsAdapters =>
@@ -36,4 +37,11 @@ public sealed record UserSessionActivePathSnapshot(
 
     public bool HasResolvedDefaultAudioHardwareRoute =>
         DefaultAudioRoutes.Value?.Routes.Any(static route => route.HasResolvedHardwareRoute) == true;
+
+    public IReadOnlyList<GraphicsAdapterSnapshot> PresentMonCorrelatedGraphicsAdapters =>
+        GraphicsAdapters.Value is not { } graphics || !PresentMonDevices.IsAvailable
+            ? []
+            : graphics.Adapters
+                .Where(adapter => PresentMonDevices.FindByLuid(adapter.Luid) is not null)
+                .ToArray();
 }
