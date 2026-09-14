@@ -79,11 +79,15 @@ workload process
      └─ heterogeneous efficiency/performance class
 ```
 
-A later PnP ancestry/interface graph must preserve shared parents. A combo Wi-Fi/Bluetooth device, USB audio plus mouse on one xHCI controller, or GPU plus HDMI audio are not independent when they share hardware or restart semantics.
+Current source already captures PnP parent identity and provides a bounded `DeviceRelationshipGraph` for ancestor/shared-parent reasoning. Later orchestration must use those relationships rather than treating shared transports as independent.
+
+A combo Wi-Fi/Bluetooth device, USB audio plus mouse on one xHCI controller, or GPU plus HDMI audio are not independent when they share hardware or restart semantics.
 
 ## 3. GPU and multiple-adapter systems
 
 Windows can expose several graphics adapters, including integrated GPUs, discrete GPUs and software adapters. LatencyPilot must enumerate all real hardware adapters and resolve which adapter is actually presenting the target workload before arming a GPU mutation.
+
+Current source includes DXGI graphics-adapter identity plus PresentMon graphics-device introspection/correlation. The end-to-end experiment still must fail closed whenever workload-to-adapter identity is not authoritative enough for mutation.
 
 Required behavior:
 
@@ -101,6 +105,8 @@ An iGPU plus dGPU is therefore not an error case and does not imply that both sh
 
 Audio must be tied to the actual active endpoint, not to a generic "sound card" assumption.
 
+Current source can read the default render endpoint roles and walk the Core Audio device-topology connection far enough to retain the connected hardware-topology device ID when Windows exposes it. That evidence must be reconciled with PnP ancestry before it becomes a mutation guardrail.
+
 For systems where sound is rendered through a monitor over HDMI/DisplayPort, the active audio endpoint can belong to the GPU/display-audio path. LatencyPilot must therefore resolve:
 
 ```text
@@ -117,6 +123,8 @@ If the active endpoint is USB or Bluetooth, the corresponding transport/controll
 ## 5. Keyboard and mouse latency
 
 Input optimization is not a single registry tweak.
+
+Current source includes input-device route discovery, but Raw Input timing and USB-ETW measurement remain later-phase work.
 
 Required measurement path:
 
@@ -175,18 +183,19 @@ The same rule applies to system/ACPI/bus drivers: observe broadly, mutate only w
 
 LatencyPilot must not hardcode Intel marketing labels into the core model. Windows exposes an `EfficiencyClass`; higher numerical classes represent intrinsically faster but less power-efficient cores, while lower classes represent more efficient cores. This is a relative topology property, not proof that a given interrupt or workload should always run on the highest class.
 
+Current source already captures processor topology together with CPU-set state including efficiency/scheduling class, parked/allocated flags and processor-group identity. GPU candidate generation consumes that evidence while remaining bounded and single-group for the current KAFFINITY writer.
+
 Current policy:
 
 - retain physical-core and SMT identity;
 - retain processor group identity;
+- retain CPU-set availability/parked/allocated context;
 - expose heterogeneous-core detection;
 - bounded candidate screening must represent distinct efficiency classes instead of silently sampling only one class;
 - within a physical core, avoid pretending SMT siblings are independent physical candidates;
 - never hard-ban CPU 0;
 - measured pressure and repeated outcome decide finalists;
 - multi-group machines remain fail-closed for the current single-group GPU affinity writer until a group-correct mutation model exists.
-
-Future CPU-set capture should add parked/allocated/current scheduling context from `GetSystemCpuSetInformation` without replacing the physical-topology model.
 
 ## 9. One-click orchestration order
 
@@ -232,20 +241,38 @@ Examples of required dependency-aware guardrails:
 
 A local win with a material collateral regression is `Tradeoff`, not `Improved`.
 
-## 11. Implementation sequence
+## 11. Current implementation sequence
 
-Near-term source work:
+Already present in source and therefore **not** future scaffolding:
 
-1. complete durable journal/recovery wiring in the privileged Service;
-2. build the latency-sensitive device inventory and dependency graph;
-3. add DXGI/PresentMon adapter identity and multi-GPU resolution;
-4. add active audio endpoint discovery and endpoint→adapter/PnP mapping;
-5. add PnP parent/child ancestry for shared-device relationships;
-6. complete the first GPU affinity experiment with safe restart, runtime verification and rollback;
-7. add Raw Input + USB topology/ETW and xHCI experiment support;
-8. add active NIC/RSS topology and controlled-network experiment support;
+- durable SQLite mutation journal/recovery substrate;
+- processor topology + CPU-set evidence;
+- present PnP inventory and parent relationships;
+- representative GPU/NIC/xHCI evidence;
+- Core Audio default-render route discovery;
+- input-device route discovery;
+- DXGI/PresentMon graphics-device correlation;
+- PresentMon workload metric capture;
+- bounded GPU-affinity candidate generation;
+- exact original/candidate stored-state apply/revert path;
+- exact-target SetupAPI device refresh/restart checks;
+- startup recovery classification;
+- runtime GPU ISR processor-placement verification.
+
+Immediate remaining sequence:
+
+1. physically validate current Service startup/recovery and exact-target restart/reboot-required behavior while IPC stays read-only;
+2. exercise forced apply/rollback failure and prove exact recovery on supported hardware;
+3. reconcile runtime ISR-placement evidence with stored candidate state;
+4. only then design mutation-specific typed/allowlisted IPC/authorization;
+5. wire bounded GPU candidate screening and balanced finalist confirmation using ETW + applicable PresentMon target/guardrail metrics;
+6. finish active-path/shared-device guardrails needed by that GPU experiment;
+7. proceed to Raw Input + USB topology/ETW and xHCI experiments;
+8. add active NIC/RSS topology and controlled-network experiments;
 9. add Wi-Fi/Bluetooth runtime-state and dependency-aware observation;
-10. combine only proven per-domain experiments into bounded one-click orchestration.
+10. combine only physically proven per-domain experiments into bounded one-click orchestration.
+
+`PROJECT_STATUS.md` owns the exact current execution ladder and physical blockers.
 
 ## 12. Primary references
 
