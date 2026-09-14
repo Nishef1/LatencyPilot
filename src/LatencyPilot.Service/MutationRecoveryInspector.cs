@@ -20,6 +20,7 @@ internal enum MutationStoredStateRelation
 internal sealed record MutationRecoveryInspection(
     MutationJournalEntry Entry,
     bool ActualStateRead,
+    bool TargetEnvironmentStable,
     MutationStoredStateRelation StoredStateRelation,
     MutationRecoveryPlan RecoveryPlan,
     GpuInterruptAffinitySnapshot? GpuInterruptAffinity,
@@ -202,10 +203,14 @@ internal sealed class MutationRecoveryInspector : IHostedService
         {
             const string reason = "mutation kind is not supported by startup recovery inspection";
             ActualStateReadFailed(logger, entry.ExperimentId, reason, null);
-            var plan = MutationRecoveryPlanner.Create(entry, MutationStoredStateRelation.Unknown);
+            var plan = MutationRecoveryPlanner.Create(
+                entry,
+                MutationStoredStateRelation.Unknown,
+                targetEnvironmentStable: false);
             RecoveryPlanSelected(logger, entry.ExperimentId, plan.Action.ToString(), plan.Reason, null);
             return new MutationRecoveryInspection(
                 entry,
+                false,
                 false,
                 MutationStoredStateRelation.Unknown,
                 plan,
@@ -236,21 +241,36 @@ internal sealed class MutationRecoveryInspector : IHostedService
                 (false, true) => MutationStoredStateRelation.MatchesCandidate,
                 _ => MutationStoredStateRelation.Diverged,
             };
-            var plan = MutationRecoveryPlanner.Create(entry, relation);
+            var targetEnvironmentStable = string.Equals(
+                actual.DriverVersion,
+                original.DriverVersion,
+                StringComparison.OrdinalIgnoreCase);
+            var plan = MutationRecoveryPlanner.Create(entry, relation, targetEnvironmentStable);
 
             ActualGpuStateRead(logger, entry.ExperimentId, entry.TargetId, null);
             StoredStateClassified(logger, entry.ExperimentId, relation.ToString(), null);
             RecoveryPlanSelected(logger, entry.ExperimentId, plan.Action.ToString(), plan.Reason, null);
-            return new MutationRecoveryInspection(entry, true, relation, plan, actual, null);
+            return new MutationRecoveryInspection(
+                entry,
+                true,
+                targetEnvironmentStable,
+                relation,
+                plan,
+                actual,
+                null);
         }
         catch (Exception exception) when (IsRecoverableActualStateFailure(exception))
         {
             var reason = $"{exception.GetType().Name}: {exception.Message}";
             ActualStateReadFailed(logger, entry.ExperimentId, reason, exception);
-            var plan = MutationRecoveryPlanner.Create(entry, MutationStoredStateRelation.Unknown);
+            var plan = MutationRecoveryPlanner.Create(
+                entry,
+                MutationStoredStateRelation.Unknown,
+                targetEnvironmentStable: false);
             RecoveryPlanSelected(logger, entry.ExperimentId, plan.Action.ToString(), plan.Reason, null);
             return new MutationRecoveryInspection(
                 entry,
+                false,
                 false,
                 MutationStoredStateRelation.Unknown,
                 plan,
