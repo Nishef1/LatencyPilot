@@ -87,13 +87,50 @@ public static class GpuAffinityCandidatePlanner
                 bestLogical.Pressure));
         }
 
-        // Missing pressure evidence is allowed for diagnostics, but it must never
-        // outrank measured candidates. CPU 0 is deliberately not hard-excluded.
-        return candidates
+        var ordered = candidates
             .OrderBy(static candidate => candidate.ObservedPressureScore)
             .ThenByDescending(static candidate => candidate.EfficiencyClass)
             .ThenBy(static candidate => candidate.PhysicalCoreIndex)
-            .Take(maximumCandidates)
             .ToArray();
+
+        if (!topology.HasHeterogeneousCores)
+        {
+            return ordered.Take(maximumCandidates).ToArray();
+        }
+
+        // On hybrid CPUs, do not silently assume either the fastest class or the
+        // most-efficient class is always best for interrupt work. Ensure that the
+        // bounded screening set represents distinct efficiency classes first, then
+        // fill the remaining slots from the globally lowest-pressure physical cores.
+        var selected = new List<GpuAffinityCandidate>(maximumCandidates);
+        foreach (var efficiencyClass in topology.EfficiencyClasses.OrderDescending())
+        {
+            var representative = ordered.FirstOrDefault(candidate =>
+                candidate.EfficiencyClass == efficiencyClass);
+            if (representative is not null)
+            {
+                selected.Add(representative);
+                if (selected.Count == maximumCandidates)
+                {
+                    return selected.ToArray();
+                }
+            }
+        }
+
+        foreach (var candidate in ordered)
+        {
+            if (selected.Any(existing => existing.PhysicalCoreIndex == candidate.PhysicalCoreIndex))
+            {
+                continue;
+            }
+
+            selected.Add(candidate);
+            if (selected.Count == maximumCandidates)
+            {
+                break;
+            }
+        }
+
+        return selected.ToArray();
     }
 }
