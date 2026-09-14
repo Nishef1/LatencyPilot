@@ -12,10 +12,19 @@ internal static partial class ConfigurationManager
 
     internal const uint AllocatedLogConfiguration = 0x00000002;
     internal const uint ResourceTypeIrq = 0x00000004;
+    internal const uint DeviceNodeStarted = 0x00000008;
+    internal const uint DeviceNodeHasProblem = 0x00000400;
 
     [LibraryImport("cfgmgr32.dll")]
     internal static partial uint CM_Get_Parent(
         out uint parentDeviceInstance,
+        uint deviceInstance,
+        uint flags);
+
+    [LibraryImport("cfgmgr32.dll")]
+    internal static partial uint CM_Get_DevNode_Status(
+        out uint status,
+        out uint problemNumber,
         uint deviceInstance,
         uint flags);
 
