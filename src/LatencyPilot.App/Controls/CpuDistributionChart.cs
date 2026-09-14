@@ -96,6 +96,21 @@ public sealed class CpuDistributionChart : UserControl
             _canvas.Children.Add(tick);
         }
 
+        const int verticalGridIntervals = 8;
+        for (var index = 0; index <= verticalGridIntervals; index++)
+        {
+            var x = left + plotWidth * index / verticalGridIntervals;
+            _canvas.Children.Add(new Line
+            {
+                X1 = x,
+                X2 = x,
+                Y1 = top,
+                Y2 = top + plotHeight,
+                Stroke = gridBrush,
+                StrokeThickness = 1,
+            });
+        }
+
         var slot = plotWidth / bars.Length;
         var barWidth = Math.Clamp(slot * 0.56d, 2d, 24d);
         var labelStride = Math.Max(1, (int)Math.Ceiling(18d / Math.Max(1d, slot)));
