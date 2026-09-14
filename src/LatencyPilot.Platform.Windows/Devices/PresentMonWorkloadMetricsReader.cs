@@ -9,7 +9,9 @@ public static class PresentMonWorkloadMetricsReader
     private const int InvalidProcessStatus = 6;
     private const int AlreadyTrackingProcessStatus = 7;
     private const int InsufficientBufferStatus = 11;
-    private const int QueryMalformedStatus = 21;
+    private const int MiddlewareVersionLowStatus = 18;
+    private const int MiddlewareVersionHighStatus = 19;
+    private const int MiddlewareServiceMismatchStatus = 20;
     private const ushort SupportedApiMajor = 3;
     private const ushort MinimumApiMinor = 4;
     private const uint InitialSwapChainCapacity = 8;
@@ -24,10 +26,7 @@ public static class PresentMonWorkloadMetricsReader
         string? controlPipeName = null,
         CancellationToken cancellationToken = default)
     {
-        if (processId == 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(processId));
-        }
+        ArgumentOutOfRangeException.ThrowIfZero(processId);
 
         var windowMilliseconds = window.TotalMilliseconds;
         if (!double.IsFinite(windowMilliseconds) ||
@@ -48,7 +47,7 @@ public static class PresentMonWorkloadMetricsReader
                 null,
                 null,
                 null,
-                "PresentMonAPI2.dll was not found in a trusted LatencyPilot or installed PresentMon location.",
+                "PresentMonAPI2.dll was not found in a trusted installed or LatencyPilot-controlled location.",
                 capturedAt);
         }
 
@@ -101,6 +100,7 @@ public static class PresentMonWorkloadMetricsReader
             closeSession = GetDelegate<PresentMonCloseSession>(library, "pmCloseSession");
             var startTracking = GetDelegate<PresentMonStartTrackingProcess>(library, "pmStartTrackingProcess");
             stopTracking = GetDelegate<PresentMonStopTrackingProcess>(library, "pmStopTrackingProcess");
+            var flushFrames = GetDelegate<PresentMonFlushFrames>(library, "pmFlushFrames");
             var registerQuery = GetDelegate<PresentMonRegisterDynamicQuery>(library, "pmRegisterDynamicQuery");
             freeQuery = GetDelegate<PresentMonFreeDynamicQuery>(library, "pmFreeDynamicQuery");
             var pollQuery = GetDelegate<PresentMonPollDynamicQuery>(library, "pmPollDynamicQuery");
@@ -110,14 +110,19 @@ public static class PresentMonWorkloadMetricsReader
                 : openSessionWithPipe(out session, controlPipeName);
             if (status != Success || session == 0)
             {
+                var incompatible = IsVersionMismatch(status);
                 return Failure(
-                    PresentMonWorkloadCaptureStatus.ServiceUnavailable,
+                    incompatible
+                        ? PresentMonWorkloadCaptureStatus.VersionIncompatible
+                        : PresentMonWorkloadCaptureStatus.ServiceUnavailable,
                     processId,
                     windowMilliseconds,
                     apiVersion,
                     resolvedPath,
                     status,
-                    "PresentMon API is present but a service session could not be opened.",
+                    incompatible
+                        ? "PresentMon middleware and service versions are incompatible."
+                        : "PresentMon API is present but a service session could not be opened.",
                     capturedAt);
             }
 
@@ -171,7 +176,13 @@ public static class PresentMonWorkloadMetricsReader
 
             var unavailable = new List<string>();
             var selected = essential.ToList();
-            if (!TryRegisterProbe(session, registerQuery, freeQuery, selected, windowMilliseconds))
+            if (!TryRegisterProbe(
+                    session,
+                    registerQuery,
+                    freeQuery,
+                    selected,
+                    windowMilliseconds,
+                    out var essentialQueryStatus))
             {
                 return Failure(
                     PresentMonWorkloadCaptureStatus.QueryUnavailable,
@@ -179,7 +190,7 @@ public static class PresentMonWorkloadMetricsReader
                     windowMilliseconds,
                     apiVersion,
                     resolvedPath,
-                    QueryMalformedStatus,
+                    essentialQueryStatus,
                     "PresentMon could not register LatencyPilot's essential process/swap-chain query.",
                     capturedAt);
             }
@@ -187,7 +198,13 @@ public static class PresentMonWorkloadMetricsReader
             foreach (var candidate in optional)
             {
                 var probe = selected.Append(candidate).ToArray();
-                if (TryRegisterProbe(session, registerQuery, freeQuery, probe, windowMilliseconds))
+                if (TryRegisterProbe(
+                        session,
+                        registerQuery,
+                        freeQuery,
+                        probe,
+                        windowMilliseconds,
+                        out _))
                 {
                     selected.Add(candidate);
                 }
@@ -228,6 +245,35 @@ public static class PresentMonWorkloadMetricsReader
 
             var blobSize = ValidateAndGetBlobSize(elements, selected);
             await Task.Delay(window, cancellationToken).ConfigureAwait(false);
+
+            status = flushFrames(session, processId);
+            if (status == InvalidProcessStatus)
+            {
+                return Failure(
+                    PresentMonWorkloadCaptureStatus.InvalidProcess,
+                    processId,
+                    windowMilliseconds,
+                    apiVersion,
+                    resolvedPath,
+                    status,
+                    "The workload process ended before PresentMon could finalize the requested guardrail window.",
+                    capturedAt,
+                    unavailable);
+            }
+
+            if (status != Success)
+            {
+                return Failure(
+                    PresentMonWorkloadCaptureStatus.PollFailed,
+                    processId,
+                    windowMilliseconds,
+                    apiVersion,
+                    resolvedPath,
+                    status,
+                    "PresentMon could not flush buffered frame events before polling the workload guardrail query.",
+                    capturedAt,
+                    unavailable);
+            }
 
             var poll = Poll(query, processId, pollQuery, blobSize);
             if (poll.Status != Success)
@@ -279,6 +325,7 @@ public static class PresentMonWorkloadMetricsReader
             BadImageFormatException or
             DllNotFoundException or
             EntryPointNotFoundException or
+            FileLoadException or
             InvalidDataException or
             OverflowException)
         {
@@ -316,16 +363,19 @@ public static class PresentMonWorkloadMetricsReader
         }
     }
 
+    private static bool IsVersionMismatch(int status) =>
+        status is MiddlewareVersionLowStatus or MiddlewareVersionHighStatus or MiddlewareServiceMismatchStatus;
+
     private static bool TryRegisterProbe(
         nint session,
         PresentMonRegisterDynamicQuery registerQuery,
         PresentMonFreeDynamicQuery freeQuery,
         IReadOnlyList<QueryMetric> metrics,
-        double windowMilliseconds)
+        double windowMilliseconds,
+        out int status)
     {
         nint probeQuery = 0;
         var elements = metrics.Select(CreateQueryElement).ToArray();
-        int status;
         unsafe
         {
             fixed (NativeQueryElement* elementPointer = elements)
@@ -656,6 +706,9 @@ public static class PresentMonWorkloadMetricsReader
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int PresentMonStopTrackingProcess(nint session, uint processId);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int PresentMonFlushFrames(nint session, uint processId);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private unsafe delegate int PresentMonRegisterDynamicQuery(
