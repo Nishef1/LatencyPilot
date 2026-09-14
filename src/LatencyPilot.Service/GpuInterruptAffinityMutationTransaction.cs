@@ -8,6 +8,7 @@ namespace LatencyPilot.Service;
 internal static class GpuInterruptAffinityMutationContract
 {
     internal const string Kind = "gpu-interrupt-affinity";
+    internal const string PreWriteAbortPrefix = "prewrite-abort:";
 }
 
 internal sealed record GpuInterruptAffinityMutationStepResult(
@@ -79,19 +80,36 @@ internal sealed class GpuInterruptAffinityMutationTransaction
             MutationJournalState.Prepared,
             MutationJournalState.Applying);
 
+        // Registry state is external to the SQLite transaction. Re-read after
+        // the durable state transition and immediately before the write. If an
+        // external change appears here, record that LatencyPilot did not write
+        // the candidate so recovery will never claim ownership of that change.
         try
         {
-            // Registry state is external to the SQLite transaction. Re-read after
-            // the durable state transition and immediately before the write so a
-            // user/driver change in the preflight window is not overwritten.
+            ValidateCandidateAgainstCurrentTopology(candidate);
             var immediatelyBeforeWrite = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
             if (!GpuInterruptAffinityStateComparer.MatchesOriginal(immediatelyBeforeWrite, original) ||
                 !DriverVersionMatches(immediatelyBeforeWrite, original))
             {
-                throw new InvalidOperationException(
-                    "GPU affinity state or driver version changed after preflight; candidate write was refused.");
+                MarkPreWriteAbort(
+                    applying,
+                    "GPU affinity state, processor topology, or driver version changed after preflight; candidate write was not attempted.");
             }
+        }
+        catch (MutationPreWriteAbortException)
+        {
+            throw;
+        }
+        catch (Exception preWriteFailure)
+        {
+            MarkPreWriteAbort(
+                applying,
+                $"GPU affinity immediate pre-write validation failed before candidate write: {preWriteFailure.GetType().Name}: {preWriteFailure.Message}",
+                preWriteFailure);
+        }
 
+        try
+        {
             GpuInterruptAffinityPolicyStore.Apply(original, candidate);
             var stored = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
             if (!GpuInterruptAffinityStateComparer.MatchesCandidate(stored, candidate))
@@ -324,6 +342,22 @@ internal sealed class GpuInterruptAffinityMutationTransaction
         throw new MutationPreparedAbortException(boundedReason, innerException);
     }
 
+    private void MarkPreWriteAbort(
+        MutationJournalEntry applying,
+        string reason,
+        Exception? innerException = null)
+    {
+        var boundedReason = BoundFailureReason(
+            GpuInterruptAffinityMutationContract.PreWriteAbortPrefix + " " + reason);
+        _ = journal.Transition(
+            applying.ExperimentId,
+            applying.Revision,
+            MutationJournalState.Applying,
+            MutationJournalState.RecoveryRequired,
+            boundedReason);
+        throw new MutationPreWriteAbortException(boundedReason, innerException);
+    }
+
     private MutationJournalEntry TryMarkRecoveryRequired(
         MutationJournalEntry applying,
         Exception failure)
@@ -427,6 +461,14 @@ internal sealed class GpuInterruptAffinityMutationTransaction
     private sealed class MutationPreparedAbortException : InvalidOperationException
     {
         internal MutationPreparedAbortException(string message, Exception? innerException = null)
+            : base(message, innerException)
+        {
+        }
+    }
+
+    private sealed class MutationPreWriteAbortException : InvalidOperationException
+    {
+        internal MutationPreWriteAbortException(string message, Exception? innerException = null)
             : base(message, innerException)
         {
         }
