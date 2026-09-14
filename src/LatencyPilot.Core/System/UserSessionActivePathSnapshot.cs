@@ -29,6 +29,7 @@ public sealed record UserSessionActivePathSnapshot(
     ActivePathComponent<ProcessorCpuSetSnapshot> CpuSets,
     ActivePathComponent<GraphicsAdapterInventory> GraphicsAdapters,
     ActivePathComponent<DefaultAudioRouteInventory> DefaultAudioRoutes,
+    ActivePathComponent<UserInputRouteInventory> InputRoutes,
     PresentMonDeviceInventory PresentMonDevices,
     DateTimeOffset CapturedAtUtc)
 {
@@ -37,6 +38,16 @@ public sealed record UserSessionActivePathSnapshot(
 
     public bool HasResolvedDefaultAudioHardwareRoute =>
         DefaultAudioRoutes.Value?.Routes.Any(static route => route.HasResolvedHardwareRoute) == true;
+
+    public bool HasResolvedUsbInputRoute =>
+        InputRoutes.Value?.Routes.Any(static route =>
+            route.RawInputDevice.ResolutionStatus == RawInputRouteResolutionStatus.Available &&
+            route.IsUsbBacked) == true;
+
+    public bool HasResolvedBluetoothInputRoute =>
+        InputRoutes.Value?.Routes.Any(static route =>
+            route.RawInputDevice.ResolutionStatus == RawInputRouteResolutionStatus.Available &&
+            route.IsBluetoothBacked) == true;
 
     public IReadOnlyList<GraphicsAdapterSnapshot> PresentMonCorrelatedGraphicsAdapters =>
         GraphicsAdapters.Value is not { } graphics || !PresentMonDevices.IsAvailable
