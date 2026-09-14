@@ -53,7 +53,7 @@ public sealed class CpuDistributionChart : UserControl
         }
 
         _emptyState.Visibility = Visibility.Collapsed;
-        var bars = _bars.Take(24).ToArray();
+        var bars = _bars.ToArray();
         var width = ActualWidth;
         var height = ActualHeight;
         const double left = 34;
@@ -62,7 +62,10 @@ public sealed class CpuDistributionChart : UserControl
         const double bottom = 30;
         var plotWidth = Math.Max(1d, width - left - right);
         var plotHeight = Math.Max(1d, height - top - bottom);
-        var maximum = Math.Max(1d, bars.Max(item => item.Value) * 1.12d);
+        var peak = bars.Max(item => item.Value);
+        var maximum = peak <= 100d
+            ? Math.Min(100d, Math.Max(1d, peak * 1.12d))
+            : Math.Max(1d, peak * 1.12d);
         var gridBrush = DashboardThemeResources.Brush(this, "ChartGridBrush");
         var mutedBrush = DashboardThemeResources.Brush(this, "MutedTextBrush");
         var primaryBrush = DashboardThemeResources.Brush(this, "ChartAccentSecondaryBrush");
@@ -94,8 +97,8 @@ public sealed class CpuDistributionChart : UserControl
         }
 
         var slot = plotWidth / bars.Length;
-        var barWidth = Math.Clamp(slot * 0.56d, 5d, 24d);
-        var peak = bars.Max(item => item.Value);
+        var barWidth = Math.Clamp(slot * 0.56d, 2d, 24d);
+        var labelStride = Math.Max(1, (int)Math.Ceiling(18d / Math.Max(1d, slot)));
 
         for (var index = 0; index < bars.Length; index++)
         {
@@ -107,8 +110,8 @@ public sealed class CpuDistributionChart : UserControl
             {
                 Width = barWidth,
                 Height = Math.Max(2d, barHeight),
-                RadiusX = 3,
-                RadiusY = 3,
+                RadiusX = Math.Min(3d, barWidth / 2d),
+                RadiusY = Math.Min(3d, barWidth / 2d),
                 Fill = Math.Abs(item.Value - peak) < 0.0001d ? primaryBrush : tertiaryBrush,
                 Opacity = Math.Abs(item.Value - peak) < 0.0001d ? 1d : 0.72d,
             };
@@ -117,13 +120,18 @@ public sealed class CpuDistributionChart : UserControl
             Canvas.SetTop(rect, y);
             _canvas.Children.Add(rect);
 
+            if (index % labelStride != 0 && index != bars.Length - 1)
+            {
+                continue;
+            }
+
             var label = new TextBlock
             {
                 Text = item.Label.Replace("CPU ", string.Empty, StringComparison.Ordinal),
                 FontSize = 9,
                 Foreground = mutedBrush,
             };
-            Canvas.SetLeft(label, x + barWidth / 2d - 5d);
+            Canvas.SetLeft(label, left + slot * index + slot / 2d - 6d);
             Canvas.SetTop(label, top + plotHeight + 7d);
             _canvas.Children.Add(label);
         }
