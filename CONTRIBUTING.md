@@ -38,24 +38,25 @@ A pull request should be narrowly scoped and explain:
 - which current architecture boundary it touches;
 - what measurements or authoritative Windows documentation support it;
 - what existing permanent test was updated, replaced, or why no permanent-test change is justified;
-- whether any mutation, privilege boundary, future persistence/recovery contract, IPC contract, or rollback behavior changes;
+- whether any mutation, privilege boundary, persistence/recovery contract, IPC contract, or rollback behavior changes;
 - any known limitations or hardware-specific assumptions.
 
 Large features should normally begin with an issue or ADR before implementation.
 
-Current Phase 2 source boundaries are:
+Current source boundaries are:
 
 ```text
 Core
 Benchmarking
 Protocol
 Platform.Windows
+Persistence
 Service
 App
 CriticalTests
 ```
 
-The future SQLite persistence boundary is a Phase 3 requirement, not a placeholder Phase 2 project. Do not add an empty `LatencyPilot.Persistence` project or speculative repository abstraction merely to reserve a namespace; introduce the real persistence boundary together with its schema, migrations, journal and recovery contract.
+`LatencyPilot.Persistence` is now a concrete Phase 3 boundary with the real SQLite mutation journal/recovery contract. Keep it concrete and narrow: do not add a second persistence engine, placeholder repository layer, or speculative storage abstraction without a demonstrated need and an ADR where the architecture changes.
 
 ## Forks and local copies
 
@@ -84,7 +85,7 @@ A supported mutation must eventually have:
 9. interrupted-run recovery behavior;
 10. durable journal/recovery state before mutation ships.
 
-Phase 2 remains read-only. Do not add mutation commands before the Phase 3 safety substrate exists.
+The public protocol remains read-only and mutation stays unavailable/unarmed. ADR 0004 permits internal Phase 3 safety/candidate source work to overlap remaining Phase 2 physical closure, but do not add user-reachable mutation commands until the arming gate in `PROJECT_STATUS.md` is physically satisfied.
 
 ### One variable at a time
 
@@ -102,9 +103,9 @@ Do not replace raw measurements with a single score. Reports must preserve enoug
 
 ### Privilege separation
 
-The **WinUI 3** application must remain a normal non-elevated desktop process. Privileged observation and future supported mutations belong in the narrowly scoped Windows Service and must cross the typed, versioned IPC contract.
+The **WinUI 3** application must remain a normal non-elevated desktop process. Privileged observation and supported mutations belong in the narrowly scoped Windows Service and must cross the typed, versioned IPC contract when exposed.
 
-The current Phase 2 active-console authorization rule is observation authorization only; it is not sufficient future mutation authorization.
+The current active-console authorization rule is observation authorization only; it is not sufficient future mutation authorization.
 
 ### Rollback is part of the feature
 
@@ -121,7 +122,7 @@ The useful portfolio is deliberately small:
 - deterministic domain/statistics contracts;
 - fail-closed protocol/privilege-surface contracts;
 - a small number of Windows read-only integration invariants;
-- later, the highest-blast-radius persistence/recovery/mutation contracts.
+- the highest-blast-radius persistence/recovery/mutation contracts.
 
 Temporary investigative/debug tests are welcome while developing interop, parsers, migrations or recovery behavior. Remove them before finalization unless they justify one of the permanent slots.
 
