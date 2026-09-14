@@ -8,25 +8,19 @@ namespace LatencyPilot.App.Controls;
 public sealed class CpuInterruptMap : UserControl
 {
     private readonly StackPanel _rows = new() { Spacing = 2 };
-    private readonly TextBlock _emptyState;
+    private readonly ChartEmptyState _emptyState;
 
     public CpuInterruptMap()
     {
         MinHeight = (double)Application.Current.Resources["ChartPlotMinHeight"];
-        _emptyState = new TextBlock
-        {
-            Text = "Capture evidence to compare DPC and ISR intensity by processor.",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-        };
+        _emptyState = new ChartEmptyState(
+            "\uE81E",
+            "Capture a quick snapshot to compare DPC and ISR intensity by processor.");
 
         var root = new Grid();
         root.Children.Add(_rows);
         root.Children.Add(_emptyState);
         Content = root;
-        ActualThemeChanged += (_, _) => _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
         AutomationProperties.SetName(this, "CPU interrupt intensity map");
     }
 
@@ -103,8 +97,7 @@ public sealed class CpuInterruptMap : UserControl
     internal void Clear(string message)
     {
         _rows.Children.Clear();
-        _emptyState.Foreground = DashboardThemeResources.Brush(this, "MutedTextBrush");
-        _emptyState.Text = message;
+        _emptyState.SetMessage(message);
         _emptyState.Visibility = Visibility.Visible;
         AutomationProperties.SetHelpText(this, message);
     }
