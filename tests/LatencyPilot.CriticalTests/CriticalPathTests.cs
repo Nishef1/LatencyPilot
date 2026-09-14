@@ -7,6 +7,7 @@ using LatencyPilot.Benchmarking.Statistics;
 using LatencyPilot.Core.Experiments;
 using LatencyPilot.Core.Metrics;
 using LatencyPilot.Core.Results;
+using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
@@ -24,7 +25,7 @@ public sealed class CriticalPathTests
         EvaluationPercentile: 0.99);
 
     [TestMethod]
-    public void ExperimentLifecycleRejectsIllegalTransitions()
+    public void ExperimentLifecycleAndDurableJournalRejectUnsafeTransitions()
     {
         ExperimentStateMachine.EnsureTransition(
             ExperimentState.Planned,
@@ -32,6 +33,101 @@ public sealed class CriticalPathTests
 
         Assert.ThrowsExactly<InvalidOperationException>(() =>
             ExperimentStateMachine.EnsureTransition(ExperimentState.Planned, ExperimentState.Kept));
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "LatencyPilot.CriticalTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        try
+        {
+            var journal = new MutationJournal(Path.Combine(tempDirectory, "journal.db"));
+            journal.Initialize();
+
+            var firstId = Guid.NewGuid();
+            var prepared = journal.CreatePrepared(
+                firstId,
+                "gpu-interrupt-affinity",
+                "PCI\\VEN_TEST&DEV_TEST",
+                "{\"devicePolicy\":null,\"assignmentSetOverride\":null}",
+                "{\"devicePolicy\":4,\"assignmentSetOverride\":2}",
+                DateTimeOffset.UnixEpoch);
+
+            Assert.AreEqual(MutationJournalState.Prepared, prepared.State);
+            Assert.AreEqual(0L, prepared.Revision);
+            Assert.IsTrue(journal.HasUnresolved());
+
+            Assert.ThrowsExactly<InvalidOperationException>(() =>
+                journal.CreatePrepared(
+                    Guid.NewGuid(),
+                    "gpu-interrupt-affinity",
+                    "PCI\\VEN_OTHER&DEV_OTHER",
+                    "{}",
+                    "{}"));
+
+            var applying = journal.Transition(
+                firstId,
+                prepared.Revision,
+                MutationJournalState.Prepared,
+                MutationJournalState.Applying,
+                nowUtc: DateTimeOffset.UnixEpoch.AddSeconds(1));
+            Assert.AreEqual(MutationJournalState.Applying, applying.State);
+
+            var recovery = journal.Transition(
+                firstId,
+                applying.Revision,
+                MutationJournalState.Applying,
+                MutationJournalState.RecoveryRequired,
+                "simulated interruption",
+                DateTimeOffset.UnixEpoch.AddSeconds(2));
+            Assert.AreEqual(MutationJournalState.RecoveryRequired, recovery.State);
+            Assert.AreEqual("simulated interruption", recovery.FailureReason);
+
+            Assert.ThrowsExactly<InvalidOperationException>(() =>
+                journal.Transition(
+                    firstId,
+                    recovery.Revision,
+                    MutationJournalState.RecoveryRequired,
+                    MutationJournalState.Kept));
+
+            var reverting = journal.Transition(
+                firstId,
+                recovery.Revision,
+                MutationJournalState.RecoveryRequired,
+                MutationJournalState.Reverting,
+                nowUtc: DateTimeOffset.UnixEpoch.AddSeconds(3));
+            var reverted = journal.Transition(
+                firstId,
+                reverting.Revision,
+                MutationJournalState.Reverting,
+                MutationJournalState.Reverted,
+                nowUtc: DateTimeOffset.UnixEpoch.AddSeconds(4));
+
+            Assert.IsTrue(reverted.IsTerminal);
+            Assert.IsFalse(journal.HasUnresolved());
+
+            // Terminal recovery must unblock the next experiment; stale revisions must not.
+            var second = journal.CreatePrepared(
+                Guid.NewGuid(),
+                "gpu-interrupt-affinity",
+                "PCI\\VEN_NEXT&DEV_NEXT",
+                "{}",
+                "{}");
+            Assert.ThrowsExactly<InvalidOperationException>(() =>
+                journal.Transition(
+                    second.ExperimentId,
+                    expectedRevision: 99,
+                    MutationJournalState.Prepared,
+                    MutationJournalState.Applying));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+            catch
+            {
+                // SQLite pooling can briefly retain file handles on some runners. Cleanup is best-effort.
+            }
+        }
     }
 
     [TestMethod]
