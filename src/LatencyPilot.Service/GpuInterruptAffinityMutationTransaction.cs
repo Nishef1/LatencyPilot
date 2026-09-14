@@ -1,5 +1,7 @@
+using LatencyPilot.Core.System;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Platform.Windows.System;
 
 namespace LatencyPilot.Service;
 
@@ -28,6 +30,7 @@ internal sealed class GpuInterruptAffinityMutationTransaction
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
         ArgumentNullException.ThrowIfNull(candidate);
+        ValidateCandidateAgainstCurrentTopology(candidate);
 
         var original = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
         if (GpuInterruptAffinityStateComparer.MatchesCandidate(original, candidate))
@@ -49,6 +52,37 @@ internal sealed class GpuInterruptAffinityMutationTransaction
         var prepared = GetRequiredGpuEntry(experimentId, MutationJournalState.Prepared);
         var original = DeserializeOriginal(prepared);
         var candidate = GpuInterruptAffinityJournalCodec.DeserializeCandidate(prepared.CandidateStateJson);
+
+        try
+        {
+            ValidateCandidateAgainstCurrentTopology(candidate);
+            var current = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
+            if (!GpuInterruptAffinityStateComparer.MatchesOriginal(current, original))
+            {
+                AbortPrepared(
+                    prepared,
+                    "Stored GPU affinity state changed after the exact original snapshot was journaled; apply was not attempted.");
+            }
+
+            if (!string.Equals(current.DriverVersion, original.DriverVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                AbortPrepared(
+                    prepared,
+                    "Display-driver version changed after the mutation snapshot was prepared; apply was not attempted.");
+            }
+        }
+        catch (MutationPreparedAbortException)
+        {
+            throw;
+        }
+        catch (Exception preflightFailure)
+        {
+            AbortPrepared(
+                prepared,
+                $"GPU affinity pre-apply validation failed before any write: {preflightFailure.GetType().Name}: {preflightFailure.Message}",
+                preflightFailure);
+        }
+
         var applying = journal.Transition(
             prepared.ExperimentId,
             prepared.Revision,
@@ -93,7 +127,7 @@ internal sealed class GpuInterruptAffinityMutationTransaction
             GpuInterruptAffinityMutationStepResult rollback;
             try
             {
-                rollback = RollbackFromRecovery(recovery, original);
+                rollback = RollbackFromRecovery(recovery, original, candidate);
             }
             catch (Exception rollbackFailure)
             {
@@ -123,15 +157,18 @@ internal sealed class GpuInterruptAffinityMutationTransaction
     {
         var entry = GetRequiredGpuEntry(experimentId);
         var original = DeserializeOriginal(entry);
+        var candidate = GpuInterruptAffinityJournalCodec.DeserializeCandidate(entry.CandidateStateJson);
 
         return entry.State switch
         {
             MutationJournalState.Applied or
             MutationJournalState.Measuring or
             MutationJournalState.AwaitingDecision =>
-                RollbackFromActive(entry, original),
+                RollbackFromActive(entry, original, candidate),
             MutationJournalState.RecoveryRequired =>
-                RollbackFromRecovery(entry, original),
+                RollbackFromRecovery(entry, original, candidate),
+            MutationJournalState.Reverting =>
+                RestoreFromReverting(entry, original, candidate),
             MutationJournalState.Reverted =>
                 new GpuInterruptAffinityMutationStepResult(entry, null, true),
             _ => throw new InvalidOperationException(
@@ -141,19 +178,21 @@ internal sealed class GpuInterruptAffinityMutationTransaction
 
     private GpuInterruptAffinityMutationStepResult RollbackFromActive(
         MutationJournalEntry entry,
-        GpuInterruptAffinitySnapshot original)
+        GpuInterruptAffinitySnapshot original,
+        GpuInterruptAffinityCandidate candidate)
     {
         var reverting = journal.Transition(
             entry.ExperimentId,
             entry.Revision,
             entry.State,
             MutationJournalState.Reverting);
-        return RestoreFromReverting(reverting, original);
+        return RestoreFromReverting(reverting, original, candidate);
     }
 
     private GpuInterruptAffinityMutationStepResult RollbackFromRecovery(
         MutationJournalEntry recovery,
-        GpuInterruptAffinitySnapshot original)
+        GpuInterruptAffinitySnapshot original,
+        GpuInterruptAffinityCandidate candidate)
     {
         if (recovery.State != MutationJournalState.RecoveryRequired)
         {
@@ -166,16 +205,37 @@ internal sealed class GpuInterruptAffinityMutationTransaction
             recovery.Revision,
             MutationJournalState.RecoveryRequired,
             MutationJournalState.Reverting);
-        return RestoreFromReverting(reverting, original);
+        return RestoreFromReverting(reverting, original, candidate);
     }
 
     private GpuInterruptAffinityMutationStepResult RestoreFromReverting(
         MutationJournalEntry reverting,
-        GpuInterruptAffinitySnapshot original)
+        GpuInterruptAffinitySnapshot original,
+        GpuInterruptAffinityCandidate candidate)
     {
         try
         {
-            GpuInterruptAffinityPolicyStore.Restore(original);
+            var current = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
+            var matchesOriginal = GpuInterruptAffinityStateComparer.MatchesOriginal(current, original);
+            var matchesCandidate = GpuInterruptAffinityStateComparer.MatchesCandidate(current, candidate);
+            if (!matchesOriginal && !matchesCandidate)
+            {
+                var reason =
+                    "Rollback refused to overwrite GPU affinity state because current storage matches neither the journaled original nor the experiment candidate.";
+                var recovery = journal.Transition(
+                    reverting.ExperimentId,
+                    reverting.Revision,
+                    MutationJournalState.Reverting,
+                    MutationJournalState.RecoveryRequired,
+                    reason);
+                return new GpuInterruptAffinityMutationStepResult(recovery, null, false);
+            }
+
+            if (!matchesOriginal)
+            {
+                GpuInterruptAffinityPolicyStore.Restore(original);
+            }
+
             var stored = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
             if (!GpuInterruptAffinityStateComparer.MatchesOriginal(stored, original))
             {
@@ -212,6 +272,21 @@ internal sealed class GpuInterruptAffinityMutationTransaction
                 "GPU affinity rollback failed before a verified active original state was established.",
                 rollbackFailure);
         }
+    }
+
+    private void AbortPrepared(
+        MutationJournalEntry prepared,
+        string reason,
+        Exception? innerException = null)
+    {
+        var boundedReason = BoundFailureReason(reason);
+        _ = journal.Transition(
+            prepared.ExperimentId,
+            prepared.Revision,
+            MutationJournalState.Prepared,
+            MutationJournalState.AbortedBeforeApply,
+            boundedReason);
+        throw new MutationPreparedAbortException(boundedReason, innerException);
     }
 
     private MutationJournalEntry TryMarkRecoveryRequired(
@@ -251,9 +326,8 @@ internal sealed class GpuInterruptAffinityMutationTransaction
         }
         catch
         {
-            // The original rollback exception is more actionable here. Startup
-            // recovery will still inspect the unresolved journal entry and actual
-            // machine state before any future mutation is allowed.
+            // Startup recovery still inspects any unresolved journal entry and
+            // actual machine state before any future mutation is allowed.
         }
     }
 
@@ -291,9 +365,30 @@ internal sealed class GpuInterruptAffinityMutationTransaction
         return original;
     }
 
-    private static string FormatFailure(string operation, Exception exception)
+    private static void ValidateCandidateAgainstCurrentTopology(GpuInterruptAffinityCandidate candidate)
     {
-        var text = $"GPU affinity {operation} failed: {exception.GetType().Name}: {exception.Message}";
-        return text.Length <= 2048 ? text : text[..2048];
+        var topology = ProcessorTopologyReader.Capture();
+        var validated = GpuInterruptAffinityCandidate.Create(
+            topology,
+            new LogicalProcessorId(candidate.ProcessorGroup, candidate.ProcessorNumber));
+        if (validated.AffinityMask != candidate.AffinityMask)
+        {
+            throw new InvalidDataException(
+                "GPU affinity candidate no longer matches current processor topology.");
+        }
+    }
+
+    private static string FormatFailure(string operation, Exception exception) =>
+        BoundFailureReason($"GPU affinity {operation} failed: {exception.GetType().Name}: {exception.Message}");
+
+    private static string BoundFailureReason(string text) =>
+        text.Length <= 2048 ? text : text[..2048];
+
+    private sealed class MutationPreparedAbortException : InvalidOperationException
+    {
+        internal MutationPreparedAbortException(string message, Exception? innerException = null)
+            : base(message, innerException)
+        {
+        }
     }
 }
