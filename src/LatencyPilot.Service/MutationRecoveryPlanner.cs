@@ -52,6 +52,20 @@ internal static class MutationRecoveryPlanner
                 "Actual stored state matches neither the captured original nor the candidate; an external or partial change may have occurred.");
         }
 
+        var preWriteAbort = entry.FailureReason?.StartsWith(
+            GpuInterruptAffinityMutationContract.PreWriteAbortPrefix,
+            StringComparison.Ordinal) == true;
+        if (preWriteAbort)
+        {
+            return storedStateRelation is MutationStoredStateRelation.MatchesOriginal or
+                MutationStoredStateRelation.MatchesOriginalAndCandidate
+                ? new MutationRecoveryPlan(
+                    MutationRecoveryAction.FinalizeVerifiedRollback,
+                    "The transaction recorded that it had not written the candidate and stored state is still the captured original; recovery may verify activation and terminalize without a policy write.")
+                : Manual(
+                    "The transaction recorded that it had not written the candidate, so a candidate-looking or changed state cannot safely be claimed as LatencyPilot-owned.");
+        }
+
         if (entry.State == MutationJournalState.Prepared)
         {
             return storedStateRelation is MutationStoredStateRelation.MatchesOriginal or
