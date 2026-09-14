@@ -42,9 +42,5 @@ jobs:
             ${{ runner.os }}-nuget-tests-
             ${{ runner.os }}-nuget-
 
-      - name: Phase 3 validation harness smoke (temporary)
-        shell: powershell
-        run: .\eng\Phase3PhysicalValidation.Smoke.ps1
-
       - name: Critical tests
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
