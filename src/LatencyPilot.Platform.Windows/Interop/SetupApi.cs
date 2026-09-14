@@ -46,6 +46,54 @@ internal struct SpDevInfoData
     };
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal struct SpClassInstallHeader
+{
+    internal uint Size;
+    internal uint InstallFunction;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct SpPropChangeParams
+{
+    internal SpClassInstallHeader ClassInstallHeader;
+    internal uint StateChange;
+    internal uint Scope;
+    internal uint HardwareProfile;
+
+    internal static SpPropChangeParams CreatePropertyChange() => new()
+    {
+        ClassInstallHeader = new SpClassInstallHeader
+        {
+            Size = checked((uint)Marshal.SizeOf<SpClassInstallHeader>()),
+            InstallFunction = SetupApi.DifPropertyChange,
+        },
+        StateChange = SetupApi.DicsPropertyChange,
+        Scope = SetupApi.DicsFlagGlobal,
+        HardwareProfile = 0,
+    };
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal unsafe struct SpDevInstallParams
+{
+    internal uint Size;
+    internal uint Flags;
+    internal uint FlagsEx;
+    internal nint ParentWindow;
+    internal nint InstallMessageHandler;
+    internal nint InstallMessageHandlerContext;
+    internal nint FileQueue;
+    internal nuint ClassInstallReserved;
+    internal uint Reserved;
+    internal fixed char DriverPath[260];
+
+    internal static SpDevInstallParams Create() => new()
+    {
+        Size = checked((uint)Marshal.SizeOf<SpDevInstallParams>()),
+    };
+}
+
 internal sealed class SafeDeviceInfoSetHandle : SafeHandleMinusOneIsInvalid
 {
     internal SafeDeviceInfoSetHandle(IntPtr handle)
@@ -59,9 +107,14 @@ internal sealed class SafeDeviceInfoSetHandle : SafeHandleMinusOneIsInvalid
 
 internal static partial class SetupApi
 {
+    internal const uint DifPropertyChange = 0x00000012;
+    internal const uint DicsPropertyChange = 0x00000003;
+    internal const uint DicsFlagGlobal = 0x00000001;
+    internal const uint DiNeedRestart = 0x00000080;
+    internal const uint DiNeedReboot = 0x00000100;
+
     private const uint DigcfPresent = 0x00000002;
     private const uint DigcfAllClasses = 0x00000004;
-    private const uint DicsFlagGlobal = 0x00000001;
     private const uint DiregDev = 0x00000001;
     private const uint KeyRead = 0x00020019;
     private static readonly IntPtr InvalidHandleValue = new(-1);
@@ -123,6 +176,15 @@ internal static partial class SetupApi
         uint memberIndex,
         ref SpDevInfoData deviceInfoData);
 
+    [LibraryImport("setupapi.dll", EntryPoint = "SetupDiOpenDeviceInfoW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetupDiOpenDeviceInfo(
+        SafeDeviceInfoSetHandle deviceInfoSet,
+        string deviceInstanceId,
+        IntPtr parentWindow,
+        uint openFlags,
+        ref SpDevInfoData deviceInfoData);
+
     [LibraryImport("setupapi.dll", EntryPoint = "SetupDiGetDeviceInstanceIdW", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static unsafe partial bool SetupDiGetDeviceInstanceId(
@@ -154,6 +216,28 @@ internal static partial class SetupApi
         uint propertyBufferSize,
         out uint requiredSize,
         uint flags);
+
+    [LibraryImport("setupapi.dll", EntryPoint = "SetupDiSetClassInstallParamsW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetupDiSetClassInstallParams(
+        SafeDeviceInfoSetHandle deviceInfoSet,
+        ref SpDevInfoData deviceInfoData,
+        ref SpClassInstallHeader classInstallParams,
+        uint classInstallParamsSize);
+
+    [LibraryImport("setupapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetupDiCallClassInstaller(
+        uint installFunction,
+        SafeDeviceInfoSetHandle deviceInfoSet,
+        ref SpDevInfoData deviceInfoData);
+
+    [LibraryImport("setupapi.dll", EntryPoint = "SetupDiGetDeviceInstallParamsW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetupDiGetDeviceInstallParams(
+        SafeDeviceInfoSetHandle deviceInfoSet,
+        ref SpDevInfoData deviceInfoData,
+        ref SpDevInstallParams deviceInstallParams);
 
     [LibraryImport("setupapi.dll", SetLastError = true)]
     private static partial IntPtr SetupDiOpenDevRegKey(
