@@ -1,5 +1,8 @@
+using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
+using LatencyPilot.Core.Observation;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Service;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -78,5 +81,115 @@ public sealed class NetworkRssTests
         Assert.AreEqual(
             NetworkRssPnpCorrelationStatus.MissingIdentity,
             NetworkRssPnpCorrelator.Resolve(missing.InterfaceDescription, []).Status);
+
+        var observations = Enumerable.Range(0, 25)
+            .Select(index => new NetworkProbeObservation(
+                index * 10d,
+                true,
+                1d + ((index % 5) * 0.1d),
+                940d + (index % 3),
+                5d + (index % 2)))
+            .ToArray();
+        var benchmark = LocalNetworkBenchmark.Analyze(NetworkBenchmarkScope.LocalAuthoritative, observations);
+        Assert.AreEqual(NetworkBenchmarkStatus.Available, benchmark.Status);
+        Assert.IsTrue(benchmark.IsAuthoritative);
+        Assert.AreEqual(0d, benchmark.LossRatio, 0.000001);
+        Assert.AreEqual(25, benchmark.Metrics[NetworkBenchmarkMetricNames.RoundTripTime].Samples.Count);
+        Assert.AreEqual(24, benchmark.Metrics[NetworkBenchmarkMetricNames.Jitter].Samples.Count);
+        Assert.AreEqual(25, benchmark.Metrics[NetworkBenchmarkMetricNames.LossIndicator].Samples.Count);
+        Assert.AreEqual(25, benchmark.Metrics[NetworkBenchmarkMetricNames.Throughput].Samples.Count);
+        Assert.AreEqual(25, benchmark.Metrics[NetworkBenchmarkMetricNames.CpuUtilization].Samples.Count);
+
+        var withLoss = observations.ToArray();
+        withLoss[12] = withLoss[12] with { Success = false, RoundTripMilliseconds = null };
+        var lossResult = LocalNetworkBenchmark.Analyze(NetworkBenchmarkScope.LocalAuthoritative, withLoss);
+        Assert.AreEqual(NetworkBenchmarkStatus.Available, lossResult.Status);
+        Assert.AreEqual(1d / 25d, lossResult.LossRatio, 0.000001);
+        Assert.AreEqual(24, lossResult.Metrics[NetworkBenchmarkMetricNames.RoundTripTime].Samples.Count);
+        Assert.ThrowsExactly<ArgumentException>(() => LocalNetworkBenchmark.Analyze(
+            NetworkBenchmarkScope.LocalAuthoritative,
+            withLoss.Select((item, index) => index == 12 ? item with { RoundTripMilliseconds = 0d } : item).ToArray()));
+
+        var supplemental = LocalNetworkBenchmark.Analyze(NetworkBenchmarkScope.InternetSupplemental, observations);
+        Assert.AreEqual(NetworkBenchmarkStatus.SupplementalOnly, supplemental.Status);
+        Assert.IsFalse(supplemental.IsAuthoritative);
+        Assert.AreEqual(
+            NetworkBenchmarkStatus.InsufficientSamples,
+            LocalNetworkBenchmark.Analyze(NetworkBenchmarkScope.LocalAuthoritative, observations.Take(10).ToArray()).Status);
+
+        var adapter = new PnPDeviceSnapshot(
+            "PCI\\VEN_TEST&DEV_NIC",
+            Guid.NewGuid(),
+            "Test 10GbE Adapter",
+            "Test Vendor",
+            "PCI",
+            "e2fexpress",
+            new DriverMetadataSnapshot("1.0", "Test Vendor", "e2fexpress.inf"),
+            InterruptConfigurationSnapshot.Available(null, null, null, null),
+            InterruptResourceSnapshot.Available([]));
+        var capture = new KernelLatencyCaptureResult(
+            DateTimeOffset.UnixEpoch,
+            TimeSpan.FromSeconds(20),
+            TimeSpan.FromSeconds(20),
+            [
+                new KernelLatencyEvent(KernelLatencyEventKind.Dpc, 2, 1, 30, 0x1000, null, null, "C:\\Windows\\System32\\drivers\\e2fexpress.sys"),
+                new KernelLatencyEvent(KernelLatencyEventKind.Isr, 2, 2, 6, 0x1001, 44, 0, "C:\\Windows\\System32\\drivers\\E2FEXPRESS.SYS"),
+                new KernelLatencyEvent(KernelLatencyEventKind.Dpc, 4, 3, 12, 0x2000, null, null, "C:\\Windows\\System32\\drivers\\ndis.sys"),
+            ],
+            0,
+            0,
+            0,
+            false);
+        var attribution = NetworkInterruptAttribution.Analyze(capture, adapter);
+        Assert.AreEqual(1, attribution.MatchingDpcEventCount);
+        Assert.AreEqual(1, attribution.MatchingIsrEventCount);
+        Assert.AreEqual(1, attribution.GenericNdisEventCount);
+        Assert.IsTrue(attribution.HasTargetEvidence);
+
+        var rss = mapped with
+        {
+            PnpCorrelation = new NetworkRssPnpCorrelation(
+                NetworkRssPnpCorrelationStatus.Available,
+                adapter.InstanceId,
+                null),
+        };
+        var ready = NetworkOptimizationReadiness.Evaluate(rss, adapter, benchmark, attribution);
+        Assert.AreEqual(NetworkOptimizationReadinessStatus.Ready, ready.Status);
+        Assert.AreEqual(adapter.InstanceId, ready.AdapterInstanceId);
+        Assert.IsTrue(ready.TargetMetrics.ContainsKey(NetworkBenchmarkMetricNames.RoundTripTime));
+        Assert.IsTrue(ready.TargetMetrics.ContainsKey(NetworkBenchmarkMetricNames.Jitter));
+        CollectionAssert.Contains(ready.RequiredGuardrails.ToList(), NetworkBenchmarkMetricNames.LossIndicator);
+        CollectionAssert.Contains(ready.RequiredGuardrails.ToList(), NetworkBenchmarkMetricNames.Throughput);
+        CollectionAssert.Contains(ready.RequiredGuardrails.ToList(), NetworkBenchmarkMetricNames.CpuUtilization);
+
+        Assert.AreEqual(
+            NetworkOptimizationReadinessStatus.NotReady,
+            NetworkOptimizationReadiness.Evaluate(
+                rss with
+                {
+                    PnpCorrelation = new NetworkRssPnpCorrelation(
+                        NetworkRssPnpCorrelationStatus.Available,
+                        "PCI\\VEN_OTHER",
+                        null),
+                },
+                adapter,
+                benchmark,
+                attribution).Status);
+        Assert.AreEqual(
+            NetworkOptimizationReadinessStatus.Inconclusive,
+            NetworkOptimizationReadiness.Evaluate(rss, adapter, supplemental, attribution).Status);
+        Assert.AreEqual(
+            NetworkOptimizationReadinessStatus.Inconclusive,
+            NetworkOptimizationReadiness.Evaluate(
+                rss,
+                adapter,
+                benchmark,
+                attribution with
+                {
+                    MatchingDpcEventCount = 0,
+                    MatchingIsrEventCount = 0,
+                    DpcDurationsMicroseconds = [],
+                    IsrDurationsMicroseconds = [],
+                }).Status);
     }
 }
