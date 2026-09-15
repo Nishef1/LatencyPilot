@@ -1,6 +1,10 @@
 [CmdletBinding()]
 param(
-    [string]$Version
+    [string]$Version,
+    [switch]$FinalRelease,
+    [switch]$RequireSigning,
+    [string]$SigningCertificateThumbprint = $env:LATENCYPILOT_SIGNING_CERT_SHA1,
+    [string]$TimestampUrl = $env:LATENCYPILOT_TIMESTAMP_URL
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,6 +41,72 @@ function Resolve-InnoSetupCompiler {
     }
 
     return $command.Source
+}
+
+function Resolve-SignTool {
+    $command = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($null -ne $command) {
+        return $command.Source
+    }
+
+    $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+    if (Test-Path -LiteralPath $kitsRoot -PathType Container) {
+        $candidate = Get-ChildItem -LiteralPath $kitsRoot -Directory |
+            Sort-Object Name -Descending |
+            ForEach-Object { Join-Path $_.FullName 'x64\signtool.exe' } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Select-Object -First 1
+        if ($null -ne $candidate) {
+            return $candidate
+        }
+    }
+
+    throw 'SignTool.exe was not found. Install a current Windows SDK before publishing a signed release.'
+}
+
+function Invoke-AuthenticodeSign {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SignTool,
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string]$CertificateThumbprint,
+        [Parameter(Mandatory)]
+        [string]$Rfc3161TimestampUrl
+    )
+
+    Invoke-Native -FilePath $SignTool -ArgumentList @(
+        'sign',
+        '/sha1', $CertificateThumbprint,
+        '/fd', 'SHA256',
+        '/tr', $Rfc3161TimestampUrl,
+        '/td', 'SHA256',
+        $Path
+    )
+    Invoke-Native -FilePath $SignTool -ArgumentList @('verify', '/pa', '/all', $Path)
+}
+
+function Write-PayloadManifest {
+    param(
+        [Parameter(Mandatory)]
+        [string]$PayloadRoot
+    )
+
+    $manifest = Join-Path $PayloadRoot 'PAYLOAD_SHA256.txt'
+    $root = [System.IO.Path]::GetFullPath($PayloadRoot).TrimEnd('\')
+    $entries = Get-ChildItem -LiteralPath $root -File -Recurse |
+        Where-Object { -not [string]::Equals($_.FullName, $manifest, [StringComparison]::OrdinalIgnoreCase) } |
+        ForEach-Object {
+            $relative = $_.FullName.Substring($root.Length + 1).Replace('\', '/')
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            [PSCustomObject]@{ Relative = $relative; Hash = $hash }
+        } |
+        Sort-Object Relative
+
+    $lines = @('# LatencyPilot payload SHA-256 manifest')
+    $lines += $entries | ForEach-Object { "$($_.Hash)  $($_.Relative)" }
+    [System.IO.File]::WriteAllLines($manifest, $lines, [System.Text.UTF8Encoding]::new($false))
 }
 
 function Assert-PublishedAppStarts {
@@ -99,6 +169,28 @@ function Assert-PublishedAppStarts {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         }
     }
+}
+
+$signingEnabled = -not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint) -or
+    -not [string]::IsNullOrWhiteSpace($TimestampUrl)
+if ($signingEnabled -and
+    ([string]::IsNullOrWhiteSpace($SigningCertificateThumbprint) -or
+     [string]::IsNullOrWhiteSpace($TimestampUrl))) {
+    throw 'Signing configuration is incomplete. Set both LATENCYPILOT_SIGNING_CERT_SHA1 and LATENCYPILOT_TIMESTAMP_URL, or neither.'
+}
+if (($RequireSigning -or $FinalRelease) -and -not $signingEnabled) {
+    throw 'This release requires Authenticode signing. Configure a code-signing certificate thumbprint and RFC 3161 timestamp URL.'
+}
+
+$signTool = $null
+if ($signingEnabled) {
+    if ($SigningCertificateThumbprint -notmatch '^[0-9A-Fa-f]{40}$') {
+        throw 'SigningCertificateThumbprint must be an exact 40-character SHA-1 certificate thumbprint.'
+    }
+    if (-not [Uri]::IsWellFormedUriString($TimestampUrl, [UriKind]::Absolute)) {
+        throw 'TimestampUrl must be an absolute RFC 3161 timestamp service URL.'
+    }
+    $signTool = Resolve-SignTool
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -215,6 +307,16 @@ try {
         throw 'LatencyPilot.pri is missing or empty in the WinUI publish output.'
     }
 
+    if ($signingEnabled) {
+        Get-ChildItem -LiteralPath $appOutput -File -Recurse |
+            Where-Object { $_.Name -like 'LatencyPilot*.exe' -or $_.Name -like 'LatencyPilot*.dll' } |
+            Sort-Object FullName |
+            ForEach-Object {
+                Invoke-AuthenticodeSign -SignTool $signTool -Path $_.FullName `
+                    -CertificateThumbprint $SigningCertificateThumbprint -Rfc3161TimestampUrl $TimestampUrl
+            }
+    }
+
     Assert-PublishedAppStarts -AppOutput $appOutput
 
     Invoke-Native -FilePath 'dotnet' -ArgumentList @(
@@ -229,23 +331,42 @@ try {
         '-p:PublishReadyToRun=false'
     )
 
+    if ($signingEnabled) {
+        Get-ChildItem -LiteralPath $serviceOutput -File -Recurse |
+            Where-Object { $_.Name -like 'LatencyPilot*.exe' -or $_.Name -like 'LatencyPilot*.dll' } |
+            Sort-Object FullName |
+            ForEach-Object {
+                Invoke-AuthenticodeSign -SignTool $signTool -Path $_.FullName `
+                    -CertificateThumbprint $SigningCertificateThumbprint -Rfc3161TimestampUrl $TimestampUrl
+            }
+    }
+
     Copy-Item scripts/Install-Service.ps1 (Join-Path $payloadRoot 'Install-Service.ps1')
     Copy-Item scripts/Uninstall-Service.ps1 (Join-Path $payloadRoot 'Uninstall-Service.ps1')
+    Copy-Item scripts/Export-Diagnostics.ps1 (Join-Path $payloadRoot 'Export-Diagnostics.ps1')
     Copy-Item docs/PHYSICAL_VALIDATION.md (Join-Path $payloadRoot 'PHYSICAL_VALIDATION.md')
     Copy-Item docs/PORTABLE.md (Join-Path $payloadRoot 'PORTABLE.md')
     Copy-Item docs/DIAGNOSTICS.md (Join-Path $payloadRoot 'DIAGNOSTICS.md')
     Copy-Item README.md (Join-Path $payloadRoot 'README.md')
     Copy-Item LICENSE (Join-Path $payloadRoot 'LICENSE')
     Set-Content -LiteralPath (Join-Path $payloadRoot 'VERSION.txt') -Value $Version -NoNewline
+
+    $signingMode = if ($signingEnabled) { 'authenticode-sha256-rfc3161' } else { 'unsigned-prerelease' }
+    $releaseChannel = if ($FinalRelease) { 'final' } else { 'prerelease' }
     @(
         "version=$Version"
         "release_revision=$revision"
         "commit=$commit"
         "tests_workflow_run=$($greenTestRun.databaseId)"
+        "release_channel=$releaseChannel"
+        "signing=$signingMode"
+        'payload_manifest=PAYLOAD_SHA256.txt'
         'build_mode=owner-local'
         'deployment=self-contained-offline'
         'app_launch_smoke=passed'
     ) | Set-Content -LiteralPath (Join-Path $payloadRoot 'BUILD_INFO.txt')
+
+    Write-PayloadManifest -PayloadRoot $payloadRoot
 
     $env:LATENCYPILOT_VERSION = $Version
     $iscc = Resolve-InnoSetupCompiler
@@ -255,6 +376,11 @@ try {
     if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) {
         throw "Setup output was not created: $setup"
     }
+    if ($signingEnabled) {
+        Invoke-AuthenticodeSign -SignTool $signTool -Path $setup `
+            -CertificateThumbprint $SigningCertificateThumbprint -Rfc3161TimestampUrl $TimestampUrl
+    }
+
     $setupHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $setup).Hash.ToLowerInvariant()
     $setupChecksum = "$setup.sha256"
     Set-Content -LiteralPath $setupChecksum -Value "$setupHash  $(Split-Path $setup -Leaf)" -NoNewline
@@ -271,23 +397,27 @@ try {
     $portableChecksum = "$portable.sha256"
     Set-Content -LiteralPath $portableChecksum -Value "$portableHash  $(Split-Path $portable -Leaf)" -NoNewline
 
-    Invoke-Native -FilePath 'gh' -ArgumentList @(
+    $releaseArguments = @(
         'release', 'create', $tag,
         $setup,
         $setupChecksum,
         $portable,
         $portableChecksum,
         '--target', $commit,
-        '--title', "LatencyPilot $Version",
-        '--prerelease',
-        '--latest=false',
-        '--generate-notes'
+        '--title', "LatencyPilot $Version"
     )
+    if (-not $FinalRelease) {
+        $releaseArguments += @('--prerelease', '--latest=false')
+    }
+    $releaseArguments += '--generate-notes'
+    Invoke-Native -FilePath 'gh' -ArgumentList $releaseArguments
 
     Write-Host ''
     Write-Host "Published $tag from $commit."
-    Write-Host "Setup SHA-256:    $setupHash"
-    Write-Host "Portable SHA-256: $portableHash"
+    Write-Host "Release channel:      $releaseChannel"
+    Write-Host "Signing:              $signingMode"
+    Write-Host "Setup SHA-256:        $setupHash"
+    Write-Host "Portable SHA-256:     $portableHash"
 }
 finally {
     Pop-Location
