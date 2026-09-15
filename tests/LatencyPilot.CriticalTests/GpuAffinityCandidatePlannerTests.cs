@@ -248,12 +248,21 @@ public sealed class GpuAffinityCandidatePlannerTests
                 1_000,
                 10))
             .ToArray());
+        var workloadStability = WorkloadStabilityAnalyzer.Analyze(Enumerable.Range(1, 5)
+            .Select(number => new WorkloadWindowEvidence(
+                number,
+                20_000,
+                1_000,
+                1_000,
+                null))
+            .ToArray());
         var baseline = new GpuOptimizationBaselineEvidence(
             quality,
             Guid.NewGuid(),
             "scene-v1",
             "environment-v1",
-            new string('a', 40));
+            new string('a', 40),
+            workloadStability);
         var policy = new ComparisonPolicy(
             MinimumSamples: 20,
             MinimumRelativeChange: 0.03,
