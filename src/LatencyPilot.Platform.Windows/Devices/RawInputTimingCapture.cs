@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Platform.Windows.Interop;
+using LatencyPilot.Platform.Windows.System;
 
 namespace LatencyPilot.Platform.Windows.Devices;
 
@@ -123,6 +124,14 @@ public static class RawInputTimingCapture
         nint changedDeviceHandle) =>
         changeCode == DeviceRemovalChangeCode && changedDeviceHandle == selectedDeviceHandle;
 
+    internal static bool IsAwakeIntervalUsable(
+        SystemAwakeTimeSnapshot before,
+        SystemAwakeTimeSnapshot after)
+    {
+        var interval = SystemAwakeTimeReader.Evaluate(before, after);
+        return interval.IsValid && !interval.SleepOrSuspendDetected;
+    }
+
     private static void CaptureThread(
         RawInputDeviceSnapshot device,
         ushort usagePage,
@@ -137,6 +146,7 @@ public static class RawInputTimingCapture
         var registered = false;
         var startedAtUtc = default(DateTimeOffset?);
         var startTimestamp = 0L;
+        SystemAwakeTimeSnapshot? awakeStarted = null;
         CaptureSession? session = null;
         RawInputTimingCaptureResult? finalResult = null;
 
@@ -199,6 +209,7 @@ public static class RawInputTimingCapture
             RegisterTopLevelCollection(usagePage, usage, window, remove: false);
             registered = true;
             startedAtUtc = DateTimeOffset.UtcNow;
+            awakeStarted = SystemAwakeTimeReader.Capture();
             startTimestamp = Stopwatch.GetTimestamp();
             ready.TrySetResult(window);
 
@@ -220,9 +231,24 @@ public static class RawInputTimingCapture
             }
 
             var endTimestamp = Stopwatch.GetTimestamp();
+            var awakeEnded = SystemAwakeTimeReader.Capture();
             var actualDurationMilliseconds = startTimestamp == 0
                 ? 0d
                 : (endTimestamp - startTimestamp) * 1_000d / Stopwatch.Frequency;
+
+            var awakeInterval = SystemAwakeTimeReader.Evaluate(awakeStarted, awakeEnded);
+            if (!awakeInterval.IsValid || awakeInterval.SleepOrSuspendDetected)
+            {
+                finalResult = new RawInputTimingCaptureResult(
+                    RawInputTimingCaptureStatus.ReadFailed,
+                    null,
+                    durationMilliseconds,
+                    actualDurationMilliseconds,
+                    session.ReportLimitReached,
+                    startedAtUtc,
+                    awakeInterval.Reason ?? "The system sleep/awake interval is not usable for Raw Input timing.");
+                return;
+            }
 
             if (session.DeviceRemoved)
             {
