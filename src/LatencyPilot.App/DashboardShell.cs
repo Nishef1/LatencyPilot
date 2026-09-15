@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace LatencyPilot.App;
@@ -28,6 +29,7 @@ public sealed partial class MainWindow
 
         UpdateAppearanceMenu();
         RootGrid.SizeChanged += (_, _) => ApplyDashboardLayout();
+        RootGrid.Loaded += (_, _) => ApplyDesktopAcrylicBackdrop();
         AppNavigationView.SelectedItem = OverviewNavItem;
         ShowDashboardView("overview");
 
@@ -45,6 +47,21 @@ public sealed partial class MainWindow
         }
 
         ApplyDashboardLayout();
+    }
+
+    private void ApplyDesktopAcrylicBackdrop()
+    {
+        try
+        {
+            if (SystemBackdrop is not DesktopAcrylicBackdrop)
+            {
+                SystemBackdrop = new DesktopAcrylicBackdrop();
+            }
+        }
+        catch (Exception exception)
+        {
+            Logger.Warning(exception, "Desktop Acrylic backdrop could not be enabled; continuing with the semantic surface fallback.");
+        }
     }
 
     private void AppNavigationView_SelectionChanged(
