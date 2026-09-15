@@ -4,82 +4,144 @@ Status: canonical visual single source of truth (SSOT) for the WinUI app.
 
 ## Purpose
 
-LatencyPilot should look like a calm, premium, native Windows 11 performance tool rather than a generic dashboard or a gaming tweak utility. Visual changes must be made through the design system before individual screens are edited.
+LatencyPilot should look like a calm, premium, native Windows 11 performance tool rather than a generic dashboard or a gaming tweak utility. Visual polish must never make the evidence or safety model less truthful.
 
 ## Canonical resources
 
-- `src/LatencyPilot.App/Design/DesignTokens.xaml` — semantic colors, chart palette, spacing, type scale, radii, dimensions, shell widths, and page/card padding.
-- `src/LatencyPilot.App/Design/ComponentStyles.xaml` — reusable text, navigation, card, chart-card, metric, button, pill, and list recipes.
-- `src/LatencyPilot.App/App.xaml` — composition only. It loads WinUI resources and the two LatencyPilot dictionaries; it must not become another token store.
+- `src/LatencyPilot.App/Design/DesignTokens.xaml` — semantic colors, chart palette, spacing, type scale, radii, dimensions, and shared padding.
+- `src/LatencyPilot.App/Design/ComponentStyles.xaml` — reusable text, card, chart, metric, button, pill, and list recipes.
+- `src/LatencyPilot.App/MainWindow.xaml` — Acrylic-backed application shell, native `NavigationView`, and the four product views.
+- `src/LatencyPilot.App/DashboardShell.cs` — view routing, adaptive card reflow, appearance and shell coordination. It does not own measurement rules.
+- `src/LatencyPilot.App/App.xaml` — resource composition only.
 - `src/LatencyPilot.App/Controls/*Chart.cs` — focused native WinUI visualizations. They render display models only and never call ETW/service/persistence directly.
 
 ## Rules
 
-1. Do not hard-code product colors in screens. Add or reuse a semantic brush in `DesignTokens.xaml`.
-2. Do not invent one-off card radii, page padding, control heights, shell widths, or shared spacing when a token already represents the intent.
-3. Reusable visual recipes belong in `ComponentStyles.xaml`, not copied across screens.
-4. Light, Dark, and High Contrast variants for a semantic color use the same resource key.
-5. Semantic status colors mean something: accent = action/selection, success = verified/healthy, warning = caution/inconclusive, impact = elevated concern, danger = failure/severe signal. Do not use status colors decoratively.
-6. Keep surfaces quiet. Prefer hierarchy, charts, spacing, and typography over gradients, excessive shadows, nested cards, or prose walls.
-7. Dynamic C# UI must consume semantic resource keys (for example through the existing `ThemeBrush`/dashboard theme-resource paths) rather than introduce literal colors.
-8. New screens should preserve Windows text scaling, keyboard access, AutomationProperties, High Contrast, and adaptive layout behavior.
-9. Product safety state is information, not decoration. Observation-only/mutation-disabled claims must reflect the real service/protocol state and must never be changed only to improve appearance.
-10. A successful build is not visual approval. Material UI changes require a real Windows render review at the target window sizes.
-11. Charts must visualize evidence the current protocol actually provides. Never synthesize a continuous timeline, heatmap time bucket, performance delta, or health verdict merely to match a mockup.
-12. Missing evidence renders an intentional empty state. Placeholder data that could be mistaken for a real measurement is prohibited.
+1. Do not hard-code product colors in screens when a semantic design token can represent the intent.
+2. Do not invent one-off radii, shared spacing, control heights or page padding when the design system already owns that value.
+3. Reusable visual recipes belong in `ComponentStyles.xaml`, not copied across views.
+4. Light, Dark and High Contrast variants for a semantic color use the same resource key.
+5. Semantic status colors mean something: accent = action/selection, success = verified/healthy, warning = caution/inconclusive/not-ready, impact = elevated concern, danger = failure/severe signal. Never use them merely as decoration.
+6. Keep surfaces quiet. Prefer hierarchy, whitespace, charts and typography over nested cards, decorative gradients, excessive shadows or prose walls.
+7. Dynamic C# UI consumes semantic resource keys through the existing theme-resource paths instead of introducing literal product colors.
+8. Preserve Windows text scaling, keyboard access, AutomationProperties, High Contrast and adaptive behavior.
+9. Product safety state is information, not decoration. Observation-only/mutation-disabled claims must reflect the real service/protocol state.
+10. Build success is not visual approval. Material UI changes require a real Windows render review at target window sizes and themes.
+11. Charts visualize evidence the current protocol actually provides. Never synthesize a continuous timeline, time-bucket heatmap, performance delta or health score merely to match a mockup.
+12. Missing evidence renders an intentional empty state. Placeholder values that could be mistaken for real measurements are prohibited.
+13. Comparison quality and optimizer readiness are separate truths. A valid baseline may still be not ready for an optimization experiment.
+
+## Shell and material
+
+The active shell is native WinUI 3:
+
+- `DesktopAcrylicBackdrop` is the window-level material.
+- The root content is transparent so the system backdrop can remain visible.
+- A compact custom title bar carries product identity and the real observation-only state.
+- A native `NavigationView` owns adaptive primary navigation.
+- Content cards use semantic surfaces and borders so the application remains readable when Windows transparency is disabled.
+- Acrylic is environmental material, not a blur effect applied independently to every card.
+
+High Contrast never depends on translucency and continues to use Windows system colors.
+
+## Information architecture
+
+There are four primary destinations:
+
+1. **Overview** — current latency evidence, baseline/readiness summary, charts, and the next meaningful action.
+2. **Measure** — quick snapshot and five-window baseline preparation/capture.
+3. **Devices** — Graphics, Network/RSS, and USB/xHCI read-only evidence.
+4. **Evidence** — exact distributions, attribution, baseline windows, measurement context, and export/provenance.
+
+Baseline is a measurement workflow, not a fifth top-level destination. Appearance lives in the navigation footer rather than competing with product destinations.
+
+The old custom button rail and scroll-to-section navigation are not part of the current design. Navigation selection always corresponds to the visible view.
+
+## Iconography
+
+Routine product icons use WinUI controls:
+
+- prefer `SymbolIcon` when the `Symbol` enum communicates the action,
+- otherwise use `FontIcon` with `SymbolThemeFontFamily`, which maps to Segoe Fluent Icons on Windows 11,
+- custom geometry is reserved for LatencyPilot-specific product/latency identity where a standard Fluent icon does not express the concept.
+
+Optical targets:
+
+- navigation: 16–18 px,
+- compact actions: 14–16 px,
+- section/status icons: 18–20 px,
+- metric/hero icons: 20–24 px.
+
+Ambiguous or safety-relevant actions keep visible text; color or icon alone is never the only meaning.
 
 ## Truthful chart contract
 
-The premium dashboard uses four native visual components:
+The Overview uses four native visual components:
 
 - `LatencyProfileChart` — latest real DPC/ISR percentile shape (`p50`, `p95`, `p99`, `p99.9`, `max`), or the five real baseline-window p99 values after a repeated baseline.
 - `CpuDistributionChart` — each logical processor's real share of observed DPC + ISR events.
 - `ModuleContributionChart` — real attributed module duration normalized against total attributed kernel time.
 - `CpuInterruptMap` — DPC share and ISR share for the busiest observed processors. It is heatmap-like visually but does **not** invent time buckets.
 
-If future protocol versions add timestamped event buckets, a true time-series/temporal heatmap may replace these views only after that evidence is available end-to-end.
+If a future protocol adds timestamped event buckets, a temporal chart may use them only after that evidence exists end-to-end.
 
-## Current visual direction
+## Overview hierarchy
 
-- Native Windows 11 / Fluent foundation.
-- Mica-backed window chrome with a compact custom title area.
-- Light-first appearance with dark and High Contrast parity.
-- Blue interaction accent with indigo/blue chart semantics; semantic green/amber/orange/red only when warranted.
-- Flat translucent surfaces, subtle borders, and very limited elevation.
-- Chart-first evidence: visual pattern first, exact values available through progressive disclosure.
-- Compact left section navigation with a real dashboard canvas rather than a long engineering document.
-- Primary flow: system readiness -> quick snapshot or repeated baseline -> visual evidence -> exact evidence/export.
+The default consumer view prioritizes:
 
-## Main workspace hierarchy
+1. measurement availability and capture actions,
+2. DPC p99, ISR p99, CPU concentration, and baseline/readiness state,
+3. latency profile and CPU distribution,
+4. module contribution and CPU interrupt map,
+5. compact machine context.
 
-The observation dashboard intentionally prioritizes:
+Exact counts, p99.9/max detail, long quality explanations, provenance and baseline windows live in Evidence. Baseline preparation belongs in Measure. Detailed device/provider state belongs in Devices.
 
-1. current latency health evidence and primary actions,
-2. DPC/ISR p99, CPU concentration, and last-baseline state,
-3. latency profile, CPU distribution, module contribution, and CPU interrupt-map visuals,
-4. compact machine/device context,
-5. baseline preparation and recent snapshot state,
-6. exact counts, attribution detail, quality explanations, and baseline-window tables behind progressive disclosure.
+Phase names, mutation implementation details and engineering gate terminology remain in status/engineering documentation unless they materially affect a user decision.
 
-Phase names, internal gate terminology, mutation implementation details, and long methodology explanations belong in engineering/status documentation or tooltips unless they materially affect a user decision.
+## Surface hierarchy
 
-## Shared dashboard keys
+Use three visual levels at most:
 
-Use these instead of screen-local substitutes:
+1. system Acrylic shell,
+2. semantic page/section surface,
+3. metric/action tile where grouping genuinely helps.
 
-- dimensions: `NavigationRailWidth`, `ContextPanelWidth`, `ContentMaxWidth`, `ChartMinHeight`, `DashboardGap`;
+Prefer whitespace and dividers before adding another rounded rectangle. Bounded top-N evidence lists rely on the page scroll rather than nested scrolling regions.
+
+## Shared keys
+
+Continue using the semantic resources in `DesignTokens.xaml` rather than screen-local substitutes. Important active keys include:
+
+- layout: `ContentMaxWidth`, `DashboardGap`, `PagePadding`, `ChartMinHeight`;
+- surfaces: `PremiumSurfaceBrush`, `SurfaceAltBrush`, `SurfaceStrongBrush`, `BorderBrush`, `DividerBrush`;
 - chart brushes: `ChartGridBrush`, `ChartAccentPrimaryBrush`, `ChartAccentSecondaryBrush`, `ChartAccentTertiaryBrush`, `ChartWarmBrush`, `ChartCellBrush`;
-- navigation brushes: `NavigationBrush`, `NavigationSelectedBrush`, `NavigationIconBrush`;
-- recipes: `DashboardCardStyle`, `ChartCardStyle`, `DashboardMetricStyle`, `IconTileStyle`, `NavigationRailStyle`, `NavigationItemStyle`, `NavigationItemSelectedStyle`.
+- status brushes: `SuccessBrush`, `WarningBrush`, `ImpactBrush`, `DangerBrush` and their soft counterparts;
+- recipes: `DashboardCardStyle`, `ChartCardStyle`, `DashboardMetricStyle`, `MetricTileStyle`, `IconTileStyle`, `PrimaryButtonStyle`, `SecondaryButtonStyle`, `QuietButtonStyle`, `PillBorderStyle`.
+
+Legacy rail-specific resources may remain only while another consumer still exists; remove them once code search and hosted compile proof confirm they are dead.
+
+## Responsive behavior
+
+`NavigationView` owns expanded/compact/overlay navigation behavior. Product grids may reflow their cards, but should not implement a second competing navigation breakpoint system.
+
+Desktop intent:
+
+- wide: expanded navigation plus multi-column cards/charts,
+- medium: compact navigation plus one/two-column content,
+- narrow: overlay/compact navigation and stacked content.
+
+No visible control should be parked in a zero-width column as a substitute for responsive layout.
 
 ## Change checklist
 
-Before adding a new literal visual value, ask:
+Before adding or changing visual behavior, ask:
 
-- Is this a semantic token already?
-- Will another screen need the same value?
-- Does it require Light/Dark/High Contrast variants?
-- Is it a reusable component recipe rather than a screen-specific layout choice?
-- Does the visualization directly map to evidence we actually collect?
+- Is this a semantic token or reusable component recipe?
+- Does it preserve Light/Dark/High Contrast and transparency-disabled readability?
+- Does a Fluent system icon already communicate this action?
+- Does the visualization map directly to evidence we collect?
+- Is this information important enough for Overview, or should it live in Measure/Devices/Evidence?
+- Does the change preserve measurement/safety semantics?
 
-If any answer points to reuse, update the SSOT first and consume the resource from the screen. If the evidence does not exist, change the visual rather than fabricate the data.
+If evidence does not exist, change the visual rather than fabricate the data.
