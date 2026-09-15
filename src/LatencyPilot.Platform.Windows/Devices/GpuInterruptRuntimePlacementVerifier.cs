@@ -33,6 +33,20 @@ public static class GpuInterruptRuntimePlacementVerifier
 {
     private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
 
+    public static bool ConfirmsGateAPlacement(
+        bool storedCandidateBefore,
+        bool storedCandidateAfter,
+        bool captureIsValid,
+        GpuInterruptRuntimePlacementEvidence runtimePlacement)
+    {
+        ArgumentNullException.ThrowIfNull(runtimePlacement);
+
+        return storedCandidateBefore &&
+               storedCandidateAfter &&
+               captureIsValid &&
+               runtimePlacement.ConfirmsRequestedPlacement;
+    }
+
     public static GpuInterruptRuntimePlacementEvidence Analyze(
         KernelLatencyCaptureResult capture,
         string deviceInstanceId,
