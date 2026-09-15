@@ -46,6 +46,7 @@ public sealed class WorkloadStabilityContractTests
         Assert.AreEqual("gpu-affinity-v1", stableEligibility.Target);
 
         AssertEvidenceVerifierRejectsContradictorySerializedReadiness();
+        AssertGateAPlannerConsumesEvidenceV9Readiness();
     }
 
     private static void AssertEvidenceVerifierRejectsContradictorySerializedReadiness()
@@ -63,6 +64,21 @@ public sealed class WorkloadStabilityContractTests
             contradictory.ExitCode,
             "Verifier accepted serialized Stable workload readiness even though the source windows contain material CPU activity drift.\n" +
             contradictory.StandardOutput + "\n" + contradictory.StandardError);
+    }
+
+    private static void AssertGateAPlannerConsumesEvidenceV9Readiness()
+    {
+        var plannerSource = File.ReadAllText(FindRepositoryFile(
+            "tools",
+            "LatencyPilot.PhysicalValidation",
+            "BaselineEvidenceCandidatePlan.cs"));
+
+        StringAssert.Contains(plannerSource, "latencypilot-evidence-v9");
+        StringAssert.Contains(plannerSource, "\"workloadStability\"");
+        StringAssert.Contains(plannerSource, "\"optimizerEligibility\"");
+        Assert.IsFalse(
+            plannerSource.Contains("latencypilot-evidence-v8", StringComparison.Ordinal),
+            "Gate A candidate planning must not accept the superseded evidence-v8 contract.");
     }
 
     private static VerifierResult RunEvidenceVerifier(double[] cpuBusy)
