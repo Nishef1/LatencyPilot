@@ -20,6 +20,31 @@ public sealed class GpuRuntimePlacementContractTests
             [new ProcessorObservedInterruptCount(3, 200)]);
 
         Assert.IsTrue(confirmed.ConfirmsRequestedPlacement);
+        Assert.IsTrue(
+            GpuInterruptRuntimePlacementVerifier.ConfirmsGateAPlacement(
+                storedCandidateBefore: true,
+                storedCandidateAfter: true,
+                captureIsValid: true,
+                confirmed));
+
+        Assert.IsFalse(
+            GpuInterruptRuntimePlacementVerifier.ConfirmsGateAPlacement(
+                storedCandidateBefore: false,
+                storedCandidateAfter: true,
+                captureIsValid: true,
+                confirmed));
+        Assert.IsFalse(
+            GpuInterruptRuntimePlacementVerifier.ConfirmsGateAPlacement(
+                storedCandidateBefore: true,
+                storedCandidateAfter: false,
+                captureIsValid: true,
+                confirmed));
+        Assert.IsFalse(
+            GpuInterruptRuntimePlacementVerifier.ConfirmsGateAPlacement(
+                storedCandidateBefore: true,
+                storedCandidateAfter: true,
+                captureIsValid: false,
+                confirmed));
 
         var missingRuntimeEvidence = confirmed with
         {
@@ -28,6 +53,12 @@ public sealed class GpuRuntimePlacementContractTests
             ObservedProcessors = [],
         };
         Assert.IsFalse(missingRuntimeEvidence.ConfirmsRequestedPlacement);
+        Assert.IsFalse(
+            GpuInterruptRuntimePlacementVerifier.ConfirmsGateAPlacement(
+                storedCandidateBefore: true,
+                storedCandidateAfter: true,
+                captureIsValid: true,
+                missingRuntimeEvidence));
 
         var inconsistentResolvedCounts = confirmed with
         {
