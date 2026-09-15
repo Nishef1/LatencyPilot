@@ -72,15 +72,16 @@ A clean start requires `unresolved=0`. Record exact GPU/driver/device identity a
 
 ## 3. Plan candidates from valid current evidence
 
-Use the valid Real-world baseline plus fresh topology/CPU-set metadata:
+Use the valid Real-world baseline from the **same exact clean source revision** plus fresh topology/CPU-set metadata. Resolve and record the full 40-hex commit first:
 
 ```powershell
-dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.PhysicalValidation.csproj --configuration Release -- plan-gpu-affinity --evidence '<path-to-LatencyPilot-baseline.json>'
+$commit = (git rev-parse HEAD).Trim()
+dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.PhysicalValidation.csproj --configuration Release -- plan-gpu-affinity --evidence '<path-to-LatencyPilot-baseline.json>' --expected-commit $commit
 ```
 
-The planner must reject stale/wrong-schema/wrong-protocol/invalid-baseline/topology-mismatched evidence. Candidate policy remains bounded: measured per-window DPC+ISR pressure, one logical sibling per physical core, current CPU-set availability when readable, hybrid efficiency-class representation, group-0 v1 boundary and at most four default candidates.
+The planner must reject missing, abbreviated or stale source provenance before candidate generation. `sourceRevisionId` in the evidence must be an exact full 40-hex match for `--expected-commit`; a valid baseline from a different revision is not Gate-A planning evidence for the current revision. It must also reject wrong-schema/wrong-protocol/invalid-baseline/changing-workload/topology-mismatched evidence. Candidate policy remains bounded: measured per-window DPC+ISR pressure, one logical sibling per physical core, current CPU-set availability when readable, hybrid efficiency-class representation, group-0 v1 boundary and at most four default candidates.
 
-Record the entire ranked set. Select one candidate for the first physical exercise. Ranking is screening guidance, not proof of improvement.
+Record `expected-commit`, `evidence-revision`, `source-revision-match`, workload-stability method/status and the entire ranked set. Select one candidate for the first physical exercise. Ranking is screening guidance, not proof of improvement.
 
 ## 4. Prepare without writing
 
@@ -193,7 +194,7 @@ Gate A passes only when evidence on the exact clean revision proves:
 
 1. normal App + Service build/install/launch;
 2. journal startup readiness;
-3. bounded candidate came from valid topology-matched Real-world baseline;
+3. bounded candidate came from an exact-revision, topology-matched, stable Real-world baseline;
 4. unresolved state survives Service restart and is correctly reclassified;
 5. exact-target restart/reboot-required behavior is understood;
 6. one candidate apply reaches verified stored state and effective runtime GPU ISR placement under the rules above;
