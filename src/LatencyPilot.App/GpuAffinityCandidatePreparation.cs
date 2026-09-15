@@ -3,6 +3,7 @@ using System.Globalization;
 using LatencyPilot.App.Services;
 using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Benchmarking.Candidates;
+using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
@@ -22,10 +23,25 @@ public sealed partial class MainWindow
         ApplyBaselineTransientSignals(captures);
         _latestGpuAffinityCandidates = [];
 
-        if (isPartial ||
-            !quality.IsValidForComparison ||
-            scenario != MeasurementScenario.RealWorld)
+        if (isPartial || scenario != MeasurementScenario.RealWorld)
         {
+            return;
+        }
+
+        var workloadStability = WorkloadStabilityAnalyzer.Analyze(
+            captures.Select((capture, index) => new WorkloadWindowEvidence(
+                index + 1,
+                capture.ActualDurationMilliseconds,
+                capture.Dpc.Count,
+                capture.Isr.Count,
+                SystemCpuBusyPercent: null)).ToArray());
+        if (!GpuOptimizationBaselineReadiness.IsEligible(quality, workloadStability))
+        {
+            Logger.Information(
+                "GPU affinity candidate preparation skipped because the repeated baseline is not experiment-ready. BaselineValid={BaselineValid}, WorkloadStatus={WorkloadStatus}, Reasons={Reasons}.",
+                quality.IsValidForComparison,
+                workloadStability.Status,
+                workloadStability.Reasons.Count == 0 ? "none" : string.Join(" | ", workloadStability.Reasons));
             return;
         }
 
@@ -75,7 +91,7 @@ public sealed partial class MainWindow
                     CultureInfo.InvariantCulture,
                     $"core {candidate.PhysicalCoreIndex}/CPU {candidate.Processor.Number}: {candidate.ObservedPressureScore:P2}")));
             Logger.Information(
-                "Prepared {CandidateCount} read-only GPU affinity candidate(s) from the valid Real-world baseline using mean per-window DPC/ISR event share. Candidates={Candidates}.",
+                "Prepared {CandidateCount} read-only GPU affinity candidate(s) from the valid stable Real-world baseline using mean per-window DPC/ISR event share. Candidates={Candidates}.",
                 _latestGpuAffinityCandidates.Count,
                 summary);
         }
