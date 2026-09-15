@@ -55,6 +55,7 @@ public sealed partial class MainWindow
                 _measurementScenarioComboBox.SelectedIndex = 0;
             }
 
+            var dotnetExecutable = ResolveDotnetExecutable();
             EvidenceExportStatusText.Text =
                 "One-click GPU validation started. LatencyPilot will hide itself so the same warmed game/scene stays foreground, capture the baseline, request UAC once, test one candidate, restore the original state, and write a report.";
 
@@ -86,10 +87,12 @@ public sealed partial class MainWindow
                 throw new FileNotFoundException("The one-click Gate A validation helper project was not found.", helperProject);
             }
 
+            var dotnetDirectory = Path.GetDirectoryName(dotnetExecutable)
+                ?? throw new InvalidOperationException("The resolved dotnet executable has no parent directory.");
             var startInfo = new ProcessStartInfo
             {
-                FileName = "dotnet.exe",
-                WorkingDirectory = _gateARepositoryRoot,
+                FileName = dotnetExecutable,
+                WorkingDirectory = dotnetDirectory,
                 UseShellExecute = true,
                 Verb = "runas",
             };
@@ -200,6 +203,51 @@ public sealed partial class MainWindow
         }
 
         return null;
+    }
+
+    private static string ResolveDotnetExecutable()
+    {
+        var dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+        if (!string.IsNullOrWhiteSpace(dotnetRoot))
+        {
+            var rootedCandidate = Path.Combine(dotnetRoot.Trim(), "dotnet.exe");
+            if (File.Exists(rootedCandidate))
+            {
+                return Path.GetFullPath(rootedCandidate);
+            }
+        }
+
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        if (!string.IsNullOrWhiteSpace(programFiles))
+        {
+            var defaultCandidate = Path.Combine(programFiles, "dotnet", "dotnet.exe");
+            if (File.Exists(defaultCandidate))
+            {
+                return Path.GetFullPath(defaultCandidate);
+            }
+        }
+
+        var path = Environment.GetEnvironmentVariable("PATH");
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            foreach (var segment in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var normalizedSegment = segment.Trim('"');
+                if (string.IsNullOrWhiteSpace(normalizedSegment))
+                {
+                    continue;
+                }
+
+                var pathCandidate = Path.Combine(normalizedSegment, "dotnet.exe");
+                if (File.Exists(pathCandidate))
+                {
+                    return Path.GetFullPath(pathCandidate);
+                }
+            }
+        }
+
+        throw new FileNotFoundException(
+            "dotnet.exe could not be resolved for the elevated Gate A helper. Install the .NET 10 SDK or ensure DOTNET_ROOT/PATH points to it.");
     }
 
     private static void TryRevealReport(string reportPath)
