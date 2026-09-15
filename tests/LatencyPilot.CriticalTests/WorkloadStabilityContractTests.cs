@@ -170,7 +170,7 @@ public sealed class WorkloadStabilityContractTests
 
             File.WriteAllText(tempPath, JsonSerializer.Serialize(evidence));
             var verifier = FindRepositoryFile("scripts", "Verify-Evidence.ps1");
-            var startInfo = new ProcessStartInfo("pwsh.exe")
+            var startInfo = new ProcessStartInfo("powershell.exe")
             {
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
