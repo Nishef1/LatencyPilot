@@ -346,6 +346,13 @@ internal sealed class GpuOptimizationOrchestrator
         ArgumentNullException.ThrowIfNull(request.Policy);
         request.Policy.Validate();
 
+        if (!request.Baseline.IsEligibleForExperiment)
+        {
+            throw new ArgumentException(
+                "GPU orchestration requires both a valid baseline-quality-v2 decision baseline and a stable workload-stability-v1 activity assessment.",
+                nameof(request));
+        }
+
         if (request.WorkloadProcessId == 0 || request.Baseline.SessionId == Guid.Empty)
         {
             throw new ArgumentException("Workload process and baseline session identities are required.", nameof(request));
