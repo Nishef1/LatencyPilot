@@ -8,15 +8,16 @@ For the shortest current-revision workflow, start with `docs/OWNER_CLOSURE.md`. 
 
 ```text
 Protocol:              v6
-Evidence:              latencypilot-evidence-v8
+Evidence:              latencypilot-evidence-v9
 Quick snapshot:        1 × 5 s, diagnostic only
 Decision baseline:     baseline-quality-v2
                        5 × 20 s authoritative windows
                        5 s LatencyPilot/service settle before window 1
                        750 ms inter-window settle
 Workload readiness:    workload-stability-v1
+Optimizer eligibility: gpu-affinity-v1 (serialized, explicit)
 p99.9 display floor:   10,000 samples per distribution
-Permanent tests:       17 / 20 owner-authorized maximum
+Permanent tests:       18 / 20 owner-authorized maximum
 ```
 
 ## 1. Preconditions and privilege boundary
@@ -57,7 +58,7 @@ Ctrl+B  repeated decision baseline
 Ctrl+E  export latest completed evidence
 ```
 
-`Ctrl+E` must be unavailable without completed evidence and while measurement is active. Every successful protocol-v6 capture must carry a unique `RequestId` correlating App logs, Service logs and evidence-v8.
+`Ctrl+E` must be unavailable without completed evidence and while measurement is active. Every successful protocol-v6 capture must carry a unique `RequestId` correlating App logs, Service logs and evidence-v9.
 
 Scenario semantics:
 
@@ -95,7 +96,7 @@ Get-FileHash .\LatencyPilot-observation-*.json -Algorithm SHA256
 Expected envelope:
 
 ```text
-schema:   latencypilot-evidence-v8
+schema:   latencypilot-evidence-v9
 purpose:  quick-diagnostic-snapshot
 protocol: 6
 ```
@@ -146,7 +147,15 @@ no >50% extreme-window deviation
 
 For optimizer eligibility, `workload-stability-v1` additionally checks DPC event-rate and ISR event-rate stability across the same five windows, plus system CPU-busy stability when complete per-window CPU activity evidence is available. Partial CPU-activity evidence is insufficient rather than silently ignored.
 
-Do not delete inconvenient windows. `Valid` means repeatable enough for the current comparison method; it does not mean globally healthy.
+Evidence v9 serializes both the workload result and the explicit `gpu-affinity-v1` eligibility result. Therefore these are intentionally separate claims:
+
+```text
+quality.isValidForComparison
+!=
+optimizerEligibility.isEligible
+```
+
+Do not delete inconvenient windows. `Valid` means repeatable enough for the current comparison method; it does not mean globally healthy or optimizer-ready.
 
 Run and export two separate baselines on the final candidate:
 
@@ -166,14 +175,16 @@ Verify each artifact:
 Expected envelope:
 
 ```text
-schema:                latencypilot-evidence-v8
+schema:                latencypilot-evidence-v9
 purpose:               repeated-decision-baseline
 baselineMethodVersion: baseline-quality-v2
+workloadStability:     workload-stability-v1 result
+optimizerEligibility:  gpu-affinity-v1 explicit eligibility/reason
 protocol:              6
 captures/windows:      exactly 5 aligned entries
 ```
 
-A partial, short, lossy, undersampled, noisy or drifted baseline remains diagnostic evidence but cannot pass the closure gate.
+A partial, short, lossy, undersampled, noisy or drifted baseline remains diagnostic evidence but cannot pass the closure gate. A baseline may still be valid for comparison while its optimizer eligibility is false; the serialized reason must agree with the canonical readiness contract.
 
 After both exact-revision baselines exist, run the consolidated audit in `docs/OWNER_CLOSURE.md`; it reuses the canonical evidence verifier and records the exact SHA-256/source-revision result together with current Service/journal/device/USB/RSS state.
 
@@ -207,7 +218,7 @@ The consolidated read-only audit verifies the final no-stale-ETW and clean-journ
 
 ## 7. Accessibility and zero-mutation checks
 
-Check Light, Dark, Windows High Contrast, narrow/wide widths, enlarged text scaling, keyboard-only focus order and screen-reader/UI Automation for Service state, scenario, measurement purpose, exact values, runtime context and baseline verdict. Color must not be the only state cue, and a quick snapshot must not be announced as a health verdict.
+Check Light, Dark, Windows High Contrast, narrow/wide widths, enlarged text scaling, keyboard-only focus order and screen-reader/UI Automation for Service state, scenario, measurement purpose, exact values, runtime context and baseline verdict. Color must not be the only state cue, and a quick snapshot must not be announced as a health verdict. The baseline card must expose comparison validity and optimizer readiness as text/automation semantics, not color alone.
 
 Use `scripts/Capture-UiAccessibilityEvidence.ps1` for reproducible WinApp CLI/UIA trees and screenshots in `Light`, `Dark`, `HighContrast`, `TextScale`, `Narrow`, and `Keyboard` states. Review the resulting evidence with Accessibility Insights FastPass and a focused Narrator pass; captured automation evidence is supporting proof, not a substitute for human reading-order, announcement-quality and visual-layout judgment.
 
@@ -228,9 +239,9 @@ Close Phase 2 only when the **same final clean source candidate** has:
 - owner-local App/Service compile/run;
 - protected Service path + normal-user App boundary;
 - protocol-v6 connection/capture;
-- clean evidence-v8 quick snapshot;
-- valid Real-world evidence-v8/baseline-v2 decision baseline;
-- valid Controlled-idle evidence-v8/baseline-v2 decision baseline;
+- clean evidence-v9 quick snapshot;
+- valid Real-world evidence-v9/baseline-v2 decision baseline with serialized workload/readiness evidence;
+- valid Controlled-idle evidence-v9/baseline-v2 decision baseline with serialized workload/readiness evidence;
 - green consolidated read-only audit JSON for that exact revision;
 - representative GPU/NIC/xHCI evidence;
 - attribution plausibility;
