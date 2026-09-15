@@ -25,5 +25,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="LatencyPilot.PhysicalValidation" />
+    <InternalsVisibleTo Include="LatencyPilot.CriticalTests" />
   </ItemGroup>
 </Project>
