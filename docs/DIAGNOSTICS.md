@@ -1,7 +1,7 @@
 # LatencyPilot Diagnostics and Logging
 
 Status: **Active diagnostics contract**  
-Last updated: 2026-09-14
+Last updated: 2026-09-15
 
 LatencyPilot uses bounded structured local diagnostics so App, IPC, Service and ETW failures can be reconstructed without turning logging into a second telemetry system or contaminating the measurement hot path.
 
@@ -9,9 +9,11 @@ Current related contracts:
 
 ```text
 Observation protocol:   v6
-Evidence schema:        latencypilot-evidence-v8
+Evidence schema:        latencypilot-evidence-v9
 Quick snapshot purpose: quick-diagnostic-snapshot
 Decision baseline:      baseline-quality-v2
+Workload readiness:     workload-stability-v1
+GPU optimizer target:   gpu-affinity-v1
 Public mutation:        unavailable / unarmed
 ```
 
@@ -86,7 +88,7 @@ App request lifecycle
 → framed IPC request/response
 → Service capture lifecycle
 → protocol-v6 KernelLatencyCaptureResponse
-→ evidence-v8 capture object
+→ evidence-v9 capture object
 ```
 
 This lets a saved evidence artifact be correlated to App/Service logs without depending on wall-clock ordering alone.
@@ -132,7 +134,7 @@ Only bounded module names belong in this concise operational summary. Full bound
 
 ## Evidence verification
 
-`scripts/Verify-Evidence.ps1` is the independent local verifier for saved evidence-v8 artifacts. It validates envelope/provenance, purpose, source revision, RequestId uniqueness, capture shape, p99.9 sample semantics and SHA-256.
+`scripts/Verify-Evidence.ps1` is the independent local verifier for saved evidence-v9 artifacts. It validates envelope/provenance, purpose, source revision, RequestId uniqueness, capture shape, p99.9 sample semantics and SHA-256. For repeated baselines it also verifies the serialized `workload-stability-v1` and `gpu-affinity-v1` optimizer-eligibility fields are internally consistent with the canonical readiness contract.
 
 Example:
 
@@ -150,7 +152,7 @@ Example:
   -RequireCleanCapture
 ```
 
-`-RequireValidBaseline` is stronger and applies only to `purpose=repeated-decision-baseline`. It requires the current `baseline-quality-v2` closure contract, including:
+`-RequireValidBaseline` applies only to `purpose=repeated-decision-baseline`. It requires the current `baseline-quality-v2` closure contract, including:
 
 ```text
 exactly 5 aligned captures/windows/runtime windows
@@ -162,7 +164,12 @@ ISR event count >= 1,000 per window
 Status = Valid
 IsValidForComparison = true
 valid capture windows = 5/5
+serialized workloadStability uses workload-stability-v1
+serialized optimizerEligibility targets gpu-affinity-v1
+serialized optimizer eligibility/reason agrees with the readiness contract
 ```
+
+The strict baseline gate does **not** redefine comparison validity as optimizer eligibility. A baseline can be closure-valid for comparison while `optimizerEligibility.isEligible=false`; the explicit serialized reason must still reconcile correctly.
 
 Use both strict switches for Phase 2 decision-baseline closure:
 
@@ -231,4 +238,4 @@ When investigating a capture problem:
 2. locate the matching App entry;
 3. locate the matching Service entries;
 4. if no Service capture entry exists, investigate connection/ACL/session/service-lifecycle failure before the ETW layer;
-5. if capture completed, reconcile the logged bounded summary against the saved evidence-v8 artifact rather than trusting either source in isolation.
+5. if capture completed, reconcile the logged bounded summary against the saved evidence-v9 artifact rather than trusting either source in isolation.
