@@ -1,3 +1,4 @@
+using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Platform.Windows.Devices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -79,5 +80,12 @@ public sealed class GpuRuntimePlacementContractTests
             ],
         };
         Assert.IsFalse(offTargetEvidence.ConfirmsRequestedPlacement);
+
+        var expectedRevision = new string('a', 40);
+        Assert.IsTrue(GpuOptimizationSourceRevisionPolicy.IsExactMatch(expectedRevision, expectedRevision.ToUpperInvariant()));
+        Assert.IsFalse(GpuOptimizationSourceRevisionPolicy.IsExactMatch(expectedRevision, new string('a', 39)));
+        Assert.IsFalse(GpuOptimizationSourceRevisionPolicy.IsExactMatch(expectedRevision, new string('b', 40)));
+        Assert.IsFalse(GpuOptimizationSourceRevisionPolicy.IsExactMatch(expectedRevision, null));
+        Assert.IsFalse(GpuOptimizationSourceRevisionPolicy.IsExactMatch("dirty", expectedRevision));
     }
 }
