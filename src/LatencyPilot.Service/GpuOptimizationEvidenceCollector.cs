@@ -180,8 +180,7 @@ internal sealed class GpuOptimizationEvidenceCollector
                  verification.TargetDeviceInstanceId,
                  StringComparison.OrdinalIgnoreCase) ||
              runtimePlacement.TargetProcessorNumber != request.Finalist.Processor.Number ||
-             !runtimePlacement.HasRuntimeEvidence ||
-             runtimePlacement.ObservedOnlyOnTarget != true))
+             !runtimePlacement.ConfirmsRequestedPlacement))
         {
             invalidReason =
                 "Candidate run lacks direct GPU-driver ISR evidence confined to the requested target processor.";
