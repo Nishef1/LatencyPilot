@@ -2,145 +2,352 @@
 
 ## Goal
 
-Rebuild the current LatencyPilot main screen to match the approved premium visual direction: compact native Windows 11 shell, strong hierarchy, minimal prose, meaningful charts, and evidence-first interaction. The result must feel like a shippable first-party performance utility rather than an engineering dashboard.
+Rebuild LatencyPilot's current single-scroll engineering dashboard into a calm, premium, native Windows 11 application shell that a non-expert can understand immediately. The UI must preserve the exact evidence and safety semantics already implemented while reducing cognitive load, improving navigation, standardizing iconography, and making the important distinction between **measurement quality** and **optimizer readiness** obvious.
+
+This is a visual/information-architecture rebuild, not a measurement or optimizer redesign.
 
 ## Non-negotiable constraints
 
-- WinUI 3 / Windows App SDK 2.4 Stable; no additional UI/chart framework.
-- Light-first, native Mica, with Dark and High Contrast preserved.
-- Existing measurement semantics remain authoritative; no invented metrics or fabricated time-series.
-- Protocol remains `LatencyPilot.Observation.v6`; public commands stay `GetStatus` and `CaptureKernelLatency` only.
-- `ServiceBoundary.MutationAvailable` remains `false`.
-- Existing keyboard accelerators, evidence export, readiness gating, service boundary, and baseline logic remain functional.
-- Design values must come from the existing SSOT: `DesignTokens.xaml`, `ComponentStyles.xaml`, and this design-system contract. Shared styling must not be re-hardcoded in the page.
-- Permanent automated test count remains at 9 unless a genuinely new durable invariant warrants the final slot. Red/green UI checks may be temporary and must be removed before final state.
+- WinUI 3 on Windows App SDK 2.4.0; no additional UI/chart framework.
+- Window-level `DesktopAcrylicBackdrop` is the primary material. No custom blur/composition implementation.
+- The app must remain usable when Windows disables transparency; semantic surfaces and borders must still produce readable hierarchy.
+- Dark and High Contrast remain first-class. High Contrast must use system colors and never depend on translucency.
+- Existing measurement semantics remain authoritative; no invented score, fabricated timeline, synthetic health grade, or fake status.
+- Protocol remains `LatencyPilot.Observation.v6`; public commands remain `GetStatus` and `CaptureKernelLatency` only.
+- `ServiceBoundary.MutationAvailable` remains `false` until the existing physical arming gates say otherwise.
+- Existing keyboard accelerators, evidence export, readiness gating, service boundary, baseline logic, physical-validation contracts, and schema semantics remain functional.
+- Existing native chart controls remain the evidence visualization layer unless a real bug requires modification.
+- Shared visual values belong in `DesignTokens.xaml` / `ComponentStyles.xaml`; screen-local color literals and duplicated component recipes are prohibited.
+- CI remains the build/test gate. Do not add a second UI framework, UI test framework, or snapshot infrastructure just for this redesign.
 
-## Truthful visualization contract
+## Product direction
 
-The approved concept image contains a continuous 60-second latency line and a time heatmap. The current protocol does not return raw event timestamps or time buckets, so shipping those visuals literally would fabricate data. The implementation therefore preserves the same visual hierarchy while mapping every visual to evidence that actually exists:
+LatencyPilot should feel closer to a first-party Windows performance utility than a gaming tweak dashboard:
 
-- **Tail profile chart:** plots DPC and ISR p50 / p95 / p99 / p99.9 / max from the latest real capture.
-- **Baseline stability chart:** plots DPC p99 and ISR p99 across the five actual baseline windows when a baseline exists.
-- **CPU interrupt distribution:** bars derived from each processor's real DPC+ISR event count.
-- **CPU interrupt map:** a heatmap-like matrix derived from real per-processor DPC and ISR shares, not fake time buckets.
-- **Top modules by kernel time:** horizontal bars derived from `TotalDurationMicroseconds` for real attributed modules.
+- restrained Acrylic rather than gradients everywhere,
+- one clear primary action at a time,
+- strong spacing and typography instead of nested cards,
+- Fluent iconography with consistent optical size,
+- concise status language,
+- charts only where a visual pattern helps a decision,
+- exact technical evidence available without dominating the first screen.
 
-When data is unavailable, charts show an intentional empty state rather than placeholder values.
+The user should be able to answer these questions in a few seconds:
 
-## Information architecture
+1. Is measurement available?
+2. Is my latest baseline trustworthy?
+3. Is the system ready for an optimization experiment?
+4. What is dominating observed latency/interrupt work?
+5. What should I do next?
 
-### App shell
+## Shell architecture
 
-A fixed 184–200 px left navigation rail plus a flexible dashboard canvas. Navigation is section navigation within the single existing screen, not fake multi-page navigation. The rail provides:
+### MainWindow
 
-- Overview
-- Measure
-- Baseline
-- Devices
-- Appearance/status footer
+`MainWindow` becomes a shell instead of the entire product screen.
 
-Selecting a section scrolls the dashboard to the corresponding real section. No unimplemented Reports/Settings destinations are shown.
+It owns:
 
-### Header
+- window-level `DesktopAcrylicBackdrop`,
+- custom title bar / product identity,
+- top-level service/safety status,
+- native `NavigationView`,
+- page host,
+- appearance preference,
+- routing only.
 
-Compact title bar and dashboard header:
+It must not own large evidence lists or page layout details.
 
-- LatencyPilot identity + version
-- `Observation only` safety status
-- `Latency health` heading and one-line purpose
-- Quick snapshot (primary when baseline is locked/not prepared)
-- Build baseline (primary when readiness is satisfied)
-- Export JSON (secondary)
+### Navigation
 
-No large hero paragraph.
+Use a real WinUI `NavigationView` rather than a custom button rail that scrolls a single giant canvas.
 
-### Context rail
+Top-level destinations are deliberately reduced to four:
 
-`This PC` becomes concise context, not four anonymous number tiles. It shows:
+1. **Overview** — current health, last baseline readiness, top evidence and next action.
+2. **Measure** — quick snapshot and repeated-baseline workflow, baseline preparation, progress and measurement guidance.
+3. **Devices** — display/GPU, network/RSS and USB/xHCI evidence.
+4. **Evidence** — exact counts, baseline windows, attribution, export/provenance.
 
-- Windows edition/build
-- logical / physical / SMT CPU counts
-- primary present display adapter name and driver version when available
-- architecture summary
+`Baseline` is not a separate top-level destination because it is a measurement workflow, not a peer product area.
 
-`Device evidence` becomes a compact read-only card with clear readiness/status and one action.
+Appearance belongs in the NavigationView footer/settings affordance, not as another primary destination.
 
-### Dashboard summary
+Navigation selection must correspond to the visible page. Manual scrolling must never leave a stale selected nav item because the new architecture does not use nav-as-scroll-position.
 
-Four metric cards:
+## Window material and surfaces
 
-1. DPC p99
-2. ISR p99
-3. CPU concentration (share handled by busiest observed CPU)
-4. Last baseline verdict / status
+### Acrylic
 
-Cards may include tiny sparklines derived only from available distribution/baseline evidence.
+Use:
 
-### Visual evidence grid
+```xaml
+<Window.SystemBackdrop>
+    <DesktopAcrylicBackdrop />
+</Window.SystemBackdrop>
+```
 
-- Tail profile / baseline stability line chart
-- CPU interrupt distribution bar chart
-- Top modules horizontal bars
-- CPU DPC/ISR intensity map
+The root visual should not paint an opaque/gradient full-window background over Acrylic.
 
-Charts use the same indigo/blue semantic palette, concise axes/labels, and strong empty states.
+Acrylic remains environmental material, not decoration. Content surfaces use semantic translucent/opaque brushes from the design system for readability. Do not stack multiple acrylic effects inside every card.
 
-### Preparation and snapshot
+### Surface hierarchy
 
-Baseline preparation is compact and stays visible near the bottom of the overview. The two existing readiness acknowledgements remain the gate. Copy is shortened on-screen; full rationale remains accessible through tooltips/automation help.
+Three levels only:
 
-Recent snapshot becomes a compact visual card with status and the most relevant evidence summary. The verbose current `Snapshot evidence` prose card is removed from the primary flow.
+- shell/backdrop,
+- page surface/group,
+- metric/action tile where grouping materially helps.
 
-## SSOT expansion
+Avoid card-inside-card patterns. Use dividers and whitespace before adding another rounded rectangle.
 
-`DesignTokens.xaml` owns:
+## Iconography
 
-- shell/nav dimensions
-- chart colors and grid colors
-- card/surface/background brushes
-- text hierarchy
-- shared spacing/radius/dimensions
+Use WinUI/Windows icon controls consistently:
 
-`ComponentStyles.xaml` owns:
+- `SymbolIcon` where the standard `Symbol` enum covers the meaning,
+- `FontIcon` with `SymbolThemeFontFamily` for Fluent glyphs not exposed by `Symbol`,
+- existing custom waveform geometry only for product identity / latency-specific branding where no system icon communicates the concept.
 
-- nav item styles
-- dashboard cards / metric cards
-- chart card styles
-- compact status pills
-- action buttons
+Do not mix arbitrary path art with Fluent icons for routine actions.
 
-No screen-specific brush hex values are permitted in `MainWindow.xaml` or chart controls.
+Optical sizing:
 
-## Component boundaries
+- navigation: 16–18 px,
+- compact action: 14–16 px,
+- section/status icon: 18–20 px,
+- large metric/hero icon: 20–24 px.
 
-New focused WinUI controls:
+Icons never replace required text for ambiguous or safety-relevant actions.
 
-- `Controls/LatencyProfileChart`: DPC/ISR percentile or baseline-window lines.
-- `Controls/CpuDistributionChart`: processor share bars.
-- `Controls/ModuleContributionChart`: module-duration bars.
-- `Controls/CpuInterruptMap`: processor × DPC/ISR intensity matrix.
+## Page designs
 
-Controls receive already-computed display models; they do not call ETW, persistence, or service APIs.
+### Overview
 
-`DashboardVisuals.cs` converts `KernelLatencyCaptureResponse` and baseline-window evidence into those display models and updates summary cards. Measurement/business logic stays in existing files.
+The Overview is the primary consumer page and should fit the core decision flow in one desktop viewport at the default window size.
+
+#### Header
+
+- `Latency health`
+- one-line explanatory subtitle
+- primary action chosen from current state:
+  - `Quick snapshot` when no useful evidence exists,
+  - `Build baseline` when preparation/readiness makes that the next meaningful action.
+- secondary action for the other capture mode.
+- export moves to an overflow/secondary action when evidence exists.
+
+#### Status summary
+
+Do not compress unrelated truths into one amber headline.
+
+Represent separately:
+
+- `Baseline valid` / `Baseline inconclusive`
+- `Optimizer ready` / `Optimizer not ready`
+- optional `Transient tail observed`
+
+A valid baseline that is not optimization-ready must visually read as a trustworthy measurement with a blocked next step, not as a failed baseline.
+
+Use short status rows/badges plus one concise explanation. Detailed reasons belong in Measure/Evidence.
+
+#### Key metrics
+
+Keep only decision-useful metrics:
+
+- DPC p99,
+- ISR p99,
+- busiest-CPU interrupt concentration,
+- dominant module / baseline-readiness summary.
+
+p99.9/max remain available in expanded evidence rather than becoming equal-weight headline metrics.
+
+#### Visual evidence
+
+Reuse the existing real-data charts:
+
+- latency profile / five-window stability,
+- CPU interrupt distribution,
+- top modules by kernel time,
+- CPU DPC/ISR map.
+
+Overview may show the two most useful charts prominently and the other two in a secondary row, but all data remains real and evidence-backed.
+
+#### System context
+
+Replace the large persistent `This PC` rail with a compact system context strip/card:
+
+- Windows build,
+- physical/logical CPU summary,
+- primary GPU and driver,
+- observation service state.
+
+Architecture/package/group details move to Evidence/Devices unless they affect a decision.
+
+### Measure
+
+This page owns both measurement workflows.
+
+#### Quick snapshot
+
+- single clear CTA,
+- five-second duration shown as supporting text,
+- recent snapshot summary,
+- concise quality/integrity result.
+
+#### Baseline
+
+- scenario selector,
+- preparation checklist/gate,
+- five-window progress,
+- comparison-quality result,
+- workload-stability result,
+- optimizer-readiness result,
+- specific retry guidance when workload changed.
+
+No engineering gate names in the primary copy unless they materially help troubleshooting.
+
+### Devices
+
+Group by device domain rather than one long technical dump:
+
+- Graphics
+- Network
+- USB / xHCI
+
+Each domain gets:
+
+- Fluent icon,
+- detected device/driver identity,
+- key evidence/status,
+- disclosure for technical details.
+
+Do not imply tunability or mutation availability just because a device is detected.
+
+### Evidence
+
+This is the technical page and can be denser, but still avoids nested scrolling.
+
+Sections:
+
+- latest capture integrity,
+- exact DPC/ISR counts and tails,
+- attribution coverage,
+- top modules,
+- CPU concentration,
+- repeated baseline windows,
+- measurement context,
+- export/provenance.
+
+Lists showing only a bounded top-N must size to content rather than creating independent scroll bars inside the main page scroll.
+
+## Status and feedback model
+
+Use native non-modal patterns.
+
+- Persistent normal state: compact status in shell/header.
+- Actionable warning/error: `InfoBar` on the relevant page.
+- Long operation: inline progress with disabled duplicate action.
+- No toast-like fake success messages for ordinary local capture completion.
+
+Status colors retain existing semantics:
+
+- accent = action/selection,
+- success = verified/healthy,
+- warning = caution/inconclusive/not-ready,
+- impact = elevated concern,
+- danger = failed/severe signal.
+
+Text/labels always accompany status color.
+
+## State and code boundaries
+
+Do not move ETW/service behavior into page controls.
+
+Introduce the smallest shared UI state needed to keep pages synchronized with the existing capture pipeline. The preferred boundary is a focused `DashboardSessionState` owned by the window/application layer that stores the latest already-computed display/evidence state and notifies pages. It must not duplicate analyzer/business rules.
+
+Measurement/business logic remains in existing measurement/evidence services and analyzers.
+
+Page code-behind may orchestrate presentation and route commands, but page controls must not query the privileged service independently when the existing window/session layer already owns that workflow.
+
+## Design system update
+
+`DesignTokens.xaml` remains the visual SSOT, but the current full-window gradient direction is retired for the shell.
+
+Add/revise semantic resources for:
+
+- Acrylic-compatible shell/page surfaces,
+- navigation selection,
+- compact status backgrounds,
+- hero/metric spacing,
+- page max width,
+- standard icon sizes,
+- page section spacing.
+
+`ComponentStyles.xaml` owns reusable recipes for:
+
+- page header,
+- status badge/row,
+- metric tile,
+- section surface,
+- primary/secondary/quiet buttons,
+- icon tile,
+- compact evidence row.
 
 ## Responsive behavior
 
-- >= 1400 px: fixed left rail + 2-column visualization grid.
-- 1080–1399 px: compact left rail + responsive 2-column/1-column chart grid.
-- < 1080 px: rail collapses to compact top/side mode and chart cards stack; no column is assigned width zero while still holding visible content.
+Use native `NavigationView` adaptive pane behavior instead of manually shrinking a custom rail.
+
+Desktop targets:
+
+- wide: expanded left pane, 2-column evidence layouts where useful,
+- medium: compact left pane, responsive 1–2 column cards,
+- narrow: overlay/compact navigation and stacked content.
+
+No visible child should remain inside a zero-width layout column.
 
 ## Accessibility
 
-- High Contrast uses system colors and clear outlines.
-- Charts include concise automation names and textual summaries for non-visual access.
-- Color is never the sole signal; labels/values remain visible.
-- Keyboard accelerators remain unchanged.
+- Preserve keyboard access and existing accelerators.
+- Every icon-only control has `AutomationProperties.Name` and tooltip where appropriate.
+- Pages expose meaningful headings and automation labels.
+- No status relies only on color.
+- Text scaling must not clip metric labels or action text.
+- High Contrast uses system colors and readable borders; Acrylic is never required for content legibility.
+- Reduced/disabled Windows transparency must still leave a coherent surface hierarchy.
+
+## What does not change
+
+This redesign must not change:
+
+- protocol version,
+- evidence schema semantics,
+- baseline-quality thresholds,
+- workload-stability thresholds,
+- optimizer readiness rules,
+- mutation availability,
+- physical Gate A/B/C/D requirements,
+- device mutation domains,
+- ETW capture behavior.
+
+If a UI change appears to require changing one of those contracts, stop and resolve that separately rather than hiding it in visual work.
 
 ## Verification
 
-- Temporary structural UI test verifies SSOT use and presence of real chart controls; remove before final state.
-- Release-build `LatencyPilot.App` on Windows CI during implementation.
-- Existing critical suite remains green.
-- Final CI returns to normal test-only 9/9.
-- Owner-local render must be visually reviewed at the real 1280×820 baseline and ultrawide viewport. Build success alone is not visual completion.
+Repository verification:
+
+- App remains compiled by the existing critical-tests project graph.
+- Existing permanent critical suite remains green; no permanent UI wording tests are added.
+- If a stable structural invariant requires a test, keep the durable suite within the owner-authorized ceiling.
+- No new UI package is introduced.
+- `MainWindow` becomes materially smaller and shell-focused.
+
+Visual verification on real Windows remains mandatory after source/CI completion:
+
+- default 1664×936 desktop viewport,
+- approximately 1280×820 compact desktop viewport,
+- dark mode,
+- High Contrast,
+- Windows transparency disabled,
+- text scaling above 100%.
+
+Build/test success proves compilation and behavioral contracts; it does not by itself prove visual quality.
