@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
 using LatencyPilot.Benchmarking.Candidates;
+using LatencyPilot.Benchmarking.Optimization;
+using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.Devices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -76,5 +78,47 @@ public sealed class GpuAffinityCandidatePlannerTests
         var noProcessorTarget = descriptor.ToArray();
         BinaryPrimitives.WriteUInt64LittleEndian(noProcessorTarget.AsSpan(16, 8), 0);
         Assert.IsFalse(AllocatedIrqDescriptorParser.TryParseResourceList(noProcessorTarget, out _));
+
+        var startedAt = DateTimeOffset.UnixEpoch;
+        var rawFrames = new PresentMonFrameCaptureSnapshot(
+            PresentMonWorkloadCaptureStatus.Available,
+            77,
+            30_000,
+            30_000,
+            new PresentMonApiVersionSnapshot(3, 4, 0),
+            Enumerable.Range(0, 1_000)
+                .Select(index => new PresentMonFrameMetricsSnapshot(
+                    1,
+                    8d + index / 10_000d,
+                    5d,
+                    3d,
+                    6d,
+                    5d,
+                    1d,
+                    index == 999,
+                    4d,
+                    7d))
+                .ToArray(),
+            [],
+            "PresentMonAPI2.dll",
+            null,
+            null,
+            startedAt,
+            startedAt.AddSeconds(30));
+
+        var rawSeries = PresentMonGuardrailSeriesBuilder.Create(rawFrames);
+        Assert.AreEqual(1_000, rawSeries[PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric].Samples.Count);
+        Assert.AreEqual(1_000, rawSeries[PresentMonGuardrailSeriesBuilder.DroppedFrameRatioMetric].Samples.Count);
+        Assert.AreEqual(1d, rawSeries[PresentMonGuardrailSeriesBuilder.DroppedFrameRatioMetric].Samples[^1]);
+        Assert.IsFalse(rawSeries.ContainsKey(PresentMonGuardrailSeriesBuilder.DisplayedFpsMetric));
+        Assert.IsFalse(rawSeries.ContainsKey(PresentMonGuardrailSeriesBuilder.PresentedFpsMetric));
+
+        var incompleteFrames = rawFrames with
+        {
+            Frames = rawFrames.Frames.Select((frame, index) =>
+                index == 500 ? frame with { CpuFrameTimeMilliseconds = null } : frame).ToArray(),
+        };
+        Assert.IsFalse(PresentMonGuardrailSeriesBuilder.Create(incompleteFrames)
+            .ContainsKey(PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric));
     }
 }
