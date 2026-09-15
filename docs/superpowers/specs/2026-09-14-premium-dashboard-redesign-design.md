@@ -2,7 +2,7 @@
 
 ## Goal
 
-Rebuild LatencyPilot's current single-scroll engineering dashboard into a calm, premium, native Windows 11 application shell that a non-expert can understand immediately. The UI must preserve the exact evidence and safety semantics already implemented while reducing cognitive load, improving navigation, standardizing iconography, and making the important distinction between **measurement quality** and **optimizer readiness** obvious.
+Rebuild LatencyPilot's current single-scroll engineering dashboard into a calm, premium, native Windows 11 application shell that a non-expert can understand immediately. Preserve the exact evidence and safety semantics already implemented while reducing cognitive load, improving navigation, standardizing iconography, and making the distinction between **measurement quality** and **optimizer readiness** obvious.
 
 This is a visual/information-architecture rebuild, not a measurement or optimizer redesign.
 
@@ -19,6 +19,7 @@ This is a visual/information-architecture rebuild, not a measurement or optimize
 - Existing native chart controls remain the evidence visualization layer unless a real bug requires modification.
 - Shared visual values belong in `DesignTokens.xaml` / `ComponentStyles.xaml`; screen-local color literals and duplicated component recipes are prohibited.
 - CI remains the build/test gate. Do not add a second UI framework, UI test framework, or snapshot infrastructure just for this redesign.
+- Preserve the existing working `MainWindow` measurement orchestration. Do not create a parallel state/MVVM layer merely to support the visual rebuild.
 
 ## Product direction
 
@@ -44,23 +45,23 @@ The user should be able to answer these questions in a few seconds:
 
 ### MainWindow
 
-`MainWindow` becomes a shell instead of the entire product screen.
+`MainWindow.xaml` becomes a real shell visually, while the existing partial `MainWindow` C# files remain the orchestration owner for capture and evidence state.
 
-It owns:
+The shell owns:
 
 - window-level `DesktopAcrylicBackdrop`,
 - custom title bar / product identity,
 - top-level service/safety status,
 - native `NavigationView`,
-- page host,
+- four independent view hosts,
 - appearance preference,
-- routing only.
+- routing.
 
-It must not own large evidence lists or page layout details.
+This tranche deliberately does **not** introduce a new page-level state layer. Existing named controls are re-parented into the new view hosts so existing measurement code remains authoritative. Future extraction into separate Page classes is allowed only if a real maintenance need appears; it is not required for this redesign.
 
 ### Navigation
 
-Use a real WinUI `NavigationView` rather than a custom button rail that scrolls a single giant canvas.
+Use a real WinUI `NavigationView` rather than a custom button rail that scrolls one giant canvas.
 
 Top-level destinations are deliberately reduced to four:
 
@@ -71,15 +72,15 @@ Top-level destinations are deliberately reduced to four:
 
 `Baseline` is not a separate top-level destination because it is a measurement workflow, not a peer product area.
 
-Appearance belongs in the NavigationView footer/settings affordance, not as another primary destination.
+Appearance belongs in `NavigationView.PaneFooter`, not as a primary destination.
 
-Navigation selection must correspond to the visible page. Manual scrolling must never leave a stale selected nav item because the new architecture does not use nav-as-scroll-position.
+Navigation selection directly controls which view host is visible. The old scroll-position navigation model is removed, so stale selected navigation state cannot occur.
 
 ## Window material and surfaces
 
 ### Acrylic
 
-Use:
+Use the Windows App SDK system backdrop:
 
 ```xaml
 <Window.SystemBackdrop>
@@ -87,9 +88,9 @@ Use:
 </Window.SystemBackdrop>
 ```
 
-The root visual should not paint an opaque/gradient full-window background over Acrylic.
+The root visual must not paint an opaque/gradient full-window background over Acrylic.
 
-Acrylic remains environmental material, not decoration. Content surfaces use semantic translucent/opaque brushes from the design system for readability. Do not stack multiple acrylic effects inside every card.
+Acrylic is environmental material, not decoration. Content surfaces use semantic translucent/opaque brushes from the design system for readability. Do not stack multiple acrylic effects inside every card.
 
 ### Surface hierarchy
 
@@ -124,44 +125,30 @@ Icons never replace required text for ambiguous or safety-relevant actions.
 
 ### Overview
 
-The Overview is the primary consumer page and should fit the core decision flow in one desktop viewport at the default window size.
+The Overview is the primary consumer view and should fit the core decision flow in one desktop viewport at the default window size.
 
-#### Header
+Header:
 
-- `Latency health`
-- one-line explanatory subtitle
-- primary action chosen from current state:
-  - `Quick snapshot` when no useful evidence exists,
-  - `Build baseline` when preparation/readiness makes that the next meaningful action.
-- secondary action for the other capture mode.
-- export moves to an overflow/secondary action when evidence exists.
+- `Latency health`,
+- one-line explanatory subtitle,
+- primary capture action,
+- secondary capture action,
+- evidence export as a lower-priority action.
 
-#### Status summary
+Status summary must represent separately:
 
-Do not compress unrelated truths into one amber headline.
+- `Baseline valid` / `Baseline inconclusive`,
+- `Optimizer ready` / `Optimizer not ready`,
+- optional `Transient tail observed`.
 
-Represent separately:
+A valid baseline that is not optimization-ready must read as a trustworthy measurement with a blocked next step, not as a failed baseline.
 
-- `Baseline valid` / `Baseline inconclusive`
-- `Optimizer ready` / `Optimizer not ready`
-- optional `Transient tail observed`
-
-A valid baseline that is not optimization-ready must visually read as a trustworthy measurement with a blocked next step, not as a failed baseline.
-
-Use short status rows/badges plus one concise explanation. Detailed reasons belong in Measure/Evidence.
-
-#### Key metrics
-
-Keep only decision-useful metrics:
+Key metrics remain decision-useful only:
 
 - DPC p99,
 - ISR p99,
 - busiest-CPU interrupt concentration,
-- dominant module / baseline-readiness summary.
-
-p99.9/max remain available in expanded evidence rather than becoming equal-weight headline metrics.
-
-#### Visual evidence
+- dominant module / readiness summary.
 
 Reuse the existing real-data charts:
 
@@ -170,64 +157,44 @@ Reuse the existing real-data charts:
 - top modules by kernel time,
 - CPU DPC/ISR map.
 
-Overview may show the two most useful charts prominently and the other two in a secondary row, but all data remains real and evidence-backed.
-
-#### System context
-
-Replace the large persistent `This PC` rail with a compact system context strip/card:
-
-- Windows build,
-- physical/logical CPU summary,
-- primary GPU and driver,
-- observation service state.
-
-Architecture/package/group details move to Evidence/Devices unless they affect a decision.
+Replace the large persistent `This PC` rail with a compact system context surface showing Windows build, CPU summary, primary GPU/driver, and observation-service state.
 
 ### Measure
 
-This page owns both measurement workflows.
+Own both measurement workflows.
 
-#### Quick snapshot
+Quick snapshot:
 
 - single clear CTA,
-- five-second duration shown as supporting text,
+- five-second duration as supporting copy,
 - recent snapshot summary,
 - concise quality/integrity result.
 
-#### Baseline
+Baseline:
 
 - scenario selector,
-- preparation checklist/gate,
+- preparation gate,
 - five-window progress,
 - comparison-quality result,
 - workload-stability result,
 - optimizer-readiness result,
 - specific retry guidance when workload changed.
 
-No engineering gate names in the primary copy unless they materially help troubleshooting.
+No internal gate terminology in primary copy unless it materially helps troubleshooting.
 
 ### Devices
 
-Group by device domain rather than one long technical dump:
+Group by device domain:
 
-- Graphics
-- Network
-- USB / xHCI
+- Graphics,
+- Network,
+- USB / xHCI.
 
-Each domain gets:
-
-- Fluent icon,
-- detected device/driver identity,
-- key evidence/status,
-- disclosure for technical details.
-
-Do not imply tunability or mutation availability just because a device is detected.
+Each domain gets a Fluent icon, detected identity, key evidence/status, and progressive disclosure for technical details. Detection must not imply mutation availability.
 
 ### Evidence
 
-This is the technical page and can be denser, but still avoids nested scrolling.
-
-Sections:
+Technical view with:
 
 - latest capture integrity,
 - exact DPC/ISR counts and tails,
@@ -238,16 +205,16 @@ Sections:
 - measurement context,
 - export/provenance.
 
-Lists showing only a bounded top-N must size to content rather than creating independent scroll bars inside the main page scroll.
+Bounded top-N lists must size to their content instead of creating nested scroll bars.
 
 ## Status and feedback model
 
 Use native non-modal patterns.
 
 - Persistent normal state: compact status in shell/header.
-- Actionable warning/error: `InfoBar` on the relevant page.
-- Long operation: inline progress with disabled duplicate action.
-- No toast-like fake success messages for ordinary local capture completion.
+- Actionable warning/error: `InfoBar` on the relevant view.
+- Long operation: inline progress with duplicate actions disabled.
+- No fake toast-like success message for ordinary local capture completion.
 
 Status colors retain existing semantics:
 
@@ -259,19 +226,17 @@ Status colors retain existing semantics:
 
 Text/labels always accompany status color.
 
-## State and code boundaries
+## Code boundaries
 
-Do not move ETW/service behavior into page controls.
+Do not move ETW/service behavior into view controls.
 
-Introduce the smallest shared UI state needed to keep pages synchronized with the existing capture pipeline. The preferred boundary is a focused `DashboardSessionState` owned by the window/application layer that stores the latest already-computed display/evidence state and notifies pages. It must not duplicate analyzer/business rules.
+Existing partial `MainWindow` files remain the source of truth for capture, readiness and rendering behavior. The redesign changes visual ownership and routing only. `DashboardShell.cs` becomes the shell/navigation/layout coordinator. `DashboardVisuals.cs`, `PremiumObservationUi.cs`, measurement experience files, device evidence code, and evidence export continue to compute/update the same named UI outputs unless a visual simplification removes a redundant output.
 
-Measurement/business logic remains in existing measurement/evidence services and analyzers.
-
-Page code-behind may orchestrate presentation and route commands, but page controls must not query the privileged service independently when the existing window/session layer already owns that workflow.
+Do not duplicate analyzer or readiness rules in visual code.
 
 ## Design system update
 
-`DesignTokens.xaml` remains the visual SSOT, but the current full-window gradient direction is retired for the shell.
+`DesignTokens.xaml` remains the visual SSOT; the current full-window gradient direction is retired from the active shell.
 
 Add/revise semantic resources for:
 
@@ -295,7 +260,7 @@ Add/revise semantic resources for:
 
 ## Responsive behavior
 
-Use native `NavigationView` adaptive pane behavior instead of manually shrinking a custom rail.
+Use native `NavigationView` adaptive pane behavior rather than manually shrinking a custom rail.
 
 Desktop targets:
 
@@ -303,13 +268,13 @@ Desktop targets:
 - medium: compact left pane, responsive 1–2 column cards,
 - narrow: overlay/compact navigation and stacked content.
 
-No visible child should remain inside a zero-width layout column.
+No visible child remains inside a zero-width layout column.
 
 ## Accessibility
 
 - Preserve keyboard access and existing accelerators.
-- Every icon-only control has `AutomationProperties.Name` and tooltip where appropriate.
-- Pages expose meaningful headings and automation labels.
+- Every icon-only control has `AutomationProperties.Name` and a tooltip where appropriate.
+- Views expose meaningful headings and automation labels.
 - No status relies only on color.
 - Text scaling must not clip metric labels or action text.
 - High Contrast uses system colors and readable borders; Acrylic is never required for content legibility.
@@ -329,7 +294,7 @@ This redesign must not change:
 - device mutation domains,
 - ETW capture behavior.
 
-If a UI change appears to require changing one of those contracts, stop and resolve that separately rather than hiding it in visual work.
+If a UI change appears to require changing one of those contracts, stop and resolve it separately rather than hiding it in visual work.
 
 ## Verification
 
@@ -337,9 +302,9 @@ Repository verification:
 
 - App remains compiled by the existing critical-tests project graph.
 - Existing permanent critical suite remains green; no permanent UI wording tests are added.
-- If a stable structural invariant requires a test, keep the durable suite within the owner-authorized ceiling.
+- If a stable structural invariant warrants a test, keep the durable suite within the owner-authorized ceiling.
 - No new UI package is introduced.
-- `MainWindow` becomes materially smaller and shell-focused.
+- Old custom navigation/scroll-position routing is removed rather than left as dead code.
 
 Visual verification on real Windows remains mandatory after source/CI completion:
 
