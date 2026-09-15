@@ -31,6 +31,8 @@ $MinimumSamplesForP999 = 10000
 $MaximumRelativeNoiseFloor = 0.30
 $MaximumRelativeDrift = 0.20
 $ExtremeWindowRelativeDeviation = 0.50
+$MaximumWorkloadRelativeActivityDrift = 0.25
+$MaximumWorkloadExtremeWindowRelativeDeviation = 0.50
 $NumericTolerance = 0.001
 
 function Get-RequiredPropertyValue {
@@ -176,6 +178,174 @@ function Get-Percentile {
     $fraction = $position - $lower
     return [double]$SortedValues[$lower] +
         (([double]$SortedValues[$upper] - [double]$SortedValues[$lower]) * $fraction)
+}
+
+function New-WorkloadSignalSnapshot {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][double[]]$Values
+    )
+
+    [double[]]$sorted = @($Values | Sort-Object)
+    [double[]]$early = @([double]$Values[0], [double]$Values[1])
+    [double[]]$late = @([double]$Values[$Values.Count - 2], [double]$Values[$Values.Count - 1])
+    $early = @($early | Sort-Object)
+    $late = @($late | Sort-Object)
+
+    $median = Get-Percentile $sorted 0.50
+    $earlyMedian = Get-Percentile $early 0.50
+    $lateMedian = Get-Percentile $late 0.50
+
+    if ($median -eq 0) {
+        $allZero = @($Values | Where-Object { [double]$_ -ne 0 }).Count -eq 0
+        $relativeDrift = if ($allZero) { 0.0 } else { [double]::PositiveInfinity }
+        $maximumRelativeDeviation = if ($allZero) { 0.0 } else { [double]::PositiveInfinity }
+    }
+    else {
+        $denominator = [Math]::Abs($median)
+        $relativeDrift = [Math]::Abs($lateMedian - $earlyMedian) / $denominator
+        $maximumRelativeDeviation = 0.0
+        foreach ($value in $Values) {
+            $deviation = [Math]::Abs([double]$value - $median) / $denominator
+            if ($deviation -gt $maximumRelativeDeviation) {
+                $maximumRelativeDeviation = $deviation
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        SignalName = $Name
+        Median = $median
+        EarlyMedian = $earlyMedian
+        LateMedian = $lateMedian
+        RelativeDrift = $relativeDrift
+        HasMaterialDrift = $relativeDrift -gt $MaximumWorkloadRelativeActivityDrift
+        MaximumRelativeDeviation = $maximumRelativeDeviation
+        HasExtremeWindow = $maximumRelativeDeviation -gt $MaximumWorkloadExtremeWindowRelativeDeviation
+    }
+}
+
+function Get-ExpectedWorkloadStability {
+    param(
+        [Parameter(Mandatory)][object[]]$Windows,
+        [Parameter(Mandatory)][object[]]$RuntimeWindows
+    )
+
+    if ($Windows.Count -ne $RequiredBaselineWindows -or $RuntimeWindows.Count -ne $RequiredBaselineWindows) {
+        return [pscustomobject]@{ Status = 'Insufficient'; Signals = @(); HasReasons = $true }
+    }
+
+    $dpcRates = @()
+    $isrRates = @()
+    $cpuValues = @()
+    $cpuEvidenceCount = 0
+
+    for ($index = 0; $index -lt $Windows.Count; $index++) {
+        $windowNumber = $index + 1
+        $window = $Windows[$index]
+        $runtimeWindow = $RuntimeWindows[$index]
+        $duration = Get-RequiredPropertyValue $window 'actualDurationMilliseconds' "window $windowNumber"
+        $dpcCount = [int](Get-RequiredPropertyValue $window 'dpcEventCount' "window $windowNumber")
+        $isrCount = [int](Get-RequiredPropertyValue $window 'isrEventCount' "window $windowNumber")
+
+        if (-not (Test-FinitePositive $duration) -or $dpcCount -lt 0 -or $isrCount -lt 0) {
+            return [pscustomobject]@{ Status = 'Insufficient'; Signals = @(); HasReasons = $true }
+        }
+
+        $durationSeconds = [double]$duration / 1000.0
+        $dpcRates += [double]$dpcCount / $durationSeconds
+        $isrRates += [double]$isrCount / $durationSeconds
+
+        $context = Get-OptionalPropertyValue $runtimeWindow 'context'
+        $cpuBusy = Get-OptionalPropertyValue $context 'systemCpuBusyPercent'
+        if ($null -ne $cpuBusy) {
+            if (-not (Test-FiniteNumber $cpuBusy) -or [double]$cpuBusy -lt 0 -or [double]$cpuBusy -gt 100) {
+                return [pscustomobject]@{ Status = 'Insufficient'; Signals = @(); HasReasons = $true }
+            }
+
+            $cpuEvidenceCount++
+            $cpuValues += [double]$cpuBusy
+        }
+    }
+
+    if ($cpuEvidenceCount -gt 0 -and $cpuEvidenceCount -lt $RequiredBaselineWindows) {
+        return [pscustomobject]@{ Status = 'Insufficient'; Signals = @(); HasReasons = $true }
+    }
+
+    $signals = @(
+        New-WorkloadSignalSnapshot 'DPC event rate' ([double[]]$dpcRates)
+        New-WorkloadSignalSnapshot 'ISR event rate' ([double[]]$isrRates)
+    )
+    if ($cpuEvidenceCount -eq $RequiredBaselineWindows) {
+        $signals += New-WorkloadSignalSnapshot 'System CPU busy' ([double[]]$cpuValues)
+    }
+
+    $changing = @($signals | Where-Object { $_.HasMaterialDrift -or $_.HasExtremeWindow })
+    if ($changing.Count -eq 0) {
+        return [pscustomobject]@{ Status = 'Stable'; Signals = $signals; HasReasons = $false }
+    }
+
+    return [pscustomobject]@{ Status = 'Changing'; Signals = $signals; HasReasons = $true }
+}
+
+function Assert-WorkloadReadinessConsistency {
+    param(
+        [Parameter(Mandatory)][object[]]$Windows,
+        [Parameter(Mandatory)][object[]]$RuntimeWindows,
+        [Parameter(Mandatory)]$SerializedWorkload,
+        [Parameter(Mandatory)]$SerializedOptimizer,
+        [Parameter(Mandatory)]$Quality,
+        [Parameter(Mandatory)][string]$Scenario
+    )
+
+    $expected = Get-ExpectedWorkloadStability $Windows $RuntimeWindows
+    $serializedStatus = [string](Get-RequiredPropertyValue $SerializedWorkload 'status' 'Workload stability')
+    $serializedEligible = [bool](Get-RequiredPropertyValue $SerializedWorkload 'isEligibleForExperiment' 'Workload stability')
+    $serializedReasons = @((Get-RequiredPropertyValue $SerializedWorkload 'reasons' 'Workload stability'))
+
+    if ($serializedStatus -ne $expected.Status) {
+        throw "Serialized workload readiness status '$serializedStatus' does not match recomputed '$($expected.Status)'."
+    }
+    if ($serializedEligible -ne ($expected.Status -eq 'Stable')) {
+        throw "Serialized workload readiness eligibility '$serializedEligible' does not match recomputed status '$($expected.Status)'."
+    }
+    if (($expected.Status -eq 'Stable' -and $serializedReasons.Count -ne 0) -or
+        ($expected.Status -ne 'Stable' -and $serializedReasons.Count -eq 0)) {
+        throw "Serialized workload readiness reasons are inconsistent with recomputed status '$($expected.Status)'."
+    }
+
+    $serializedSignals = @((Get-RequiredPropertyValue $SerializedWorkload 'signals' 'Workload stability'))
+    if ($serializedSignals.Count -ne $expected.Signals.Count) {
+        throw "Serialized workload signal count '$($serializedSignals.Count)' does not match recomputed '$($expected.Signals.Count)'."
+    }
+
+    for ($index = 0; $index -lt $expected.Signals.Count; $index++) {
+        $expectedSignal = $expected.Signals[$index]
+        $serializedSignal = $serializedSignals[$index]
+        $context = "Workload signal $($index + 1)"
+        $serializedName = [string](Get-RequiredPropertyValue $serializedSignal 'signalName' $context)
+        if ($serializedName -ne $expectedSignal.SignalName) {
+            throw "$context name '$serializedName' does not match recomputed '$($expectedSignal.SignalName)'."
+        }
+
+        Assert-NearlyEqual $expectedSignal.Median (Get-RequiredPropertyValue $serializedSignal 'median' $context) "$context median"
+        Assert-NearlyEqual $expectedSignal.EarlyMedian (Get-RequiredPropertyValue $serializedSignal 'earlyMedian' $context) "$context early median"
+        Assert-NearlyEqual $expectedSignal.LateMedian (Get-RequiredPropertyValue $serializedSignal 'lateMedian' $context) "$context late median"
+        Assert-NearlyEqual $expectedSignal.RelativeDrift (Get-RequiredPropertyValue $serializedSignal 'relativeDrift' $context) "$context relative drift"
+        Assert-NearlyEqual $expectedSignal.MaximumRelativeDeviation (Get-RequiredPropertyValue $serializedSignal 'maximumRelativeDeviation' $context) "$context maximum relative deviation"
+
+        if ([bool](Get-RequiredPropertyValue $serializedSignal 'hasMaterialDrift' $context) -ne [bool]$expectedSignal.HasMaterialDrift -or
+            [bool](Get-RequiredPropertyValue $serializedSignal 'hasExtremeWindow' $context) -ne [bool]$expectedSignal.HasExtremeWindow) {
+            throw "$context drift flags do not match recomputed workload evidence."
+        }
+    }
+
+    $qualityValid = [bool](Get-RequiredPropertyValue $Quality 'isValidForComparison' 'Baseline quality')
+    $expectedOptimizerEligible = $Scenario -eq 'RealWorld' -and $qualityValid -and $expected.Status -eq 'Stable'
+    $serializedOptimizerEligible = [bool](Get-RequiredPropertyValue $SerializedOptimizer 'isEligible' 'Optimizer eligibility')
+    if ($serializedOptimizerEligible -ne $expectedOptimizerEligible) {
+        throw "Serialized optimizer eligibility '$serializedOptimizerEligible' does not match recomputed '$expectedOptimizerEligible'."
+    }
 }
 
 function Assert-Distribution {
@@ -649,6 +819,8 @@ if ($evidenceType -eq 'baseline') {
         Assert-NearlyEqual (Get-OptionalPropertyValue $captureDpc 'p99Microseconds') (Get-OptionalPropertyValue $window 'dpcP99Microseconds') "Baseline DPC p99 window $expectedWindowNumber"
         Assert-NearlyEqual (Get-OptionalPropertyValue $captureIsr 'p99Microseconds') (Get-OptionalPropertyValue $window 'isrP99Microseconds') "Baseline ISR p99 window $expectedWindowNumber"
     }
+
+    Assert-WorkloadReadinessConsistency $windows $runtimeWindows $workloadStability $optimizerEligibility $quality $scenarioValue
 }
 
 $sha256 = (Get-FileHash -LiteralPath $resolvedPath -Algorithm SHA256).Hash.ToLowerInvariant()
