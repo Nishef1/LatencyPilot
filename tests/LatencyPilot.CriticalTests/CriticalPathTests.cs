@@ -4,6 +4,7 @@ using System.Text.Json;
 using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Benchmarking.Statistics;
+using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.Experiments;
 using LatencyPilot.Core.Metrics;
 using LatencyPilot.Core.Results;
@@ -430,6 +431,39 @@ public sealed class CriticalPathTests
             new SystemLoadSnapshot(200, 800, 500));
         Assert.IsNotNull(calculatedBusy);
         Assert.AreEqual(80d, calculatedBusy.Value, 0.000001d);
+
+        var usbPorts = new[]
+        {
+            new UsbHubPortSnapshot(
+                "\\\\?\\usb#root_hub30#test",
+                "USB\\ROOT_HUB30\\TEST",
+                "PCI\\VEN_TEST&DEV_XHCI",
+                3,
+                "{745A17A0-74D3-11D0-B6FE-00A0C90F57DA}\\0001",
+                UsbPortConnectionStatus.Connected,
+                UsbDeviceSpeed.High,
+                false),
+        };
+        var exactUsbRoute = UsbPortRouteCorrelator.Resolve(
+            "{745a17a0-74d3-11d0-b6fe-00a0c90f57da}\\0001",
+            "PCI\\VEN_TEST&DEV_XHCI",
+            usbPorts);
+        Assert.AreEqual(UsbPortRouteResolutionStatus.Available, exactUsbRoute.Status);
+        Assert.AreEqual(3u, exactUsbRoute.Port?.ConnectionIndex);
+
+        var missingUsbRoute = UsbPortRouteCorrelator.Resolve(
+            "{745A17A0-74D3-11D0-B6FE-00A0C90F57DA}\\9999",
+            "PCI\\VEN_TEST&DEV_XHCI",
+            usbPorts);
+        Assert.AreEqual(UsbPortRouteResolutionStatus.NotFound, missingUsbRoute.Status);
+        Assert.IsNull(missingUsbRoute.Port);
+
+        var duplicateUsbRoute = UsbPortRouteCorrelator.Resolve(
+            usbPorts[0].DriverKeyName,
+            "PCI\\VEN_TEST&DEV_XHCI",
+            [usbPorts[0], usbPorts[0] with { ConnectionIndex = 4 }]);
+        Assert.AreEqual(UsbPortRouteResolutionStatus.Ambiguous, duplicateUsbRoute.Status);
+        Assert.IsNull(duplicateUsbRoute.Port);
     }
 
     private static void AssertTransactionalRegistryCommitAndRollback()
