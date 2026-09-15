@@ -160,10 +160,10 @@ public sealed partial class MainWindow
                 "The five-second LatencyPilot settle period is not workload warm-up. Finish loading, shader compilation, startup transitions or other one-time work before starting the baseline unless those transitions are intentionally the workload being tested.",
                 "Before/after evidence is comparable only when the foreground workload, power conditions and background state are reproduced closely enough on both sides."),
             _ => (
-                "The real workload is warmed and at a repeatable point.",
-                "The workload and background activity will stay consistent.",
-                "For a real-world run, keep the applications that are part of the problem. Do not close them merely to improve the numbers. Finish one-time startup/loading work first unless it is intentionally what you are measuring.",
-                "Other applications may remain open. Repeatability matters more than artificially making the machine idle; use the same scene, action loop or workload pattern through the full sequence."),
+                "The real workload is warmed and already at the steady scene, action loop, or workload pattern I want to measure.",
+                "I will keep that same steady pattern through all five windows; this is not a multi-scene or phase-changing built-in benchmark.",
+                "Keep the applications that are part of the problem open. Finish loading, shader compilation and one-time transitions first. The five-window baseline is designed for a steady repeated workload, not for different benchmark phases.",
+                "Other applications may remain open if they are part of the intended test context. Hold the same scene/action loop/background state throughout. For a built-in benchmark that changes scenes or phases, compare repeated whole benchmark runs instead of treating its internal phases as five equivalent windows."),
         };
 
         _measurementContextReadyCheckBox.Content = new TextBlock { Text = contextText, TextWrapping = TextWrapping.Wrap, FontSize = 12 };
@@ -223,8 +223,9 @@ public sealed partial class MainWindow
             }
             else
             {
-                _measurementReadinessStatusText.Text =
-                    "Prepared · ready for five 20-second windows.";
+                _measurementReadinessStatusText.Text = SelectedMeasurementScenario == MeasurementScenario.RealWorld
+                    ? "Prepared · steady workload confirmed · ready for five 20-second windows."
+                    : "Prepared · ready for five 20-second windows.";
                 _measurementReadinessStatusText.Foreground = ThemeBrush("SuccessBrush");
             }
         }
