@@ -29,6 +29,14 @@ public sealed class GpuRuntimePlacementContractTests
         };
         Assert.IsFalse(missingRuntimeEvidence.ConfirmsRequestedPlacement);
 
+        var inconsistentResolvedCounts = confirmed with
+        {
+            TargetProcessorIsrEventCount = 199,
+            OffTargetIsrEventCount = 0,
+            ObservedProcessors = [new ProcessorObservedInterruptCount(3, 199)],
+        };
+        Assert.IsFalse(inconsistentResolvedCounts.ConfirmsRequestedPlacement);
+
         var offTargetEvidence = confirmed with
         {
             TargetProcessorIsrEventCount = 199,
