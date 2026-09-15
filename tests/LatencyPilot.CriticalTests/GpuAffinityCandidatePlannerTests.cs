@@ -160,30 +160,43 @@ public sealed class GpuAffinityCandidatePlannerTests
             candidates[0].Processor,
             true,
             startedAt);
+        var runtimePlacement = new GpuInterruptRuntimePlacementEvidence(
+            verification.TargetDeviceInstanceId,
+            "nvlddmkm",
+            candidates[0].Processor.Number,
+            200,
+            200,
+            0,
+            5,
+            [new ProcessorObservedInterruptCount(candidates[0].Processor.Number, 200)]);
 
         var mapped = GpuOptimizationEvidenceCollector.TryCreateRun(
             request,
             verification,
             kernel,
             rawFrames,
+            runtimePlacement,
             Guid.NewGuid());
         Assert.IsTrue(mapped.IsUsable, mapped.Reason);
         Assert.IsNotNull(mapped.Run);
         Assert.AreEqual(1_000, mapped.Run.Measurement.Primary.Samples.Count);
         Assert.IsTrue(mapped.Run.Measurement.Guardrails.Values.All(static series => series.Samples.Count >= 1_000));
         Assert.AreEqual(candidates[0].Processor, mapped.Run.AppliedProcessor);
+        Assert.AreEqual(runtimePlacement, mapped.RuntimePlacement);
 
         Assert.IsFalse(GpuOptimizationEvidenceCollector.TryCreateRun(
             request,
             verification with { IsVerified = false },
             kernel,
             rawFrames,
+            runtimePlacement,
             Guid.NewGuid()).IsUsable);
         Assert.IsFalse(GpuOptimizationEvidenceCollector.TryCreateRun(
             request,
             verification,
             kernel,
             rawFrames with { ProcessId = 78 },
+            runtimePlacement,
             Guid.NewGuid()).IsUsable);
         Assert.IsFalse(GpuOptimizationEvidenceCollector.TryCreateRun(
             request,
@@ -194,12 +207,32 @@ public sealed class GpuAffinityCandidatePlannerTests
                 ActualWindowMilliseconds = 20_000,
                 EndedAtUtc = startedAt.AddSeconds(20),
             },
+            runtimePlacement,
             Guid.NewGuid()).IsUsable);
         Assert.IsFalse(GpuOptimizationEvidenceCollector.TryCreateRun(
             request with { SourceRevisionId = "dirty" },
             verification,
             kernel,
             rawFrames,
+            runtimePlacement,
+            Guid.NewGuid()).IsUsable);
+        Assert.IsFalse(GpuOptimizationEvidenceCollector.TryCreateRun(
+            request,
+            verification,
+            kernel,
+            rawFrames,
+            null,
+            Guid.NewGuid()).IsUsable);
+        Assert.IsFalse(GpuOptimizationEvidenceCollector.TryCreateRun(
+            request,
+            verification,
+            kernel,
+            rawFrames,
+            runtimePlacement with
+            {
+                TargetProcessorIsrEventCount = 199,
+                OffTargetIsrEventCount = 1,
+            },
             Guid.NewGuid()).IsUsable);
 
         var quality = BaselineQualityAnalyzer.Analyze(Enumerable.Range(1, 5)
@@ -389,7 +422,18 @@ public sealed class GpuAffinityCandidatePlannerTests
                 run,
                 null,
                 DateTimeOffset.UnixEpoch,
-                DateTimeOffset.UnixEpoch + request.RequestedDuration));
+                DateTimeOffset.UnixEpoch + request.RequestedDuration,
+                request.Role == GpuConfirmationOrder.Candidate
+                    ? new GpuInterruptRuntimePlacementEvidence(
+                        "PCI\\VEN_10DE&DEV_TEST",
+                        "nvlddmkm",
+                        request.Finalist.Processor.Number,
+                        200,
+                        200,
+                        0,
+                        0,
+                        [new ProcessorObservedInterruptCount(request.Finalist.Processor.Number, 200)])
+                    : null));
         }
 
         public void AwaitDecision(Guid experimentId)
