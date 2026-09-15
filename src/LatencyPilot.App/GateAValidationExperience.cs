@@ -26,6 +26,7 @@ public sealed partial class MainWindow
             Content = "Validate GPU · one click",
             MinHeight = 40,
             Padding = new Thickness(16, 8, 16, 8),
+            Style = (Style)Application.Current.Resources["SecondaryButtonStyle"],
         };
         AutomationProperties.SetName(_gateAValidationButton, "Validate GPU with one click");
         AutomationProperties.SetHelpText(
@@ -45,6 +46,7 @@ public sealed partial class MainWindow
             return;
         }
 
+        var windowHiddenForWorkload = false;
         _gateAValidationButton.IsEnabled = false;
         try
         {
@@ -54,7 +56,11 @@ public sealed partial class MainWindow
             }
 
             EvidenceExportStatusText.Text =
-                "One-click GPU validation started. Keep the same warmed game/scene active through the baseline. After UAC, return to that workload; LatencyPilot will test one candidate and restore the original state automatically.";
+                "One-click GPU validation started. LatencyPilot will hide itself so the same warmed game/scene stays foreground, capture the baseline, request UAC once, test one candidate, restore the original state, and write a report.";
+
+            AppWindow.Hide();
+            windowHiddenForWorkload = true;
+            await Task.Delay(TimeSpan.FromSeconds(2));
 
             await CaptureBaselineAsync();
             if (string.IsNullOrWhiteSpace(_latestEvidenceJson))
@@ -69,9 +75,6 @@ public sealed partial class MainWindow
             var baselinePath = Path.Combine(validationDirectory, $"gate-a-baseline-{stamp}.json");
             var reportPath = Path.Combine(validationDirectory, $"gate-a-report-{stamp}.json");
             await File.WriteAllTextAsync(baselinePath, _latestEvidenceJson);
-
-            EvidenceExportStatusText.Text =
-                "Baseline captured. Approve the UAC prompt once, then return to the same warmed workload. The candidate test, runtime verification, rollback, recovery exercise, and report are automatic.";
 
             var helperProject = Path.Combine(
                 _gateARepositoryRoot,
@@ -145,6 +148,11 @@ public sealed partial class MainWindow
         }
         finally
         {
+            if (windowHiddenForWorkload && !AppWindow.IsVisible)
+            {
+                AppWindow.Show(true);
+            }
+
             _gateAValidationButton.IsEnabled = true;
         }
     }
