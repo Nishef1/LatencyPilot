@@ -264,6 +264,24 @@ public sealed class GpuAffinityCandidatePlannerTests
         Assert.AreEqual(0, keepBackend.ActiveExperimentCount);
         Assert.IsTrue(keepBackend.AppliedCandidates.Skip(candidates.Count)
             .All(candidate => candidate == keepResult.Screening.Finalist.Candidate));
+
+        var setupFailureBackend = new FakeGpuOptimizationExecutionBackend(
+            OrchestrationMeasurement(100, 10),
+            OrchestrationMeasurement(100, 10),
+            failBeginMeasurementCall: 1);
+        try
+        {
+            _ = await new GpuOptimizationOrchestrator(setupFailureBackend).RunAsync(orchestrationRequest);
+            Assert.Fail("A simulated post-apply measurement setup failure must escape the orchestrator.");
+        }
+        catch (InvalidOperationException exception)
+        {
+            StringAssert.Contains(exception.Message, "simulated measurement setup failure");
+        }
+
+        Assert.AreEqual(1, setupFailureBackend.ApplyCount);
+        Assert.AreEqual(1, setupFailureBackend.RollbackCount);
+        Assert.AreEqual(0, setupFailureBackend.ActiveExperimentCount);
     }
 
     private static GpuOptimizationMeasurementSet OrchestrationMeasurement(double primary, double frameTime) =>
@@ -285,13 +303,17 @@ public sealed class GpuAffinityCandidatePlannerTests
         private readonly GpuOptimizationMeasurementSet original;
         private readonly GpuOptimizationMeasurementSet candidate;
         private readonly HashSet<Guid> activeExperiments = [];
+        private readonly int failBeginMeasurementCall;
+        private int beginMeasurementCount;
 
         internal FakeGpuOptimizationExecutionBackend(
             GpuOptimizationMeasurementSet original,
-            GpuOptimizationMeasurementSet candidate)
+            GpuOptimizationMeasurementSet candidate,
+            int failBeginMeasurementCall = 0)
         {
             this.original = original;
             this.candidate = candidate;
+            this.failBeginMeasurementCall = failBeginMeasurementCall;
         }
 
         internal int ApplyCount { get; private set; }
@@ -329,6 +351,11 @@ public sealed class GpuAffinityCandidatePlannerTests
         public void BeginMeasurement(Guid experimentId)
         {
             Assert.IsTrue(activeExperiments.Contains(experimentId));
+            beginMeasurementCount++;
+            if (beginMeasurementCount == failBeginMeasurementCall)
+            {
+                throw new InvalidOperationException("simulated measurement setup failure");
+            }
         }
 
         public Task<GpuOptimizationEvidenceCollectionResult> CaptureAsync(
