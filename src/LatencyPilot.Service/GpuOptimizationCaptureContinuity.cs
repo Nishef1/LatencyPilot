@@ -17,7 +17,7 @@ internal sealed record GpuOptimizationCaptureContinuityResult(
     bool IsStable,
     IReadOnlyList<string> Reasons);
 
-internal static partial class GpuOptimizationCaptureContinuity
+internal static class GpuOptimizationCaptureContinuity
 {
     private const uint NoActiveConsoleSession = uint.MaxValue;
 
@@ -120,6 +120,6 @@ internal static partial class GpuOptimizationCaptureContinuity
             reasons.AsReadOnly());
     }
 
-    [LibraryImport("kernel32.dll")]
-    private static partial uint WTSGetActiveConsoleSessionId();
+    [DllImport("kernel32.dll")]
+    private static extern uint WTSGetActiveConsoleSessionId();
 }
