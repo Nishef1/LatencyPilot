@@ -43,18 +43,45 @@ The command is deliberately read-only except for writing the requested audit JSO
 
 `logman query -ets` and Windows service inspection are used only as observation surfaces; the audit does not start/stop a Service, ETW session, device, or mutation experiment.
 
-## 3. Finish the manual Phase 2 evidence
+## 3. Capture reproducible UI/accessibility evidence
 
-A green audit JSON is **not** Phase 2 closure by itself. Record the remaining owner-observed checks from `docs/PHYSICAL_VALIDATION.md`:
+LatencyPilot includes `scripts/Capture-UiAccessibilityEvidence.ps1`, which uses Microsoft's WinApp CLI/UI Automation surface. Install `Microsoft.winappcli` with WinGet once, start the exact-revision App, put the UI into the state being reviewed, and capture each required scenario separately:
+
+```powershell
+$uiOut = Join-Path $env:USERPROFILE 'Documents\LatencyPilot\validation\ui'
+
+.\scripts\Capture-UiAccessibilityEvidence.ps1 `
+  -AppTarget 'LatencyPilot' `
+  -Scenario Light `
+  -OutputDirectory $uiOut
+
+.\scripts\Capture-UiAccessibilityEvidence.ps1 `
+  -AppTarget 'LatencyPilot' `
+  -Scenario Dark `
+  -OutputDirectory $uiOut
+
+.\scripts\Capture-UiAccessibilityEvidence.ps1 `
+  -AppTarget 'LatencyPilot' `
+  -Scenario HighContrast `
+  -OutputDirectory $uiOut
+```
+
+Repeat for `TextScale`, `Narrow`, and `Keyboard` after placing Windows/the App in the corresponding state. Each run records WinApp connection state, a deep UIA tree, an interactive-only tree, a screenshot and a SHA-256 manifest. The capture deliberately does **not** claim accessibility compliance by itself.
+
+Review the captured UIA tree for meaningful names/roles and logical focus exposure, run Accessibility Insights FastPass, exercise the primary flow without pointer input, and perform a focused Narrator pass. Human review remains authoritative for clipping/overlap, reading order, announcement quality and whether the live interaction is understandable.
+
+## 4. Finish the remaining manual Phase 2 evidence
+
+A green read-only audit JSON plus UI evidence is **not** Phase 2 closure by itself. Record the remaining owner-observed checks from `docs/PHYSICAL_VALIDATION.md`:
 
 1. compare DPC/ISR attribution against an independent observer where practical;
 2. exercise active-console-session rejection plus App-close, Service-restart and interrupted/partial-baseline behavior;
-3. inspect Light, Dark, High Contrast, narrow/text-scaled layouts, keyboard-only navigation and screen-reader/UIA naming;
+3. review the captured Light/Dark/High Contrast/narrow/text-scaled/keyboard/UIA evidence with Accessibility Insights and Narrator;
 4. compare before/after machine state and explicitly record that the read-only validation caused no unrelated system mutation.
 
 Only after those checks and the automated audit agree may Phase 2 be marked physically closed.
 
-## 4. Gate A next
+## 5. Gate A next
 
 After Phase 2 is physically closed, follow `docs/PHASE3_PHYSICAL_VALIDATION.md` using the exact same current-revision Real-world baseline. Gate A still requires a real owner-local GPU affinity apply/restart/runtime-placement/rollback/recovery exercise. ConfigMgr allocated interrupt resources are provenance only; success requires the exact stored candidate around a clean kernel capture plus attributable GPU-driver ISR runtime placement on the requested processor.
 
