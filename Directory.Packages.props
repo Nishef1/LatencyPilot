@@ -4,6 +4,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageVersion Include="ManagedNativeWifi" Version="3.0.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.2.6" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.12" />
