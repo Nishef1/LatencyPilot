@@ -370,6 +370,24 @@ public sealed class GpuAffinityCandidatePlannerTests
 
         internal List<GpuAffinityCandidate> AppliedCandidates { get; } = [];
 
+        public GpuGraphicsTargetIdentityResolution ResolveGraphicsTarget(
+            string deviceInstanceId,
+            string? presentMonApiPath,
+            string? presentMonControlPipeName)
+        {
+            _ = presentMonApiPath;
+            _ = presentMonControlPipeName;
+            return new GpuGraphicsTargetIdentityResolution(
+                true,
+                new GpuGraphicsTargetIdentitySnapshot(
+                    deviceInstanceId,
+                    new GraphicsAdapterLuid(1, 2),
+                    7,
+                    "Test GPU",
+                    1),
+                null);
+        }
+
         public GpuInterruptAffinitySnapshot CaptureOriginal(string deviceInstanceId) =>
             new(
                 deviceInstanceId,
