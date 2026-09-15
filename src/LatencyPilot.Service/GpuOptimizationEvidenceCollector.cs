@@ -46,7 +46,7 @@ internal sealed class GpuOptimizationEvidenceCollector
     private const int CaptureDeadlineSlackSeconds = 15;
     private const int KernelMaximumEvents = 2_000_000;
 
-    internal async Task<GpuOptimizationEvidenceCollectionResult> CaptureAsync(
+    internal static async Task<GpuOptimizationEvidenceCollectionResult> CaptureAsync(
         GpuOptimizationEvidenceRequest request,
         GpuInterruptAffinitySnapshot originalState,
         string? presentMonApiPath = null,
