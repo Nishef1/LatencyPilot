@@ -102,8 +102,8 @@ internal static class NetworkRssPropertyMapper
 
         IEnumerable<string?> sequence = value switch
         {
-            string[] strings => strings,
-            IEnumerable<string> strings => strings,
+            string[] array => array,
+            IEnumerable<string> enumerable => enumerable,
             _ => throw UnexpectedType(name, value),
         };
 
@@ -118,13 +118,13 @@ internal static class NetworkRssPropertyMapper
             throw new InvalidDataException($"RSS provider property '{name}' contains a null array item.");
         }
 
-        var strings = materialized.Select(static item => item!).ToArray();
-        if (strings.Any(static item => item.Length > MaximumStringLength))
+        var values = materialized.Select(static item => item!).ToArray();
+        if (values.Any(static item => item.Length > MaximumStringLength))
         {
             throw new InvalidDataException($"RSS provider property '{name}' contains an oversized string item.");
         }
 
-        return Array.AsReadOnly(strings);
+        return Array.AsReadOnly(values);
     }
 
     private static InvalidDataException UnexpectedType(string name, object value) =>
