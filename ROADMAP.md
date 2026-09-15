@@ -185,6 +185,7 @@ authoritative stable baseline
 - [x] synchronized ETW + raw PresentMon evidence under one interval;
 - [x] raw DPC target metric and graphics guardrails;
 - [x] attributed GPU ISR runtime-placement verification;
+- [x] Gate A placement command fails closed unless direct resolved GPU-driver ISR evidence is confined to the requested processor;
 - [x] screening cannot Keep directly;
 - [x] fixed eight-run ABBA+BAAB confirmation;
 - [x] explicit five-way decision interpretation;
@@ -308,9 +309,9 @@ Auto mode completes a bounded supported multi-subsystem session and every retain
 ## Permanent-test policy
 
 - Default/target permanent suite size: **10**.
-- Current durable suite: **15 tests**.
+- Current durable suite: **16 tests**.
 - Owner-authorized maximum: **20**, only when needed to keep test files `<=1200` lines or when separate subsystem contracts materially improve durable failure isolation.
-- Current USB, input, NIC/RSS, profile/Pareto and restore contracts are intentionally separate under that authorization; do not merge them merely to hit the target number.
+- Current USB, input, NIC/RSS, profile/Pareto, restore and GPU runtime-placement contracts are intentionally separate under that authorization; do not merge them merely to hit the target number.
 - Temporary/obsolete tests must be removed rather than accumulated.
 - Hardware validation, exploratory benchmark runs and release checklists are not automated tests.
 
