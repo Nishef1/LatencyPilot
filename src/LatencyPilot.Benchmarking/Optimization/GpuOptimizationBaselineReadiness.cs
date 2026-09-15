@@ -4,6 +4,8 @@ namespace LatencyPilot.Benchmarking.Optimization;
 
 public static class GpuOptimizationBaselineReadiness
 {
+    private const int RequiredBaselineWindows = 5;
+
     public static bool IsEligible(
         BaselineQualityResult? quality,
         WorkloadStabilityResult? workloadStability) =>
@@ -11,14 +13,14 @@ public static class GpuOptimizationBaselineReadiness
         {
             IsValidForComparison: true,
             MethodVersion: BaselineQualityAnalyzer.MethodVersion,
-            TotalWindowCount: BaselineQualityAnalyzer.RequiredWindowCount,
-            ValidCaptureWindowCount: BaselineQualityAnalyzer.RequiredWindowCount,
+            TotalWindowCount: RequiredBaselineWindows,
+            ValidCaptureWindowCount: RequiredBaselineWindows,
         } validQuality &&
         validQuality.DpcP99.IsStable &&
         validQuality.IsrP99.IsStable &&
         validQuality.Reasons.Count == 0 &&
-        validQuality.DpcP99.EligibleWindowCount == BaselineQualityAnalyzer.RequiredWindowCount &&
-        validQuality.IsrP99.EligibleWindowCount == BaselineQualityAnalyzer.RequiredWindowCount &&
+        validQuality.DpcP99.EligibleWindowCount == RequiredBaselineWindows &&
+        validQuality.IsrP99.EligibleWindowCount == RequiredBaselineWindows &&
         workloadStability is
         {
             MethodVersion: WorkloadStabilityAnalyzer.MethodVersion,
