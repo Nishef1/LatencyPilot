@@ -16,9 +16,11 @@ param(
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
-$ExpectedSchema = 'latencypilot-evidence-v8'
+$ExpectedSchema = 'latencypilot-evidence-v9'
 $ExpectedProtocol = 6
 $ExpectedBaselineMethod = 'baseline-quality-v2'
+$ExpectedWorkloadMethod = 'workload-stability-v1'
+$ExpectedOptimizerTarget = 'gpu-affinity-v1'
 $QuickSnapshotPurpose = 'quick-diagnostic-snapshot'
 $DecisionBaselinePurpose = 'repeated-decision-baseline'
 $RequiredBaselineWindows = 5
@@ -566,14 +568,55 @@ if (@($requestIds | Group-Object | Where-Object Count -gt 1).Count -ne 0) {
 $windows = @()
 $runtimeWindows = @()
 $quality = $null
+$workloadStability = $null
+$optimizerEligibility = $null
 if ($evidenceType -eq 'baseline') {
     $windows = @((Get-RequiredPropertyValue $document 'windows' 'Baseline evidence'))
     $runtimeWindows = @((Get-RequiredPropertyValue $document 'runtimeWindows' 'Baseline evidence'))
     $quality = Get-RequiredPropertyValue $document 'quality' 'Baseline evidence'
+    $workloadStability = Get-RequiredPropertyValue $document 'workloadStability' 'Baseline evidence'
+    $optimizerEligibility = Get-RequiredPropertyValue $document 'optimizerEligibility' 'Baseline evidence'
     $baselineMethod = [string](Get-RequiredPropertyValue $document 'baselineMethodVersion' 'Baseline evidence')
     if ($baselineMethod -ne $ExpectedBaselineMethod) {
         throw "Baseline method '$baselineMethod' is not '$ExpectedBaselineMethod'."
     }
+
+    $workloadMethod = [string](Get-RequiredPropertyValue $workloadStability 'methodVersion' 'Workload stability')
+    $workloadStatus = [string](Get-RequiredPropertyValue $workloadStability 'status' 'Workload stability')
+    $workloadEligible = [bool](Get-RequiredPropertyValue $workloadStability 'isEligibleForExperiment' 'Workload stability')
+    $workloadReasons = @((Get-RequiredPropertyValue $workloadStability 'reasons' 'Workload stability'))
+    if ($workloadMethod -ne $ExpectedWorkloadMethod) {
+        throw "Workload readiness method '$workloadMethod' is not '$ExpectedWorkloadMethod'."
+    }
+    if ($workloadStatus -notin @('Stable', 'Changing', 'Insufficient')) {
+        throw "Workload readiness status '$workloadStatus' is invalid."
+    }
+    if ($workloadEligible -ne ($workloadStatus -eq 'Stable')) {
+        throw "Workload readiness eligibility '$workloadEligible' is inconsistent with status '$workloadStatus'."
+    }
+    if ($workloadStatus -eq 'Stable' -and $workloadReasons.Count -ne 0) {
+        throw 'Stable workload readiness unexpectedly contains failure reasons.'
+    }
+
+    $optimizerTarget = [string](Get-RequiredPropertyValue $optimizerEligibility 'target' 'Optimizer eligibility')
+    $optimizerIsEligible = [bool](Get-RequiredPropertyValue $optimizerEligibility 'isEligible' 'Optimizer eligibility')
+    $optimizerReason = [string](Get-RequiredPropertyValue $optimizerEligibility 'reason' 'Optimizer eligibility')
+    if ($optimizerTarget -ne $ExpectedOptimizerTarget) {
+        throw "Optimizer eligibility target '$optimizerTarget' is not '$ExpectedOptimizerTarget'."
+    }
+    if ([string]::IsNullOrWhiteSpace($optimizerReason)) {
+        throw 'Optimizer eligibility must include a non-empty reason.'
+    }
+    if ($optimizerIsEligible -and $scenarioValue -ne 'RealWorld') {
+        throw "Optimizer eligibility cannot be true for scenario '$scenarioValue'."
+    }
+    if ($optimizerIsEligible -and (-not [bool](Get-RequiredPropertyValue $quality 'isValidForComparison' 'Baseline quality'))) {
+        throw 'Optimizer eligibility cannot be true when baseline comparison quality is invalid.'
+    }
+    if ($optimizerIsEligible -and ($workloadStatus -ne 'Stable' -or -not $workloadEligible -or $workloadReasons.Count -ne 0)) {
+        throw 'Optimizer eligibility cannot be true when workload readiness is not Stable and clean.'
+    }
+
     if ($captures.Count -ne $windows.Count -or $captures.Count -ne $runtimeWindows.Count) {
         throw "Baseline evidence is misaligned: captures=$($captures.Count), windows=$($windows.Count), runtimeWindows=$($runtimeWindows.Count)."
     }
@@ -714,6 +757,9 @@ else {
     Write-Host "Method:          $(Get-RequiredPropertyValue $document 'baselineMethodVersion' 'Baseline evidence')"
     Write-Host "Status:          $(Get-RequiredPropertyValue $quality 'status' 'Baseline quality')"
     Write-Host "Valid compare:   $(Get-RequiredPropertyValue $quality 'isValidForComparison' 'Baseline quality')"
+    Write-Host "Workload:        $(Get-RequiredPropertyValue $workloadStability 'status' 'Workload stability') ($ExpectedWorkloadMethod)"
+    Write-Host "Optimizer:       $(Get-RequiredPropertyValue $optimizerEligibility 'isEligible' 'Optimizer eligibility') ($ExpectedOptimizerTarget)"
+    Write-Host "Optimizer reason: $(Get-RequiredPropertyValue $optimizerEligibility 'reason' 'Optimizer eligibility')"
 
     $dpcQuality = Get-RequiredPropertyValue $quality 'dpcP99' 'Baseline quality'
     $isrQuality = Get-RequiredPropertyValue $quality 'isrP99' 'Baseline quality'
