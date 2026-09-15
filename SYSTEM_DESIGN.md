@@ -352,13 +352,13 @@ Gate D  user-facing product arming
 Current export:
 
 ```text
-schema = latencypilot-evidence-v8
+schema = latencypilot-evidence-v9
 protocolVersion = 6
 purpose = quick-diagnostic-snapshot | repeated-decision-baseline
 sourceRevisionId = exact clean source when available
 ```
 
-Observation artifacts contain one bounded capture. Baseline artifacts retain aligned captures/windows/runtime context plus `baseline-quality-v2`. Workload-stability readiness is deterministic from the same five-window capture activity and is used by optimizer eligibility; changing this serialized evidence contract requires a new evidence schema version rather than silently redefining v8.
+Observation artifacts contain one bounded capture. Baseline artifacts retain aligned captures/windows/runtime context plus `baseline-quality-v2`, the serialized `workload-stability-v1` result, and the explicit `gpu-affinity-v1` optimizer-eligibility result/reason. The schema therefore preserves the distinction between `quality.isValidForComparison` and `optimizerEligibility.isEligible`; one must never be inferred from the other.
 
 Serialization/file I/O occurs outside authoritative measurement windows. Saved JSON receives SHA-256 verification metadata.
 
@@ -473,9 +473,9 @@ Diagnostics export is local/redacted and performs no automatic upload.
 ## 19. Permanent test strategy
 
 - Default/target: **10** permanent tests.
-- Current durable suite: **15**.
+- Current durable suite: **18**.
 - Owner-authorized maximum: **20** only when needed for `<=1200` lines per test file or materially safer durable failure isolation.
-- Current subsystem-specific USB, input, NIC/RSS, profile/Pareto and restore contracts intentionally use that separation.
+- Current subsystem-specific USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness, GPU runtime-placement and installed-Service source-provenance contracts intentionally use that separation.
 - Temporary/obsolete tests must be removed rather than accumulated.
 
 Hardware validation is separate from this budget.
