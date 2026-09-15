@@ -42,7 +42,7 @@ Phase 0 governance
 → 1.0
 ```
 
-Phase closure remains evidence-gated, but ADR 0004 allows later-phase **source implementation** to overlap remaining diagnostic/product-polish validation once the prerequisite measurement substrate has produced a valid targeted Real-world baseline. Overlap never arms mutation early and never counts as closing an unfinished phase.
+ADR 0004 allows later-phase **source implementation** to overlap remaining physical validation once a valid targeted Real-world baseline exists. Overlap never arms mutation early and never counts as closing an unfinished phase.
 
 ---
 
@@ -62,10 +62,6 @@ Phase closure remains evidence-gated, but ADR 0004 allows later-phase **source i
 ### Exit gate
 
 A contributor can determine product intent, non-goals, architecture, contribution rules and completion criteria without chat history.
-
-### After Phase 0
-
-Proceed to Phase 1: buildable solution → comparison invariants → read-only desktop slice → validation/package evidence.
 
 ---
 
@@ -93,21 +89,13 @@ Proceed to Phase 1: buildable solution → comparison invariants → read-only d
 - [x] guardrail regression cannot be hidden by local target improvement;
 - [x] structurally insufficient evidence is Inconclusive.
 
-Historical Phase 1 release/CI evidence remains historical. Current hosted CI is intentionally test-only and does not prove WinUI or Service runtime behavior.
-
-### Exit gate
-
-Historical Phase 1 evidence established a buildable self-contained x64 foundation with deterministic tests and no device mutation.
-
-### After Phase 1
-
-Proceed to Phase 2: authoritative inventory/resource evidence → privileged read-only ETW observation → module/CPU attribution → decision-baseline methodology → evidence UX → physical closure.
+Historical Phase 1 release/build evidence remains historical. Current hosted CI is intentionally test-only.
 
 ---
 
 ## Phase 2 — Trustworthy read-only Windows observation
 
-**State: PHYSICAL CLOSURE IN PROGRESS; TARGETED PHASE 3 SOURCE WORK ALLOWED BY ADR 0004**
+**State: PHYSICAL CLOSURE IN PROGRESS; LATER SOURCE WORK ALLOWED BY ADR 0004**
 
 Current contract:
 
@@ -121,7 +109,8 @@ Decision baseline:    baseline-quality-v2
                       >=1,000 DPC and >=1,000 ISR events/window
 p99.9:                >=10,000 samples/distribution
 Mutation:             unavailable/unarmed
-Permanent tests:      10/10
+Permanent tests:      10 current; conditional owner-authorized max 20
+Test source files:    <=1200 lines each
 ```
 
 ### 2.1 Inventory and evidence provenance
@@ -132,10 +121,11 @@ Permanent tests:      10/10
 - [x] driver provider/version/INF metadata;
 - [x] stored interrupt configuration with availability/error provenance;
 - [x] allocated IRQ/resource capture through Configuration Manager;
+- [x] defensive explicit allocated-IRQ descriptor parsing rather than blind struct reinterpretation;
 - [x] optional per-device failures degrade to partial evidence rather than erasing the device;
 - [x] representative GPU/display, network and actual `USBXHCI` evidence surfaces;
 - [ ] physical representative GPU/NIC/xHCI inspector validation;
-- [ ] authoritative line-vs-message assigned-interrupt distinction only if Windows exposes it through a trustworthy assigned-resource source; do not infer it from stored MSI configuration or raw ConfigMgr flags.
+- [ ] authoritative line-vs-message assigned-interrupt distinction only if Windows exposes it through a trustworthy assigned-resource source.
 
 Canonical semantic boundary:
 
@@ -166,12 +156,10 @@ stored interrupt configuration
 - [x] p50/p95/p99/max using the canonical estimator;
 - [x] p99.9 only at >=10,000 samples for that distribution;
 - [x] capture integrity includes ETW loss, invalid latency/image events and event-limit state;
-- [x] unique capture `RequestId` retained through logs/protocol/evidence;
+- [x] unique capture RequestId retained through logs/protocol/evidence;
 - [x] physical Service → ETW → IPC path produced clean evidence on the owner's target;
 - [ ] active-session rejection validation with a second local session where practical;
 - [ ] attribution plausibility against an independent observer where practical.
-
-Microsoft's 100 µs DPC and 25 µs ISR values are driver-duration guidance references. LatencyPilot's >1 ms and >3 ms rows are local diagnostic buckets. None of those values is a universal system-health score.
 
 ### 2.3 Measurement products and baseline quality
 
@@ -184,49 +172,35 @@ Microsoft's 100 µs DPC and 25 µs ISR values are driver-duration guidance refer
 
 #### Repeated decision baseline
 
-- [x] workload is expected to be warmed/repeatable before sequence start where applicable;
-- [x] five-second LatencyPilot/service settle before window 1;
+- [x] workload warmed/repeatable before sequence start where applicable;
+- [x] five-second settle before window 1;
 - [x] exactly five 20-second authoritative windows;
 - [x] 750 ms inter-window settle;
-- [x] low-observer-activity sequencing avoids heavy redraw/file export between windows;
-- [x] `baseline-quality-v2` requires each requested window to be >=20,000 ms;
-- [x] actual duration must be >=95% of requested duration;
-- [x] capture integrity must be clean;
-- [x] each metric requires >=1,000 events/window plus finite positive p99;
-- [x] relative P10-P90 p99 spread <=30%;
-- [x] early/late p99 drift <=20%;
-- [x] no >50% extreme-window deviation;
-- [x] no silent deletion of inconvenient windows;
-- [x] contiguous `WindowNumber` is authoritative sequence; wall-clock timestamps are provenance;
-- [x] best-effort runtime CPU/power context retained as provenance without silently changing the versioned formula;
+- [x] low-observer-activity sequencing;
+- [x] each requested window >=20,000 ms and actual duration >=95%;
+- [x] clean capture integrity;
+- [x] each DPC/ISR metric >=1,000 events/window;
+- [x] bounded noise, drift and extreme-window gates;
+- [x] contiguous WindowNumber is the sequence authority;
+- [x] best-effort runtime CPU/power provenance;
 - [x] partial/short/lossy/undersampled/noisy/drifted sequence cannot become Valid;
 - [x] physical Real-world valid decision baseline on clean revision `a4b4ff36c875982d5a263665860853462d0b055b`;
-- [ ] physical Controlled-idle valid decision baseline (diagnostic Phase 2 context; not a blocker for Phase 3 source implementation under ADR 0004);
-- [x] low-observer-activity sequence produced a valid Real-world baseline on the target workload;
-- [ ] thermal warning only if a trustworthy low-overhead source is identified and physical evidence shows it changes decisions.
-
-`Valid` means repeatable enough for the current comparison method. It does not mean “the machine is healthy”.
+- [ ] physical Controlled-idle valid decision baseline;
+- [ ] thermal warning only if a trustworthy low-overhead source is found and evidence shows it changes decisions.
 
 ### 2.4 Evidence and UX
 
-- [x] evidence schema `latencypilot-evidence-v8`;
-- [x] explicit evidence purpose separates quick snapshot from decision baseline;
-- [x] product/protocol/source revision provenance;
-- [x] scenario provenance and stale-evidence invalidation;
-- [x] best-effort runtime CPU/power provenance;
-- [x] bounded environment/topology provenance;
-- [x] unique RequestIds;
+- [x] evidence-v8 with purpose/product/protocol/source/scenario/runtime/topology provenance;
 - [x] full bounded processor/module/unresolved aggregates;
-- [x] baseline captures/windows/runtime-windows alignment validation;
-- [x] SHA-256 after save;
-- [x] independent `scripts/Verify-Evidence.ps1` verification;
+- [x] baseline capture/window alignment validation;
+- [x] SHA-256 after save and independent `scripts/Verify-Evidence.ps1`;
 - [x] strict clean-capture and valid-baseline verifier gates;
 - [x] keyboard accelerators Ctrl+R/O/B/E;
 - [x] High Contrast/theme/accessibility metadata source;
 - [x] adaptive narrow/wide layout source;
 - [x] representative device-evidence inspector;
 - [x] clean/dirty source provenance surfaced in header;
-- [x] baseline progress percentage/phase/ETA with low-frequency redraw;
+- [x] low-frequency baseline progress/ETA;
 - [ ] physical JSON-vs-visible-evidence/SHA/source-revision audit;
 - [ ] physical warning/sample-insufficient/scenario/readiness state validation;
 - [ ] physical narrow-window/text-scaling/keyboard/screen-reader sanity;
@@ -234,48 +208,40 @@ Microsoft's 100 µs DPC and 25 µs ISR values are driver-duration guidance refer
 
 ### Phase 2 exit gate
 
-Phase 2 still closes only after the remaining read-only physical checks are reconciled. ADR 0004 changes **development sequencing**, not the meaning of Phase 2 completion.
-
-The Real-world baseline is now authoritative evidence for targeted GPU optimizer development. Controlled idle remains useful context but is not required to start Phase 3 source implementation.
-
-### After Phase 2
-
-Finish the remaining read-only physical record while Phase 3 safety/candidate source work proceeds. Do not arm mutation merely because code exists.
+Phase 2 closes only after the remaining read-only physical checks are reconciled. ADR 0004 changes development sequencing, not the meaning of completion.
 
 ---
 
 ## Phase 3 — Safe mutation platform + one-click GPU interrupt experiment
 
-**State: IN PROGRESS — SAFETY/CANDIDATE SOURCE IMPLEMENTATION; MUTATION NOT ARMED**
+**State: GPU EXECUTION SOURCE IMPLEMENTED; PHYSICAL ARMING IN PROGRESS; PRODUCT MUTATION NOT ARMED**
 
-Primary product target:
+Primary target:
 
 ```text
 Optimize GPU
-→ automatic preflight/baseline
+→ authoritative preflight/baseline
 → bounded candidates
 → journaled apply/verify/measure/revert
-→ finalist confirmation
+→ balanced finalist confirmation
 → Keep best or restore exact original state
 ```
 
 ### 3.1 Safety substrate
 
-- [x] narrow privileged Service exists;
-- [x] typed/versioned Named Pipe infrastructure exists;
-- [x] generic privileged shell/registry/process execution is prohibited and absent;
-- [x] concrete `LatencyPilot.Persistence` project added with Microsoft.Data.Sqlite 10.0.12;
-- [x] schema-v1 durable mutation journal with atomic transactions and compare-and-swap revisions;
-- [x] unresolved journal blocks creation of another mutation experiment;
+- [x] narrow privileged Service and typed/versioned Named Pipe infrastructure;
+- [x] generic privileged shell/registry/process execution prohibited and absent;
+- [x] concrete SQLite mutation journal with atomic transactions and compare-and-swap revisions;
+- [x] unresolved journal blocks another mutation experiment;
 - [x] explicit Prepared/Applying/Applied/Measuring/AwaitingDecision/Reverting/Reverted/Kept/RecoveryRequired/AbortedBeforeApply states;
-- [x] recovery-required state can only proceed toward rollback in journal v1;
-- [x] generic experiment state machine no longer allows a post-apply `Aborted` terminal shortcut;
-- [x] Service startup initializes the journal and re-reads/classifies actual stored state for unresolved known GPU-affinity experiments;
-- [x] fail-closed recovery planner distinguishes original/candidate/diverged/unknown stored state and refuses blind automatic writes on divergence/unknown state;
-- [x] shared recovery assessment re-reads actual state immediately before explicit recovery decisions;
-- [x] rollback-biased recovery executor exists internally and refuses unknown/diverged/driver-changed state;
-- [x] owner-only non-shipping physical-validation harness exists without exposing mutation through product IPC;
-- [ ] mutation-specific typed protocol commands + authorization/allowlist;
+- [x] RecoveryRequired can proceed only toward rollback in journal v1;
+- [x] Service startup re-reads/classifies actual stored state for unresolved known GPU experiments;
+- [x] fail-closed original/candidate/diverged/unknown recovery planner;
+- [x] shared recovery assessment re-reads actual state immediately before recovery decisions;
+- [x] rollback-biased recovery executor refuses unknown/diverged/driver-changed state;
+- [x] owner-only physical-validation harness exists without product mutation IPC;
+- [x] interruption-safe two-value GPU affinity write/restore semantics with exact compensation or unresolved recovery ownership;
+- [ ] mutation-specific typed protocol commands + authorization/allowlist — blocked by Gate A;
 - [ ] interrupted/pending experiments survive Service restart/reboot end to end on physical hardware;
 - [ ] verified forced rollback/recovery on physical hardware;
 - [x] source-level reboot-required detection keeps an experiment unresolved rather than claiming activation;
@@ -283,125 +249,106 @@ Optimize GPU
 
 ### 3.2 First reversible GPU experiment
 
-- [x] source-level exact stored-state snapshot for GPU `DevicePolicy` and `AssignmentSetOverride`, including missing values and original registry kinds/bytes;
-- [x] source-level apply/restore adapter restricted to present SetupAPI display adapters and `CurrentControlSet` affinity-policy values;
-- [x] source-level stored-state verification after apply and restore;
-- [x] one-processor-group v1 applicability boundary for KAFFINITY writes;
-- [x] topology-aware physical-core candidate generation with one SMT sibling selected by measured pressure;
+- [x] exact stored-state snapshot for DevicePolicy/AssignmentSetOverride including missing values and original kinds/bytes;
+- [x] apply/restore restricted to present SetupAPI display adapters and documented affinity-policy values;
+- [x] stored-state verification after apply and restore;
+- [x] one-processor-group v1 KAFFINITY boundary;
+- [x] topology-aware physical-core candidate generation from measured per-window DPC+ISR pressure;
 - [x] CPU0 is not hard-excluded;
 - [x] bounded candidate count defaults to four;
-- [x] baseline per-CPU DPC+ISR evidence feeds per-window-normalized automatic candidate pressure scoring;
-- [x] source-level exact-target `DIF_PROPERTYCHANGE` / `DICS_PROPCHANGE` restart path with `DI_NEEDRESTART` / `DI_NEEDREBOOT` and devnode-status handling;
+- [x] exact-target `DIF_PROPERTYCHANGE` / `DICS_PROPCHANGE` source with restart/reboot-required handling;
 - [ ] physical exact-target restart/reboot-required validation;
-- [x] source-level runtime ISR-placement evidence analyzer keeps stored registry verification distinct from observed runtime placement;
-- [ ] integrate and physically validate runtime/effective interrupt placement in the experiment loop;
-- [x] journaled source transaction prepares before apply, verifies stored candidate/original state, and keeps incomplete rollback unresolved;
-- [x] mutation commands remain unarmed until journal/recovery/restart safety passes owner-local validation;
-- [ ] candidate screening loop;
-- [x] deterministic screening interpreter nominates only a finalist; no Keep recommendation from screening;
-- [x] versioned ABBA + BAAB confirmation interpreter with identity/duration/sample/integrity/state/noise/drift gates and per-metric deltas;
-- [x] complete-window PresentMon aggregate-series conversion, with missing/changed workload evidence rejected;
-- [ ] finalist confirmation using balanced/interleaved A/B ordering such as ABBA/BAAB;
-- [ ] ETW DPC/ISR target metrics integrated into the mutation experiment;
-- [ ] PresentMon frame-time / CPU-GPU busy-wait / GPU-display latency / dropped-frame metrics integrated where applicable;
-- [ ] relevant USB/network/audio/stability guardrails;
-- [ ] explicit Improved/Regressed/Tradeoff/NoMeasurableDifference/Inconclusive decision;
-- [ ] Keep/Revert with raw deltas and provenance;
+- [x] runtime GPU ISR-placement evidence analyzer keeps stored policy distinct from effective placement;
+- [x] runtime placement evidence is integrated into internal candidate evidence: attributed GPU ISR must appear on target CPU and none may appear off-target;
+- [ ] physical runtime/effective interrupt placement validation;
+- [x] journaled transaction prepares before apply and keeps incomplete rollback unresolved;
+- [x] mutation remains unarmed until physical safety passes;
+- [x] bounded candidate screening loop;
+- [x] deterministic screening nominates only a finalist;
+- [x] synchronized ETW + raw PresentMon capture under one requested interval/deadline;
+- [x] raw DPC duration target samples integrated into the mutation experiment;
+- [x] raw PresentMon frame-time / CPU-GPU busy-wait / GPU-display latency / dropped-frame guardrails integrated where exposed;
+- [x] fixed eight-run ABBA + BAAB finalist confirmation with identity/duration/sample/integrity/state/noise/drift gates;
+- [x] explicit Improved/Regressed/Tradeoff/NoMeasurableDifference/Inconclusive interpretation;
+- [x] source-level Keep/Restore with raw deltas/provenance and verified journal transitions;
+- [ ] relevant USB/network/audio/stability guardrails beyond currently available graphics/ETW evidence;
 - [ ] forced-failure rollback on supported physical hardware.
 
-MSI/MSI-X is deliberately not bundled into the first affinity mutation. It becomes a separate supported experiment only after its applicability, actual state and rollback are authoritative.
-
-Do not assume CPU0 avoidance, Windows default affinity, a community tweak or another machine's winner is universally correct.
+MSI/MSI-X is deliberately not bundled into the first GPU affinity mutation. It is a separate future supported experiment only after applicability, actual state and rollback are authoritative.
 
 ### 3.3 Mutation arming gates
-
-Phase 3 mutation crosses four distinct gates. They are intentionally separate so internal hardware validation, privileged IPC and user-facing product arming cannot be conflated.
 
 ```text
 Gate A — internal physical substrate proof
   owner-only harness; protocol v6 remains read-only
   prove journal/recovery, exact-target restart/reboot handling,
-  candidate apply/runtime evidence/exact rollback and forced failure recovery
+  candidate apply/runtime evidence/exact rollback and forced-failure recovery
 
 Gate B — typed mutation IPC implementation
-  add only mutation-specific typed/allowlisted commands and authorization
-  MutationAvailable remains false; no user-facing arming
+  after Gate A only; mutation-specific typed/allowlisted commands and authorization
+  MutationAvailable remains false
 
 Gate C — physical IPC boundary proof
-  validate the real App/client → Service mutation path on supported hardware
-  prove authorization, journal ownership, apply/recovery/rollback end to end
+  validate real App/client → Service mutation path and recovery/rollback
 
 Gate D — product arming
-  expose the supported one-click workflow only after Gate C and required
-  target/guardrail orchestration are physically credible
+  expose supported one-click mutation only after Gate C and credible evidence UX
 ```
-
-Passing Gate A authorizes Gate B **source development**; it does not authorize public mutation. Passing Gate B without Gate C evidence does not authorize `MutationAvailable=true`. Phase 2 physical closure remains an independent obligation.
 
 ### Phase 3 exit gate
 
-A supported physical GPU can be tuned through one **one-click, bounded, journaled** experiment and safely restored, including a forced-failure rollback exercise. A result must be backed by target metrics and relevant guardrails, not merely by a registry write. The user-facing workflow is armed only after the Gate A → B → C → D sequence has been satisfied.
-
-### After Phase 3
-
-Proceed to Phase 4: reuse the same one-click experiment engine for HID/xHCI analysis and reversible controller-affinity experiments.
+A supported physical GPU can be tuned through one one-click bounded journaled experiment and safely restored, including forced-failure rollback, with target metrics and relevant guardrails. This remains **open** until the physical Gate A→B→C→D sequence is satisfied.
 
 ---
 
 ## Phase 4 — USB/xHCI and input-latency analysis
 
-**State: SOURCE DISCOVERY STARTED; MEASUREMENT/EXPERIMENT LOOP NOT STARTED**
+**State: SOURCE DISCOVERY STARTED; AUTHORITATIVE ROUTE/TIMING/EXPERIMENT READINESS IN PROGRESS**
 
-- [x] Raw Input device identities can be resolved to stable PnP ancestry/active input routes;
-- [ ] complete HID → port/hub → xHCI mapping;
-- [ ] Raw Input report interval/jitter/missing/coalesced/burst analysis;
+- [x] Raw Input device identities resolve to stable PnP ancestry/active input routes;
+- [ ] authoritative HID → exact hub/port → xHCI mapping using documented USB hub interfaces/IOCTLs;
+- [ ] host-observable Raw Input report interval/jitter/long-gap/coalescing/burst analysis;
 - [ ] USB/xHCI ETW correlation;
-- [ ] controller DPC/ISR attribution;
-- [ ] host-observable input timing clearly distinguished from physical end-to-end latency;
-- [ ] supported reversible xHCI/controller-affinity experiments;
-- [ ] target metrics plus collateral guardrails.
+- [ ] exact controller DPC/ISR attribution;
+- [ ] host-observable input timing explicitly distinguished from physical end-to-end latency;
+- [ ] supported reversible xHCI/controller-affinity experiment source using the existing journal/recovery discipline;
+- [ ] target metrics plus collateral guardrails;
+- [ ] physical high-polling route/benchmark/revert evidence.
 
 ### Exit gate
 
-At least one high-polling input/controller path can be analyzed and a reversible xHCI experiment compared without overstating measurement capability.
-
-### After Phase 4
-
-Proceed to NIC capability/RSS inventory → queue/processor distribution → NDIS attribution → controlled local-network benchmark → reversible RSS/affinity experiments.
+At least one high-polling input/controller path is authoritatively identified, measured and compared through a reversible xHCI experiment without overstating host-observable timing as physical click-to-photon latency.
 
 ---
 
 ## Phase 5 — NIC/RSS latency optimization
 
-**State: NOT STARTED**
+**State: SOURCE IMPLEMENTATION NOT YET COMPLETE**
 
-- [ ] NIC capabilities/RSS inventory;
-- [ ] RSS processor/queue distribution;
-- [ ] NDIS DPC/ISR attribution;
-- [ ] controlled local-network latency/jitter benchmark;
-- [ ] supported reversible RSS/affinity experiments;
+- [ ] authoritative StandardCimv2 NIC/RSS capability/current-state inventory;
+- [ ] RSS processor/queue/indirection distribution;
+- [ ] exact NDIS/vendor-driver DPC/ISR attribution;
+- [ ] controlled local-network latency/jitter/loss benchmark contract;
+- [ ] supported reversible RSS/affinity experiment source using journal/recovery discipline;
 - [ ] throughput/loss/CPU guardrails;
-- [ ] Internet tests remain supplemental rather than authoritative local-network evidence.
+- [ ] Internet tests remain supplemental rather than authoritative local-network evidence;
+- [ ] physical local-network benchmark/apply/revert evidence.
 
 ### Exit gate
 
 The tool can distinguish a local networking improvement from path noise and revert every supported NIC change.
 
-### After Phase 5
-
-Proceed to Phase 6: combine only already-supported experiments into a bounded search with profiles, repeated finalists, trade-off/Pareto handling and global restore semantics.
-
 ---
 
 ## Phase 6 — Cross-subsystem optimizer and workload profiles
 
-**State: NOT STARTED**
+**State: NOT YET SOURCE-COMPLETE**
 
 - [ ] Competitive/Gaming, General and Audio-sensitive profiles;
 - [ ] raw metrics always visible;
 - [ ] bounded candidate search/pruning;
 - [ ] repeated finalists;
-- [ ] Pareto/trade-off representation;
+- [ ] Pareto/trade-off representation without arbitrary weighted score;
 - [ ] no overwrite of user-kept state without a new journaled experiment;
 - [ ] global Restore Baseline;
 - [ ] per-subsystem opt-out.
@@ -410,23 +357,19 @@ Proceed to Phase 6: combine only already-supported experiments into a bounded se
 
 Auto mode completes a bounded multi-subsystem session and every retained change has individual evidence, provenance and rollback state.
 
-### After Phase 6
-
-Proceed to Phase 7 productization/release hardening.
-
 ---
 
 ## Phase 7 — Productization and 1.0
 
-**State: NOT STARTED**
+**State: FOUNDATION EXISTS; HARDENING NOT YET CLOSED**
 
-- [ ] installer/uninstaller and Service lifecycle hardened;
-- [ ] self-contained Windows 11 x64 package;
-- [ ] signing/release provenance;
+- [ ] installer/uninstaller and Service lifecycle hardened against unresolved recovery state;
+- [ ] self-contained Windows 11 x64 package source reconciled to intended payload;
+- [ ] deterministic signing/release provenance/checksum hooks;
 - [ ] safe upgrade of journal/history;
 - [ ] uninstall restoration of active managed changes;
 - [ ] redacted diagnostic bundle;
-- [ ] accessibility/keyboard-navigation pass;
+- [ ] accessibility/keyboard-navigation physical pass;
 - [ ] no unexplained admin prompts;
 - [ ] clean-machine validation;
 - [ ] reboot/crash/recovery validation;
@@ -437,16 +380,19 @@ Proceed to Phase 7 productization/release hardening.
 
 1.0 installs cleanly, produces trustworthy baselines, executes supported GPU/USB/NIC workflows, survives interruption, restores managed state and uninstalls without unexplained configuration residue.
 
-### After Phase 7
-
-Run the final 1.0 audit against the full product definition, every phase exit gate, recovery state, documentation, license, signing/provenance and representative physical-hardware evidence. Only then tag 1.0.
-
 ---
 
-## Permanent-test rule
+## Permanent-test policy
 
-Repository-wide permanent automated tests may not exceed **10** unless the owner explicitly approves an exception and an ADR explains why remaining at 10 would be more harmful.
+- Default/target permanent suite size: **10**.
+- Current count: **10**.
+- Every test source file must be **<=1200 lines**.
+- The repository owner explicitly authorizes growth up to **20** permanent tests only when genuinely necessary to keep files below 1200 lines or to preserve a materially safer durable separation.
+- This authorization is not a target. Remove temporary/obsolete tests and consolidate low-value duplication before increasing the count.
+- Hardware validation, exploratory benchmark runs and release checklists do not count as automated tests.
 
-Current count: **10**.
+## Definition of 100%
 
-Test count is not a quality target. Consolidate scenario matrices inside durable high-value tests. Temporary implementation/debug tests may be created, run and deleted before finalization. Hardware validation is separate from this cap.
+Repository/source completion is not the same as true product 1.0. A source item may be checked when its deterministic implementation exists and has the evidence required by that item. Hardware-, App/runtime-, package-, accessibility- and signing-dependent requirements remain open until owner-local evidence exists.
+
+Only after every phase exit gate, Gate A→B→C→D, representative supported hardware validation, release/signing/provenance and recovery/uninstall validation are satisfied may the product be tagged 1.0.
