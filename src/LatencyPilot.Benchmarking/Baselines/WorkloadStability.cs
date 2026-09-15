@@ -77,6 +77,16 @@ public static class WorkloadStabilityAnalyzer
                 [$"Invalid workload activity evidence in window(s) {string.Join(", ", invalidWindows)}."]);
         }
 
+        var cpuEvidenceWindowCount = ordered.Count(static window => window.SystemCpuBusyPercent is not null);
+        if (cpuEvidenceWindowCount is > 0 and < RequiredWindowCount)
+        {
+            return new WorkloadStabilityResult(
+                MethodVersion,
+                WorkloadStabilityStatus.Insufficient,
+                [],
+                [$"System CPU busy evidence must be present for all {RequiredWindowCount} workload windows or absent from all of them; received {cpuEvidenceWindowCount}."]);
+        }
+
         var signals = new List<WorkloadSignalStability>(3)
         {
             AnalyzeSignal(
@@ -89,7 +99,7 @@ public static class WorkloadStabilityAnalyzer
                     window.IsrEventCount / (window.ActualDurationMilliseconds / 1_000d)).ToArray()),
         };
 
-        if (ordered.All(static window => window.SystemCpuBusyPercent is not null))
+        if (cpuEvidenceWindowCount == RequiredWindowCount)
         {
             signals.Add(AnalyzeSignal(
                 "System CPU busy",
