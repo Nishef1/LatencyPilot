@@ -137,6 +137,8 @@ internal static class PhysicalValidationProgram
         Console.WriteLine("GPU affinity candidate plan: READ-ONLY");
         Console.WriteLine($"evidence-revision={plan.SourceRevisionId ?? "unavailable"}");
         Console.WriteLine($"validated-windows={plan.WindowCount.ToString(CultureInfo.InvariantCulture)}");
+        Console.WriteLine($"workload-stability-method={plan.WorkloadStability.MethodVersion}");
+        Console.WriteLine($"workload-stability-status={plan.WorkloadStability.Status}");
         Console.WriteLine($"cpu-set-metadata={(plan.CpuSetMetadataAvailable ? "available" : "unavailable")}");
         Console.WriteLine($"candidate-count={plan.Candidates.Count.ToString(CultureInfo.InvariantCulture)}");
 
