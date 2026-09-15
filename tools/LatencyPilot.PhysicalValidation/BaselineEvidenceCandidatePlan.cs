@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Benchmarking.Candidates;
+using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
@@ -95,6 +96,16 @@ internal static class BaselineEvidenceCandidatePlan
             RequireInt32(persistedQuality, "totalWindowCount", quality.TotalWindowCount);
             RequireInt32(persistedQuality, "validCaptureWindowCount", quality.ValidCaptureWindowCount);
 
+            var workloadStability = ReadWorkloadStability(root, windows);
+            if (!GpuOptimizationBaselineReadiness.IsEligible(quality, workloadStability))
+            {
+                var reason = workloadStability.Reasons.Count == 0
+                    ? string.Empty
+                    : $" {string.Join(" ", workloadStability.Reasons)}";
+                throw new InvalidDataException(
+                    $"Baseline evidence is not eligible for GPU optimization because {WorkloadStabilityAnalyzer.MethodVersion} is {workloadStability.Status}.{reason}");
+            }
+
             var pressureWindows = ReadProcessorWindows(root, windows, topology);
             var pressure = ProcessorPressureEvidenceBuilder.Create(topology, pressureWindows);
 
@@ -129,6 +140,46 @@ internal static class BaselineEvidenceCandidatePlan
                 cpuSetMetadataAvailable,
                 candidates);
         }
+    }
+
+    private static WorkloadStabilityResult ReadWorkloadStability(
+        JsonElement root,
+        BaselineWindowEvidence[] windows)
+    {
+        var runtimeWindows = RequireProperty(root, "runtimeWindows");
+        if (runtimeWindows.ValueKind != JsonValueKind.Array || runtimeWindows.GetArrayLength() != windows.Length)
+        {
+            throw new InvalidDataException(
+                $"Baseline evidence runtimeWindows/windows are misaligned: runtimeWindows={GetArrayLengthOrNegative(runtimeWindows)}, windows={windows.Length}.");
+        }
+
+        var evidence = new List<WorkloadWindowEvidence>(windows.Length);
+        var runtimeIndex = 0;
+        foreach (var runtimeWindow in runtimeWindows.EnumerateArray())
+        {
+            runtimeIndex++;
+            RequireObject(runtimeWindow, $"runtime window {runtimeIndex}");
+            RequireInt32(runtimeWindow, "windowNumber", runtimeIndex);
+
+            var context = RequireProperty(runtimeWindow, "context");
+            double? systemCpuBusyPercent = context.ValueKind switch
+            {
+                JsonValueKind.Null => null,
+                JsonValueKind.Object => ReadOptionalFiniteDouble(context, "systemCpuBusyPercent"),
+                _ => throw new InvalidDataException(
+                    $"Baseline evidence runtime window {runtimeIndex} context must be an object or null."),
+            };
+
+            var window = windows[runtimeIndex - 1];
+            evidence.Add(new WorkloadWindowEvidence(
+                window.WindowNumber,
+                window.ActualDurationMilliseconds,
+                window.DpcEventCount,
+                window.IsrEventCount,
+                systemCpuBusyPercent));
+        }
+
+        return WorkloadStabilityAnalyzer.Analyze(evidence);
     }
 
     private static List<IReadOnlyList<ProcessorInterruptCountEvidence>> ReadProcessorWindows(
@@ -312,6 +363,24 @@ internal static class BaselineEvidenceCandidatePlan
         }
 
         return value.GetString();
+    }
+
+    private static double? ReadOptionalFiniteDouble(JsonElement parent, string propertyName)
+    {
+        if (!parent.TryGetProperty(propertyName, out var value) || value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.Number ||
+            !value.TryGetDouble(out var result) ||
+            !double.IsFinite(result))
+        {
+            throw new InvalidDataException(
+                $"Baseline evidence '{propertyName}' must be a finite number or null when present.");
+        }
+
+        return result;
     }
 
     private static void RequireInt32(JsonElement parent, string propertyName, int expected)
