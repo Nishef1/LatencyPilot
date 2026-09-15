@@ -279,19 +279,20 @@ public sealed partial class MainWindow
             return;
         }
 
-        var statusText = state.IsEligible
-            ? "Valid · optimization-ready"
-            : "Valid · not optimization-ready";
-        BaselineSummaryText.Text = statusText;
-        BaselineSummaryIcon.Glyph = state.IsEligible ? "\uE73E" : "\uE7BA";
-        BaselineSummaryText.Foreground = ThemeBrush(state.IsEligible ? "SuccessBrush" : "WarningBrush");
+        const string baselineStatus = "Baseline valid";
+        var optimizerStatus = state.IsEligible ? "Optimizer ready" : "Optimizer not ready";
+
+        BaselineSummaryText.Text = baselineStatus;
+        BaselineSummaryIcon.Glyph = "\uE73E";
+        BaselineSummaryText.Foreground = ThemeBrush("SuccessBrush");
+        BaselineSummaryDetailText.Foreground = ThemeBrush(state.IsEligible ? "SuccessBrush" : "WarningBrush");
         BaselineSummaryDetailText.TextWrapping = TextWrapping.Wrap;
         BaselineSummaryDetailText.MaxLines = 3;
 
         var transientDetail = _latestBaselineTransientSignals is { HasOverOneMillisecondSignal: true } transient
             ? $"{Environment.NewLine}Tail: {FormatTransientDashboardDetail(transient).Replace("p99 repeatable · ", string.Empty, StringComparison.Ordinal)}"
             : string.Empty;
-        BaselineSummaryDetailText.Text = $"{state.Detail}{transientDetail}";
+        BaselineSummaryDetailText.Text = $"{optimizerStatus} · {state.Detail}{transientDetail}";
 
         var transientHelp = _latestBaselineTransientSignals is { HasOverOneMillisecondSignal: true } transientSummary
             ? $" {FormatTransientExactEvidence(transientSummary)}"
@@ -300,7 +301,8 @@ public sealed partial class MainWindow
             $"Baseline quality: Valid. Optimizer eligibility: {(state.IsEligible ? "Eligible" : "Not eligible")}. {state.Reason}{transientHelp}";
         ToolTipService.SetToolTip(BaselineSummaryText, helpText);
         ToolTipService.SetToolTip(BaselineSummaryDetailText, helpText);
-        AutomationProperties.SetName(BaselineSummaryText, statusText);
+        AutomationProperties.SetName(BaselineSummaryText, baselineStatus);
+        AutomationProperties.SetName(BaselineSummaryDetailText, optimizerStatus);
         AutomationProperties.SetHelpText(BaselineSummaryText, helpText);
         AutomationProperties.SetHelpText(BaselineSummaryDetailText, helpText);
     }
@@ -311,6 +313,7 @@ public sealed partial class MainWindow
         ToolTipService.SetToolTip(BaselineSummaryDetailText, null);
         AutomationProperties.SetHelpText(BaselineSummaryText, string.Empty);
         AutomationProperties.SetHelpText(BaselineSummaryDetailText, string.Empty);
+        BaselineSummaryDetailText.Foreground = ThemeBrush("MutedTextBrush");
     }
 
     private static ProcessorInterruptCountEvidence CreateProcessorInterruptCountEvidence(
