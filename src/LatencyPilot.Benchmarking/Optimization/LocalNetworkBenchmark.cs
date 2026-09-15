@@ -171,7 +171,7 @@ public static class LocalNetworkBenchmark
         Func<NetworkProbeObservation, double?> selector,
         string metricName,
         MetricDirection direction,
-        IDictionary<string, MetricSeries> metrics)
+        Dictionary<string, MetricSeries> metrics)
     {
         if (observations.Count == 0 || observations.Any(observation => !selector(observation).HasValue))
         {
