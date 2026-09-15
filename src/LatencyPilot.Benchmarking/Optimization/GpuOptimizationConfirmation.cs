@@ -266,8 +266,7 @@ public static class GpuOptimizationConfirmation
         double? evaluationPercentile = isDropRatio ? null : direction == MetricDirection.LowerIsBetter ? 0.99 : 0.01;
         foreach (var run in runs)
         {
-            var series = isPrimary ? runs[0].Measurement.Primary : runs[0].Measurement.Guardrails[name];
-            series = isPrimary ? run.Measurement.Primary : run.Measurement.Guardrails[name];
+            var series = isPrimary ? run.Measurement.Primary : run.Measurement.Guardrails[name];
             if (series.Samples.Count < minimumSamples || series.Samples.Any(value =>
                     value < 0 || !double.IsFinite(value) || (isDropRatio && value > 1)) ||
                 (isDropRatio && direction != MetricDirection.LowerIsBetter))
