@@ -32,6 +32,8 @@ public sealed partial class MainWindow
 
         if (captures.Count != windows.Count || captures.Count != runtimeWindows.Count)
         {
+            AppendGpuOptimizationReadiness(
+                "Not ready. Baseline latency, window, and runtime-context evidence are misaligned; capture a new baseline.");
             Logger.Warning(
                 "GPU affinity candidate preparation skipped because baseline evidence is misaligned. Captures={CaptureCount}, Windows={WindowCount}, RuntimeWindows={RuntimeWindowCount}.",
                 captures.Count,
@@ -43,7 +45,9 @@ public sealed partial class MainWindow
         var workloadStability = WorkloadStabilityAnalyzer.Analyze(
             windows,
             runtimeWindows.Select(static window => window.Context?.SystemCpuBusyPercent).ToArray());
-        if (!GpuOptimizationBaselineReadiness.IsEligible(quality, workloadStability))
+        var experimentReady = GpuOptimizationBaselineReadiness.IsEligible(quality, workloadStability);
+        AppendGpuOptimizationReadiness(FormatGpuOptimizationReadiness(quality, workloadStability, experimentReady));
+        if (!experimentReady)
         {
             Logger.Information(
                 "GPU affinity candidate preparation skipped because the repeated baseline is not experiment-ready. BaselineValid={BaselineValid}, WorkloadStatus={WorkloadStatus}, Reasons={Reasons}.",
@@ -61,6 +65,8 @@ public sealed partial class MainWindow
             var topology = ProcessorTopologyReader.Capture();
             if (topology.ProcessorGroupCount != 1)
             {
+                AppendGpuOptimizationReadiness(
+                    $"Candidate planning stopped: this system exposes {topology.ProcessorGroupCount} processor groups; GPU affinity v1 supports exactly one.");
                 Logger.Information(
                     "GPU affinity candidate preparation skipped because topology has {ProcessorGroupCount} processor groups; v1 supports exactly one.",
                     topology.ProcessorGroupCount);
@@ -111,10 +117,40 @@ public sealed partial class MainWindow
             Win32Exception)
         {
             _latestGpuAffinityCandidates = [];
+            AppendGpuOptimizationReadiness(
+                "Candidate planning could not produce a trustworthy bounded plan. The baseline remains available for diagnosis, but no optimization should be attempted from it.");
             Logger.Warning(
                 exception,
                 "Valid baseline was retained, but automatic GPU affinity candidate preparation could not produce a trustworthy plan.");
         }
+    }
+
+    private static string FormatGpuOptimizationReadiness(
+        BaselineQualityResult quality,
+        WorkloadStabilityResult workloadStability,
+        bool experimentReady)
+    {
+        if (experimentReady)
+        {
+            return $"Ready for bounded read-only GPU candidate planning. Latency repeatability passed {BaselineQualityAnalyzer.MethodVersion} and workload activity is Stable under {WorkloadStabilityAnalyzer.MethodVersion}.";
+        }
+
+        if (!quality.IsValidForComparison)
+        {
+            return $"Not ready. Latency repeatability did not pass {BaselineQualityAnalyzer.MethodVersion}; capture a new baseline before optimization.";
+        }
+
+        var workloadReason = workloadStability.Reasons.Count == 0
+            ? $"{WorkloadStabilityAnalyzer.MethodVersion} could not establish stable workload activity."
+            : string.Join(" ", workloadStability.Reasons);
+        return $"Not ready. Latency repeatability is valid, but workload activity is {workloadStability.Status} under {WorkloadStabilityAnalyzer.MethodVersion}. {workloadReason} Re-run after the workload is fully warmed and repeatable.";
+    }
+
+    private void AppendGpuOptimizationReadiness(string detail)
+    {
+        BaselineReasonsText.Text = string.IsNullOrWhiteSpace(BaselineReasonsText.Text)
+            ? $"Optimization readiness: {detail}"
+            : $"{BaselineReasonsText.Text}{Environment.NewLine}Optimization readiness: {detail}";
     }
 
     private static ProcessorInterruptCountEvidence CreateProcessorInterruptCountEvidence(
