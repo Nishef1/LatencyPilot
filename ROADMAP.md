@@ -185,7 +185,7 @@ authoritative stable baseline
 - [x] synchronized ETW + raw PresentMon evidence under one interval;
 - [x] raw DPC target metric and graphics guardrails;
 - [x] attributed GPU ISR runtime-placement verification;
-- [x] Gate A placement command fails closed unless direct resolved GPU-driver ISR evidence is confined to the requested processor;
+- [x] Gate A placement command fails closed unless the exact stored candidate remains verified before/after a clean capture and direct resolved GPU-driver ISR evidence is confined to the requested processor; ConfigMgr allocated resources remain independent provenance;
 - [x] screening cannot Keep directly;
 - [x] fixed eight-run ABBA+BAAB confirmation;
 - [x] explicit five-way decision interpretation;
