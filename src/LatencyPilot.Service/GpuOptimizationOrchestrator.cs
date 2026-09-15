@@ -44,6 +44,10 @@ internal interface IGpuOptimizationExecutionBackend
         string? presentMonControlPipeName,
         CancellationToken cancellationToken);
 
+    void AwaitDecision(Guid experimentId);
+
+    void KeepCandidate(Guid experimentId);
+
     void Rollback(Guid experimentId);
 }
 
@@ -162,8 +166,158 @@ internal sealed class GpuOptimizationOrchestrator
                 [screening.Reason]);
         }
 
-        throw new InvalidOperationException(
-            "A screening finalist exists, but balanced confirmation has not been executed yet.");
+        return await ConfirmFinalistAsync(
+            request,
+            originalState,
+            screening,
+            screening.Finalist.Candidate,
+            candidateRuns.AsReadOnly(),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<GpuOptimizationOrchestrationResult> ConfirmFinalistAsync(
+        GpuOptimizationOrchestrationRequest request,
+        GpuInterruptAffinitySnapshot originalState,
+        GpuOptimizationScreeningResult screening,
+        GpuAffinityCandidate finalist,
+        IReadOnlyList<GpuOptimizationCandidateRunRecord> candidateRuns,
+        CancellationToken cancellationToken)
+    {
+        var schedule = GpuOptimizationDecisionEngine.CreateBalancedConfirmationSchedule();
+        var runs = new List<GpuOptimizationConfirmationRun>(schedule.Count);
+        Guid? activeExperimentId = null;
+
+        try
+        {
+            for (var index = 0; index < schedule.Count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var role = schedule[index];
+
+                if (role == GpuConfirmationOrder.Original && activeExperimentId is { } activeOriginalTransition)
+                {
+                    backend.Rollback(activeOriginalTransition);
+                    activeExperimentId = null;
+                }
+                else if (role == GpuConfirmationOrder.Candidate && activeExperimentId is null)
+                {
+                    activeExperimentId = backend.ApplyCandidate(request.DeviceInstanceId, finalist);
+                    backend.BeginMeasurement(activeExperimentId.Value);
+                }
+
+                var evidence = await backend.CaptureAsync(
+                    CreateEvidenceRequest(
+                        request,
+                        index + 1,
+                        role,
+                        finalist,
+                        request.ConfirmationDuration),
+                    originalState,
+                    request.PresentMonApiPath,
+                    request.PresentMonControlPipeName,
+                    cancellationToken).ConfigureAwait(false);
+                if (!evidence.IsUsable || evidence.Run is null)
+                {
+                    if (activeExperimentId is { } unusableActive)
+                    {
+                        backend.Rollback(unusableActive);
+                        activeExperimentId = null;
+                    }
+
+                    var partial = GpuOptimizationConfirmation.Confirm(
+                        finalist,
+                        request.Baseline,
+                        runs,
+                        request.Policy);
+                    var reasons = new List<string>
+                    {
+                        evidence.Reason ?? $"Confirmation run {index + 1} evidence is unusable.",
+                    };
+                    reasons.AddRange(partial.Reasons);
+                    return new GpuOptimizationOrchestrationResult(
+                        GpuOptimizationRecommendation.RestoreOriginal,
+                        screening,
+                        partial,
+                        candidateRuns,
+                        reasons.AsReadOnly());
+                }
+
+                runs.Add(evidence.Run);
+
+                if (role != GpuConfirmationOrder.Candidate || activeExperimentId is null)
+                {
+                    continue;
+                }
+
+                var isFinalRun = index == schedule.Count - 1;
+                var nextReturnsToOriginal = !isFinalRun &&
+                    schedule[index + 1] == GpuConfirmationOrder.Original;
+                if (nextReturnsToOriginal)
+                {
+                    backend.Rollback(activeExperimentId.Value);
+                    activeExperimentId = null;
+                }
+                else if (isFinalRun)
+                {
+                    backend.AwaitDecision(activeExperimentId.Value);
+                }
+            }
+
+            var confirmation = GpuOptimizationConfirmation.Confirm(
+                finalist,
+                request.Baseline,
+                runs,
+                request.Policy);
+            if (confirmation.Recommendation == GpuOptimizationRecommendation.KeepCandidate)
+            {
+                if (activeExperimentId is null)
+                {
+                    throw new InvalidOperationException(
+                        "Balanced confirmation recommended Keep, but no verified candidate experiment remains active.");
+                }
+
+                backend.KeepCandidate(activeExperimentId.Value);
+                activeExperimentId = null;
+                return new GpuOptimizationOrchestrationResult(
+                    GpuOptimizationRecommendation.KeepCandidate,
+                    screening,
+                    confirmation,
+                    candidateRuns,
+                    confirmation.Reasons);
+            }
+
+            if (activeExperimentId is { } activeRestore)
+            {
+                backend.Rollback(activeRestore);
+                activeExperimentId = null;
+            }
+
+            return new GpuOptimizationOrchestrationResult(
+                GpuOptimizationRecommendation.RestoreOriginal,
+                screening,
+                confirmation,
+                candidateRuns,
+                confirmation.Reasons.Count == 0
+                    ? ["Balanced confirmation did not establish a safe measurable improvement."]
+                    : confirmation.Reasons);
+        }
+        catch (Exception failure) when (activeExperimentId is not null)
+        {
+            var active = activeExperimentId.Value;
+            try
+            {
+                backend.Rollback(active);
+            }
+            catch (Exception rollbackFailure)
+            {
+                throw new AggregateException(
+                    "GPU optimization confirmation failed and the active candidate did not roll back cleanly.",
+                    failure,
+                    rollbackFailure);
+            }
+
+            throw;
+        }
     }
 
     private static GpuOptimizationEvidenceRequest CreateEvidenceRequest(
@@ -279,15 +433,7 @@ internal sealed class GpuOptimizationExecutionBackend : IGpuOptimizationExecutio
 
     public void BeginMeasurement(Guid experimentId)
     {
-        var entry = journal.TryGet(experimentId)
-            ?? throw new InvalidOperationException($"GPU affinity experiment {experimentId:D} was not found.");
-        if (!string.Equals(entry.Kind, GpuInterruptAffinityMutationContract.Kind, StringComparison.Ordinal) ||
-            entry.State != MutationJournalState.Applied)
-        {
-            throw new InvalidOperationException(
-                $"GPU affinity experiment {experimentId:D} must be Applied before measurement begins.");
-        }
-
+        var entry = GetRequiredEntry(experimentId, MutationJournalState.Applied);
         _ = journal.Transition(
             entry.ExperimentId,
             entry.Revision,
@@ -308,6 +454,46 @@ internal sealed class GpuOptimizationExecutionBackend : IGpuOptimizationExecutio
             presentMonControlPipeName,
             cancellationToken);
 
+    public void AwaitDecision(Guid experimentId)
+    {
+        var entry = GetRequiredEntry(experimentId, MutationJournalState.Measuring);
+        _ = journal.Transition(
+            entry.ExperimentId,
+            entry.Revision,
+            MutationJournalState.Measuring,
+            MutationJournalState.AwaitingDecision);
+    }
+
+    public void KeepCandidate(Guid experimentId)
+    {
+        var entry = GetRequiredEntry(experimentId, MutationJournalState.AwaitingDecision);
+        var original = GpuInterruptAffinityJournalCodec.DeserializeOriginal(entry.OriginalStateJson);
+        var candidate = GpuInterruptAffinityJournalCodec.DeserializeCandidate(entry.CandidateStateJson);
+        var current = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
+        var driverMatches = string.Equals(
+            current.DriverVersion,
+            original.DriverVersion,
+            StringComparison.OrdinalIgnoreCase);
+        if (!driverMatches || !GpuInterruptAffinityStateComparer.MatchesCandidate(current, candidate))
+        {
+            const string reason =
+                "GPU affinity candidate changed before Keep could be finalized; recovery is required.";
+            _ = journal.Transition(
+                entry.ExperimentId,
+                entry.Revision,
+                MutationJournalState.AwaitingDecision,
+                MutationJournalState.RecoveryRequired,
+                reason);
+            throw new InvalidOperationException(reason);
+        }
+
+        _ = journal.Transition(
+            entry.ExperimentId,
+            entry.Revision,
+            MutationJournalState.AwaitingDecision,
+            MutationJournalState.Kept);
+    }
+
     public void Rollback(Guid experimentId)
     {
         var rollback = transaction.RollbackAndActivate(experimentId);
@@ -318,5 +504,21 @@ internal sealed class GpuOptimizationExecutionBackend : IGpuOptimizationExecutio
                 rollback.JournalEntry.FailureReason ??
                 "GPU affinity rollback did not reach a verified exact-original state.");
         }
+    }
+
+    private MutationJournalEntry GetRequiredEntry(
+        Guid experimentId,
+        MutationJournalState requiredState)
+    {
+        var entry = journal.TryGet(experimentId)
+            ?? throw new InvalidOperationException($"GPU affinity experiment {experimentId:D} was not found.");
+        if (!string.Equals(entry.Kind, GpuInterruptAffinityMutationContract.Kind, StringComparison.Ordinal) ||
+            entry.State != requiredState)
+        {
+            throw new InvalidOperationException(
+                $"GPU affinity experiment {experimentId:D} must be {requiredState}; actual state is {entry.State}.");
+        }
+
+        return entry;
     }
 }
