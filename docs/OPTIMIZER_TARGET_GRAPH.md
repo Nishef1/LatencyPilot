@@ -1,7 +1,7 @@
 # LatencyPilot Whole-System Optimizer Target Graph
 
 Status: **Authoritative design input for Phases 3–6**  
-Last updated: 2026-09-14
+Last updated: 2026-09-15
 
 LatencyPilot must not become a GPU-only affinity tool. The one-click optimizer is a whole-system experiment orchestrator. It observes every DPC/ISR contributor it can attribute, then applies only narrow, supported, reversible mutations to the active hardware paths that can plausibly affect the current workload.
 
@@ -79,7 +79,7 @@ workload process
      └─ heterogeneous efficiency/performance class
 ```
 
-Current source already captures PnP parent identity and provides a bounded `DeviceRelationshipGraph` for ancestor/shared-parent reasoning. Later orchestration must use those relationships rather than treating shared transports as independent.
+Current source captures PnP parent identity and provides a bounded `DeviceRelationshipGraph` for ancestor/shared-parent reasoning. Orchestration must use those relationships rather than treating shared transports as independent.
 
 A combo Wi-Fi/Bluetooth device, USB audio plus mouse on one xHCI controller, or GPU plus HDMI audio are not independent when they share hardware or restart semantics.
 
@@ -124,35 +124,45 @@ If the active endpoint is USB or Bluetooth, the corresponding transport/controll
 
 Input optimization is not a single registry tweak.
 
-Current source includes input-device route discovery, but Raw Input timing and USB-ETW measurement remain later-phase work.
+Current source now includes:
 
-Required measurement path:
+- Raw Input device discovery and stable PnP route correlation;
+- documented USB hub interface/IOCTL enumeration;
+- unique driver-key → hub/port correlation with explicit ambiguity/unavailability;
+- exact xHCI controller ancestry where it can be proven;
+- bounded host-observable Raw Input timing capture;
+- median/p95/p99 interval, observed report rate, tail jitter, long-gap and burst/coalescing evidence;
+- xHCI module-attributed DPC/ISR readiness evidence;
+- App inspector wiring for route/port evidence and explicit on-demand host timing capture.
 
-- Raw Input for host-observable keyboard/mouse/HID report arrival intervals, jitter, burst/coalescing and irregularity;
-- device identity and transport mapping;
-- USB ETW for USB input paths;
-- HID → hub/port → xHCI mapping for USB devices;
-- Bluetooth transport/radio mapping for Bluetooth input;
-- controller DPC/ISR attribution;
-- PresentMon input/display metrics only where they are actually available and meaningful for the target workload.
+The evidence boundary remains strict:
 
-Raw Input alone is not physical switch-to-photon latency and must not be labeled that way.
+```text
+host-observable Raw Input dispatch timing
+!= physical switch latency
+!= click-to-photon latency
+```
 
-The one-click optimizer may later test reversible controller/interrupt placement candidates, but only after the actual input path is mapped and collateral devices on the same controller are known.
+The source can therefore characterize the Windows-host input path without claiming a hardware latency measurement it does not have.
+
+A system-changing xHCI/controller-affinity experiment remains deliberately unarmed and its mutation source remains deferred until the shared GPU mutation substrate passes physical Gate A. When that gate is satisfied, any xHCI candidate must still account for collateral devices sharing the controller and preserve exact rollback/recovery semantics.
 
 ## 6. Ethernet, Wi-Fi and Bluetooth
 
 Networking is path-aware.
 
-For wired Ethernet:
+For wired Ethernet, current read-only/readiness source already provides:
 
-- identify the active physical adapter;
-- collect NDIS DPC/ISR evidence;
-- inspect RSS capabilities/current configuration;
-- use controlled/local RTT/jitter/loss plus throughput/CPU guardrails;
-- test only supported RSS/affinity candidates.
+- authoritative `Root\StandardCimv2` `MSFT_NetAdapterRssSettingData` state;
+- RSS enabled/support state, MSI/MSI-X provider fields, queue/message counts, profile, processor range and processor/indirection evidence when exposed;
+- conservative provider→PnP correlation;
+- vendor-driver DPC/ISR attribution kept distinct from generic NDIS evidence;
+- a controlled local benchmark interpretation contract for RTT, jitter, loss, throughput and CPU guardrails;
+- Internet observations treated as supplemental rather than authoritative local adapter evidence.
 
 For heterogeneous CPUs, Windows RSS behavior can itself be topology-aware. LatencyPilot must not blindly force a P-core or E-core policy when the active RSS profile is designed to balance across heterogeneous processors. Windows/default behavior remains a control candidate.
+
+A system-changing RSS/affinity experiment remains deliberately unarmed and its mutation source is deferred until Gate A proves the shared mutation/recovery substrate physically.
 
 For Wi-Fi:
 
@@ -183,7 +193,7 @@ The same rule applies to system/ACPI/bus drivers: observe broadly, mutate only w
 
 LatencyPilot must not hardcode Intel marketing labels into the core model. Windows exposes an `EfficiencyClass`; higher numerical classes represent intrinsically faster but less power-efficient cores, while lower classes represent more efficient cores. This is a relative topology property, not proof that a given interrupt or workload should always run on the highest class.
 
-Current source already captures processor topology together with CPU-set state including efficiency/scheduling class, parked/allocated flags and processor-group identity. GPU candidate generation consumes that evidence while remaining bounded and single-group for the current KAFFINITY writer.
+Current source captures processor topology together with CPU-set state including efficiency/scheduling class, parked/allocated flags and processor-group identity. GPU candidate generation consumes that evidence while remaining bounded and single-group for the current KAFFINITY writer.
 
 Current policy:
 
@@ -212,6 +222,8 @@ Build dependency graph and shared-controller constraints
     ↓
 Reuse or acquire valid baseline
     ↓
+Require explicit optimizer readiness
+    ↓
 Rank evidence-backed domains
     ↓
 Run one reversible experiment at a time
@@ -228,6 +240,16 @@ Present raw deltas, trade-offs and Restore Baseline
 ```
 
 The combined optimizer must not stack several unverified changes and then guess which one helped.
+
+Evidence v9 and the App now make a critical distinction explicit before this flow starts:
+
+```text
+Valid for comparison
+!=
+Ready for optimization
+```
+
+The GPU optimizer target uses the shared `baseline-quality-v2` + `workload-stability-v1` readiness contract and serializes the resulting `gpu-affinity-v1` eligibility/reason.
 
 ## 10. Cross-domain guardrails
 
@@ -250,30 +272,37 @@ Already present in source and therefore **not** future scaffolding:
 - present PnP inventory and parent relationships;
 - representative GPU/NIC/xHCI evidence;
 - Core Audio default-render route discovery;
-- input-device route discovery;
+- Raw Input device route discovery and bounded host timing;
+- documented USB hub/port correlation and xHCI ancestry;
+- StandardCimv2 RSS inventory/correlation and local network readiness interpretation;
 - DXGI/PresentMon graphics-device correlation;
 - PresentMon workload metric capture;
 - bounded GPU-affinity candidate generation;
+- shared baseline/workload optimizer-readiness contract;
+- explicit evidence-v9 workload/optimizer readiness serialization;
 - exact original/candidate stored-state apply/revert path;
 - exact-target SetupAPI device refresh/restart checks;
+- synchronized ETW + raw PresentMon GPU evidence;
+- runtime GPU ISR processor-placement verification;
+- screening/finalist policy and fixed ABBA+BAAB confirmation source;
 - startup recovery classification;
 - rollback-biased explicit recovery execution;
-- owner-only non-shipping Phase 3 physical-validation harness;
-- runtime GPU ISR processor-placement verification.
+- global Restore Baseline planning/execution for retained GPU changes;
+- owner-only non-shipping Phase 3 physical-validation harness.
 
-Immediate remaining sequence:
+Immediate remaining sequence is now physical-gate driven rather than source-churn driven:
 
-1. **Gate A:** owner-local physical validation of startup/recovery, unresolved-state survival/classification, exact-target restart/reboot-required behavior, one bounded apply/runtime-evidence/exact-rollback cycle and forced-failure recovery while protocol v6 stays read-only;
-2. **Gate B:** implement mutation-specific typed/allowlisted IPC and mutation authorization while keeping `MutationAvailable=false` and the UI unarmed;
-3. **Gate C:** physically validate the real client/App → Service mutation path, including authorization, journal ownership, restart/recovery and exact rollback;
-4. wire bounded GPU candidate screening and balanced finalist confirmation using ETW + applicable PresentMon target/guardrail metrics, plus the active-path/shared-device guardrails needed by that workflow;
-5. **Gate D:** arm the supported user-facing one-click workflow only after Gate C and the required optimizer target/guardrail path are credible;
-6. proceed to Raw Input + USB topology/ETW and xHCI experiments;
-7. add active NIC/RSS topology and controlled-network experiments;
-8. add Wi-Fi/Bluetooth runtime-state and dependency-aware observation;
-9. combine only physically proven per-domain experiments into bounded one-click orchestration.
+1. close the remaining owner-local **Phase 2 read-only physical validation** on the exact current revision;
+2. **Gate A:** physically prove startup/recovery, unresolved-state survival/classification, exact-target restart/reboot-required behavior, one bounded GPU candidate apply → stored verification → runtime ISR placement → exact rollback, and one supported forced-failure recovery while protocol v6 stays read-only;
+3. **Gate B:** only after Gate A, implement mutation-specific typed/allowlisted IPC and mutation authorization while keeping the product unarmed during development;
+4. **Gate C:** physically validate the real client/App → Service mutation path, including authorization, journal ownership, restart/recovery and exact rollback;
+5. **Gate D:** arm the supported user-facing GPU workflow only after Gate C and the required target/guardrail UX are credible;
+6. implement and physically validate the supported xHCI/controller-affinity mutation experiment using the proven shared safety substrate;
+7. implement and physically validate the supported NIC/RSS mutation experiment;
+8. combine only physically proven per-domain experiments into bounded one-click orchestration with Pareto/guardrail handling and Restore Baseline;
+9. finish release/accessibility/representative-hardware closure for 1.0.
 
-Until Gate A evidence exists, Gate B/C/D and candidate-screening product work are sequencing targets, not current execution work. `PROJECT_STATUS.md` owns the exact current execution ladder and physical blockers.
+Until Gate A evidence exists, USB/NIC mutation source and product arming are sequencing targets, not permission to duplicate an unproven mutation path. `PROJECT_STATUS.md` owns the exact current execution ladder and physical blockers.
 
 ## 12. Primary references
 
@@ -281,7 +310,7 @@ Until Gate A evidence exists, Gate B/C/D and candidate-screening product work ar
 - Microsoft CPU Sets: current CPU-set state and assignment APIs.
 - Microsoft system-defined device setup classes: Display, Media, Net, HID, Keyboard, Mouse, Bluetooth, USB, storage and system classes.
 - Microsoft Raw Input APIs: keyboard/mouse/HID host-observable input.
-- Microsoft USB ETW documentation: USB hub/controller/device tracing.
+- Microsoft USB hub/interface documentation: authoritative hub/port/controller correlation semantics.
 - Microsoft Core Audio / MMDevice / DeviceTopology: active audio endpoints and adapter topology.
 - Microsoft DXGI: multi-adapter enumeration.
 - Microsoft RSS/NDIS documentation: processor distribution, RSS profiles and heterogeneous-CPU considerations.
