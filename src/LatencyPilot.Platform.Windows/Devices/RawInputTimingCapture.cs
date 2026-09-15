@@ -38,6 +38,9 @@ public static class RawInputTimingCapture
     private const uint ErrorInsufficientBuffer = 122;
     private const uint StopCaptureMessage = User32RawInput.WmApp + 0x51;
 
+    internal const uint DeviceArrivalChangeCode = User32RawInput.GidcArrival;
+    internal const uint DeviceRemovalChangeCode = User32RawInput.GidcRemoval;
+
     private static readonly SemaphoreSlim CaptureGate = new(1, 1);
     private static readonly ConcurrentDictionary<nint, CaptureSession> Sessions = new();
     private static readonly NativeWindowProcedure WindowProcedure = WindowProc;
@@ -113,6 +116,12 @@ public static class RawInputTimingCapture
             CaptureGate.Release();
         }
     }
+
+    internal static bool IsSelectedDeviceRemoval(
+        nint selectedDeviceHandle,
+        nuint changeCode,
+        nint changedDeviceHandle) =>
+        changeCode == DeviceRemovalChangeCode && changedDeviceHandle == selectedDeviceHandle;
 
     private static void CaptureThread(
         RawInputDeviceSnapshot device,
@@ -215,6 +224,19 @@ public static class RawInputTimingCapture
                 ? 0d
                 : (endTimestamp - startTimestamp) * 1_000d / Stopwatch.Frequency;
 
+            if (session.DeviceRemoved)
+            {
+                finalResult = new RawInputTimingCaptureResult(
+                    RawInputTimingCaptureStatus.DeviceUnavailable,
+                    null,
+                    durationMilliseconds,
+                    actualDurationMilliseconds,
+                    session.ReportLimitReached,
+                    startedAtUtc,
+                    "The selected Raw Input device was removed while timing capture was active.");
+                return;
+            }
+
             var status = session.ReadError is null
                 ? RawInputTimingCaptureStatus.Available
                 : RawInputTimingCaptureStatus.ReadFailed;
@@ -298,6 +320,17 @@ public static class RawInputTimingCapture
         if (message == StopCaptureMessage)
         {
             User32RawInput.PostQuitMessage(0);
+            return 0;
+        }
+
+        if (message == User32RawInput.WmInputDeviceChange)
+        {
+            if (IsSelectedDeviceRemoval(session.SelectedDeviceHandle, wParam, lParam))
+            {
+                session.DeviceRemoved = true;
+                User32RawInput.PostQuitMessage(0);
+            }
+
             return 0;
         }
 
@@ -523,7 +556,9 @@ public static class RawInputTimingCapture
         {
             UsagePage = usagePage,
             Usage = usage,
-            Flags = remove ? User32RawInput.RemoveFlag : User32RawInput.InputSinkFlag,
+            Flags = remove
+                ? User32RawInput.RemoveFlag
+                : User32RawInput.InputSinkFlag | User32RawInput.DeviceNotifyFlag,
             TargetWindow = remove ? 0 : targetWindow,
         };
         var size = checked((uint)Marshal.SizeOf<RawInputDeviceRegistration>());
@@ -554,6 +589,7 @@ public static class RawInputTimingCapture
         internal nint PreviousWindowProcedure { get; } = previousWindowProcedure;
         internal List<long> Timestamps { get; } = new(maximumReports);
         internal bool ReportLimitReached { get; set; }
+        internal bool DeviceRemoved { get; set; }
         internal string? ReadError { get; set; }
     }
 }
