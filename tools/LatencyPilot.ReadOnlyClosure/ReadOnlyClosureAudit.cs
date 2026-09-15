@@ -10,6 +10,10 @@ internal static class ReadOnlyClosureAudit
 {
     private const string ServiceName = "LatencyPilot.Observation";
     private const string KernelSessionPrefix = "LatencyPilot-Kernel-";
+    private static readonly JsonSerializerOptions RecordJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+    };
 
     internal static int Run(string[] args)
     {
@@ -254,7 +258,7 @@ internal static class ReadOnlyClosureAudit
         }
         File.WriteAllText(
             outputPath,
-            JsonSerializer.Serialize(record, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+            JsonSerializer.Serialize(record, RecordJsonOptions));
 
         foreach (var check in checks)
         {
