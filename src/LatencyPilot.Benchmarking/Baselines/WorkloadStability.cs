@@ -118,8 +118,8 @@ public static class WorkloadStabilityAnalyzer
     private static WorkloadSignalStability AnalyzeSignal(string name, double[] values)
     {
         var median = Percentiles.Calculate(values, 0.50);
-        var earlyMedian = Percentiles.Calculate(values.AsSpan(0, 2), 0.50);
-        var lateMedian = Percentiles.Calculate(values.AsSpan(values.Length - 2, 2), 0.50);
+        var earlyMedian = Percentiles.Calculate(values.Take(2).ToArray(), 0.50);
+        var lateMedian = Percentiles.Calculate(values.Skip(values.Length - 2).ToArray(), 0.50);
 
         double relativeDrift;
         if (median == 0d)
