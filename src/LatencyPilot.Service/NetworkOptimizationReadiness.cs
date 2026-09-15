@@ -14,6 +14,25 @@ internal static class NetworkOptimizationReadiness
         NetworkBenchmarkMetricNames.CpuUtilization,
     ];
 
+    internal static NetworkOptimizationReadinessResult EvaluateForExperiment(
+        NetworkRssAdapterSnapshot rss,
+        PnPDeviceSnapshot adapter,
+        NetworkBenchmarkResult benchmark,
+        NetworkInterruptAttributionEvidence attribution,
+        NetworkEnvironmentContinuityResult continuity)
+    {
+        ArgumentNullException.ThrowIfNull(continuity);
+        if (!continuity.IsStable)
+        {
+            return Result(
+                NetworkOptimizationReadinessStatus.Inconclusive,
+                adapter.InstanceId,
+                $"Network environment continuity failed: {string.Join(" ", continuity.Reasons)}");
+        }
+
+        return Evaluate(rss, adapter, benchmark, attribution);
+    }
+
     internal static NetworkOptimizationReadinessResult Evaluate(
         NetworkRssAdapterSnapshot rss,
         PnPDeviceSnapshot adapter,
