@@ -11,6 +11,7 @@ internal sealed record BaselineEvidenceCandidatePlanResult(
     string? SourceRevisionId,
     int WindowCount,
     bool CpuSetMetadataAvailable,
+    WorkloadStabilityResult WorkloadStability,
     IReadOnlyList<GpuAffinityCandidate> Candidates);
 
 internal static class BaselineEvidenceCandidatePlan
@@ -138,6 +139,7 @@ internal static class BaselineEvidenceCandidatePlan
                 sourceRevisionId,
                 windows.Length,
                 cpuSetMetadataAvailable,
+                workloadStability,
                 candidates);
         }
     }
@@ -161,14 +163,17 @@ internal static class BaselineEvidenceCandidatePlan
             RequireObject(runtimeWindow, $"runtime window {runtimeIndex}");
             RequireInt32(runtimeWindow, "windowNumber", runtimeIndex);
 
-            var context = RequireProperty(runtimeWindow, "context");
-            double? systemCpuBusyPercent = context.ValueKind switch
+            double? systemCpuBusyPercent = null;
+            if (runtimeWindow.TryGetProperty("context", out var context) && context.ValueKind != JsonValueKind.Null)
             {
-                JsonValueKind.Null => null,
-                JsonValueKind.Object => ReadOptionalFiniteDouble(context, "systemCpuBusyPercent"),
-                _ => throw new InvalidDataException(
-                    $"Baseline evidence runtime window {runtimeIndex} context must be an object or null."),
-            };
+                if (context.ValueKind != JsonValueKind.Object)
+                {
+                    throw new InvalidDataException(
+                        $"Baseline evidence runtime window {runtimeIndex} context must be an object or null.");
+                }
+
+                systemCpuBusyPercent = ReadOptionalFiniteDouble(context, "systemCpuBusyPercent");
+            }
 
             var window = windows[runtimeIndex - 1];
             evidence.Add(new WorkloadWindowEvidence(
