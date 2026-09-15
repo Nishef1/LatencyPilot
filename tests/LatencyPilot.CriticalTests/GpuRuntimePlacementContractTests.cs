@@ -218,14 +218,10 @@ public sealed class GpuRuntimePlacementContractTests
             {
                 GraphicsTarget = laterContext.GraphicsTarget with { PresentMonDeviceId = 8 },
             }).IsStable);
-    }
 
-    [TestMethod]
-    public void HybridPreflightStopsBeforeMutationBackend()
-    {
         var backend = new RejectingGraphicsPreflightBackend();
         var request = new GpuOptimizationOrchestrationRequest(
-            "PCI\\VEN_10DE&DEV_2484&SUBSYS_147A10DE&REV_A1\\4&TEST",
+            target.InstanceId,
             42,
             EligibleBaseline(),
             [new GpuAffinityCandidate(1, new LogicalProcessorId(0, 2), 0, true, 0.05)],
