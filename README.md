@@ -2,55 +2,63 @@
 
 **Evidence-driven latency experimentation for Windows 11.**
 
-LatencyPilot is built around one rule:
+LatencyPilot follows one rule:
 
 > **Measure → Experiment → Verify → Compare → Keep or Revert**
 
-It is not a registry-tweak pack, debloater, one-click FPS booster, or a list of settings assumed to be universally better. The product measures the actual machine, preserves the evidence behind a decision, and requires every supported system change to be attributable, verifiable and reversible.
+It is not a registry-tweak pack, debloater, generic FPS booster or a list of settings assumed to be universally better. The product measures the actual machine, keeps raw evidence visible, and requires every supported system change to be attributable, verifiable and reversible.
 
 > [!IMPORTANT]
-> LatencyPilot is **0.0.2 pre-alpha**. Phase 2 physical closure is still open while ADR 0004 permits targeted Phase 3 safety/candidate source work. The public protocol remains read-only and user-reachable mutation is **unavailable/unarmed**.
+> LatencyPilot is **0.0.2 pre-alpha**. The repository has advanced through the read-only USB/NIC/profile/release source tranche, but true product 1.0 is **not** complete: Phase 2 owner-local closure and the physical mutation Gate A→B→C→D sequence are still open. Public protocol v6 remains observation-only and user-reachable mutation is unavailable.
 
 ## Current state
 
 - Phase 0 — governance/architecture: **closed**
-- Phase 1 — buildable foundation/comparison core: **closed**
-- Phase 2 — trustworthy read-only observation + decision baseline: **physical closure in progress**
-- Phase 3 — safe mutation substrate + GPU interrupt experiment: **source implementation in progress; mutation not armed**
-- Public observation protocol — **v6**, `GetStatus` + `CaptureKernelLatency` only
+- Phase 1 — deterministic comparison/build foundation: **closed**
+- Phase 2 — trustworthy read-only observation: **source complete; physical closure open**
+- Phase 3 — GPU experiment/recovery: **internal source implemented; physical arming open**
+- Phase 4 — USB/xHCI/input: **read-only/readiness source implemented; mutation/physical proof gated**
+- Phase 5 — NIC/RSS: **read-only/readiness source implemented; mutation/physical proof gated**
+- Phase 6 — profiles/Pareto/Restore Baseline: **policy/recovery source implemented; armed multi-subsystem flow gated**
+- Phase 7 — release/recovery hardening: **source implemented; owner-local package/signing closure open**
+- Observation protocol — **v6**, `GetStatus` + `CaptureKernelLatency` only
 - Evidence schema — **`latencypilot-evidence-v8`**
-- Repeated baseline method — **`baseline-quality-v2`**
-- Permanent automated tests — **9 / hard maximum 10**
+- Repeated baseline — **`baseline-quality-v2`**
+- Optimizer workload readiness — **`workload-stability-v1`**
+- Permanent deterministic tests — **15**; target 10, owner-authorized maximum 20 only for materially safer durable separation/line-limit needs
 - Hosted CI — **test-only**
 
-[`PROJECT_STATUS.md`](PROJECT_STATUS.md) is the live execution ledger. [`ROADMAP.md`](ROADMAP.md) defines the product/phase exit gates. Do not infer completion from source presence alone.
+[`PROJECT_STATUS.md`](PROJECT_STATUS.md) is the live execution ledger. [`ROADMAP.md`](ROADMAP.md) defines product and phase exit gates. Source presence never substitutes for physical evidence.
 
-## Why LatencyPilot
+## What LatencyPilot answers
 
-Windows exposes interrupt, CPU-topology, ETW, USB, networking and scheduling controls, but hardware-specific advice is easy to overgeneralize. LatencyPilot is intended to answer questions such as:
+LatencyPilot is intended to answer questions such as:
 
 - Which drivers contribute most to DPC/ISR work?
 - Is one CPU handling disproportionate interrupt work?
-- Is that concentration repeatable under the workload that matters?
-- Does a candidate actually improve tail/frame/input behavior?
-- Does a local win cause a regression in another subsystem?
-- Is an apparent gain larger than normal run-to-run variation?
-- Can the exact original state be restored after interruption or failure?
+- Is that behavior repeatable under the workload that matters?
+- Is the workload itself stable enough to compare candidates?
+- Which exact USB hub/port/controller backs an input path?
+- What host-observable Raw Input report interval/jitter is present without pretending it is click-to-photon latency?
+- What RSS state does Windows actually report for the network adapter?
+- Does a candidate improve the target without regressing graphics/network/audio/input guardrails?
+- Is an apparent gain larger than normal noise/drift?
+- Can every retained managed change be restored after interruption or failure?
 
 ## Product contract
 
 1. **No tweak without evidence.**
-2. **One variable at a time before combination testing.**
-3. **Quick diagnosis is not benchmark proof.**
-4. **Tail latency matters, but extreme percentiles require enough samples.**
-5. **Measure collateral effects.** A local win may still be a trade-off.
-6. **Know the noise floor.** A small delta inside normal variability is not an improvement.
+2. **Quick diagnosis is not benchmark proof.**
+3. **One variable at a time before combination testing.**
+4. **Tail latency requires adequate samples.**
+5. **Measure collateral effects.** A local win can still be a trade-off.
+6. **Know the noise floor and workload stability.** A changing workload is not candidate evidence.
 7. **Rollback first.** Snapshot, durable journal, verification and recovery are part of the feature.
 8. **No universal magic settings.** Hardware, firmware, drivers, workloads and Windows builds differ.
-9. **Raw evidence remains visible.** A composite score never replaces the underlying metrics.
-10. **Documented platform semantics define what a setting means; local measurement decides whether it helps.**
+9. **Raw metrics remain visible.** There is no hidden weighted optimizer score.
+10. **Documented platform semantics define what a setting/evidence source means; local measurement decides whether it helps.**
 
-## Current architecture
+## Architecture
 
 ```text
 src/
@@ -66,16 +74,16 @@ tests/
   LatencyPilot.CriticalTests/
 ```
 
-Responsibilities are deliberately narrow:
+Responsibilities stay narrow:
 
-- `Core` — stable domain concepts and invariants;
-- `Benchmarking` — percentile/statistical, baseline-quality, comparison and verdict logic;
-- `Protocol` — typed/versioned local IPC contracts only;
-- `Platform.Windows` — ETW, SetupAPI/ConfigMgr, topology, device/resource and other Windows-specific mechanisms;
+- `Core` — stable domain concepts/invariants;
+- `Benchmarking` — percentile, baseline/workload stability, comparison, profiles, Pareto/readiness logic;
+- `Protocol` — typed/versioned local IPC only;
+- `Platform.Windows` — ETW, SetupAPI/ConfigMgr, USB hub IOCTLs, Raw Input, StandardCimv2 RSS and Windows-specific mechanisms;
 - `Persistence` — concrete SQLite mutation journal/recovery state;
-- `Service` — privileged boundary for kernel observation and internal fail-closed mutation substrate;
-- `App` — non-elevated WinUI 3 UX;
-- `CriticalTests` — deliberately small high-blast-radius deterministic suite.
+- `Service` — privileged observation boundary and internal fail-closed experiment/recovery substrate;
+- `App` — non-elevated WinUI 3 evidence/measurement UX;
+- `CriticalTests` — focused durable high-blast-radius contracts.
 
 Current stack:
 
@@ -86,15 +94,15 @@ Current stack:
 - narrow Windows Service;
 - typed/versioned Named Pipes;
 - ETW via `Microsoft.Diagnostics.Tracing.TraceEvent`;
-- SetupAPI + Configuration Manager + documented processor topology/CPU-set APIs;
-- SQLite via `Microsoft.Data.Sqlite` for the concrete Phase 3 journal;
-- PresentMon API where graphics/frame telemetry is applicable;
-- Serilog for bounded structured local diagnostics;
-- MSTest + Microsoft.Testing.Platform for the capped permanent suite.
+- SetupAPI + Configuration Manager;
+- documented USB hub interfaces/IOCTLs and Raw Input;
+- `Root\StandardCimv2` RSS provider through `System.Management`;
+- SQLite via `Microsoft.Data.Sqlite`;
+- PresentMon API for graphics/frame evidence where applicable;
+- Serilog bounded local diagnostics;
+- MSTest + Microsoft.Testing.Platform.
 
-NuGet package versions are centrally managed in [`Directory.Packages.props`](Directory.Packages.props). Project files declare package usage without repeating version numbers.
-
-The App remains non-elevated. The installed Service owns privileged operations. There is no generic privileged shell/process/registry execution surface.
+NuGet versions are centrally managed by [`Directory.Packages.props`](Directory.Packages.props). The App remains non-elevated. There is no generic privileged shell/process/registry execution surface.
 
 ## Measurement products
 
@@ -105,12 +113,12 @@ The App remains non-elevated. The installed Service owns privileged operations. 
 purpose = quick-diagnostic-snapshot
 ```
 
-Used for capture integrity, attribution, CPU concentration, local tail/reference context and hypothesis generation. It is **not** a system-health verdict, stability proof or optimization recommendation.
+Used for integrity, attribution, CPU concentration and hypothesis generation. It is **not** a health verdict or optimization recommendation.
 
 ### Repeated decision baseline
 
 ```text
-workload already warmed/repeatable where applicable
+workload already warmed/repeatable when applicable
 5 s LatencyPilot/service settle
 5 × 20 s authoritative windows
 750 ms inter-window settle
@@ -118,7 +126,11 @@ purpose = repeated-decision-baseline
 method = baseline-quality-v2
 ```
 
-A window is eligible only when duration, capture integrity and sample requirements pass. Across the five windows, the versioned noise/drift gates must also pass. `Valid` means repeatable enough for the current comparison method; it does **not** mean that the machine is globally healthy or optimal.
+A window must pass duration, capture-integrity and sample requirements. Across all five windows, noise/drift/extreme-window gates must pass.
+
+### Optimizer workload readiness
+
+`workload-stability-v1` uses the same five-window sequence and rejects candidate planning when DPC/ISR event-rate activity (and CPU-busy evidence where available) changes materially or contains an isolated extreme activity window. A statistically clean latency baseline is therefore not enough by itself; the workload must also be comparable.
 
 Current p99.9 policy withholds p99.9 until an individual distribution contains at least **10,000 samples**.
 
@@ -126,7 +138,7 @@ See [`docs/BENCHMARK_METHODOLOGY.md`](docs/BENCHMARK_METHODOLOGY.md).
 
 ## Evidence semantics
 
-LatencyPilot deliberately keeps these evidence levels separate:
+LatencyPilot keeps these levels separate:
 
 ```text
 stored interrupt configuration
@@ -137,21 +149,14 @@ stored interrupt configuration
 Examples:
 
 - registry interrupt settings are stored configuration;
-- ConfigMgr resources are assigned-resource evidence;
+- Configuration Manager resources are assigned-resource evidence;
 - ETW DPC/ISR events are runtime behavior.
 
-A stored `MSISupported=1` value is therefore not presented as proof that MSI/MSI-X is actively delivering interrupts at runtime.
+A stored `MSISupported=1` value is not presented as proof that MSI/MSI-X is active at runtime.
 
-Evidence-v8 also separates:
+Evidence-v8 also keeps quick snapshots separate from repeated baselines. Saved evidence carries source/protocol/scenario provenance and SHA-256 verification metadata.
 
-```text
-quick-diagnostic-snapshot
-repeated-decision-baseline
-```
-
-Saved evidence carries source/protocol/scenario provenance and SHA-256 verification metadata.
-
-Use the verifier on Windows:
+Verify on Windows:
 
 ```powershell
 .\scripts\Verify-Evidence.ps1 .\LatencyPilot-observation-*.json `
@@ -159,7 +164,7 @@ Use the verifier on Windows:
   -RequireCleanCapture
 ```
 
-For a decision-grade baseline:
+For a decision baseline:
 
 ```powershell
 .\scripts\Verify-Evidence.ps1 .\LatencyPilot-baseline-*.json `
@@ -168,63 +173,58 @@ For a decision-grade baseline:
   -RequireValidBaseline
 ```
 
-See [`docs/PHYSICAL_VALIDATION.md`](docs/PHYSICAL_VALIDATION.md).
+## Read-only USB/input and NIC/RSS inspection
 
-## Phase 3 mutation substrate
+The existing App device-evidence inspector now remains one read-only surface for:
 
-Phase 3 source work is intentionally ahead of public mutation reachability. Implemented source includes:
+- representative GPU/NIC/xHCI driver/interrupt evidence;
+- Raw Input → PnP → xHCI route identity;
+- exact documented USB hub/port correlation when one unique driver-key match exists;
+- StandardCimv2 RSS provider state and conservative provider→PnP correlation;
+- optional five-second host-observable Raw Input timing capture with median/p95/p99 interval, observed report rate, jitter, gaps and burst/coalescing evidence.
 
-- concrete SQLite durable mutation journal;
-- exact original-state capture before owned writes;
-- compare-and-swap journal revisions and unresolved-entry blocking;
-- fail-closed startup recovery inspection;
-- GPU interrupt-affinity applicability/candidate generation;
-- exact stored-state apply/revert verification;
-- exact-target SetupAPI device refresh/restart checks;
-- recovery behavior that refuses blind overwrite after divergence;
-- runtime GPU ISR processor-placement evidence;
-- PresentMon API discovery/correlation and workload-metric capture.
+The timing capture is explicitly host Raw Input dispatch timing. It is **not** physical device latency or click-to-photon measurement.
 
-This does **not** mean mutation is enabled. The public protocol still exposes only read-only observation commands. Physical restart/apply/rollback/reboot-recovery evidence is required before mutation-specific IPC can be designed and armed.
+## Internal GPU experiment source
 
-The GPU experiment direction remains:
+The internal source path is:
 
 ```text
-baseline/control
-→ topology-aware bounded candidates
-→ journaled apply + stored/runtime verification
-→ target + guardrail measurement
-→ balanced finalist confirmation
-→ Keep best or restore exact original state
+valid baseline + stable workload
+→ topology-aware bounded candidates from measured pressure
+→ exact original snapshot + durable journal
+→ apply / verify / exact-target activation
+→ synchronized ETW + raw PresentMon evidence
+→ runtime GPU ISR-placement verification
+→ exact rollback between screening candidates
+→ finalist only
+→ fixed ABBA + BAAB confirmation
+→ verified Keep or exact RestoreOriginal / RecoveryRequired
 ```
 
-Windows default affinity, CPU0 avoidance, community tweaks, or another machine's winner are never assumed to be universally optimal.
+Screening cannot Keep directly. Missing/incompatible evidence is Inconclusive. A guardrail regression prevents an automatic win. Public protocol v6 exposes none of the mutation operations.
 
-## Dependencies: reuse before custom code
+## USB/NIC optimization frontier
 
-The project intentionally uses maintained platform/packages where they reduce risk without hiding critical semantics:
+Repository source contains authoritative read-only/readiness contracts for xHCI/input and RSS/network. Their system-changing mutation paths are deliberately deferred until the shared mutation substrate passes physical Gate A. That sequencing prevents copying a source-level GPU safety design into other controllers before restart/rollback/recovery have actually been proven on hardware.
 
-- `Microsoft.Data.Sqlite` rather than a custom database layer;
-- `Microsoft.Diagnostics.Tracing.TraceEvent` rather than a custom ETW decoder stack;
-- Windows App SDK / WinUI 3 rather than a second desktop UI framework;
-- `Microsoft.Extensions.Hosting.WindowsServices` for Service hosting;
-- Serilog packages for structured file logging.
+## Profiles, Pareto and Restore Baseline
 
-Raw Windows interop remains in `LatencyPilot.Platform.Windows` where it is small, API-specific and part of the behavior being verified. Do not add a second interop/UI/MVVM/DI framework merely to reduce visible P/Invoke lines. For PresentMon, use the installed PresentMon API/SDK contract rather than shipping a mismatched private service DLL.
+Versioned profiles include Competitive/Gaming, General and Audio-sensitive policies with explicit subsystem opt-out. Candidate relations are represented as Dominates, Dominated, Equivalent, Tradeoff or Inconclusive from named metric outcomes; unlike metrics are never collapsed into an arbitrary weighted score.
 
-Before introducing another dependency, compare reuse/adaptation against the current implementation for API coverage, support status, license, deployment/native payload, maintenance cost, observability and rollback implications.
+Retained managed changes are discoverable newest-first. Global Restore Baseline planning fails closed on unresolved state or unknown mutation kinds and delegates restoration to supported subsystem-specific recovery executors rather than a generic privileged writer.
 
 ## Testing and evidence policy
 
-The permanent automated suite has a **hard repository-wide maximum of 10 tests** and currently uses nine broad tests. Add a permanent test only for a durable high-blast-radius correctness/safety contract; merge or replace lower-value tests rather than growing a test-per-bug suite.
+The durable suite currently contains **15 tests**. The default target remains 10; the owner-authorized maximum is 20 only when separate subsystem contracts materially improve failure isolation or are needed to keep each test file `<=1200` lines. Current USB, input, NIC/RSS, profile/Pareto and restore contracts use that authorization intentionally.
 
-GitHub Actions intentionally runs only the critical test project:
+GitHub Actions runs only:
 
 ```powershell
 dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
 ```
 
-Hosted CI does **not** prove WinUI/Service runtime behavior or hardware optimization claims. App/Service compile/launch remains owner-local; hardware behavior requires physical Windows 11 evidence.
+Hosted CI does **not** prove WinUI/Service launch, hardware behavior, installer/package behavior, signing or accessibility. Those are owner-local requirements.
 
 ## Local workflows
 
@@ -234,85 +234,66 @@ One-shot owner-local App + protected Service validation:
 .\run.ps1
 ```
 
-Combined protected Service + App hot-reload + structured-log development loop:
+Combined Service + App development/log loop:
 
 ```powershell
 .\live.ps1
 ```
 
-App-only CLI watch/build/restore helpers remain available through:
+App-only helpers:
 
 ```powershell
 .\dev.ps1
 ```
 
-For full WinUI XAML Hot Reload and Live Visual Tree work, Visual Studio `F5` remains the preferred inner loop.
+For full XAML Hot Reload/Live Visual Tree, Visual Studio `F5` remains the preferred UI loop.
 
-App logs:
+Logs:
 
 ```text
 %LOCALAPPDATA%\LatencyPilot\Logs\App\latencypilot-app-*.json
-```
-
-Service logs:
-
-```text
 %PROGRAMDATA%\LatencyPilot\Logs\Service\latencypilot-service-*.json
 ```
 
-See [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md).
+## Physical arming sequence
 
-## Current owner-local gate
-
-After the exact current `main` revision has a completed green **Tests** run, use `run.ps1` for compile/install/launch validation only. Confirm the exact source revision in the App, that the Service remains read-only, observation/evidence export still works, and startup recovery inspection reports no unresolved experiment on a clean state.
-
-Then continue the physical gate in this order:
+True product mutation remains gated:
 
 ```text
-startup/recovery inspection
-→ controlled unresolved-journal recovery classification
-→ exact-target GPU restart/reboot-required validation
-→ forced apply/rollback failure exercise while IPC remains unarmed
-→ runtime ISR placement reconciliation
-→ only then mutation-specific typed authorization/IPC
-→ bounded candidate screening
-→ PresentMon + ETW target/guardrail integration
-→ balanced finalist confirmation
-→ Keep best or restore exact original state
+finish Phase 2 read-only physical closure
+→ Gate A: internal GPU restart/apply/runtime-placement/rollback/forced-failure proof
+→ Gate B: mutation-specific typed/allowlisted IPC
+→ Gate C: physical App/client → Service mutation-boundary proof
+→ Gate D: user-facing GPU arming
+→ supported USB/xHCI mutation implementation + physical proof
+→ supported NIC/RSS mutation implementation + physical proof
+→ bounded multi-subsystem validation
 ```
 
-The exact checklist and blockers live in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
-
-## Safety model
-
-A supported system-changing feature is incomplete until it follows:
-
-```text
-Detect applicability
-→ Snapshot exact original state
-→ Validate candidate
-→ Journal pending experiment
-→ Apply one narrow change
-→ Verify actual state
-→ Measure control/candidate
-→ Compare target + guardrails
-→ Keep or Revert
-→ Verify final state
-→ Close journal
-```
-
-Unknown/diverged state is a recovery condition, not success. A failed or incomplete rollback remains unresolved. Internal source implementation never by itself authorizes user-reachable mutation.
+See [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the exact live checklist.
 
 ## Release discipline
 
-Release identities use exactly `MAJOR.MINOR.PATCH`. Published versions are immutable. Current source is **0.0.2**.
+Hosted CI remains test-only. Production release creation is owner-local and fail-closed:
 
-Release/package creation remains an explicit owner-local action after the exact candidate has green deterministic tests plus required local App/Service/package and physical validation.
+```text
+clean exact main + exact green Tests
+→ Release build/publish
+→ WinUI .pri + launch smoke
+→ explicit payload + SHA-256 manifest
+→ installer + portable package hashes
+→ optional/required Authenticode signing + RFC 3161 timestamp
+→ GitHub release publication
+```
 
-See [`docs/RELEASING.md`](docs/RELEASING.md).
+Upgrade and uninstall refuse to replace/remove recovery tools while the journal is unreadable or LatencyPilot still owns an unresolved or retained (`Kept`) change. Restore/recovery must complete first.
+
+Final releases require signing configuration; source hooks alone are not signing evidence. See [`docs/RELEASING.md`](docs/RELEASING.md).
+
+## What “100%” means
+
+Repository/source completion and true 1.0 are intentionally different claims. Source may be complete up to documented safety prerequisites while physical gates remain open. **LatencyPilot is only 100%/1.0 when the remaining physical read-only audit, Gate A→B→C→D, USB/NIC experiment evidence, App accessibility/runtime validation, signed package/upgrade/uninstall/recovery validation and representative supported-hardware audit all pass on exact recorded artifacts.**
 
 ## Contributing / license / security
 
-Read [`AGENTS.md`](AGENTS.md) before making implementation changes. Also see [`CONTRIBUTING.md`](CONTRIBUTING.md), [`CLA.md`](CLA.md), [`LICENSE`](LICENSE) and [`SECURITY.md`](SECURITY.md).
-
-LatencyPilot is source-available under the repository license; commercial use, redistribution and standalone derivative distribution require the permissions described there.
+Read [`AGENTS.md`](AGENTS.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), [`CLA.md`](CLA.md), [`LICENSE`](LICENSE) and [`SECURITY.md`](SECURITY.md) before making changes.
