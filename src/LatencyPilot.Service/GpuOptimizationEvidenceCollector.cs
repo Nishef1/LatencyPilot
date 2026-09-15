@@ -59,6 +59,18 @@ internal sealed class GpuOptimizationEvidenceCollector
         ArgumentNullException.ThrowIfNull(originalState);
         ValidateRequestShape(request);
 
+        var continuityStartedAt = DateTimeOffset.UtcNow;
+        if (!GpuOptimizationCaptureContinuity.TryCapture(
+                request.WorkloadProcessId,
+                out var continuityBefore,
+                out var continuityBeforeReason) || continuityBefore is null)
+        {
+            return GpuOptimizationEvidenceCollectionResult.Unusable(
+                $"Workload continuity could not be established before capture: {continuityBeforeReason}",
+                continuityStartedAt,
+                DateTimeOffset.UtcNow);
+        }
+
         var before = VerifyExpectedStoredState(request, originalState);
         if (!before.IsVerified)
         {
@@ -92,6 +104,30 @@ internal sealed class GpuOptimizationEvidenceCollector
             IsVerified = before.IsVerified && after.IsVerified,
         };
 
+        var captureStartedAt = Max(kernelCapture.StartedAtUtc, presentMonCapture.StartedAtUtc);
+        var captureEndedAt = Min(
+            kernelCapture.StartedAtUtc + kernelCapture.ActualDuration,
+            presentMonCapture.EndedAtUtc);
+        if (!GpuOptimizationCaptureContinuity.TryCapture(
+                request.WorkloadProcessId,
+                out var continuityAfter,
+                out var continuityAfterReason) || continuityAfter is null)
+        {
+            return GpuOptimizationEvidenceCollectionResult.Unusable(
+                $"Workload continuity could not be established after capture: {continuityAfterReason}",
+                captureStartedAt,
+                captureEndedAt < captureStartedAt ? captureStartedAt : captureEndedAt);
+        }
+
+        var continuity = GpuOptimizationCaptureContinuity.Evaluate(continuityBefore, continuityAfter);
+        if (!continuity.IsStable)
+        {
+            return GpuOptimizationEvidenceCollectionResult.Unusable(
+                $"Workload or environment changed during capture: {string.Join(" ", continuity.Reasons)}",
+                captureStartedAt,
+                captureEndedAt < captureStartedAt ? captureStartedAt : captureEndedAt);
+        }
+
         GpuInterruptRuntimePlacementEvidence? runtimePlacement = null;
         if (request.Role == GpuConfirmationOrder.Candidate && combinedVerification.IsVerified)
         {
@@ -110,14 +146,10 @@ internal sealed class GpuOptimizationEvidenceCollector
                 NotSupportedException or
                 System.ComponentModel.Win32Exception)
             {
-                var startedAt = Max(kernelCapture.StartedAtUtc, presentMonCapture.StartedAtUtc);
-                var endedAt = Min(
-                    kernelCapture.StartedAtUtc + kernelCapture.ActualDuration,
-                    presentMonCapture.EndedAtUtc);
                 return GpuOptimizationEvidenceCollectionResult.Unusable(
                     $"Effective GPU ISR placement evidence could not be established: {exception.Message}",
-                    startedAt,
-                    endedAt < startedAt ? startedAt : endedAt);
+                    captureStartedAt,
+                    captureEndedAt < captureStartedAt ? captureStartedAt : captureEndedAt);
             }
         }
 
