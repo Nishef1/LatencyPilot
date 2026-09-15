@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Management;
 using LatencyPilot.Core.Devices;
 
@@ -98,7 +99,7 @@ public static class NetworkRssReader
         }
     }
 
-    private static IReadOnlyList<NetworkAdapterPnpIdentity> ReadAdapterIdentities(ManagementScope scope)
+    private static ReadOnlyCollection<NetworkAdapterPnpIdentity> ReadAdapterIdentities(ManagementScope scope)
     {
         var identities = new List<NetworkAdapterPnpIdentity>();
         using var searcher = new ManagementObjectSearcher(
@@ -131,7 +132,7 @@ public static class NetworkRssReader
         return identities.AsReadOnly();
     }
 
-    private static IReadOnlyDictionary<string, object?> ReadRssProperties(ManagementObject row)
+    private static Dictionary<string, object?> ReadRssProperties(ManagementObject row)
     {
         var properties = new Dictionary<string, object?>(RssPropertyNames.Length, StringComparer.Ordinal);
         foreach (var name in RssPropertyNames)
