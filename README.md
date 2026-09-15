@@ -25,7 +25,7 @@ It is not a registry-tweak pack, debloater, generic FPS booster or a list of set
 - Evidence schema — **`latencypilot-evidence-v8`**
 - Repeated baseline — **`baseline-quality-v2`**
 - Optimizer workload readiness — **`workload-stability-v1`**
-- Permanent deterministic tests — **17**; target 10, owner-authorized maximum 20 only for materially safer durable separation/line-limit needs
+- Permanent deterministic tests — **18**; target 10, owner-authorized maximum 20 only for materially safer durable separation/line-limit needs
 - Hosted CI — **test-only**
 
 [`PROJECT_STATUS.md`](PROJECT_STATUS.md) is the live execution ledger. [`ROADMAP.md`](ROADMAP.md) defines product and phase exit gates. Source presence never substitutes for physical evidence.
@@ -154,7 +154,7 @@ Examples:
 
 A stored `MSISupported=1` value is not presented as proof that MSI/MSI-X is active at runtime.
 
-Evidence-v8 also keeps quick snapshots separate from repeated baselines. Saved evidence carries source/protocol/scenario provenance and SHA-256 verification metadata.
+Evidence-v8 also keeps quick snapshots separate from repeated baselines. Saved evidence carries source/protocol/scenario provenance and SHA-256 verification metadata. The owner-local closure audit separately verifies that the physical Service executable configured in Windows is at the exact protected path and that its ProductVersion embeds the exact expected source revision, so a stale binary at the correct path cannot satisfy exact-revision closure.
 
 Verify on Windows:
 
@@ -216,7 +216,7 @@ Retained managed changes are discoverable newest-first. Global Restore Baseline 
 
 ## Testing and evidence policy
 
-The durable suite currently contains **17 tests**. The default target remains 10; the owner-authorized maximum is 20 only when separate subsystem contracts materially improve failure isolation or are needed to keep each test file `<=1200` lines. Current USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness and GPU runtime-placement contracts use that authorization intentionally.
+The durable suite currently contains **18 tests**. The default target remains 10; the owner-authorized maximum is 20 only when separate subsystem contracts materially improve failure isolation or are needed to keep each test file `<=1200` lines. Current USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness, GPU runtime-placement and installed-Service source-provenance contracts use that authorization intentionally.
 
 GitHub Actions runs only:
 
