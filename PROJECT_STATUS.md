@@ -14,7 +14,7 @@ Last updated: 2026-09-15
 - Evidence schema: **`latencypilot-evidence-v8`**.
 - Decision baseline: **`baseline-quality-v2`**.
 - Optimizer workload readiness: **`workload-stability-v1`**.
-- Permanent deterministic suite: **17 tests**; target 10, owner-authorized maximum 20 only for line-limit or materially safer durable subsystem separation.
+- Permanent deterministic suite: **18 tests**; target 10, owner-authorized maximum 20 only for line-limit or materially safer durable subsystem separation.
 - Hosted GitHub Actions: **test-only**. It does not prove App/Service launch, UI/accessibility, installer/package/signing or physical hardware behavior.
 
 ## Completion summary
@@ -33,7 +33,7 @@ The remaining 1.0 source-completion tranche is now implemented across:
 - recovery-aware install/upgrade/uninstall source;
 - deterministic release provenance/checksum/signing hooks and local redacted diagnostic bundle;
 - read-only App inspector wiring for representative interrupt evidence, exact USB input routes, RSS state and on-demand host Raw Input timing, with optional evidence providers isolated so one unavailable layer no longer discards the rest of the inspector result;
-- owner-local `LatencyPilot.ReadOnlyClosure` preflight that reconciles exact local/remote HEAD, exact-green Tests, Service state/path, clean journal, stale ETW, representative devices, USB/RSS and exact-revision baseline SHA/provenance without arming mutation;
+- owner-local `LatencyPilot.ReadOnlyClosure` preflight that reconciles exact local/remote HEAD, exact-green Tests, the exact protected installed Service path **and the physical Service binary's embedded exact source revision**, clean journal, stale ETW, representative devices, USB/RSS and exact-revision baseline SHA/provenance without arming mutation;
 - owner-local WinApp CLI evidence capture for Light/Dark/High Contrast/TextScale/Narrow/Keyboard UI states, including UIA trees, screenshots and SHA-256 manifests for later Accessibility Insights/Narrator review.
 
 Supported USB/NIC mutation implementations remain deliberately **not armed/built as product mutation paths** until the shared GPU mutation substrate passes Gate A physically. This is a documented safety prerequisite, not permission to substitute source existence for physical proof.
@@ -84,7 +84,7 @@ p99.9
 
 Repository source includes processor-group-aware topology, present PnP/driver/interrupt inventory, stored-vs-allocated-vs-runtime evidence separation, protected Service/Named Pipe v6, ETW DPC/ISR capture, module/processor attribution, repeated baseline gates, evidence-v8 provenance/SHA verification and adaptive evidence UI.
 
-The owner-local closure path is now consolidated in `tools/LatencyPilot.ReadOnlyClosure` and `docs/OWNER_CLOSURE.md`. It can record exact local/remote revision, exact-green CI, protected Service state, journal cleanliness, stale ETW absence, representative GPU/NIC/xHCI presence, USB topology, RSS provider state, and exact-revision steady Real-world/Controlled-idle baseline SHA/provenance in one read-only JSON audit. `scripts/Capture-UiAccessibilityEvidence.ps1` separately captures repeatable UIA/screenshot evidence for required display and keyboard states. These tools reduce manual closure work; they do not convert unexecuted owner-local checks into evidence.
+The owner-local closure path is now consolidated in `tools/LatencyPilot.ReadOnlyClosure` and `docs/OWNER_CLOSURE.md`. It records exact local/remote revision, exact-green CI, protected Service state, exact protected executable path and embedded exact source revision from the installed Service binary, journal cleanliness, stale ETW absence, representative GPU/NIC/xHCI presence, USB topology, RSS provider state, and exact-revision steady Real-world/Controlled-idle baseline SHA/provenance in one read-only JSON audit. A stale Service binary at the correct directory no longer satisfies exact-revision closure. `scripts/Capture-UiAccessibilityEvidence.ps1` separately captures repeatable UIA/screenshot evidence for required display and keyboard states. These tools reduce manual closure work; they do not convert unexecuted owner-local checks into evidence.
 
 Prior physical evidence includes a valid Real-world five-window decision baseline on clean historical revision `a4b4ff36c875982d5a263665860853462d0b055b`. That evidence authorized later source work under ADR 0004; it did not close Phase 2.
 
@@ -243,7 +243,7 @@ Owner-local package closure remains open: actual Release build, signing credenti
 
 ## Current verification discipline
 
-The permanent suite is intentionally split into 17 durable tests so USB, input timing, NIC/RSS, profile/Pareto, restore, workload-readiness and GPU runtime-placement failures remain independently diagnosable. The current owner rule permits up to 20 only for materially safer separation or the 1200-line file limit.
+The permanent suite is intentionally split into 18 durable tests so USB, input timing, NIC/RSS, profile/Pareto, restore, workload-readiness, GPU runtime-placement and installed-Service source-provenance failures remain independently diagnosable. The current owner rule permits up to 20 only for materially safer separation or the 1200-line file limit.
 
 Every final source-completion claim requires a successful **Tests** workflow on the exact final HEAD. Hosted success proves deterministic/source contracts only.
 
