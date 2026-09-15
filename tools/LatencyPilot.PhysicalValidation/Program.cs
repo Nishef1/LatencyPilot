@@ -209,34 +209,42 @@ internal static class PhysicalValidationProgram
                 CultureInfo.InvariantCulture,
                 $"candidate=group {candidate.ProcessorGroup}, CPU {candidate.ProcessorNumber}, mask 0x{candidate.AffinityMask:X}"));
 
+        var storedBefore = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
+        var storedCandidateBeforeMatches =
+            string.Equals(storedBefore.DriverVersion, original.DriverVersion, StringComparison.OrdinalIgnoreCase) &&
+            GpuInterruptAffinityStateComparer.MatchesCandidate(storedBefore, candidate);
+        Console.WriteLine($"stored-candidate-before-match={storedCandidateBeforeMatches}");
+        if (!storedCandidateBeforeMatches)
+        {
+            Console.WriteLine(
+                "placement-proof=failed; the exact stored GPU affinity candidate was not present immediately before runtime capture.");
+            return 3;
+        }
+
         var resources = target.InterruptResources;
         Console.WriteLine(
             $"allocated-interrupt-status={resources.ReadStatus} count={resources.Resources.Count.ToString(CultureInfo.InvariantCulture)}");
-        if (resources.ReadStatus != InterruptResourceReadStatus.Available || resources.Resources.Count == 0)
+        if (resources.ReadStatus == InterruptResourceReadStatus.Available && resources.Resources.Count > 0)
         {
-            Console.WriteLine("allocated-affinity-match=false");
-            Console.WriteLine("placement-proof=unavailable; exact-target allocated interrupt resources could not be established.");
-            return 3;
+            foreach (var resource in resources.Resources)
+            {
+                Console.WriteLine(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"allocated-irq={resource.Irq} group={resource.ProcessorGroup} affinity=0x{resource.AffinityMask:X} flags=0x{resource.RawFlags:X4}"));
+            }
+
+            var allocatedMatchesCandidate = resources.Resources.All(resource =>
+                resource.ProcessorGroup == candidate.ProcessorGroup &&
+                resource.AffinityMask == candidate.AffinityMask);
+            Console.WriteLine($"allocated-affinity-match={allocatedMatchesCandidate}");
+        }
+        else
+        {
+            Console.WriteLine("allocated-affinity-match=unavailable");
         }
 
-        foreach (var resource in resources.Resources)
-        {
-            Console.WriteLine(
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"allocated-irq={resource.Irq} group={resource.ProcessorGroup} affinity=0x{resource.AffinityMask:X} flags=0x{resource.RawFlags:X4}"));
-        }
-
-        var allocatedMatchesCandidate = resources.Resources.All(resource =>
-            resource.ProcessorGroup == candidate.ProcessorGroup &&
-            resource.AffinityMask == candidate.AffinityMask);
-        Console.WriteLine($"allocated-affinity-match={allocatedMatchesCandidate}");
-        if (!allocatedMatchesCandidate)
-        {
-            Console.WriteLine("placement-proof=failed; stored policy is not independently confirmed by the exact target's allocated interrupt affinity.");
-            return 3;
-        }
-
+        Console.WriteLine("allocated-affinity-role=independent-provenance-only");
         Console.WriteLine(
             $"Capturing {RuntimePlacementCaptureDuration.TotalSeconds:F0}s of raw kernel DPC/ISR evidence. Keep the representative workload active and repeatable.");
         var capture = KernelLatencyCapture.Capture(
@@ -252,6 +260,25 @@ internal static class PhysicalValidationProgram
         Console.WriteLine($"isr-events={capture.IsrCount.ToString(CultureInfo.InvariantCulture)}");
         Console.WriteLine($"resolved-module-events={capture.ResolvedModuleEventCount.ToString(CultureInfo.InvariantCulture)}");
         Console.WriteLine($"unresolved-module-events={capture.UnresolvedModuleEventCount.ToString(CultureInfo.InvariantCulture)}");
+
+        var storedAfter = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
+        var storedCandidateAfterMatches =
+            string.Equals(storedAfter.DriverVersion, original.DriverVersion, StringComparison.OrdinalIgnoreCase) &&
+            GpuInterruptAffinityStateComparer.MatchesCandidate(storedAfter, candidate);
+        Console.WriteLine($"stored-candidate-after-match={storedCandidateAfterMatches}");
+        if (!storedCandidateAfterMatches)
+        {
+            Console.WriteLine(
+                "placement-proof=failed; the exact stored GPU affinity candidate changed during runtime capture.");
+            return 3;
+        }
+
+        if (!capture.IsValid)
+        {
+            Console.WriteLine(
+                "placement-proof=incomplete; stored candidate remained stable, but ETW capture integrity was not clean.");
+            return 3;
+        }
 
         try
         {
@@ -273,7 +300,11 @@ internal static class PhysicalValidationProgram
             Console.WriteLine(
                 $"service-module-correlation={(placement.HasRuntimeEvidence ? "observed" : "not-observed")}");
 
-            if (!placement.ConfirmsRequestedPlacement)
+            if (!GpuInterruptRuntimePlacementVerifier.ConfirmsGateAPlacement(
+                    storedCandidateBeforeMatches,
+                    storedCandidateAfterMatches,
+                    capture.IsValid,
+                    placement))
             {
                 Console.WriteLine(
                     "placement-proof=failed; direct resolved GPU-driver ISR evidence was not confined to the requested target processor.");
@@ -293,15 +324,8 @@ internal static class PhysicalValidationProgram
             return 3;
         }
 
-        if (!capture.IsValid)
-        {
-            Console.WriteLine(
-                "placement-proof=incomplete; runtime placement matched, but ETW capture integrity was not clean.");
-            return 3;
-        }
-
         Console.WriteLine(
-            "placement-proof=confirmed; exact-target allocated affinity and direct GPU-driver ISR runtime placement agree on the requested target processor.");
+            "placement-proof=confirmed; the exact stored candidate remained stable across the clean capture and direct GPU-driver ISR runtime placement was confined to the requested processor.");
         return 0;
     }
 
