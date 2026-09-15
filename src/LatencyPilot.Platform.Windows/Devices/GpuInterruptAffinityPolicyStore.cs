@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
+using LatencyPilot.Platform.Windows.Interop;
 using Microsoft.Win32;
 
 namespace LatencyPilot.Platform.Windows.Devices;
@@ -101,24 +102,28 @@ public static class GpuInterruptAffinityPolicyStore
         }
 
         _ = GetPresentDisplayAdapter(original.DeviceInstanceId);
-        using var hardwareKey = OpenHardwareKey(original.DeviceInstanceId, writable: true);
-        using var interruptManagement = hardwareKey.CreateSubKey(InterruptManagementSubKey, writable: true)
-            ?? throw new InvalidOperationException("Unable to create/open Interrupt Management for the target display adapter.");
-        using var affinityPolicy = interruptManagement.CreateSubKey(AffinityPolicySubKey, writable: true)
-            ?? throw new InvalidOperationException("Unable to create/open the target Affinity Policy key.");
 
-        affinityPolicy.SetValue(
-            DevicePolicyValue,
-            unchecked((int)IrqPolicySpecifiedProcessors),
-            RegistryValueKind.DWord);
+        using (var transaction = TransactionalRegistry.Begin("LatencyPilot GPU interrupt-affinity apply"))
+        {
+            using (var affinityPolicy = transaction.CreateOrOpenKey(
+                       RegistryHive.LocalMachine,
+                       GetAffinityPolicyPath(original.DeviceInstanceId)))
+            {
+                affinityPolicy.SetValue(
+                    DevicePolicyValue,
+                    unchecked((int)IrqPolicySpecifiedProcessors),
+                    RegistryValueKind.DWord);
 
-        var mask = new byte[sizeof(ulong)];
-        BinaryPrimitives.WriteUInt64LittleEndian(mask, candidate.AffinityMask);
-        affinityPolicy.SetValue(
-            AssignmentSetOverrideValue,
-            mask,
-            RegistryValueKind.Binary);
-        affinityPolicy.Flush();
+                var mask = new byte[sizeof(ulong)];
+                BinaryPrimitives.WriteUInt64LittleEndian(mask, candidate.AffinityMask);
+                affinityPolicy.SetValue(
+                    AssignmentSetOverrideValue,
+                    mask,
+                    RegistryValueKind.Binary);
+            }
+
+            transaction.Commit();
+        }
 
         VerifyCandidateStored(original.DeviceInstanceId, candidate);
     }
@@ -127,30 +132,27 @@ public static class GpuInterruptAffinityPolicyStore
     {
         ArgumentNullException.ThrowIfNull(original);
         _ = GetPresentDisplayAdapter(original.DeviceInstanceId);
+        var affinityPolicyPath = GetAffinityPolicyPath(original.DeviceInstanceId);
 
-        using var hardwareKey = OpenHardwareKey(original.DeviceInstanceId, writable: true);
-        using var interruptManagement = hardwareKey.CreateSubKey(InterruptManagementSubKey, writable: true)
-            ?? throw new InvalidOperationException("Unable to create/open Interrupt Management while restoring GPU affinity.");
-        using (var affinityPolicy = interruptManagement.CreateSubKey(AffinityPolicySubKey, writable: true)
-            ?? throw new InvalidOperationException("Unable to create/open Affinity Policy while restoring GPU affinity."))
+        using (var transaction = TransactionalRegistry.Begin("LatencyPilot GPU interrupt-affinity restore"))
         {
-            RestoreValue(affinityPolicy, DevicePolicyValue, original.DevicePolicy);
-            RestoreValue(affinityPolicy, AssignmentSetOverrideValue, original.AssignmentSetOverride);
-            affinityPolicy.Flush();
-        }
-
-        if (!original.AffinityPolicyKeyExisted)
-        {
-            var removeEmptyKey = false;
-            using (var current = interruptManagement.OpenSubKey(AffinityPolicySubKey, writable: false))
+            if (original.AffinityPolicyKeyExisted)
             {
-                removeEmptyKey = current is not null && current.ValueCount == 0 && current.SubKeyCount == 0;
+                using var affinityPolicy = transaction.CreateOrOpenKey(RegistryHive.LocalMachine, affinityPolicyPath);
+                RestoreValue(affinityPolicy, DevicePolicyValue, original.DevicePolicy);
+                RestoreValue(affinityPolicy, AssignmentSetOverrideValue, original.AssignmentSetOverride);
+            }
+            else
+            {
+                using (var affinityPolicy = transaction.CreateOrOpenKey(RegistryHive.LocalMachine, affinityPolicyPath))
+                {
+                    EnsureOnlyMutationValuesPresent(affinityPolicy);
+                }
+
+                transaction.DeleteKey(RegistryHive.LocalMachine, affinityPolicyPath);
             }
 
-            if (removeEmptyKey)
-            {
-                interruptManagement.DeleteSubKey(AffinityPolicySubKey, throwOnMissingSubKey: false);
-            }
+            transaction.Commit();
         }
 
         VerifyRestored(original);
@@ -188,7 +190,7 @@ public static class GpuInterruptAffinityPolicyStore
         if (!IsCandidateStored(deviceInstanceId, candidate))
         {
             throw new InvalidOperationException(
-                "GPU interrupt-affinity policy write could not be verified from the target device hardware key.");
+                "GPU interrupt-affinity policy transaction committed but the candidate could not be verified from the target device hardware key.");
         }
     }
 
@@ -197,7 +199,34 @@ public static class GpuInterruptAffinityPolicyStore
         if (!IsRestored(original))
         {
             throw new InvalidOperationException(
-                "GPU interrupt-affinity original state could not be verified after rollback.");
+                "GPU interrupt-affinity restore transaction committed but the exact original state could not be verified.");
+        }
+    }
+
+    private static void EnsureOnlyMutationValuesPresent(TransactionalRegistryKey affinityPolicy)
+    {
+        var counts = affinityPolicy.GetCounts();
+        if (counts.SubKeyCount != 0)
+        {
+            throw new InvalidOperationException(
+                "Refusing to remove the Affinity Policy key because it contains subkeys that were not created by the bounded mutation.");
+        }
+
+        var knownValueCount = 0u;
+        if (affinityPolicy.ValueExists(DevicePolicyValue))
+        {
+            knownValueCount++;
+        }
+
+        if (affinityPolicy.ValueExists(AssignmentSetOverrideValue))
+        {
+            knownValueCount++;
+        }
+
+        if (counts.ValueCount != knownValueCount)
+        {
+            throw new InvalidOperationException(
+                "Refusing to remove the Affinity Policy key because it contains registry values outside the bounded mutation contract.");
         }
     }
 
@@ -225,6 +254,9 @@ public static class GpuInterruptAffinityPolicyStore
                 "The target display adapter hardware registry key is unavailable.");
     }
 
+    private static string GetAffinityPolicyPath(string deviceInstanceId) =>
+        $"SYSTEM\\CurrentControlSet\\Enum\\{deviceInstanceId}\\{InterruptManagementSubKey}\\{AffinityPolicySubKey}";
+
     private static RegistryValueSnapshot ReadSupportedValue(RegistryKey? key, string valueName)
     {
         if (key is null || !key.GetValueNames().Any(name =>
@@ -249,11 +281,11 @@ public static class GpuInterruptAffinityPolicyStore
         return new RegistryValueSnapshot(true, kind, bytes);
     }
 
-    private static void RestoreValue(RegistryKey key, string valueName, RegistryValueSnapshot original)
+    private static void RestoreValue(TransactionalRegistryKey key, string valueName, RegistryValueSnapshot original)
     {
         if (!original.Exists)
         {
-            key.DeleteValue(valueName, throwOnMissingValue: false);
+            key.DeleteValue(valueName);
             return;
         }
 
@@ -262,18 +294,21 @@ public static class GpuInterruptAffinityPolicyStore
             throw new InvalidDataException($"Original registry value '{valueName}' has no value kind.");
         }
 
-        object value = original.Kind.Value switch
+        switch (original.Kind.Value)
         {
-            RegistryValueKind.DWord when original.Data.Length == sizeof(int) =>
-                BitConverter.ToInt32(original.Data, 0),
-            RegistryValueKind.QWord when original.Data.Length == sizeof(long) =>
-                BitConverter.ToInt64(original.Data, 0),
-            RegistryValueKind.Binary => original.Data.ToArray(),
-            _ => throw new InvalidDataException(
-                $"Original registry value '{valueName}' cannot be restored from its captured representation."),
-        };
-
-        key.SetValue(valueName, value, original.Kind.Value);
+            case RegistryValueKind.DWord when original.Data.Length == sizeof(int):
+                key.SetValue(valueName, BitConverter.ToInt32(original.Data, 0), RegistryValueKind.DWord);
+                return;
+            case RegistryValueKind.QWord when original.Data.Length == sizeof(long):
+                key.SetValue(valueName, BitConverter.ToInt64(original.Data, 0), RegistryValueKind.QWord);
+                return;
+            case RegistryValueKind.Binary:
+                key.SetValue(valueName, original.Data.ToArray(), RegistryValueKind.Binary);
+                return;
+            default:
+                throw new InvalidDataException(
+                    $"Original registry value '{valueName}' cannot be restored from its captured representation.");
+        }
     }
 
     private static bool ValuesEqual(RegistryValueSnapshot left, RegistryValueSnapshot right) =>
