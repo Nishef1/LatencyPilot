@@ -149,3 +149,46 @@ public static class NetworkRssReader
         Exception exception) =>
         new(status, [], capturedAtUtc, exception.Message);
 }
+
+public sealed record NetworkRssInspectionCoverage(
+    bool IsUsable,
+    int ProviderRowCount,
+    int PnpCorrelatedRowCount,
+    string? Reason)
+{
+    public static NetworkRssInspectionCoverage Evaluate(NetworkRssSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var providerRows = snapshot.Adapters.Count;
+        var correlatedRows = snapshot.Adapters.Count(static adapter => adapter.PnpCorrelation.IsAvailable);
+        if (!snapshot.IsAvailable)
+        {
+            return new NetworkRssInspectionCoverage(
+                false,
+                providerRows,
+                correlatedRows,
+                $"RSS provider read is {snapshot.Status}: {snapshot.Error}");
+        }
+
+        if (providerRows == 0)
+        {
+            return new NetworkRssInspectionCoverage(
+                false,
+                0,
+                0,
+                "RSS provider returned no adapter setting rows.");
+        }
+
+        if (correlatedRows == 0)
+        {
+            return new NetworkRssInspectionCoverage(
+                false,
+                providerRows,
+                0,
+                "RSS provider rows could not be correlated to any present PnP network adapter.");
+        }
+
+        return new NetworkRssInspectionCoverage(true, providerRows, correlatedRows, null);
+    }
+}
