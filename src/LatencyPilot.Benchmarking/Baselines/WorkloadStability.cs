@@ -22,7 +22,9 @@ public sealed record WorkloadSignalStability(
     double EarlyMedian,
     double LateMedian,
     double RelativeDrift,
-    bool HasMaterialDrift);
+    bool HasMaterialDrift,
+    double MaximumRelativeDeviation,
+    bool HasExtremeWindow);
 
 public sealed record WorkloadStabilityResult(
     string MethodVersion,
@@ -38,6 +40,7 @@ public static class WorkloadStabilityAnalyzer
     public const string MethodVersion = "workload-stability-v1";
     public const int RequiredWindowCount = 5;
     public const double MaximumRelativeActivityDrift = 0.25;
+    public const double MaximumExtremeWindowRelativeDeviation = 0.50;
 
     public static WorkloadStabilityResult Analyze(IReadOnlyList<WorkloadWindowEvidence> windows)
     {
@@ -93,7 +96,9 @@ public static class WorkloadStabilityAnalyzer
                 ordered.Select(static window => window.SystemCpuBusyPercent!.Value).ToArray()));
         }
 
-        var changing = signals.Where(static signal => signal.HasMaterialDrift).ToArray();
+        var changing = signals
+            .Where(static signal => signal.HasMaterialDrift || signal.HasExtremeWindow)
+            .ToArray();
         if (changing.Length == 0)
         {
             return new WorkloadStabilityResult(
@@ -103,15 +108,28 @@ public static class WorkloadStabilityAnalyzer
                 []);
         }
 
+        var reasonParts = changing.Select(static signal =>
+        {
+            var parts = new List<string>(2);
+            if (signal.HasMaterialDrift)
+            {
+                parts.Add($"early/late drift {signal.RelativeDrift:P1}");
+            }
+            if (signal.HasExtremeWindow)
+            {
+                parts.Add($"maximum window deviation {signal.MaximumRelativeDeviation:P1}");
+            }
+            return $"{signal.SignalName} {string.Join(" and ", parts)}";
+        });
+
         return new WorkloadStabilityResult(
             MethodVersion,
             WorkloadStabilityStatus.Changing,
             signals.AsReadOnly(),
             [
                 "Workload activity changed materially across the repeated baseline: " +
-                string.Join(", ", changing.Select(static signal =>
-                    $"{signal.SignalName} early/late drift {signal.RelativeDrift:P1}")) +
-                $" (limit {MaximumRelativeActivityDrift:P0}).",
+                string.Join(", ", reasonParts) +
+                $" (drift limit {MaximumRelativeActivityDrift:P0}; extreme-window limit {MaximumExtremeWindowRelativeDeviation:P0}).",
             ]);
     }
 
@@ -122,15 +140,18 @@ public static class WorkloadStabilityAnalyzer
         var lateMedian = Percentiles.Calculate(values.Skip(values.Length - 2).ToArray(), 0.50);
 
         double relativeDrift;
+        double maximumRelativeDeviation;
         if (median == 0d)
         {
-            relativeDrift = values.All(static value => value == 0d)
-                ? 0d
-                : double.PositiveInfinity;
+            var allZero = values.All(static value => value == 0d);
+            relativeDrift = allZero ? 0d : double.PositiveInfinity;
+            maximumRelativeDeviation = allZero ? 0d : double.PositiveInfinity;
         }
         else
         {
-            relativeDrift = Math.Abs(lateMedian - earlyMedian) / Math.Abs(median);
+            var denominator = Math.Abs(median);
+            relativeDrift = Math.Abs(lateMedian - earlyMedian) / denominator;
+            maximumRelativeDeviation = values.Max(value => Math.Abs(value - median) / denominator);
         }
 
         return new WorkloadSignalStability(
@@ -139,7 +160,9 @@ public static class WorkloadStabilityAnalyzer
             earlyMedian,
             lateMedian,
             relativeDrift,
-            relativeDrift > MaximumRelativeActivityDrift);
+            relativeDrift > MaximumRelativeActivityDrift,
+            maximumRelativeDeviation,
+            maximumRelativeDeviation > MaximumExtremeWindowRelativeDeviation);
     }
 
     private static void ValidateWindowSequence(WorkloadWindowEvidence[] windows, string parameterName)
