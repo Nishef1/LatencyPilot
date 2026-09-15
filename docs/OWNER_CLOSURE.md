@@ -6,8 +6,10 @@ This runbook is the shortest supported path from source-complete to owner-local 
 
 Use a clean `main` checkout whose exact HEAD already has a successful `Tests` workflow. Install/run the observation Service from that same source revision and capture both of these from the App:
 
-- one five-window **Real-world workload** decision baseline;
+- one five-window **Steady real-world workload** decision baseline;
 - one five-window **Controlled idle** decision baseline.
+
+For the steady Real-world baseline, hold one warmed scene, action loop or workload pattern through all five windows. A scripted benchmark that intentionally changes scenes/phases is not a substitute for this closure baseline; repeated whole benchmark runs are a separate experiment shape and are not currently Gate A candidate evidence.
 
 Both files must be closure-grade `latencypilot-evidence-v8` evidence from the exact 40-hex source revision. Do not reuse an older baseline after source changes.
 
@@ -21,7 +23,7 @@ $out = Join-Path $env:USERPROFILE "Documents\LatencyPilot\validation\phase2-read
 
 dotnet run --project .\tools\LatencyPilot.ReadOnlyClosure\LatencyPilot.ReadOnlyClosure.csproj -- `
   --expected-commit $head `
-  --realworld-baseline "C:\path\to\realworld-baseline.json" `
+  --realworld-baseline "C:\path\to\steady-realworld-baseline.json" `
   --controlled-idle-baseline "C:\path\to\controlled-idle-baseline.json" `
   --output $out
 ```
@@ -83,6 +85,6 @@ Only after those checks and the automated audit agree may Phase 2 be marked phys
 
 ## 5. Gate A next
 
-After Phase 2 is physically closed, follow `docs/PHASE3_PHYSICAL_VALIDATION.md` using the exact same current-revision Real-world baseline. Gate A still requires a real owner-local GPU affinity apply/restart/runtime-placement/rollback/recovery exercise. ConfigMgr allocated interrupt resources are provenance only; success requires the exact stored candidate around a clean kernel capture plus attributable GPU-driver ISR runtime placement on the requested processor.
+After Phase 2 is physically closed, follow `docs/PHASE3_PHYSICAL_VALIDATION.md` using the exact same current-revision **steady Real-world** baseline. Gate A still requires a real owner-local GPU affinity apply/restart/runtime-placement/rollback/recovery exercise. ConfigMgr allocated interrupt resources are provenance only; success requires the exact stored candidate around a clean kernel capture plus attributable GPU-driver ISR runtime placement on the requested processor.
 
 Do not expose or arm public mutation before Gate A is physically proven. Gate B, then Gate C/D, then USB/NIC physical mutation evidence remain ordered dependencies rather than parallel checkbox work.
