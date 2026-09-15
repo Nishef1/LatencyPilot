@@ -25,7 +25,9 @@ LatencyPilot/service settle: 5 seconds
 750 ms inter-window settle
 ```
 
-The workload must already be warmed/repeatable unless startup/loading behavior is intentionally under test.
+The workload must already be warmed/repeatable unless startup/loading behavior is intentionally under test. For `RealWorld`, this means one **steady** scene, action loop or workload pattern that is intended to remain comparable across all five windows.
+
+A built-in benchmark that intentionally moves through different scenes/phases is a different experiment shape. Its internal phases must **not** be treated as five equivalent `RealWorld` windows merely to obtain optimizer eligibility. Such a benchmark may still be useful diagnostic evidence, but decision-grade use requires repeated **whole-run** benchmark executions (or matched phase-to-phase runs) under fixed settings. That repeated-run workflow is not currently an optimizer candidate source, so Gate A continues to require the steady-state `RealWorld` baseline below. This follows the broader benchmark discipline of fixed settings plus comparison across repeated result sets rather than assuming every interval inside one scripted workload has identical activity.
 
 Each window requires:
 
@@ -355,10 +357,10 @@ Avoid unnecessary per-event heap allocation, high-volume logging, synchronous fi
 ## 19. Permanent-test policy
 
 - Default/target permanent suite: **10** tests.
-- Current durable suite: **15** tests.
+- Current durable suite: **17** tests.
 - Every test source file: **<=1200 lines**.
 - Owner-authorized maximum: **20**, only for the file-size limit or materially safer durable subsystem separation.
-- Current separate USB, input, NIC/RSS, profile/Pareto and restore contracts intentionally use that authorization.
+- Current separate USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness and GPU runtime-placement contracts intentionally use that authorization.
 - Temporary/obsolete tests are removed rather than accumulated.
 
 Hardware validation is separate from automated-test count.
