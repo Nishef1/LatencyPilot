@@ -106,7 +106,7 @@ public sealed partial class MainWindow
             }
 
             AppendGpuOptimizationReadiness(
-                $"Ready for bounded read-only GPU candidate planning. Latency repeatability passed {BaselineQualityAnalyzer.MethodVersion}, workload activity is Stable under {WorkloadStabilityAnalyzer.MethodVersion}, and {_latestGpuAffinityCandidates.Count} candidate(s) were prepared.");
+                $"Ready for bounded read-only GPU candidate planning. Latency repeatability passed {BaselineQualityAnalyzer.MethodVersion}, steady workload activity is Stable under {WorkloadStabilityAnalyzer.MethodVersion}, and {_latestGpuAffinityCandidates.Count} candidate(s) were prepared.");
 
             var summary = string.Join(
                 ", ",
@@ -114,7 +114,7 @@ public sealed partial class MainWindow
                     CultureInfo.InvariantCulture,
                     $"core {candidate.PhysicalCoreIndex}/CPU {candidate.Processor.Number}: {candidate.ObservedPressureScore:P2}")));
             Logger.Information(
-                "Prepared {CandidateCount} read-only GPU affinity candidate(s) from the valid stable Real-world baseline using mean per-window DPC/ISR event share. Candidates={Candidates}.",
+                "Prepared {CandidateCount} read-only GPU affinity candidate(s) from the valid stable steady-state Real-world baseline using mean per-window DPC/ISR event share. Candidates={Candidates}.",
                 _latestGpuAffinityCandidates.Count,
                 summary);
         }
@@ -140,13 +140,13 @@ public sealed partial class MainWindow
     {
         if (!quality.IsValidForComparison)
         {
-            return $"Not ready. Latency repeatability did not pass {BaselineQualityAnalyzer.MethodVersion}; capture a new baseline before optimization.";
+            return $"Not ready. Latency repeatability did not pass {BaselineQualityAnalyzer.MethodVersion}; capture a new steady-state baseline before optimization. A phase-changing built-in benchmark is not eligible for this five-window baseline method.";
         }
 
         var workloadReason = workloadStability.Reasons.Count == 0
             ? $"{WorkloadStabilityAnalyzer.MethodVersion} could not establish stable workload activity."
             : string.Join(" ", workloadStability.Reasons);
-        return $"Not ready. Latency repeatability is valid, but workload activity is {workloadStability.Status} under {WorkloadStabilityAnalyzer.MethodVersion}. {workloadReason} Re-run after the workload is fully warmed and repeatable.";
+        return $"Not ready. Latency repeatability is valid, but workload activity is {workloadStability.Status} under {WorkloadStabilityAnalyzer.MethodVersion}. {workloadReason} Re-run on one warmed steady scene/action loop. If the workload is a phase-changing built-in benchmark, compare repeated whole benchmark runs instead; do not use its internal phases as GPU candidate evidence.";
     }
 
     private void AppendGpuOptimizationReadiness(string detail)
