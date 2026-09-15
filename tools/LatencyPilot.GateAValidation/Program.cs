@@ -12,6 +12,7 @@ internal static partial class GateAOneClickProgram
 {
     private const string MutationConfirmationFlag = "--confirm-physical-mutation";
     private static readonly TimeSpan WorkloadReturnDelay = TimeSpan.FromSeconds(8);
+    private static readonly JsonSerializerOptions ReportJsonOptions = new() { WriteIndented = true };
 
     internal static async Task<int> RunAsync(string[] args)
     {
@@ -69,15 +70,7 @@ internal static partial class GateAOneClickProgram
                 options.RepositoryRoot);
             RequireSuccess(build, "The physical-validation harness could not be built.");
 
-            var harnessDll = Path.Combine(
-                options.RepositoryRoot,
-                "tools",
-                "LatencyPilot.PhysicalValidation",
-                "bin",
-                "Release",
-                "net10.0-windows10.0.26100.0",
-                "win-x64",
-                "LatencyPilot.PhysicalValidation.dll");
+            var harnessDll = GetHarnessDll(options.RepositoryRoot);
             if (!File.Exists(harnessDll))
             {
                 throw new FileNotFoundException("The built physical-validation harness was not found.", harnessDll);
@@ -157,13 +150,14 @@ internal static partial class GateAOneClickProgram
             applySucceeded = apply.ExitCode == 0;
             RequireSuccess(apply, "The bounded GPU affinity candidate did not reach the applied state.");
 
+            var workloadReturnStartedAt = DateTimeOffset.UtcNow;
             steps.Add(new GateAStepReport(
                 "return-to-workload",
-                startedAtUtc: DateTimeOffset.UtcNow,
-                completedAtUtc: DateTimeOffset.UtcNow + WorkloadReturnDelay,
-                exitCode: 0,
-                standardOutput: "Return to the same warmed workload now; runtime placement capture starts automatically after the settle delay.",
-                standardError: string.Empty));
+                workloadReturnStartedAt,
+                workloadReturnStartedAt + WorkloadReturnDelay,
+                0,
+                "Return to the same warmed workload now; runtime placement capture starts automatically after the settle delay.",
+                string.Empty));
             await Task.Delay(WorkloadReturnDelay);
 
             var placement = await RunHarnessAsync(
@@ -334,7 +328,7 @@ internal static partial class GateAOneClickProgram
 
         await File.WriteAllTextAsync(
             options.OutputPath,
-            JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+            JsonSerializer.Serialize(report, ReportJsonOptions));
 
         Console.WriteLine($"gate-a-status={report.Status}");
         Console.WriteLine($"gate-a-report={options.OutputPath}");
