@@ -22,9 +22,10 @@ It is not a registry-tweak pack, debloater, generic FPS booster or a list of set
 - Phase 6 — profiles/Pareto/Restore Baseline: **policy/recovery source implemented; armed multi-subsystem flow gated**
 - Phase 7 — release/recovery hardening: **source implemented; owner-local package/signing closure open**
 - Observation protocol — **v6**, `GetStatus` + `CaptureKernelLatency` only
-- Evidence schema — **`latencypilot-evidence-v8`**
+- Evidence schema — **`latencypilot-evidence-v9`**
 - Repeated baseline — **`baseline-quality-v2`**
 - Optimizer workload readiness — **`workload-stability-v1`**
+- GPU optimizer eligibility — **`gpu-affinity-v1`**
 - Permanent deterministic tests — **18**; target 10, owner-authorized maximum 20 only for materially safer durable separation/line-limit needs
 - Hosted CI — **test-only**
 
@@ -132,6 +133,8 @@ A window must pass duration, capture-integrity and sample requirements. Across a
 
 `workload-stability-v1` uses the same five-window sequence and rejects candidate planning when DPC/ISR event-rate activity (and CPU-busy evidence where available) changes materially or contains an isolated extreme activity window. A statistically clean latency baseline is therefore not enough by itself; the workload must also be comparable.
 
+Evidence v9 makes this separation explicit. A baseline may be `Valid` for comparison while `optimizerEligibility.isEligible` is false. The App surfaces the same distinction directly as visible status text and accessibility metadata rather than forcing the user to infer readiness from color or a generic baseline label.
+
 Current p99.9 policy withholds p99.9 until an individual distribution contains at least **10,000 samples**.
 
 See [`docs/BENCHMARK_METHODOLOGY.md`](docs/BENCHMARK_METHODOLOGY.md).
@@ -154,7 +157,7 @@ Examples:
 
 A stored `MSISupported=1` value is not presented as proof that MSI/MSI-X is active at runtime.
 
-Evidence-v8 also keeps quick snapshots separate from repeated baselines. Saved evidence carries source/protocol/scenario provenance and SHA-256 verification metadata. The owner-local closure audit separately verifies that the physical Service executable configured in Windows is at the exact protected path and that its ProductVersion embeds the exact expected source revision, so a stale binary at the correct path cannot satisfy exact-revision closure.
+Evidence-v9 keeps quick snapshots separate from repeated baselines. Saved evidence carries source/protocol/scenario provenance and SHA-256 verification metadata. Repeated baseline artifacts additionally serialize `baseline-quality-v2`, `workload-stability-v1`, and the explicit `gpu-affinity-v1` optimizer eligibility/reason, so comparison validity and optimizer readiness remain auditable independent claims. The owner-local closure audit separately verifies that the physical Service executable configured in Windows is at the exact protected path and that its ProductVersion embeds the exact expected source revision, so a stale binary at the correct path cannot satisfy exact-revision closure.
 
 Verify on Windows:
 
