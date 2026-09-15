@@ -122,10 +122,12 @@ Mutation:             unavailable / unarmed
 - [x] p50/p95/p99/max and p99.9 adequacy rule;
 - [x] quick diagnostic and repeated baseline are separate measurement products;
 - [x] baseline-quality-v2 five-window quality analysis;
-- [x] workload-stability-v1 activity drift analysis for optimizer eligibility;
+- [x] workload-stability-v1 activity drift analysis for optimizer eligibility, including complete per-window system CPU-busy evidence when available;
 - [x] evidence-v8 provenance, RequestId, runtime context and SHA-256 export verification;
 - [x] adaptive/accessibility source and keyboard accelerators;
-- [x] read-only device inspector source.
+- [x] read-only device inspector source;
+- [x] consolidated owner-local read-only closure preflight for exact local/remote HEAD, exact-green Tests, Service/journal/stale-ETW/device/USB/RSS/baseline SHA and source-revision provenance;
+- [x] owner-local WinApp CLI UIA/screenshot/SHA evidence capture for Light/Dark/High Contrast/TextScale/Narrow/Keyboard review states.
 
 Canonical evidence boundary remains:
 
@@ -138,12 +140,12 @@ stored interrupt configuration
 ### Physical Phase 2 obligations
 
 - [x] Real-world valid decision baseline previously captured on clean owner-local source;
-- [ ] Controlled-idle valid five-window baseline on current closure revision;
+- [ ] exact-closure-revision Real-world and Controlled-idle valid five-window baselines + green consolidated read-only audit;
 - [ ] representative GPU/NIC/xHCI inspector sanity on current source;
 - [ ] attribution plausibility against an independent observer where practical;
 - [ ] active-session rejection and App-close/Service-restart/stale-ETW cleanup checks;
-- [ ] JSON-visible-data/SHA/source-revision reconciliation;
-- [ ] Light/Dark/High Contrast, narrow/text scaling, keyboard and screen-reader/UIA pass;
+- [ ] JSON-visible-data/SHA/source-revision reconciliation recorded by the consolidated audit;
+- [ ] Light/Dark/High Contrast, narrow/text scaling, keyboard and screen-reader/UIA pass using captured WinApp evidence plus Accessibility Insights/Narrator review;
 - [ ] explicit proof read-only validation performs no unrelated mutation.
 
 ### Exit gate
@@ -191,7 +193,7 @@ authoritative stable baseline
 - [x] explicit five-way decision interpretation;
 - [x] Keep/Restore journal transitions and verified rollback;
 - [x] workload-stability-v1 required by shared optimizer readiness;
-- [x] App candidate preparation refuses changing/inconclusive workload activity;
+- [x] App candidate preparation uses actual per-window runtime CPU activity when available, refuses changing/inconclusive/misaligned workload evidence and reports Ready only after bounded candidates actually exist;
 - [ ] mutation-specific typed product IPC — **blocked by Gate A**;
 - [ ] user-facing one-click GPU mutation — **blocked by Gate C/D**.
 
@@ -291,6 +293,7 @@ Auto mode completes a bounded supported multi-subsystem session and every retain
 - [x] local redacted diagnostic bundle source with no automatic upload;
 - [x] App launch-smoke source in owner-local publisher;
 - [x] CI remains test-only;
+- [x] reproducible WinApp CLI UIA/screenshot/SHA evidence capture source for accessibility review states;
 - [ ] owner-local Release build/publish/launch-smoke on final source;
 - [ ] real Authenticode signing + verification + timestamp evidence;
 - [ ] installer/portable clean-machine install validation;
@@ -309,9 +312,9 @@ Auto mode completes a bounded supported multi-subsystem session and every retain
 ## Permanent-test policy
 
 - Default/target permanent suite size: **10**.
-- Current durable suite: **16 tests**.
+- Current durable suite: **17 tests**.
 - Owner-authorized maximum: **20**, only when needed to keep test files `<=1200` lines or when separate subsystem contracts materially improve durable failure isolation.
-- Current USB, input, NIC/RSS, profile/Pareto, restore and GPU runtime-placement contracts are intentionally separate under that authorization; do not merge them merely to hit the target number.
+- Current USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness and GPU runtime-placement contracts are intentionally separate under that authorization; do not merge them merely to hit the target number.
 - Temporary/obsolete tests must be removed rather than accumulated.
 - Hardware validation, exploratory benchmark runs and release checklists are not automated tests.
 
