@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
 
 namespace LatencyPilot.Service;
@@ -11,7 +12,9 @@ internal sealed record GpuOptimizationCaptureContinuitySnapshot(
     string ProcessName,
     int ProcessSessionId,
     uint ActiveConsoleSessionId,
-    SystemPowerSnapshot Power);
+    SystemPowerSnapshot Power,
+    SystemAwakeTimeSnapshot AwakeTime,
+    GpuGraphicsTargetIdentitySnapshot GraphicsTarget);
 
 internal sealed record GpuOptimizationCaptureContinuityResult(
     bool IsStable,
@@ -23,6 +26,9 @@ internal static class GpuOptimizationCaptureContinuity
 
     internal static bool TryCapture(
         uint processId,
+        string targetDeviceInstanceId,
+        string? presentMonApiPath,
+        string? presentMonControlPipeName,
         out GpuOptimizationCaptureContinuitySnapshot? snapshot,
         out string? reason)
     {
@@ -34,6 +40,8 @@ internal static class GpuOptimizationCaptureContinuity
             reason = "The workload process ID is outside the supported local-process range.";
             return false;
         }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetDeviceInstanceId);
 
         try
         {
@@ -59,13 +67,25 @@ internal static class GpuOptimizationCaptureContinuity
                 return false;
             }
 
+            var graphicsTarget = GpuGraphicsTargetIdentityResolver.Capture(
+                targetDeviceInstanceId,
+                presentMonApiPath,
+                presentMonControlPipeName);
+            if (!graphicsTarget.IsUsable || graphicsTarget.Identity is null)
+            {
+                reason = graphicsTarget.Reason ?? "The GPU target identity could not be established.";
+                return false;
+            }
+
             snapshot = new GpuOptimizationCaptureContinuitySnapshot(
                 processId,
                 new DateTimeOffset(process.StartTime.ToUniversalTime()),
                 process.ProcessName,
                 processSessionId,
                 activeConsoleSessionId,
-                RuntimeMeasurementContextReader.Capture().Power);
+                RuntimeMeasurementContextReader.Capture().Power,
+                SystemAwakeTimeReader.Capture(),
+                graphicsTarget.Identity);
             return true;
         }
         catch (Exception exception) when (exception is
@@ -113,6 +133,28 @@ internal static class GpuOptimizationCaptureContinuity
         if (powerInterval.PowerContextChanged)
         {
             reasons.Add("The AC/DC, charging, Battery Saver, power scheme, or Windows power mode changed during capture.");
+        }
+
+        var awakeInterval = SystemAwakeTimeReader.Evaluate(before.AwakeTime, after.AwakeTime);
+        if (!awakeInterval.IsValid || awakeInterval.SleepOrSuspendDetected)
+        {
+            reasons.Add(awakeInterval.Reason ?? "The system sleep/awake interval is not usable for comparison.");
+        }
+
+        if (before.GraphicsTarget.HardwareAdapterCount != 1 ||
+            after.GraphicsTarget.HardwareAdapterCount != 1)
+        {
+            reasons.Add("Hybrid or multi-GPU workload routing cannot be proven directly, so GPU optimization is fail-closed.");
+        }
+
+        if (!string.Equals(
+                before.GraphicsTarget.DeviceInstanceId,
+                after.GraphicsTarget.DeviceInstanceId,
+                StringComparison.OrdinalIgnoreCase) ||
+            before.GraphicsTarget.Luid != after.GraphicsTarget.Luid ||
+            before.GraphicsTarget.PresentMonDeviceId != after.GraphicsTarget.PresentMonDeviceId)
+        {
+            reasons.Add("The target GPU identity or PresentMon/DXGI correlation changed during capture.");
         }
 
         return new GpuOptimizationCaptureContinuityResult(
