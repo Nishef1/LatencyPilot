@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LatencyPilot.Benchmarking.Baselines;
+using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
 using Microsoft.Windows.Storage.Pickers;
@@ -31,7 +32,7 @@ internal sealed record EvidenceSaveResult(
 
 internal static class EvidenceExportService
 {
-    private const string EvidenceSchema = "latencypilot-evidence-v8";
+    private const string EvidenceSchema = "latencypilot-evidence-v9";
     private const string QuickSnapshotPurpose = "quick-diagnostic-snapshot";
     private const string DecisionBaselinePurpose = "repeated-decision-baseline";
 
@@ -165,6 +166,15 @@ internal static class EvidenceExportService
                 window.WindowNumber,
                 CreateRuntimeContextEvidence(window.Context)))
             .ToArray();
+        var workloadStability = WorkloadStabilityAnalyzer.Analyze(
+            windows,
+            runtimeWindows.Select(static window => window.Context?.SystemCpuBusyPercent).ToArray());
+        var optimizerEligibility = measurementScenario == MeasurementScenario.RealWorld
+            ? GpuOptimizationBaselineReadiness.Evaluate(quality, workloadStability)
+            : new GpuOptimizationBaselineEligibility(
+                GpuOptimizationBaselineReadiness.Target,
+                false,
+                $"GPU affinity baseline eligibility requires {GetMeasurementDisplayName(MeasurementScenario.RealWorld)} measurement context.");
 
         return JsonSerializer.Serialize(
             new BaselineEvidenceDocument(
@@ -180,7 +190,9 @@ internal static class EvidenceExportService
                 captures,
                 windows,
                 evidenceRuntimeWindows,
-                quality),
+                quality,
+                workloadStability,
+                optimizerEligibility),
             JsonOptions);
     }
 
@@ -467,5 +479,7 @@ internal static class EvidenceExportService
         KernelLatencyCaptureResponse[] Captures,
         BaselineWindowEvidence[] Windows,
         EvidenceRuntimeWindow[] RuntimeWindows,
-        BaselineQualityResult Quality);
+        BaselineQualityResult Quality,
+        WorkloadStabilityResult WorkloadStability,
+        GpuOptimizationBaselineEligibility OptimizerEligibility);
 }
