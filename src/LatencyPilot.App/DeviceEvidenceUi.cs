@@ -206,7 +206,7 @@ public sealed partial class MainWindow
         return panel;
     }
 
-    private async Task MeasureInputTimingAsync(
+    private static async Task MeasureInputTimingAsync(
         InputDeviceRouteSnapshot route,
         Button button,
         TextBlock resultText)
