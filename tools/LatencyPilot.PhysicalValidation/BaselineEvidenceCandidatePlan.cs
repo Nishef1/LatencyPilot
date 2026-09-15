@@ -8,7 +8,7 @@ using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
 
 internal sealed record BaselineEvidenceCandidatePlanResult(
-    string? SourceRevisionId,
+    string SourceRevisionId,
     int WindowCount,
     bool CpuSetMetadataAvailable,
     WorkloadStabilityResult WorkloadStability,
@@ -26,9 +26,19 @@ internal static class BaselineEvidenceCandidatePlan
         MaxDepth = 64,
     };
 
-    internal static BaselineEvidenceCandidatePlanResult Create(string evidencePath)
+    internal static BaselineEvidenceCandidatePlanResult Create(
+        string evidencePath,
+        string expectedSourceRevision)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(evidencePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedSourceRevision);
+
+        if (!GpuOptimizationSourceRevisionPolicy.IsValidFullRevision(expectedSourceRevision))
+        {
+            throw new ArgumentException(
+                "Expected source revision must be an exact 40-character hexadecimal Git commit id.",
+                nameof(expectedSourceRevision));
+        }
 
         var fullPath = Path.GetFullPath(evidencePath);
         var file = new FileInfo(fullPath);
@@ -68,6 +78,13 @@ internal static class BaselineEvidenceCandidatePlan
             RequireString(root, "purpose", BaselinePurpose);
             RequireInt32(root, "protocolVersion", ProtocolVersion.Current);
             RequireString(root, "baselineMethodVersion", BaselineQualityAnalyzer.MethodVersion);
+
+            var sourceRevisionId = TryGetOptionalString(root, "sourceRevisionId");
+            if (!GpuOptimizationSourceRevisionPolicy.IsExactMatch(expectedSourceRevision, sourceRevisionId))
+            {
+                throw new InvalidDataException(
+                    $"Baseline evidence source revision '{sourceRevisionId ?? "unavailable"}' does not exactly match expected commit '{expectedSourceRevision}'.");
+            }
 
             var measurementContext = RequireProperty(root, "measurementContext");
             RequireObject(measurementContext, "measurementContext");
@@ -134,9 +151,8 @@ internal static class BaselineEvidenceCandidatePlan
                 throw new InvalidDataException("No bounded GPU affinity candidate could be derived from the evidence.");
             }
 
-            var sourceRevisionId = TryGetOptionalString(root, "sourceRevisionId");
             return new BaselineEvidenceCandidatePlanResult(
-                sourceRevisionId,
+                sourceRevisionId!,
                 windows.Length,
                 cpuSetMetadataAvailable,
                 workloadStability,
