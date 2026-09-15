@@ -1,11 +1,11 @@
 # Benchmark Methodology
 
-Status: **V0.6 benchmark contract**  
+Status: **V0.7 benchmark contract**  
 Last updated: 2026-09-15
 
-LatencyPilot exists to distinguish measurable improvement from placebo, ordinary run-to-run variation, drift, or a trade-off hidden by one headline number. It is an experimental optimization platform, not a collection of assumed Windows tweaks.
+LatencyPilot exists to distinguish measurable improvement from placebo, ordinary run-to-run variation, workload drift, isolated workload spikes, or a trade-off hidden by one headline number. It is an experimental optimization platform, not a collection of assumed Windows tweaks.
 
-Where implementation and this contract disagree, resolve the discrepancy explicitly. Never silently lower the evidence bar to make an experiment pass.
+Where implementation and this contract disagree, reconcile the discrepancy explicitly. Never lower the evidence bar merely to make an experiment pass.
 
 ## 1. Evidence hierarchy
 
@@ -15,9 +15,7 @@ Where implementation and this contract disagree, resolve the discrepancy explici
 1 × 5-second DPC/ISR capture
 ```
 
-Purpose: ETW integrity, module/routine attribution, per-CPU concentration, obvious tail events and hypothesis generation.
-
-It is **not** a benchmark verdict, stability proof, health score or optimization recommendation.
+Purpose: ETW integrity, module/routine attribution, per-CPU concentration, obvious tail events and hypothesis generation. It is **not** a benchmark verdict, stability proof, health score or optimization recommendation.
 
 ### 1.2 Repeated decision baseline — `baseline-quality-v2`
 
@@ -27,7 +25,7 @@ LatencyPilot/service settle: 5 seconds
 750 ms inter-window settle
 ```
 
-The workload must already be warmed/repeatable unless startup/loading behavior is intentionally under test. Five windows are retained because inter-window variation and drift matter.
+The workload must already be warmed/repeatable unless startup/loading behavior is intentionally under test.
 
 Each window requires:
 
@@ -41,7 +39,7 @@ finite positive DPC p99
 finite positive ISR p99
 ```
 
-Across window-level p99 values:
+Across window-level DPC/ISR p99 values:
 
 ```text
 relative noise = (P90 - P10) / |median| <= 30%
@@ -49,15 +47,44 @@ early/late relative drift <= 20%
 extreme-window deviation <= 50%
 ```
 
-No inconvenient window is deleted. `Valid` means repeatable enough for the current method, not that the machine is globally healthy.
+No inconvenient window is deleted. `Valid` means repeatable enough for this latency-quality method, not that the machine is globally healthy or optimizer-ready.
 
-### 1.3 Controlled A/B experiment
+### 1.3 Optimizer workload readiness — `workload-stability-v1`
+
+A valid `baseline-quality-v2` result is necessary but **not sufficient** for optimizer candidate planning. Candidate planning additionally analyzes activity across the **same five windows**:
+
+- DPC event rate;
+- ISR event rate;
+- system CPU busy percentage when that context is available for all windows.
+
+For each available activity signal:
+
+```text
+early/late relative activity drift <= 25%
+maximum single-window relative deviation from median <= 50%
+```
+
+A changing early/late activity level or one isolated extreme workload window makes the repeated workload `Changing` and therefore ineligible for optimization. Missing/invalid/incomplete five-window evidence is `Insufficient` and also ineligible.
+
+The shared GPU readiness contract therefore requires both:
+
+```text
+baseline-quality-v2 = valid
+AND
+workload-stability-v1 = stable
+```
+
+The App uses this same readiness boundary before preparing GPU candidates. A clean latency distribution from a materially changing workload is not candidate evidence.
+
+`workload-stability-v1` is an optimizer-readiness method, not a new definition silently embedded in evidence-v8. A future serialized workload-stability field requires a new evidence schema version.
+
+### 1.4 Controlled A/B experiment
 
 A mutation is never accepted because one post-change number looks better.
 
 ```text
 Environment/provenance snapshot
-→ workload already warmed/stable
+→ workload already warmed and stable
 → authoritative control evidence
 → candidate apply
 → actual-state verification
@@ -68,28 +95,27 @@ Environment/provenance snapshot
 → final-state verification
 ```
 
-Use balanced/interleaved ordering where practical. GPU confirmation v1 uses a fixed eight-run `ABBA + BAAB` schedule.
+Use balanced/interleaved ordering where practical. GPU confirmation v1 uses fixed eight-run `ABBA + BAAB` ordering.
 
 Reboot-requiring experiments must persist exact experiment/rollback state across boots instead of pretending both sides were contiguous.
 
 ## 2. Source hierarchy
 
 - Microsoft documentation is authoritative for Windows API/resource/ETW semantics and supported behavior.
-- Measured local evidence is authoritative for whether a candidate helps a specific machine/workload.
-- Maintained tools such as PresentMon are valid telemetry/prior-art sources, not automatic product truth.
-- Community reports are hypotheses/anecdotes until independently reproduced.
+- Measured local evidence is authoritative for whether a candidate helps a particular machine/workload.
+- Maintained tools such as PresentMon are telemetry/prior-art sources, not automatic product truth.
+- Community reports are hypotheses/anecdotes until reproduced.
 
-A documented Windows policy says what LatencyPilot may set. Measurement decides whether that setting should be kept.
+A documented Windows policy says what LatencyPilot may set. Measurement decides whether the candidate should be kept.
 
 ## 3. Provenance
 
 Authoritative evidence records where applicable:
 
-- exact LatencyPilot product version and clean source revision;
+- exact LatencyPilot version and clean source revision;
 - protocol/evidence/method versions;
-- Windows build;
-- CPU topology;
-- target device and driver identity;
+- Windows build and CPU topology;
+- target device/driver identity;
 - power/environment context;
 - workload/scene identity;
 - requested/actual interval;
@@ -109,9 +135,9 @@ position = (n - 1) * p
 value = lower + interpolation * (upper - lower)
 ```
 
-A subsystem must not introduce a different estimator under the same metric name.
+A subsystem must not introduce another estimator under the same metric identity.
 
-Protocol v6 exposes p99.9 only at >=10,000 samples for that individual distribution. This is an adequacy floor, not a formal confidence guarantee.
+Protocol v6 exposes p99.9 only with >=10,000 samples for that individual distribution. This is an adequacy floor, not a confidence guarantee.
 
 ## 5. DPC/ISR reference semantics
 
@@ -122,13 +148,13 @@ ISR >25 µs    Microsoft driver-duration reference
 >3 ms         LatencyPilot diagnostic bucket
 ```
 
-These are context lines, not the optimizer objective or a health score. CPU0 concentration is evidence, not a universal rule to avoid CPU0.
+These are context lines, not an optimizer objective or health score. CPU0 concentration is evidence, not a universal CPU0-avoidance rule.
 
 ## 6. Metrics and verdicts
 
 Every supported optimization domain defines:
 
-- **primary metrics** — the effect being optimized;
+- **primary metrics** — target effect;
 - **guardrails** — collateral behavior that can block an automatic win;
 - **context** — explanatory state that cannot independently make a candidate win.
 
@@ -140,208 +166,177 @@ The authoritative verdict set is exactly:
 - `NoMeasurableDifference`
 - `Inconclusive`
 
-A primary improvement plus a material guardrail regression is `Tradeoff`, not an automatic improvement. Missing/dirty/undersampled/unverified evidence is `Inconclusive`.
+Primary improvement plus material guardrail regression is `Tradeoff`. Missing, dirty, undersampled or unverified evidence is `Inconclusive`.
 
-Do not replace the vector of raw/derived metrics with an opaque composite score.
+Do not replace the metric vector with an opaque composite score.
 
-## 7. GPU candidate search
+## 7. GPU candidate and execution contract
 
-GPU affinity search is staged rather than blindly testing every logical CPU.
+Candidate search is bounded and generated from measured repeated DPC+ISR processor pressure. One logical sibling per physical core is selected under the current single-group v1 boundary; CPU0 is not hard-excluded.
 
-Screening candidates are generated from processor topology and repeated measured DPC+ISR pressure. One logical sibling per physical core is selected under the current v1 group-0 boundary; CPU0 is not hard-excluded.
+Screening may only nominate `ConfirmFinalist`; it cannot directly Keep a candidate.
 
-Screening is bounded and may only nominate `ConfirmFinalist`. It may not produce a terminal Keep recommendation.
+Internal execution owns:
 
-Every applied candidate must have an exact original snapshot, journal ownership, actual stored-state verification, activation/restart result and exact rollback path.
+```text
+Prepare journal
+→ Apply + activate
+→ BeginMeasurement
+→ synchronized evidence
+→ exact rollback
+```
 
-## 8. GPU synchronized evidence collection
+After one finalist is nominated, confirmation owns a fixed eight-run balanced sequence. If setup/capture/interpretation fails after mutation ownership is acquired, rollback remains in the same owned failure scope. If exact restoration cannot be proven, recovery remains unresolved.
 
-The current internal collector executes kernel ETW and PresentMon concurrently under one linked deadline.
+Public protocol v6 exposes no mutation command.
+
+## 8. GPU synchronized evidence
+
+The internal collector executes kernel ETW and PresentMon concurrently under one deadline.
 
 A run requires:
 
 ```text
 requested duration: 30–60 seconds, integral milliseconds
-ETW requested duration identity matches
+ETW requested-duration identity matches
 PresentMon process/window identity matches
-common ETW/PresentMon overlap >=95% of request
+common ETW/PresentMon overlap >=95%
 clean ETW capture
-expected stored original/candidate state verified before and after
-exact session/workload/environment/source identity
+expected stored state verified before and after
+same session/workload/environment/source identity
 unique capture ID
 ```
 
-### Primary metric
+Primary evidence is raw DPC-duration samples with >=1,000 valid samples per required run.
 
-Current GPU confirmation primary evidence is the raw DPC-duration distribution from the synchronized ETW capture. It retains at least 1,000 valid samples per run.
-
-### PresentMon guardrails
-
-Where the installed PresentMon API exposes complete raw frames, named guardrails can include:
-
-- CPU frame time;
-- CPU busy/wait;
-- GPU busy/wait;
-- GPU latency;
-- display latency;
-- dropped-frame observations;
-- other explicitly modeled frame metrics.
-
-Optional metrics are omitted as a whole when incomplete; they are never synthesized. A dynamic aggregate is not reinterpreted as hundreds of frame samples.
-
-Process/API/window mismatch, changed workload identity, missing required samples or insufficient overlap makes the run unusable.
+Where PresentMon exposes complete raw frame evidence, named guardrails may include CPU frame time, CPU/GPU busy/wait, GPU/display latency and dropped-frame observations. Missing optional metrics are omitted, never synthesized; an aggregate is never inflated into fake raw samples.
 
 ## 9. GPU effective ISR-placement validity
 
-Stored affinity policy is **not** proof that the GPU interrupt actually executed on the selected processor.
+Stored affinity policy is not proof of effective placement.
 
-For a Candidate run, the same ETW capture is analyzed against the exact display-adapter driver/module identity:
+Candidate evidence additionally requires the same ETW capture to show:
 
-- at least one **attributed GPU ISR** must be observed on the candidate logical processor;
-- **zero attributed GPU ISR** may be observed on off-target logical processors;
-- unresolved ISR attribution remains unresolved and never counts as successful placement;
-- missing/ambiguous GPU driver identity cannot be promoted to placement proof.
+- exact display-driver/module attribution;
+- at least one attributed GPU ISR on the candidate logical processor;
+- zero attributed GPU ISR on off-target processors;
+- unresolved ISR attribution remains unresolved rather than counting as success.
 
-This is a validity rule, not an arbitrary performance threshold: it answers whether the intended effective placement was actually observed in the run used for the decision.
-
-Physical Gate A must still demonstrate this behavior on the owner’s supported GPU. Hosted CI proves only deterministic source contracts.
+This is a validity contract. Physical Gate A must still prove it on supported hardware.
 
 ## 10. `gpu-affinity-confirmation-v1`
 
-Confirmation requires exactly eight completed runs in the fixed schedule:
+Confirmation requires exactly:
 
 ```text
 A B B A B A A B
 ```
 
-where `A` is exact captured original state and `B` is the finalist candidate.
+`A` is exact captured original state; `B` is the finalist candidate.
 
-Baseline and runs share session, workload, environment and exact source revision. Each run has a unique capture ID and explicitly verified stored/effective state evidence appropriate to its role.
+Every run shares session/workload/environment/source identity, has a unique capture identity, equal >=30 s requested duration, >=95% actual common interval and >=1,000 samples for every required metric.
 
-Every requested interval is equal and >=30 s; actual common interval must reach >=95%. Every required primary/guardrail distribution has >=1,000 samples per run unless a higher versioned requirement applies.
+Per-side statistics retain four Original and four Candidate observations. Noise >30%, drift >20%, >50% extreme deviation, state mismatch or guardrail regression prevents a confirmed automatic Keep.
 
-Per-run statistic rules currently include:
+Only a clean confirmed `Improved` result without material guardrail regression recommends `KeepCandidate`; everything else recommends exact restoration.
 
-- nonnegative latency/duration distributions: p99;
-- higher-is-better throughput distributions: adverse lower tail (p01);
-- dropped-frame ratio: arithmetic mean over [0,1] observations so rare drops are not hidden.
+## 11. Input/USB measurement contract
 
-The four Original and four Candidate statistics remain separate. Each side uses median, P10–P90 relative noise, first-two/last-two median drift and extreme deviation. Noise >30%, drift >20% or >50% extreme deviation makes the metric/run set inconclusive.
+Raw Input characterizes **host-observable** report dispatch behavior:
 
-The effective practical threshold is the maximum of the configured threshold and measured noise/drift from both sides. This is a conservative practical-noise rule, **not** a confidence interval or significance claim.
-
-Only a clean confirmed `Improved` result without a material guardrail regression recommends `KeepCandidate`. Every other verdict recommends exact restoration.
-
-Results retain raw deltas, statistic identity, sample counts, noise/drift, thresholds, run evidence and explicit reasons.
-
-## 11. Execution-layer ownership
-
-Interpretation is not authorization. The execution layer owns mutation/journal/final-state transitions.
-
-Current internal GPU sequence:
-
-```text
-Screen candidate
-→ Prepare journal
-→ Apply + activate
-→ BeginMeasurement
-→ synchronized evidence
-→ exact rollback
-
-one finalist only
-→ ABBA+BAAB
-→ AwaitingDecision after final Candidate block
-→ re-read candidate + driver identity
-→ Keep OR exact RestoreOriginal
-```
-
-If `BeginMeasurement`, capture or interpretation throws after candidate ownership is acquired, rollback remains in the same owned failure scope. If rollback cannot prove exact restoration, recovery remains unresolved rather than reporting success.
-
-Public protocol v6 still exposes no mutation command.
-
-## 12. Input measurement contract
-
-Raw Input may characterize **host-observable** report-arrival behavior:
-
-- report intervals;
-- interval jitter;
+- raw report intervals;
+- median/p95/p99 interval;
+- observed report rate;
+- tail jitter;
 - long gaps;
 - burst/coalescing patterns visible to the application.
 
-It does not establish physical switch-to-photon latency. Hardware end-to-end claims require appropriate external instrumentation.
+It does **not** establish physical switch-to-photon latency. End-to-end hardware claims require appropriate external instrumentation.
 
-The Phase 4 source must identify the exact Raw Input/PnP route and, where Windows exposes it authoritatively, the hub/port/xHCI relationship. Names, VID/PID or registry hints alone are not enough to claim a port/controller mapping.
+Exact USB route evidence uses documented USB hub interfaces/IOCTLs. A Raw Input/PnP route is promoted to an exact hub/port only when the driver-key match is unique and controller ancestry is compatible. Names, VID/PID or registry hints alone are not port proof. Microsoft documents that `IOCTL_USB_GET_NODE_CONNECTION_DRIVERKEY_NAME` returns the driver registry key for the device connected to a selected hub port.
 
-## 13. USB/xHCI experiment contract
+The xHCI readiness layer requires exact controller identity, host timing evidence and controller/module-attributed DPC/ISR evidence. A future system-changing xHCI experiment must reuse the journal/recovery discipline and remains physically gated.
 
-A future supported xHCI experiment must define:
+## 12. Network/RSS measurement contract
 
-- exact controller identity and authoritative input route;
-- exact original controller state;
-- target timing/DPC/ISR metrics;
-- relevant GPU/network/audio/stability guardrails;
-- journaled apply/verification/revert/recovery;
-- physical proof that the selected controller and route are the ones actually being measured.
+Authoritative RSS state comes from supported Windows networking surfaces, currently `Root\StandardCimv2` `MSFT_NetAdapterRssSettingData` through the Windows provider. Missing provider fields remain unavailable; they are not reconstructed from registry folklore.
 
-Source readiness may be implemented before physical arming, but no generic device-registry writer is allowed.
+Read-only evidence may include:
 
-## 14. Network measurement contract
+- RSS enabled/support state;
+- MSI/MSI-X provider fields;
+- queue/interrupt counts;
+- profile and processor range;
+- indirection/RSS processor arrays;
+- exact/unique provider→PnP correlation when available;
+- vendor-driver DPC/ISR attribution, kept distinct from generic NDIS evidence.
 
-Internet path latency is uncontrolled and cannot be the sole authoritative primary signal for NIC/RSS tuning.
+Internet path latency is uncontrolled and cannot be the authoritative primary signal for NIC tuning. Controlled local observations retain RTT, jitter, loss, throughput and CPU guardrails. Internet observations are supplemental only.
 
-Prefer a controlled local peer and retain raw observations for:
+A future RSS mutation must snapshot exact authoritative original state, use a supported narrow candidate and reuse the durable journal/recovery path after the shared physical safety prerequisite is proven.
 
-- RTT distribution;
-- jitter;
-- loss;
-- throughput guardrail;
-- NDIS/vendor-driver DPC/ISR distribution;
-- RSS processor/queue/indirection evidence;
-- CPU utilization/context.
+## 13. Workload profiles and Pareto policy
 
-Internet observations may be supplemental and must be labeled as such.
+Profiles are versioned, transparent definitions for Competitive/Gaming, General and Audio-sensitive workloads. They may select already-authoritative primary metrics/guardrails and disable a subsystem explicitly, but may not hide raw evidence or silently remove guardrails.
 
-RSS state should come from supported Windows networking surfaces such as StandardCimv2 `MSFT_NetAdapterRssSettingData`; missing provider fields remain unavailable rather than being inferred from registry folklore.
+Cross-subsystem relations are exactly:
+
+```text
+Dominates
+Dominated
+Equivalent
+Tradeoff
+Inconclusive
+```
+
+Unlike metrics are never collapsed into a weighted score. Incomparable wins remain `Tradeoff`; missing evidence remains `Inconclusive`.
+
+## 14. Global Restore Baseline
+
+A `Kept` experiment is terminal for one experiment decision but still represents an active managed machine change.
+
+Global restore:
+
+- discovers retained changes newest-first;
+- fails closed if unresolved state exists;
+- fails closed on unknown mutation kinds;
+- delegates to supported subsystem-specific recovery executors;
+- verifies exact restoration before terminalizing the restored state;
+- never becomes a generic privileged writer.
+
+Upgrade/uninstall must keep recovery tooling installed while retained or unresolved managed state exists.
 
 ## 15. Drift and invalid experiments
 
 An experiment becomes inconclusive when the environment changes materially, including:
 
-- control-side drift;
-- workload/scene mismatch;
+- control-side latency drift;
+- workload activity drift or isolated workload spike;
+- scene/workload identity mismatch;
 - power-state change;
 - major background-load change;
 - device/driver identity change;
 - workload crash/termination;
 - authoritative thermal/clock change where available;
 - dirty/lost ETW evidence;
-- unverified stored/effective applied state.
+- unverified stored/effective state.
 
 Do not manufacture a favorable verdict around invalid evidence.
 
-## 16. Statistical comparison and practical significance
+## 16. Statistical significance and practical significance
 
-Latency distributions may be skewed, multimodal and heavy-tailed. Do not assume normality without evidence.
+Latency distributions can be skewed, multimodal and heavy-tailed. Do not assume normality without evidence.
 
-Future versioned methods may add bootstrap/resampling confidence intervals. A confidence interval crossing the no-effect boundary must not be called a confirmed improvement merely because a point estimate is favorable.
+Future versioned methods may add bootstrap/resampling intervals. A confidence interval crossing the no-effect boundary must not be called confirmed improvement merely because the point estimate is favorable.
 
-A statistically detectable delta may still be practically irrelevant. Metric-family practical thresholds remain explicit and auditable.
+A statistically detectable delta may still be practically irrelevant. Metric-family thresholds stay explicit/auditable. Historical evidence never silently changes meaning after a method upgrade.
 
-Historical evidence must not silently change meaning after method upgrades.
-
-## 17. Workload profiles and cross-subsystem decisions
-
-Profiles may select which already-authoritative metrics are primary/guardrails for General, Competitive/Gaming and Audio-sensitive workloads. A profile may not hide raw metrics, disable a guardrail silently or replace uncertainty with an unexplained score.
-
-Cross-subsystem decisions are Pareto/trade-off aware. Incomparable improvements remain a `Tradeoff`; missing evidence remains `Inconclusive`.
-
-## 18. Persistence and auditability
+## 17. Persistence and auditability
 
 An authoritative experiment should retain enough evidence to audit later:
 
-- experiment ID;
-- run role;
-- schema/protocol/method versions;
+- experiment ID and run role;
+- schema/protocol/method identities;
 - workload identity/version;
 - requested/actual interval;
 - raw-sample reference or auditable representation;
@@ -351,24 +346,27 @@ An authoritative experiment should retain enough evidence to audit later:
 - requested mutation and verified actual state;
 - source/product version.
 
-Historical records are not rewritten merely to fit newer interpretation logic.
+Historical records are not rewritten to fit newer interpretation logic.
 
-## 19. Observer effect
+## 18. Observer effect
 
 Avoid unnecessary per-event heap allocation, high-volume logging, synchronous file I/O, frequent UI redraw and avoidable GC pressure during authoritative measurement. Optimize observer overhead only when profiling justifies it; do not change metric semantics merely to make the observer faster.
 
-## 20. Permanent-test policy
+## 19. Permanent-test policy
 
-The default/target permanent suite is **10** tests. Every test source file must stay at or below **1200 lines**. The owner authorizes up to **20** permanent tests only when genuinely necessary to stay under that file-size boundary or to preserve a materially safer durable separation.
-
-This is not a coverage target. Consolidate high-value scenario matrices, delete temporary/obsolete tests, and retire lower-value cases when a stronger invariant needs the budget.
+- Default/target permanent suite: **10** tests.
+- Current durable suite: **15** tests.
+- Every test source file: **<=1200 lines**.
+- Owner-authorized maximum: **20**, only for the file-size limit or materially safer durable subsystem separation.
+- Current separate USB, input, NIC/RSS, profile/Pareto and restore contracts intentionally use that authorization.
+- Temporary/obsolete tests are removed rather than accumulated.
 
 Hardware validation is separate from automated-test count.
 
-## 21. Evidence boundary and phase closure
+## 20. Evidence and phase boundary
 
-Hosted test-only CI may prove deterministic contracts. It does **not** prove physical GPU/USB/NIC behavior, App/Service launch, installer/package correctness, signing or accessibility.
+Hosted test-only CI can prove deterministic/source contracts. It does **not** prove physical GPU/USB/NIC behavior, WinUI/Service runtime, installer/package correctness, signing or accessibility.
 
-Phase 2 still requires owner-local read-only closure. Product mutation still follows Gate A → Gate B → Gate C → Gate D in `PROJECT_STATUS.md`.
+Phase 2 still requires owner-local read-only closure. Product mutation still follows Gate A → Gate B → Gate C → Gate D in `PROJECT_STATUS.md`. USB/NIC mutation source remains deferred until the shared Gate A substrate is physically credible.
 
 The governing rule remains: **measure the machine; never assume the tweak.**
