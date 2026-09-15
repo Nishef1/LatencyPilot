@@ -84,6 +84,63 @@ public static class PresentMonGuardrailSeriesBuilder
         return result.AsReadOnly();
     }
 
+    public static IReadOnlyDictionary<string, MetricSeries> Create(PresentMonFrameCaptureSnapshot capture)
+    {
+        ArgumentNullException.ThrowIfNull(capture);
+
+        var result = new Dictionary<string, MetricSeries>(StringComparer.Ordinal);
+        if (!capture.IsAvailable ||
+            capture.ProcessId == 0 ||
+            capture.ApiVersion is null ||
+            !double.IsFinite(capture.RequestedWindowMilliseconds) || capture.RequestedWindowMilliseconds <= 0 ||
+            !double.IsFinite(capture.ActualWindowMilliseconds) || capture.ActualWindowMilliseconds <= 0 ||
+            capture.EndedAtUtc < capture.StartedAtUtc ||
+            capture.Frames.Count == 0 ||
+            capture.Frames.Any(static frame => frame is null || frame.SwapChainAddress == 0))
+        {
+            return result.AsReadOnly();
+        }
+
+        AddRawLowerIsBetter(result, CpuFrameTimeMetric, capture.Frames, static frame => frame.CpuFrameTimeMilliseconds);
+        AddRawLowerIsBetter(result, CpuBusyMetric, capture.Frames, static frame => frame.CpuBusyMilliseconds);
+        AddRawLowerIsBetter(result, CpuWaitMetric, capture.Frames, static frame => frame.CpuWaitMilliseconds);
+        AddRawLowerIsBetter(result, GpuTimeMetric, capture.Frames, static frame => frame.GpuTimeMilliseconds);
+        AddRawLowerIsBetter(result, GpuBusyMetric, capture.Frames, static frame => frame.GpuBusyMilliseconds);
+        AddRawLowerIsBetter(result, GpuWaitMetric, capture.Frames, static frame => frame.GpuWaitMilliseconds);
+        AddRawLowerIsBetter(result, GpuLatencyMetric, capture.Frames, static frame => frame.GpuLatencyMilliseconds);
+        AddRawLowerIsBetter(result, DisplayLatencyMetric, capture.Frames, static frame => frame.DisplayLatencyMilliseconds);
+
+        var dropped = capture.Frames.Select(static frame => frame.DroppedFrame).ToArray();
+        if (dropped.All(static value => value is not null))
+        {
+            result[DroppedFrameRatioMetric] = new MetricSeries(
+                DroppedFrameRatioMetric,
+                MetricDirection.LowerIsBetter,
+                dropped.Select(static value => value!.Value ? 1d : 0d));
+        }
+
+        // Presented/displayed FPS are aggregate PresentMon metrics, not one
+        // observation per raw frame. Do not synthesize FPS from frame time or
+        // duplicate an aggregate to satisfy confirmation sample thresholds.
+        return result.AsReadOnly();
+    }
+
+    private static void AddRawLowerIsBetter(
+        Dictionary<string, MetricSeries> result,
+        string name,
+        IReadOnlyList<PresentMonFrameMetricsSnapshot> frames,
+        Func<PresentMonFrameMetricsSnapshot, double?> selector)
+    {
+        var samples = frames.Select(selector).ToArray();
+        if (samples.All(static value => value is { } number && double.IsFinite(number) && number >= 0))
+        {
+            result[name] = new MetricSeries(
+                name,
+                MetricDirection.LowerIsBetter,
+                samples.Select(static value => value!.Value));
+        }
+    }
+
     private static void AddLowerIsBetter(
         Dictionary<string, MetricSeries> result,
         string name,
