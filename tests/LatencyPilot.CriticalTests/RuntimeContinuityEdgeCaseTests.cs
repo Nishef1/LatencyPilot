@@ -1,5 +1,10 @@
 using System.Net.NetworkInformation;
+using LatencyPilot.Benchmarking.Baselines;
+using LatencyPilot.Benchmarking.Candidates;
+using LatencyPilot.Benchmarking.Comparisons;
+using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
+using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Service;
@@ -105,18 +110,43 @@ public sealed class RuntimeContinuityEdgeCaseTests
             AwakeTime = new SystemAwakeTimeSnapshot(31_000, 310_000_000),
         };
         Assert.IsTrue(GpuOptimizationCaptureContinuity.Evaluate(before, after).IsStable);
+        Assert.IsTrue(RawInputTimingCapture.IsAwakeIntervalUsable(before.AwakeTime, after.AwakeTime));
 
         var slept = after with
         {
             AwakeTime = new SystemAwakeTimeSnapshot(36_000, 310_000_000),
         };
         Assert.IsFalse(GpuOptimizationCaptureContinuity.Evaluate(before, slept).IsStable);
+        Assert.IsFalse(RawInputTimingCapture.IsAwakeIntervalUsable(before.AwakeTime, slept.AwakeTime));
         Assert.IsFalse(GpuOptimizationCaptureContinuity.Evaluate(
             before,
             after with
             {
                 GraphicsTarget = after.GraphicsTarget with { PresentMonDeviceId = 8 },
             }).IsStable);
+
+        var blockedBackend = new RejectingGraphicsPreflightBackend();
+        var blockedRequest = new GpuOptimizationOrchestrationRequest(
+            target.InstanceId,
+            42,
+            EligibleBaseline(),
+            [new GpuAffinityCandidate(1, new LogicalProcessorId(0, 2), 0, true, 0.05)],
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(30),
+            new ComparisonPolicy(
+                MinimumSamples: 20,
+                MinimumRelativeChange: 0.03,
+                GuardrailRegressionLimit: 0.05,
+                EvaluationPercentile: 0.99));
+        var blocked = new GpuOptimizationOrchestrator(blockedBackend)
+            .RunAsync(blockedRequest)
+            .GetAwaiter()
+            .GetResult();
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, blocked.Recommendation);
+        Assert.IsTrue(blocked.Reasons.Any(static reason =>
+            reason.Contains("hybrid", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("multi-GPU", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsFalse(blockedBackend.BackendAdvancedBeyondPreflight);
     }
 
     [TestMethod]
@@ -203,5 +233,81 @@ public sealed class RuntimeContinuityEdgeCaseTests
                     WifiBssid = null,
                 },
             }).IsStable);
+    }
+
+    private static GpuOptimizationBaselineEvidence EligibleBaseline()
+    {
+        var quality = BaselineQualityAnalyzer.Analyze(Enumerable.Range(1, 5)
+            .Select(number => new BaselineWindowEvidence(
+                number,
+                DateTimeOffset.UnixEpoch,
+                20_000,
+                20_000,
+                true,
+                null,
+                1_000,
+                100,
+                1_000,
+                10))
+            .ToArray());
+        var workload = WorkloadStabilityAnalyzer.Analyze(
+        [
+            new WorkloadWindowEvidence(1, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(2, 20_000, 30_500, 12_100, 10.2),
+            new WorkloadWindowEvidence(3, 20_000, 30_200, 12_050, 10.1),
+            new WorkloadWindowEvidence(4, 20_000, 29_900, 11_950, 9.9),
+            new WorkloadWindowEvidence(5, 20_000, 30_100, 12_000, 10.0),
+        ]);
+
+        return new GpuOptimizationBaselineEvidence(
+            quality,
+            Guid.NewGuid(),
+            "scene-v1",
+            "environment-v1",
+            new string('a', 40),
+            workload);
+    }
+
+    private sealed class RejectingGraphicsPreflightBackend : IGpuOptimizationExecutionBackend
+    {
+        public bool BackendAdvancedBeyondPreflight { get; private set; }
+
+        public GpuGraphicsTargetIdentityResolution ResolveGraphicsTarget(
+            string deviceInstanceId,
+            string? presentMonApiPath,
+            string? presentMonControlPipeName) =>
+            new(false, null, "Hybrid or multi-GPU workload routing cannot be proven directly.");
+
+        public GpuInterruptAffinitySnapshot CaptureOriginal(string deviceInstanceId)
+        {
+            BackendAdvancedBeyondPreflight = true;
+            throw new InvalidOperationException("GPU mutation backend advanced past a rejected preflight.");
+        }
+
+        public Guid ApplyCandidate(string deviceInstanceId, GpuAffinityCandidate candidate)
+        {
+            BackendAdvancedBeyondPreflight = true;
+            throw new InvalidOperationException("GPU mutation backend advanced past a rejected preflight.");
+        }
+
+        public void BeginMeasurement(Guid experimentId) =>
+            throw new InvalidOperationException("GPU mutation backend advanced past a rejected preflight.");
+
+        public Task<GpuOptimizationEvidenceCollectionResult> CaptureAsync(
+            GpuOptimizationEvidenceRequest request,
+            GpuInterruptAffinitySnapshot originalState,
+            string? presentMonApiPath,
+            string? presentMonControlPipeName,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("GPU mutation backend advanced past a rejected preflight.");
+
+        public void AwaitDecision(Guid experimentId) =>
+            throw new InvalidOperationException("GPU mutation backend advanced past a rejected preflight.");
+
+        public void KeepCandidate(Guid experimentId) =>
+            throw new InvalidOperationException("GPU mutation backend advanced past a rejected preflight.");
+
+        public void Rollback(Guid experimentId) =>
+            throw new InvalidOperationException("GPU mutation backend advanced past a rejected preflight.");
     }
 }
