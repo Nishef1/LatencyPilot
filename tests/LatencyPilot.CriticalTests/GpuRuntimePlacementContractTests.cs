@@ -107,7 +107,14 @@ public sealed class GpuRuntimePlacementContractTests
             ProcessName: "game",
             ProcessSessionId: 1,
             ActiveConsoleSessionId: 1,
-            Power: stablePower);
+            Power: stablePower,
+            AwakeTime: new SystemAwakeTimeSnapshot(1_000, 10_000_000),
+            GraphicsTarget: new GpuGraphicsTargetIdentitySnapshot(
+                "PCI\\VEN_10DE&DEV_TEST",
+                new LatencyPilot.Core.Devices.GraphicsAdapterLuid(1, 2),
+                7,
+                "Test GPU",
+                1));
 
         Assert.IsTrue(GpuOptimizationCaptureContinuity.Evaluate(stableContext, stableContext).IsStable);
         Assert.IsFalse(GpuOptimizationCaptureContinuity.Evaluate(
