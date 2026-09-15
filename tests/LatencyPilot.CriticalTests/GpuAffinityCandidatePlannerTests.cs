@@ -2,8 +2,10 @@ using System.Buffers.Binary;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
+using LatencyPilot.Core.Observation;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Service;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -120,5 +122,81 @@ public sealed class GpuAffinityCandidatePlannerTests
         };
         Assert.IsFalse(PresentMonGuardrailSeriesBuilder.Create(incompleteFrames)
             .ContainsKey(PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric));
+
+        var kernel = new KernelLatencyCaptureResult(
+            startedAt,
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(30),
+            Enumerable.Range(0, 1_000)
+                .Select(index => new KernelLatencyEvent(
+                    KernelLatencyEventKind.Dpc,
+                    index % 4,
+                    index * 30d,
+                    25d + index / 1_000d,
+                    0,
+                    null,
+                    null))
+                .ToArray(),
+            0,
+            0,
+            0,
+            false);
+        var request = new GpuOptimizationEvidenceRequest(
+            1,
+            GpuConfirmationOrder.Candidate,
+            Guid.NewGuid(),
+            77,
+            "scene-v1",
+            "environment-v1",
+            new string('a', 40),
+            candidates[0],
+            TimeSpan.FromSeconds(30));
+        var verification = new GpuOptimizationStateVerification(
+            "PCI\\VEN_10DE&DEV_TEST",
+            GpuConfirmationOrder.Candidate,
+            candidates[0].Processor,
+            true,
+            startedAt);
+
+        var mapped = GpuOptimizationEvidenceCollector.TryCreateRun(
+            request,
+            verification,
+            kernel,
+            rawFrames,
+            Guid.NewGuid());
+        Assert.IsTrue(mapped.IsUsable, mapped.Reason);
+        Assert.IsNotNull(mapped.Run);
+        Assert.AreEqual(1_000, mapped.Run.Measurement.Primary.Samples.Count);
+        Assert.IsTrue(mapped.Run.Measurement.Guardrails.Values.All(static series => series.Samples.Count >= 1_000));
+        Assert.AreEqual(candidates[0].Processor, mapped.Run.AppliedProcessor);
+
+        Assert.IsFalse(GpuOptimizationEvidenceCollector.TryCreateRun(
+            request,
+            verification with { IsVerified = false },
+            kernel,
+            rawFrames,
+            Guid.NewGuid()).IsUsable);
+        Assert.IsFalse(GpuOptimizationEvidenceCollector.TryCreateRun(
+            request,
+            verification,
+            kernel,
+            rawFrames with { ProcessId = 78 },
+            Guid.NewGuid()).IsUsable);
+        Assert.IsFalse(GpuOptimizationEvidenceCollector.TryCreateRun(
+            request,
+            verification,
+            kernel,
+            rawFrames with
+            {
+                ActualWindowMilliseconds = 20_000,
+                EndedAtUtc = startedAt.AddSeconds(20),
+            },
+            Guid.NewGuid()).IsUsable);
+        Assert.IsFalse(GpuOptimizationEvidenceCollector.TryCreateRun(
+            request with { SourceRevisionId = "dirty" },
+            verification,
+            kernel,
+            rawFrames,
+            Guid.NewGuid()).IsUsable);
     }
 }
