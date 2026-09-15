@@ -2,6 +2,8 @@
 
 This runbook closes the read-only Phase 2 measurement substrate on physical Windows 11 hardware. It does **not** authorize mutation. ADR 0004 permits targeted Phase 3 source implementation to overlap this remaining record, but user-reachable mutation stays unavailable until its separate arming gate also passes.
 
+For the shortest current-revision workflow, start with `docs/OWNER_CLOSURE.md`. The `LatencyPilot.ReadOnlyClosure` tool automates the repeatable source/CI/Service/journal/ETW/device/USB/RSS/baseline-provenance checks below, and `scripts/Capture-UiAccessibilityEvidence.ps1` captures reproducible WinApp UI Automation/screenshot evidence. The human-observed checks in this runbook still own physical closure.
+
 ## Current contract
 
 ```text
@@ -12,8 +14,9 @@ Decision baseline:     baseline-quality-v2
                        5 × 20 s authoritative windows
                        5 s LatencyPilot/service settle before window 1
                        750 ms inter-window settle
+Workload readiness:    workload-stability-v1
 p99.9 display floor:   10,000 samples per distribution
-Permanent tests:       9 / 10
+Permanent tests:       17 / 20 owner-authorized maximum
 ```
 
 ## 1. Preconditions and privilege boundary
@@ -141,6 +144,8 @@ relative drift between early and late windows <= 20%
 no >50% extreme-window deviation
 ```
 
+For optimizer eligibility, `workload-stability-v1` additionally checks DPC event-rate and ISR event-rate stability across the same five windows, plus system CPU-busy stability when complete per-window CPU activity evidence is available. Partial CPU-activity evidence is insufficient rather than silently ignored.
+
 Do not delete inconvenient windows. `Valid` means repeatable enough for the current comparison method; it does not mean globally healthy.
 
 Run and export two separate baselines on the final candidate:
@@ -170,6 +175,8 @@ captures/windows:      exactly 5 aligned entries
 
 A partial, short, lossy, undersampled, noisy or drifted baseline remains diagnostic evidence but cannot pass the closure gate.
 
+After both exact-revision baselines exist, run the consolidated audit in `docs/OWNER_CLOSURE.md`; it reuses the canonical evidence verifier and records the exact SHA-256/source-revision result together with current Service/journal/device/USB/RSS state.
+
 ## 5. Plausibility and device evidence
 
 Where practical compare a representative workload with WPA/PerfView or LatencyMon for broad plausibility of DPC/ISR activity, dominant modules and processor concentration. Exact counts need not match because windows, aggregation and observer overhead differ. Attribution to an image that cannot contain the routine address is a blocker.
@@ -196,11 +203,13 @@ Exercise at least:
 6. where practical, malformed/incompatible protocol input fails bounded/closed;
 7. where practical, a client outside the active console session is rejected without weakening authorization.
 
-Unproven cleanup or authorization keeps Phase 2 open.
+The consolidated read-only audit verifies the final no-stale-ETW and clean-journal state, but it does not replace deliberately exercising the interruption and authorization behaviors above. Unproven cleanup or authorization keeps Phase 2 open.
 
 ## 7. Accessibility and zero-mutation checks
 
 Check Light, Dark, Windows High Contrast, narrow/wide widths, enlarged text scaling, keyboard-only focus order and screen-reader/UI Automation for Service state, scenario, measurement purpose, exact values, runtime context and baseline verdict. Color must not be the only state cue, and a quick snapshot must not be announced as a health verdict.
+
+Use `scripts/Capture-UiAccessibilityEvidence.ps1` for reproducible WinApp CLI/UIA trees and screenshots in `Light`, `Dark`, `HighContrast`, `TextScale`, `Narrow`, and `Keyboard` states. Review the resulting evidence with Accessibility Insights FastPass and a focused Narrator pass; captured automation evidence is supporting proof, not a substitute for human reading-order, announcement-quality and visual-layout judgment.
 
 Phase 2 validation must not alter interrupt affinity, MSI settings, CPU Sets, power settings, network configuration, device policy, timer settings or unrelated services. Internal Phase 3 source may exist in the same revision, but it must remain unreachable/unarmed during this runbook. Only LatencyPilot installation/Service files and documented diagnostics/evidence artifacts may persist.
 
@@ -222,11 +231,12 @@ Close Phase 2 only when the **same final clean source candidate** has:
 - clean evidence-v8 quick snapshot;
 - valid Real-world evidence-v8/baseline-v2 decision baseline;
 - valid Controlled-idle evidence-v8/baseline-v2 decision baseline;
+- green consolidated read-only audit JSON for that exact revision;
 - representative GPU/NIC/xHCI evidence;
 - attribution plausibility;
 - failure/disconnect/stale-ETW cleanup;
 - active-console authorization sanity;
-- accessibility/responsive sanity;
+- captured UIA/screenshot manifests plus Accessibility Insights/Narrator/responsive sanity;
 - zero-mutation confirmation;
 - JSON/SHA-256/source-revision reconciliation;
 - unresolved blockers explicitly listed.
