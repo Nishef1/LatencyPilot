@@ -51,6 +51,16 @@ public sealed class OptimizationProfileTests
         Assert.IsTrue(stableWorkload.IsEligibleForExperiment);
         Assert.AreEqual(0, stableWorkload.Reasons.Count);
 
+        var stableQuality = BaselineQualityAnalyzer.Analyze(
+        [
+            new BaselineWindowEvidence(1, DateTimeOffset.UnixEpoch, 20_000, 20_000, true, null, 30_000, 100, 12_000, 50),
+            new BaselineWindowEvidence(2, DateTimeOffset.UnixEpoch.AddSeconds(21), 20_000, 20_000, true, null, 31_000, 101, 12_200, 50.5),
+            new BaselineWindowEvidence(3, DateTimeOffset.UnixEpoch.AddSeconds(42), 20_000, 20_000, true, null, 29_500, 99, 11_900, 49.5),
+            new BaselineWindowEvidence(4, DateTimeOffset.UnixEpoch.AddSeconds(63), 20_000, 20_000, true, null, 30_500, 100.5, 12_100, 50.2),
+            new BaselineWindowEvidence(5, DateTimeOffset.UnixEpoch.AddSeconds(84), 20_000, 20_000, true, null, 30_200, 100.2, 12_050, 50.1),
+        ]);
+        Assert.IsTrue(GpuOptimizationBaselineReadiness.IsEligible(stableQuality, stableWorkload));
+
         var changingWorkload = WorkloadStabilityAnalyzer.Analyze(
         [
             new WorkloadWindowEvidence(1, 20_302.5, 39_533, 17_003, 12.519),
@@ -61,6 +71,7 @@ public sealed class OptimizationProfileTests
         ]);
         Assert.AreEqual(WorkloadStabilityStatus.Changing, changingWorkload.Status);
         Assert.IsFalse(changingWorkload.IsEligibleForExperiment);
+        Assert.IsFalse(GpuOptimizationBaselineReadiness.IsEligible(stableQuality, changingWorkload));
         Assert.IsTrue(changingWorkload.Reasons.Any(static reason =>
             reason.Contains("workload activity", StringComparison.OrdinalIgnoreCase)));
 
@@ -73,6 +84,7 @@ public sealed class OptimizationProfileTests
         ]);
         Assert.AreEqual(WorkloadStabilityStatus.Insufficient, incompleteWorkload.Status);
         Assert.IsFalse(incompleteWorkload.IsEligibleForExperiment);
+        Assert.IsFalse(GpuOptimizationBaselineReadiness.IsEligible(stableQuality, incompleteWorkload));
 
         var dominates = ParetoDecisionPolicy.Evaluate(
         [
