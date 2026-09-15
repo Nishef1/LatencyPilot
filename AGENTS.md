@@ -109,19 +109,19 @@ If the current state cannot be proven, report it as unknown and enter recovery. 
 
 Authoritative verdicts remain explicit: `Improved`, `Regressed`, `Tradeoff`, `NoMeasurableDifference`, `Inconclusive`.
 
-## 7. Hard test cap
+## 7. Permanent-test budget and file-size rule
 
 LatencyPilot intentionally does **not** pursue high unit-test counts or coverage percentages.
 
-**Hard repository rule: no more than 10 permanent automated tests total.**
+The default repository target remains **10 permanent automated tests total**. The repository owner has explicitly authorized growth to at most **20 permanent automated tests** only when it is genuinely necessary to preserve a coherent durable test boundary or prevent a test source file from exceeding **1200 lines**. This is permission to split when needed, not a target to grow the suite.
+
+Every test source file must remain at or below **1200 lines**. When a file approaches that limit, first remove temporary/obsolete scenarios and consolidate lower-value duplication. If a durable high-blast-radius contract still cannot be represented clearly under the limit, split it into the minimum additional permanent test(s), never exceeding 20 total without new owner authorization.
 
 A permanent test requires a credible high-blast-radius failure mode. Do not write permanent tests for getters, labels, trivial mappings, framework behavior, minor historical regressions, every parser branch, or every bug fix.
 
 Temporary investigative tests are allowed while implementing/debugging interop, parsers or framework migration. Delete them before the final commit when they do not protect a lasting high-blast-radius contract.
 
-Exceeding 10 permanent tests is prohibited unless the repository owner explicitly approves it and an ADR explains why staying at 10 would create more risk than the additional permanent test creates maintenance cost.
-
-When a later phase introduces a more important risk, merge, replace or retire a lower-value permanent test rather than growing the suite.
+When a later phase introduces a more important risk, merge, replace or retire a lower-value permanent test rather than accumulating tests indefinitely.
 
 Physical hardware validation, exploratory benchmark runs and release checklists are not counted as automated tests.
 
