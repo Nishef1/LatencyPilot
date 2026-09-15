@@ -138,17 +138,42 @@ internal static class ReadOnlyClosureAudit
             }
 
             var state = output[..separator];
-            var path = output[(separator + 1)..];
+            var configuredPath = output[(separator + 1)..];
             if (!string.Equals(state, "Running", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException($"{ServiceName} is '{state}', not Running.");
             }
-            if (!path.Contains(@"\LatencyPilot\Service\LatencyPilot.Service.exe", StringComparison.OrdinalIgnoreCase))
+
+            var servicePath = ResolveServiceExecutablePath(configuredPath);
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            if (string.IsNullOrWhiteSpace(programFiles))
             {
-                throw new InvalidOperationException($"Service executable path is unexpected: {path}");
+                throw new InvalidOperationException("Program Files could not be resolved for Service identity verification.");
             }
 
-            return $"Running from protected LatencyPilot Service path";
+            var expectedServicePath = Path.GetFullPath(Path.Combine(
+                programFiles,
+                "LatencyPilot",
+                "Service",
+                "LatencyPilot.Service.exe"));
+            if (!string.Equals(servicePath, expectedServicePath, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Service executable path is '{servicePath}', expected '{expectedServicePath}'.");
+            }
+            if (!File.Exists(servicePath))
+            {
+                throw new FileNotFoundException("Installed Service executable was not found.", servicePath);
+            }
+
+            var productVersion = FileVersionInfo.GetVersionInfo(servicePath).ProductVersion;
+            if (!SourceRevisionIdentity.MatchesExpectedCommit(productVersion, expectedCommit))
+            {
+                throw new InvalidOperationException(
+                    $"Installed Service ProductVersion '{productVersion ?? "<missing>"}' does not contain exact source revision {expectedCommit}.");
+            }
+
+            return $"Running from exact protected path; binary source={expectedCommit}";
         });
 
         RunCheck(checks, "mutation-journal", () =>
@@ -323,6 +348,39 @@ internal static class ReadOnlyClosureAudit
         }
 
         return $"scenario={expectedScenario}, SHA-256={digest}, canonical verification passed";
+    }
+
+    private static string ResolveServiceExecutablePath(string configuredPath)
+    {
+        var value = configuredPath.Trim();
+        if (value.Length == 0)
+        {
+            throw new InvalidDataException("Installed Service executable path is empty.");
+        }
+
+        string executablePath;
+        if (value[0] == '"')
+        {
+            var closingQuote = value.IndexOf('"', 1);
+            if (closingQuote <= 1)
+            {
+                throw new InvalidDataException($"Installed Service executable path is malformed: {configuredPath}");
+            }
+
+            executablePath = value[1..closingQuote];
+        }
+        else
+        {
+            var executableEnd = value.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+            if (executableEnd < 0)
+            {
+                throw new InvalidDataException($"Installed Service executable path is malformed: {configuredPath}");
+            }
+
+            executablePath = value[..(executableEnd + 4)];
+        }
+
+        return Path.GetFullPath(executablePath);
     }
 
     private static void RunCheck(
