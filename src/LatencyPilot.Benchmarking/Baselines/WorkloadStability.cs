@@ -42,6 +42,33 @@ public static class WorkloadStabilityAnalyzer
     public const double MaximumRelativeActivityDrift = 0.25;
     public const double MaximumExtremeWindowRelativeDeviation = 0.50;
 
+    public static WorkloadStabilityResult Analyze(
+        IReadOnlyList<BaselineWindowEvidence> windows,
+        IReadOnlyList<double?> systemCpuBusyPercent)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        ArgumentNullException.ThrowIfNull(systemCpuBusyPercent);
+
+        if (windows.Count != systemCpuBusyPercent.Count)
+        {
+            return new WorkloadStabilityResult(
+                MethodVersion,
+                WorkloadStabilityStatus.Insufficient,
+                [],
+                [$"Baseline/runtime activity evidence is misaligned: windows={windows.Count}, CPU activity windows={systemCpuBusyPercent.Count}."]);
+        }
+
+        var workloadWindows = windows
+            .Select((window, index) => new WorkloadWindowEvidence(
+                window.WindowNumber,
+                window.ActualDurationMilliseconds,
+                window.DpcEventCount,
+                window.IsrEventCount,
+                systemCpuBusyPercent[index]))
+            .ToArray();
+        return Analyze(workloadWindows);
+    }
+
     public static WorkloadStabilityResult Analyze(IReadOnlyList<WorkloadWindowEvidence> windows)
     {
         ArgumentNullException.ThrowIfNull(windows);
