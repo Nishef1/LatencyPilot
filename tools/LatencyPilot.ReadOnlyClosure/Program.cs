@@ -1,0 +1,1 @@
+return ReadOnlyClosureAudit.Run(args);

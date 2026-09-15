@@ -13,5 +13,7 @@
     <ProjectReference Include="../../src/LatencyPilot.Service/LatencyPilot.Service.csproj" />
     <ProjectReference Include="../../tools/LatencyPilot.PhysicalValidation/LatencyPilot.PhysicalValidation.csproj"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../tools/LatencyPilot.ReadOnlyClosure/LatencyPilot.ReadOnlyClosure.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>
