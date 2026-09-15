@@ -93,9 +93,10 @@ Current contract:
 
 ```text
 Protocol:             v6 (observation-only)
-Evidence:             latencypilot-evidence-v8
+Evidence:             latencypilot-evidence-v9
 Decision baseline:    baseline-quality-v2
 Workload readiness:   workload-stability-v1
+Optimizer eligibility: gpu-affinity-v1 (explicit serialized result)
 Quick snapshot:       1 × 5 s diagnostic only
 Decision sequence:    5 × 20 s + 5 s pre-settle + 750 ms inter-window settle
 Per-window adequacy:  >=95% duration, >=1,000 DPC, >=1,000 ISR, clean integrity
@@ -123,7 +124,8 @@ Mutation:             unavailable / unarmed
 - [x] quick diagnostic and repeated baseline are separate measurement products;
 - [x] baseline-quality-v2 five-window quality analysis;
 - [x] workload-stability-v1 activity drift analysis for optimizer eligibility, including complete per-window system CPU-busy evidence when available;
-- [x] evidence-v8 provenance, RequestId, runtime context and SHA-256 export verification;
+- [x] evidence-v9 provenance, RequestId, runtime context, serialized workload stability, explicit GPU optimizer eligibility/reason and SHA-256 export verification;
+- [x] App baseline summary separates comparison validity from optimizer readiness in visible/accessibility text rather than color alone;
 - [x] adaptive/accessibility source and keyboard accelerators;
 - [x] read-only device inspector source;
 - [x] consolidated owner-local read-only closure preflight for exact local/remote HEAD, exact-green Tests, Service/journal/stale-ETW/device/USB/RSS/baseline SHA and source-revision provenance;
@@ -312,9 +314,9 @@ Auto mode completes a bounded supported multi-subsystem session and every retain
 ## Permanent-test policy
 
 - Default/target permanent suite size: **10**.
-- Current durable suite: **17 tests**.
+- Current durable suite: **18 tests**.
 - Owner-authorized maximum: **20**, only when needed to keep test files `<=1200` lines or when separate subsystem contracts materially improve durable failure isolation.
-- Current USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness and GPU runtime-placement contracts are intentionally separate under that authorization; do not merge them merely to hit the target number.
+- Current USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness, GPU runtime-placement and installed-Service source-provenance contracts are intentionally separate under that authorization; do not merge them merely to hit the target number.
 - Temporary/obsolete tests must be removed rather than accumulated.
 - Hardware validation, exploratory benchmark runs and release checklists are not automated tests.
 
