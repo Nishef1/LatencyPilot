@@ -153,6 +153,32 @@ public sealed class NetworkRssTests
                 adapter.InstanceId,
                 null),
         };
+
+        var usableCoverage = NetworkRssInspectionCoverage.Evaluate(new NetworkRssSnapshot(
+            NetworkRssReadStatus.Available,
+            [rss],
+            DateTimeOffset.UnixEpoch,
+            null));
+        Assert.IsTrue(usableCoverage.IsUsable);
+        Assert.AreEqual(1, usableCoverage.ProviderRowCount);
+        Assert.AreEqual(1, usableCoverage.PnpCorrelatedRowCount);
+
+        Assert.IsFalse(NetworkRssInspectionCoverage.Evaluate(new NetworkRssSnapshot(
+            NetworkRssReadStatus.Available,
+            [],
+            DateTimeOffset.UnixEpoch,
+            null)).IsUsable);
+        Assert.IsFalse(NetworkRssInspectionCoverage.Evaluate(new NetworkRssSnapshot(
+            NetworkRssReadStatus.Available,
+            [mapped],
+            DateTimeOffset.UnixEpoch,
+            null)).IsUsable);
+        Assert.IsFalse(NetworkRssInspectionCoverage.Evaluate(new NetworkRssSnapshot(
+            NetworkRssReadStatus.ProviderUnavailable,
+            [rss],
+            DateTimeOffset.UnixEpoch,
+            "provider missing")).IsUsable);
+
         var ready = NetworkOptimizationReadiness.Evaluate(rss, adapter, benchmark, attribution);
         Assert.AreEqual(NetworkOptimizationReadinessStatus.Ready, ready.Status);
         Assert.AreEqual(adapter.InstanceId, ready.AdapterInstanceId);
