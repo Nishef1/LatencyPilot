@@ -98,7 +98,7 @@ internal static class EvidenceExportService
     public static string GetMeasurementDisplayName(MeasurementScenario scenario) =>
         scenario switch
         {
-            MeasurementScenario.RealWorld => "Real-world workload",
+            MeasurementScenario.RealWorld => "Steady real-world workload",
             MeasurementScenario.IdleBaseline => "Controlled idle",
             MeasurementScenario.BeforeAfter => "Before / after comparison",
             _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown measurement scenario."),
@@ -108,7 +108,7 @@ internal static class EvidenceExportService
         scenario switch
         {
             MeasurementScenario.RealWorld =>
-                "Keep the apps or game that reproduce the issue open; their activity is part of the evidence. For a decision baseline, put the workload in a warmed, repeatable state before starting.",
+                "Keep the apps or game that reproduce the issue open and hold the same warmed scene, action loop, or steady workload pattern through all five windows. Do not use a phase-changing built-in benchmark as this baseline; compare repeated whole benchmark runs separately.",
             MeasurementScenario.IdleBaseline =>
                 "Close unnecessary apps and avoid starting unrelated work while the controlled idle measurement runs.",
             MeasurementScenario.BeforeAfter =>
