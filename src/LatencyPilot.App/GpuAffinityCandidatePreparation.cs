@@ -15,9 +15,9 @@ public sealed partial class MainWindow
     private IReadOnlyList<GpuAffinityCandidate> _latestGpuAffinityCandidates = [];
 
     private void PrepareGpuAffinityCandidatePlan(
-        IReadOnlyList<KernelLatencyCaptureResponse> captures,
-        IReadOnlyList<BaselineWindowEvidence> windows,
-        IReadOnlyList<MeasurementRuntimeWindow> runtimeWindows,
+        List<KernelLatencyCaptureResponse> captures,
+        List<BaselineWindowEvidence> windows,
+        List<MeasurementRuntimeWindow> runtimeWindows,
         BaselineQualityResult quality,
         bool isPartial,
         MeasurementScenario scenario)
