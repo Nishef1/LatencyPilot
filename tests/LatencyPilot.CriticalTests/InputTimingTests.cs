@@ -18,10 +18,14 @@ public sealed class InputTimingTests
 
         Assert.AreEqual(InputTimingAnalysisStatus.Available, stable.Status);
         Assert.AreEqual(100, stable.IntervalCount);
-        Assert.AreEqual(1.0, stable.MedianIntervalMilliseconds, 0.000001);
-        Assert.AreEqual(1.0, stable.P95IntervalMilliseconds, 0.000001);
-        Assert.AreEqual(1.0, stable.P99IntervalMilliseconds, 0.000001);
-        Assert.AreEqual(1_000.0, stable.ObservedReportRateHz, 0.000001);
+        Assert.IsNotNull(stable.MedianIntervalMilliseconds);
+        Assert.IsNotNull(stable.P95IntervalMilliseconds);
+        Assert.IsNotNull(stable.P99IntervalMilliseconds);
+        Assert.IsNotNull(stable.ObservedReportRateHz);
+        Assert.AreEqual(1.0, stable.MedianIntervalMilliseconds.Value, 0.000001);
+        Assert.AreEqual(1.0, stable.P95IntervalMilliseconds.Value, 0.000001);
+        Assert.AreEqual(1.0, stable.P99IntervalMilliseconds.Value, 0.000001);
+        Assert.AreEqual(1_000.0, stable.ObservedReportRateHz.Value, 0.000001);
         Assert.AreEqual(0, stable.LongGapCount);
         Assert.AreEqual(0, stable.BurstIntervalCount);
         Assert.IsFalse(stable.HasBurstOrCoalescingEvidence);
