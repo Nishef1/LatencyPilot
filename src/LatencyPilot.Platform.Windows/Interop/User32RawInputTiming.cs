@@ -47,8 +47,12 @@ internal static partial class User32RawInput
     internal const uint InputCommand = 0x10000003;
     internal const uint HeaderCommand = 0x10000005;
     internal const uint InputSinkFlag = 0x00000100;
+    internal const uint DeviceNotifyFlag = 0x00002000;
     internal const uint RemoveFlag = 0x00000001;
+    internal const uint WmInputDeviceChange = 0x00FE;
     internal const uint WmInput = 0x00FF;
+    internal const nuint GidcArrival = 1;
+    internal const nuint GidcRemoval = 2;
     internal const uint WmApp = 0x8000;
     internal const int WindowProcedureIndex = -4;
     internal static readonly nint MessageOnlyWindow = new(-3);
