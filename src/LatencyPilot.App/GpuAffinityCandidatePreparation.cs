@@ -45,10 +45,9 @@ public sealed partial class MainWindow
         var workloadStability = WorkloadStabilityAnalyzer.Analyze(
             windows,
             runtimeWindows.Select(static window => window.Context?.SystemCpuBusyPercent).ToArray());
-        var experimentReady = GpuOptimizationBaselineReadiness.IsEligible(quality, workloadStability);
-        AppendGpuOptimizationReadiness(FormatGpuOptimizationReadiness(quality, workloadStability, experimentReady));
-        if (!experimentReady)
+        if (!GpuOptimizationBaselineReadiness.IsEligible(quality, workloadStability))
         {
+            AppendGpuOptimizationReadiness(FormatGpuOptimizationBlockReason(quality, workloadStability));
             Logger.Information(
                 "GPU affinity candidate preparation skipped because the repeated baseline is not experiment-ready. BaselineValid={BaselineValid}, WorkloadStatus={WorkloadStatus}, Reasons={Reasons}.",
                 quality.IsValidForComparison,
@@ -66,7 +65,7 @@ public sealed partial class MainWindow
             if (topology.ProcessorGroupCount != 1)
             {
                 AppendGpuOptimizationReadiness(
-                    $"Candidate planning stopped: this system exposes {topology.ProcessorGroupCount} processor groups; GPU affinity v1 supports exactly one.");
+                    $"Not ready. Baseline evidence passed, but this system exposes {topology.ProcessorGroupCount} processor groups and GPU affinity v1 supports exactly one.");
                 Logger.Information(
                     "GPU affinity candidate preparation skipped because topology has {ProcessorGroupCount} processor groups; v1 supports exactly one.",
                     topology.ProcessorGroupCount);
@@ -98,6 +97,16 @@ public sealed partial class MainWindow
                 topology,
                 pressure,
                 cpuSets);
+            if (_latestGpuAffinityCandidates.Count == 0)
+            {
+                AppendGpuOptimizationReadiness(
+                    "Not ready. Baseline evidence passed, but no bounded GPU affinity candidate could be derived from the current topology and pressure evidence.");
+                Logger.Information("GPU affinity candidate preparation produced no bounded candidates.");
+                return;
+            }
+
+            AppendGpuOptimizationReadiness(
+                $"Ready for bounded read-only GPU candidate planning. Latency repeatability passed {BaselineQualityAnalyzer.MethodVersion}, workload activity is Stable under {WorkloadStabilityAnalyzer.MethodVersion}, and {_latestGpuAffinityCandidates.Count} candidate(s) were prepared.");
 
             var summary = string.Join(
                 ", ",
@@ -118,23 +127,17 @@ public sealed partial class MainWindow
         {
             _latestGpuAffinityCandidates = [];
             AppendGpuOptimizationReadiness(
-                "Candidate planning could not produce a trustworthy bounded plan. The baseline remains available for diagnosis, but no optimization should be attempted from it.");
+                "Not ready. Candidate planning could not produce a trustworthy bounded plan. The baseline remains available for diagnosis, but no optimization should be attempted from it.");
             Logger.Warning(
                 exception,
                 "Valid baseline was retained, but automatic GPU affinity candidate preparation could not produce a trustworthy plan.");
         }
     }
 
-    private static string FormatGpuOptimizationReadiness(
+    private static string FormatGpuOptimizationBlockReason(
         BaselineQualityResult quality,
-        WorkloadStabilityResult workloadStability,
-        bool experimentReady)
+        WorkloadStabilityResult workloadStability)
     {
-        if (experimentReady)
-        {
-            return $"Ready for bounded read-only GPU candidate planning. Latency repeatability passed {BaselineQualityAnalyzer.MethodVersion} and workload activity is Stable under {WorkloadStabilityAnalyzer.MethodVersion}.";
-        }
-
         if (!quality.IsValidForComparison)
         {
             return $"Not ready. Latency repeatability did not pass {BaselineQualityAnalyzer.MethodVersion}; capture a new baseline before optimization.";
