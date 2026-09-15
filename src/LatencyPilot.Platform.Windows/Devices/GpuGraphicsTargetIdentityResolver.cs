@@ -50,8 +50,8 @@ public static class GpuGraphicsTargetIdentityResolver
             InvalidDataException or
             InvalidOperationException or
             NotSupportedException or
-            System.ComponentModel.Win32Exception or
-            System.Runtime.InteropServices.COMException)
+            global::System.ComponentModel.Win32Exception or
+            global::System.Runtime.InteropServices.COMException)
         {
             return GpuGraphicsTargetIdentityResolution.Unusable(
                 $"GPU identity could not be resolved: {exception.GetType().Name}: {exception.Message}");
