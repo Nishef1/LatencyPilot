@@ -1,222 +1,116 @@
 # GPU Execution and Safety Source Completion Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
+
+**Status:** Repository/source tranche complete; physical Gate A remains open.
 
 **Goal:** Close the repository-verifiable GPU execution/safety gap between candidate planning/confirmation interpretation and a physically gated one-click optimizer path, while keeping public mutation unarmed until Gate A physical proof passes.
 
-**Architecture:** Reuse the existing narrow GPU affinity policy store, durable mutation journal, recovery executor, ETW capture, PresentMon capture and `LatencyPilot.Benchmarking.Optimization` decision/confirmation contracts. First make storage writes interruption-safe and classifiable, then add one non-public orchestration layer that drives journal state through measure/decision using synchronized evidence. Public observation protocol remains v6/read-only and `MutationAvailable=false`; no mutation IPC or user-reachable mutation is introduced in this tranche.
-
-**Tech Stack:** C# 14, .NET 10 LTS, WinUI 3/Windows App SDK 2.4, Windows Service, SetupAPI/Configuration Manager, ETW/TraceEvent, PresentMon, SQLite mutation journal, MSTest/Microsoft.Testing.Platform.
+**Architecture:** Reuse the narrow GPU affinity store, durable journal/recovery path, ETW, PresentMon and Benchmarking decision contracts. Public observation protocol remains v6/read-only and `MutationAvailable=false`.
 
 **Spec:** `docs/superpowers/specs/2026-09-14-product-1.0-source-completion-design.md`
 
-## Global Constraints
+## Current test constraint
 
-- Work directly on `main`; preserve unrelated work.
-- Public protocol stays observation-only v6 in this tranche.
-- `ServiceBoundary.MutationAvailable` stays `false`.
-- Permanent automated tests stay at exactly 10/10; extend existing test methods rather than adding methods.
-- Hosted CI stays test-only; no hosted build/hardware claim is introduced.
-- No registry/shell/process generic privileged primitive.
-- Unknown/diverged external state, changed target/driver identity, insufficient evidence or failed restart/rollback stays fail-closed.
-- Hardware Gate A remains owner-local and is never marked passed from repository-only evidence.
+The permanent suite remains 10. Every test source file must remain <=1200 lines. The owner authorizes growth up to 20 only when genuinely necessary to preserve that file-size boundary or a materially safer durable split; temporary/obsolete tests must be removed rather than accumulated.
 
 ---
 
-### Task 1: Make the two-value GPU affinity storage operation interruption-safe
+### Task 1: Make GPU affinity storage interruption-safe
 
-**Files:**
-- Modify: `src/LatencyPilot.Platform.Windows/Devices/GpuInterruptAffinityPolicyStore.cs`
-- Modify: `src/LatencyPilot.Service/GpuInterruptAffinityMutationTransaction.cs`
-- Modify: `src/LatencyPilot.Service/MutationRecoveryAssessment.cs`
-- Modify within an existing method only: `tests/LatencyPilot.CriticalTests/CriticalPathTests.cs`
+- [x] RED scenario covered the partial two-value write/compensation ownership risk inside existing critical tests.
+- [x] GPU affinity write/restore became a bounded logical operation with exact compensation when possible.
+- [x] journal/recovery semantics retain ownership when exact original restoration cannot be proven.
+- [x] verified by the normal test-only workflow.
 
-**Interfaces:**
-- Consumes: `GpuInterruptAffinitySnapshot`, `GpuInterruptAffinityCandidate`, `GpuInterruptAffinityStateComparer`, `MutationJournal`.
-- Produces: a policy-store apply/restore contract that either verifies the full desired pair or attempts exact compensating restoration before surfacing failure; recovery assessment can distinguish a journal-owned partial apply from unrelated external divergence without weakening refusal of unknown changes.
-
-- [ ] **Step 1: Extend the existing mutation/recovery critical test matrix**
-
-Add scenarios inside the existing GPU mutation/recovery test method that model failure after the first affinity value is changed and require the transaction to retain an unresolved/recovery-owned state rather than misclassify it as a successful pre-write abort or external divergence. Keep the permanent method count unchanged.
-
-- [ ] **Step 2: Verify RED with the test-only command**
-
-Run the repository's existing critical test command. Expected: at least one new assertion fails because current `GpuInterruptAffinityPolicyStore.Apply` writes `DevicePolicy` and `AssignmentSetOverride` separately with no compensating full-pair restoration contract.
-
-- [ ] **Step 3: Implement bounded compensating storage semantics**
-
-Inside `GpuInterruptAffinityPolicyStore`, capture the exact pre-call snapshot immediately before mutation. If any exception occurs after the first attempted write, attempt to restore the exact captured pair/key-existence state, flush, and verify it. If compensation itself fails, throw an aggregate/explicit exception that preserves both the write and compensation failures. Do not overwrite a subsequently changed third-party state blindly: compensation is allowed only when current state matches original, candidate, or the explicitly recognized partial state produced by this call.
-
-- [ ] **Step 4: Make journal ownership explicit for interrupted applies**
-
-Update `GpuInterruptAffinityMutationTransaction`/recovery assessment so a write-attempt failure after `Applying` always remains journal-owned recovery work unless exact original restoration was verified. Preserve `AbortedBeforeApply` only for paths that provably performed no write.
-
-- [ ] **Step 5: Verify GREEN**
-
-Run the existing test-only suite; require 10 passed, 0 failed, 0 skipped.
-
-- [ ] **Step 6: Commit**
-
-Commit message: `fix(mutation): harden GPU affinity interrupted writes`
+Key source result: a failure after mutation begins can no longer be mislabeled as a harmless pre-write abort merely because the high-level call failed.
 
 ---
 
-### Task 2: Resolve allocated IRQ descriptor parsing ambiguity in source
+### Task 2: Parse allocated IRQ descriptors defensively
 
-**Files:**
-- Modify: `src/LatencyPilot.Platform.Windows/Interop/ConfigurationManager.cs`
-- Modify the reader that consumes `CM_Get_Res_Des_Data` for IRQ resources under `src/LatencyPilot.Platform.Windows/Devices/`
-- Modify within an existing method only: `tests/LatencyPilot.CriticalTests/CriticalPathTests.cs`
-- Modify: `docs/PHASE3_PHYSICAL_VALIDATION.md`
-
-**Interfaces:**
-- Consumes: raw `CM_Get_Res_Des_Data` bytes and documented ConfigMgr IRQ descriptor layouts.
-- Produces: explicit parsed descriptor version/size/flags/group/affinity/IRQ fields with validation that refuses impossible/truncated layouts instead of interpreting arbitrary bytes as effective placement.
-
-- [ ] **Step 1: Add descriptor-layout assertions to an existing critical test method**
-
-Cover the exact byte offsets and expected minimum size for the native IRQ descriptor representation used by the reader, plus rejection of truncated/unknown payloads. Do not add a new permanent test method.
-
-- [ ] **Step 2: Verify RED**
-
-Expected: current direct `StructLayout` interpretation does not satisfy the explicit byte-layout contract or cannot reject the ambiguous payload shape deterministically.
-
-- [ ] **Step 3: Replace implicit struct-cast assumptions with explicit parsing**
-
-Parse the returned buffer with `BinaryPrimitives`/documented offsets after validating descriptor size/type. Preserve raw flags and expose unknown/unsupported descriptor semantics as unavailable rather than coercing them into group/affinity values. Keep allocated-resource evidence separate from stored affinity policy and ETW runtime evidence.
-
-- [ ] **Step 4: Update the physical runbook**
-
-Document what source ambiguity is now eliminated and what still requires owner-local validation on the RTX 3070/current topology. Do not claim that any particular returned affinity proves runtime placement until the physical check passes.
-
-- [ ] **Step 5: Verify GREEN**
-
-Run test-only suite; require 10/10.
-
-- [ ] **Step 6: Commit**
-
-Commit message: `fix(windows): parse allocated IRQ descriptors defensively`
+- [x] explicit descriptor-layout validation added inside the existing critical test matrix.
+- [x] implicit blind reinterpretation replaced by defensive parsing.
+- [x] truncated/wrong-type/zero-target descriptors fail closed.
+- [x] raw allocated-resource evidence remains distinct from stored policy and runtime ISR evidence.
+- [x] the physical runbook retains the owner-local RTX allocated-resource ambiguity instead of manufacturing a placement claim.
 
 ---
 
-### Task 3: Add a non-public GPU experiment evidence collector
+### Task 3: Add synchronized non-public GPU evidence collection
 
-**Files:**
-- Create: `src/LatencyPilot.Service/GpuOptimizationEvidenceCollector.cs`
-- Modify: `src/LatencyPilot.Service/LatencyPilot.Service.csproj` only if an existing project reference is required.
-- Reuse existing ETW/PresentMon readers from `LatencyPilot.Platform.Windows` and models from `LatencyPilot.Core`/`Benchmarking`.
-- Modify within an existing method only: `tests/LatencyPilot.CriticalTests/CriticalPathTests.cs` for pure mapping/provenance behavior only.
+- [x] `GpuOptimizationEvidenceCollector` created.
+- [x] exact session/workload/environment/source/capture identity retained.
+- [x] ETW and raw PresentMon capture run concurrently under one deadline.
+- [x] >=95% common requested interval required.
+- [x] raw DPC duration primary samples and complete PresentMon raw-frame guardrails retained.
+- [x] short/dirty/mismatched/incomplete evidence fails closed.
+- [x] candidate evidence additionally requires effective GPU ISR placement: attributable GPU ISR on target CPU and zero attributable GPU ISR off target; unresolved attribution is not treated as success.
 
-**Interfaces:**
-- Consumes: exact GPU target identity, workload identity, requested duration, expected Original/Candidate state, source revision/session/environment identity.
-- Produces: `GpuOptimizationConfirmationRun`-compatible evidence with unique capture ID, actual duration, sample distributions, target-state verification, capture integrity and required named guardrails.
-
-- [ ] **Step 1: Define a focused collector result/provenance contract**
-
-The collector must record one common requested interval, exact start/end timestamps, ETW integrity, expected-state verification, PresentMon process/API/swapchain identity and raw enough sample distributions to satisfy the existing >=1,000-samples-per-run confirmation contract where the source actually exposes samples. Missing required evidence returns an explicit unavailable/inconclusive result; it never fabricates samples from aggregates.
-
-- [ ] **Step 2: Extend an existing test method with pure collector-mapping scenarios**
-
-Verify that mismatched workload/adapter identity, incomplete PresentMon data, short duration, duplicate capture IDs or absent target-state verification cannot become a valid confirmation run. Keep hardware capture itself owner-local.
-
-- [ ] **Step 3: Implement collector composition**
-
-Compose existing ETW capture and PresentMon APIs; do not create a second capture stack. Use a shared cancellation/deadline and record actual interval overlap. Only emit a confirmation run when the required evidence shares the same workload/session/source/environment identity.
-
-- [ ] **Step 4: Verify test-only suite**
-
-Require 10/10.
-
-- [ ] **Step 5: Commit**
-
-Commit message: `feat(optimizer): collect synchronized GPU experiment evidence`
+The runtime-placement contract was introduced with a deliberate RED at commit `44d678e4cb8b8269a30b3794cf26ea618a1e92a8` / run #666 and completed at `bf71682fd63c74fff02ee161db438d7663e4ec06` / run #667.
 
 ---
 
 ### Task 4: Add the internal GPU optimization orchestrator
 
-**Files:**
-- Create: `src/LatencyPilot.Service/GpuOptimizationOrchestrator.cs`
-- Modify: `src/LatencyPilot.Service/GpuInterruptAffinityMutationTransaction.cs` to expose only the narrow internal journal-state transitions needed by orchestration.
-- Modify: `src/LatencyPilot.Benchmarking/Optimization/*` only if a missing pure contract is discovered.
-- Modify within existing critical test methods only.
+- [x] bounded candidate screening implemented.
+- [x] every screening candidate is prepare/apply/measure/exact-rollback owned before the next candidate.
+- [x] screening can nominate only one finalist.
+- [x] fixed ABBA+BAAB eight-run confirmation implemented.
+- [x] consecutive Candidate blocks reuse the active candidate; returns to Original exact-rollback first.
+- [x] final Candidate reaches `AwaitingDecision` only after measurement.
+- [x] Keep terminalization re-reads actual candidate stored state and driver identity.
+- [x] non-Keep outcome restores exact original state.
+- [x] failure after apply, including `BeginMeasurement` failure, remains inside rollback ownership.
+- [x] no public mutation command/UI exposure added.
 
-**Interfaces:**
-- Consumes: authoritative Real-world baseline, bounded `GpuAffinityCandidate` list, `GpuInterruptAffinityMutationTransaction`, `GpuOptimizationEvidenceCollector`, `GpuOptimizationDecisionEngine`, `GpuOptimizationConfirmation`.
-- Produces: internal screening/confirmation result that always ends in either verified exact-original restoration or a journal state that remains unresolved/recovery-required; no public IPC/UI exposure.
+TDD evidence:
 
-- [ ] **Step 1: Extend existing optimizer test matrix with orchestration-state scenarios**
-
-Cover: no eligible finalist → original retained; screening finalist → exactly one finalist proceeds; dirty/inconclusive measurement → restore; confirmed improvement → recommendation may be Keep but journal is not terminalized as kept until active candidate state verification succeeds; any failure → rollback/recovery path.
-
-- [ ] **Step 2: Verify RED**
-
-Expected: orchestration type/calls do not exist.
-
-- [ ] **Step 3: Implement screening loop**
-
-For each bounded candidate: prepare → apply/activate → verify actual candidate state → collect evidence → restore exact original before trying the next candidate. Feed only complete compatible evidence into screening. Preserve each candidate result and failure reason.
-
-- [ ] **Step 4: Implement balanced finalist confirmation**
-
-Execute the existing fixed ABBA+BAAB schedule. Before every Original/Candidate run, verify the expected active stored state after any required apply/rollback/restart. Collect one run per schedule element with unique capture identity. Pass exactly eight runs to `GpuOptimizationConfirmation`.
-
-- [ ] **Step 5: Implement final decision safety**
-
-`RestoreOriginal` always verifies exact original active state. `KeepCandidate` may leave the candidate active only if the final expected-state verification succeeds and the journal transition is explicit; otherwise restore/recovery. Do not expose this through protocol v6.
-
-- [ ] **Step 6: Verify GREEN**
-
-Run test-only suite; require 10/10.
-
-- [ ] **Step 7: Commit**
-
-Commit message: `feat(optimizer): orchestrate bounded GPU experiments`
+- `a9d6afc0852f6c820c6b73d6e5510cb4e87feafe` / run #660 — RED: execution backend/orchestrator absent.
+- `5496ad5ed3728595d83bafc0d4dff1a804b72f38` / run #661 — GREEN: bounded screening.
+- `c95b8cb35e947460741637659423c9f1fd62814e` / run #662 — RED: finalist reached deliberate confirmation stop.
+- `9a0a937017744baabc0c38b8a73679f59993d558` / run #663 — GREEN: balanced confirmation/Keep path.
+- `5cd950780e0dd8a4c8d29972bfea544daaa6e179` / run #664 — RED: real rollback leak after `BeginMeasurement` failure (`expected 1`, `actual 0`).
+- `b35c225b8b5f5f8d3d5cfa5fc57d5eed8e37138f` / run #665 — GREEN: rollback ownership fixed.
+- `44d678e4cb8b8269a30b3794cf26ea618a1e92a8` / run #666 — RED: runtime-placement evidence contract absent.
+- `bf71682fd63c74fff02ee161db438d7663e4ec06` / run #667 — GREEN: effective runtime ISR-placement evidence integrated.
 
 ---
 
 ### Task 5: Reconcile status and Gate A handoff
 
-**Files:**
-- Modify: `PROJECT_STATUS.md`
-- Modify: `ROADMAP.md`
-- Modify: `SYSTEM_DESIGN.md`
-- Modify: `docs/BENCHMARK_METHODOLOGY.md` only if collection semantics changed.
-- Modify: `docs/PHASE3_PHYSICAL_VALIDATION.md`
-- Modify: this plan.
+- [x] `AGENTS.md` updated with the owner’s current test/file-size policy.
+- [x] `PROJECT_STATUS.md` reconciled to actual GPU execution source and exact run #667 evidence.
+- [x] `ROADMAP.md` marks repository-proven GPU execution items complete while leaving physical gates open.
+- [x] `SYSTEM_DESIGN.md` documents the current internal orchestrator, synchronized evidence and runtime-placement boundary.
+- [x] `docs/BENCHMARK_METHODOLOGY.md` advanced to the synchronized raw-frame/runtime-placement contract.
+- [x] `docs/PHASE3_PHYSICAL_VALIDATION.md` requires effective same-interval runtime placement evidence without coercing ambiguous allocated-resource data.
+- [x] exact current owner-local Gate A sequence remains explicit.
 
-**Interfaces:** live authority docs and owner-local handoff.
+Repository/source tranche proof: exact GPU execution HEAD `bf71682fd63c74fff02ee161db438d7663e4ec06` completed the normal hosted Tests workflow successfully in run **#667 / `34939960176`**.
 
-- [ ] **Step 1: Mark only repository-proven items complete**
+Documentation reconciliation continues on later commits, but those docs-only commits do not change the source proof above.
 
-Record interruption-safe storage source, defensive allocated-IRQ parsing, synchronized collector source and internal orchestration source only after their verification evidence exists. Keep Gate A physical apply/restart/runtime placement/rollback evidence open.
+## Physical work deliberately not marked complete
 
-- [ ] **Step 2: Record exact commits and CI runs**
+- [ ] current exact-main App/Service owner-local build/install/launch;
+- [ ] unresolved journal survives/reclassifies correctly across real Service restart;
+- [ ] exact-target restart/reboot-required behavior on supported physical GPU;
+- [ ] physical candidate apply → stored verification → clean same-interval target ISR placement → exact rollback;
+- [ ] controlled forced-failure/recovery exercise;
+- [ ] final exact original + zero unresolved;
+- [ ] Gate B typed mutation IPC;
+- [ ] Gate C physical IPC mutation boundary proof;
+- [ ] Gate D user-facing arming.
 
-Use the exact final source SHAs and test-only run IDs. Keep test count 10/10.
+## Follow-on source sequence
 
-- [ ] **Step 3: Produce the exact next owner-local Gate A sequence**
+The active follow-on plan is `docs/superpowers/plans/2026-09-15-remaining-1.0-source-completion.md`:
 
-Start with current clean `main`, normal `run.ps1`, journal zero-unresolved check, read-only allocated-resource inspection, then only the bounded apply/verify/rollback/recovery sequence. Preserve stop conditions on unknown/diverged state.
-
-- [ ] **Step 4: Final exact-HEAD CI verification**
-
-Require completed success for the normal test-only workflow on the exact final commit before calling this source tranche complete.
-
-- [ ] **Step 5: Commit**
-
-Commit message: `docs(optimizer): close GPU execution source tranche`
-
----
-
-## Follow-on 0→100 sequence after this tranche
-
-1. Execute owner-local Gate A evidence; if passed, Gate B typed mutation IPC and mutation-specific authorization.
-2. Gate C physical App/client → Service mutation-boundary proof.
-3. Gate D arm the supported GPU one-click workflow and expose the premium user-facing execution/result UX.
-4. Complete USB/xHCI authoritative route evidence and reversible experiment path using the same journal/orchestrator boundary.
-5. Complete NIC/RSS authoritative read-only evidence and reversible RSS experiment path.
-6. Add transparent workload profiles/cross-subsystem Pareto decision policy and whole-system Restore Baseline.
-7. Close remaining Phase 2 physical measurement/accessibility/integrity obligations.
-8. Release hardening: upgrade/uninstall recovery, signing/checksums, installer/package validation and diagnostics/export.
-9. Final 1.0 audit against every ROADMAP exit gate; no source-only or hosted-CI evidence may close hardware/signing/UI gates.
+1. authoritative USB hub/port/xHCI + input timing source;
+2. USB attribution/readiness;
+3. StandardCimv2 NIC/RSS source and local-network benchmark/readiness;
+4. workload profiles, Pareto policy and global Restore Baseline planning;
+5. release/upgrade/uninstall diagnostics hardening;
+6. final source reconciliation and exact-final-HEAD test-only CI;
+7. owner-local physical/package/signing closure before true 1.0.
