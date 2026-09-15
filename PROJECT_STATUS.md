@@ -1,35 +1,46 @@
 # LatencyPilot Project Status
 
-This file is the live execution ledger for `ROADMAP.md`. Current source/runtime evidence owns actual state; plans and historical chat do not.
+This is the live execution ledger for `ROADMAP.md`. Current source/runtime evidence owns actual state; plans and historical chat do not.
 
 Last updated: 2026-09-15
 
 ## Overall
 
 - Product version: **0.0.2 pre-alpha**.
-- Product completion: **Phases 0–1 closed; Phase 2 physical closure open; Phase 3 GPU execution source implemented but physical arming open; Phases 4–7 source completion in progress**.
-- User-visible mutation capability: **Unavailable / unarmed**.
 - Supported target: **Windows 11 x64, active local interactive desktop session**.
-- Desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**.
-- Privileged boundary: **Windows Service; public protocol remains read-only**.
-- Observation protocol: **v6** (`LatencyPilot.Observation.v6`).
+- Public protocol: **v6 / observation-only** (`LatencyPilot.Observation.v6`).
+- Public commands: **`GetStatus`, `CaptureKernelLatency` only**.
+- `ServiceBoundary.MutationAvailable`: **false**.
 - Evidence schema: **`latencypilot-evidence-v8`**.
-- Baseline method: **`baseline-quality-v2`**.
-- Permanent automated tests: **10 current; default target 10; owner-authorized maximum 20 only when genuinely required by the <=1200-lines-per-test-file rule or a materially safer durable split**.
-- Hosted CI: **test-only**. It does not prove App/Service launch, physical hardware behavior, installer/package behavior, accessibility or signing.
-- Current exact source evidence: `bf71682fd63c74fff02ee161db438d7663e4ec06` passed Tests run **#667 / `34939960176`**.
+- Decision baseline: **`baseline-quality-v2`**.
+- Optimizer workload readiness: **`workload-stability-v1`**.
+- Permanent deterministic suite: **15 tests**; target 10, owner-authorized maximum 20 only for line-limit or materially safer durable subsystem separation.
+- Hosted GitHub Actions: **test-only**. It does not prove App/Service launch, UI/accessibility, installer/package/signing or physical hardware behavior.
 
-## Current execution ladder
+## Completion summary
 
-1. **Completed now:** the internal GPU source path now composes bounded candidate screening, interruption-safe journal ownership, synchronized ETW + raw PresentMon evidence, effective GPU ISR-placement verification, balanced ABBA+BAAB finalist confirmation, explicit decision interpretation and verified Keep/Restore journal transitions. Product mutation is still not exposed through protocol v6.
-2. **Evidence:** exact HEAD `bf71682fd63c74fff02ee161db438d7663e4ec06` completed the normal hosted Tests workflow successfully in run **#667 / `34939960176`**. Earlier TDD runs deliberately failed for the missing orchestrator, missing confirmation path, a real `BeginMeasurement` rollback leak and missing runtime-placement contract before the corresponding fixes were applied.
-3. **Still open:** Phase 2 owner-local read-only closure; Phase 3 Gate A physical restart/recovery/apply/runtime-placement/rollback proof; Gate B/C/D mutation authorization/IPC/arming; USB/xHCI timing and authoritative port evidence; NIC/RSS source; cross-subsystem profiles/restore; release hardening; owner-local App/UI/package/signing/representative-hardware validation.
-4. **Next stage:** complete repository-verifiable USB/xHCI and input evidence, then authoritative NIC/RSS read-only evidence. Keep every mutation path internal/unarmed while Gate A is open.
-5. **After that:** complete transparent profiles/Pareto/global Restore Baseline source and release/upgrade/uninstall diagnostics; reconcile all authority docs; run exact-final-HEAD test-only CI; then execute the owner-local physical closure sequence.
+### Repository-verifiable source
+
+The remaining 1.0 source-completion tranche is now implemented across:
+
+- internal GPU candidate execution, synchronized ETW/raw PresentMon evidence, runtime GPU ISR-placement verification and balanced confirmation;
+- interruption-aware GPU affinity journal/recovery and global Restore Baseline semantics;
+- documented USB hub/port route correlation and host-observable Raw Input timing;
+- xHCI DPC/ISR attribution/readiness;
+- authoritative StandardCimv2 NIC/RSS inventory, PnP correlation, network attribution and local benchmark interpretation;
+- transparent workload profiles, subsystem opt-out and Pareto trade-off policy without a hidden score;
+- workload-stability eligibility so changing/spiky repeated workloads cannot enter optimizer candidate planning;
+- recovery-aware install/upgrade/uninstall source;
+- deterministic release provenance/checksum/signing hooks and local redacted diagnostic bundle;
+- read-only App inspector wiring for representative interrupt evidence, exact USB input routes, RSS state and on-demand host Raw Input timing.
+
+Supported USB/NIC mutation implementations remain deliberately **not armed/built as product mutation paths** until the shared GPU mutation substrate passes Gate A physically. This is a documented safety prerequisite, not permission to substitute source existence for physical proof.
+
+### True product completion
+
+**Not 100% yet.** Physical Phase 2 closure and mutation/release gates remain open. LatencyPilot must not be tagged 1.0 until those checks are recorded against exact source/package identities.
 
 ## Measurement authority
-
-The current measurement contract remains:
 
 ```text
 Quick diagnostic snapshot
@@ -45,164 +56,200 @@ Repeated decision baseline — baseline-quality-v2
   >=95% actual/request duration
   >=1,000 DPC and >=1,000 ISR events/window
   clean capture integrity
-  noise + drift gates
+  bounded noise/drift/extreme-window checks
+
+Optimizer workload readiness — workload-stability-v1
+  exactly the same five-window sequence
+  DPC event-rate stability
+  ISR event-rate stability
+  CPU-busy stability when available
+  early/late drift gate
+  isolated extreme-window activity gate
 
 p99.9
   shown only with >=10,000 samples for that distribution
 ```
 
-`Valid` means repeatable enough for the current comparison method. It does not mean the machine is globally healthy or optimally configured.
+`Valid` means repeatable enough for the relevant method. It never means the machine is globally healthy or optimal.
 
-## Phase 2 — physical closure remains open
+## Phase 2 — read-only physical closure OPEN
 
-Repository source includes processor-group-aware topology, present PnP/driver/interrupt inventory, stored-vs-allocated-vs-runtime interrupt evidence separation, protected read-only Service/Named Pipe v6, ETW DPC/ISR capture and module/processor attribution, repeated baseline quality gates, evidence-v8 provenance/SHA verification and the adaptive evidence UI.
+Repository source includes processor-group-aware topology, present PnP/driver/interrupt inventory, stored-vs-allocated-vs-runtime evidence separation, protected Service/Named Pipe v6, ETW DPC/ISR capture, module/processor attribution, repeated baseline gates, evidence-v8 provenance/SHA verification and adaptive evidence UI.
 
-Physical evidence already includes a valid Real-world five-window decision baseline on clean revision `a4b4ff36c875982d5a263665860853462d0b055b`. ADR 0004 permits targeted later-phase source work from that evidence but does **not** close Phase 2.
+Prior physical evidence includes a valid Real-world five-window decision baseline on clean historical revision `a4b4ff36c875982d5a263665860853462d0b055b`. That evidence authorized later source work under ADR 0004; it did not close Phase 2.
 
-Remaining Phase 2 owner-local obligations:
+Remaining owner-local Phase 2 obligations:
 
-1. valid Controlled-idle five-window baseline;
-2. representative GPU/NIC/xHCI inspector sanity;
+1. valid Controlled-idle five-window baseline on the closure revision;
+2. representative GPU/NIC/xHCI inspector sanity, including current USB/RSS read-only surfaces;
 3. attribution plausibility against an independent observer where practical;
 4. App-close/Service-restart/stale-ETW cleanup and active-session rejection checks;
 5. Light/Dark/High Contrast, narrow/text-scaling, keyboard and UI Automation/screen-reader sanity;
 6. JSON-visible-data/SHA/source-revision reconciliation;
-7. proof that read-only validation performs zero unrelated system mutation.
+7. proof read-only validation performs zero unrelated system mutation.
 
-## Phase 3 — GPU execution source state
+## Phase 3 — GPU execution source implemented; physical arming OPEN
 
-ADR 0004 permits internal mutation-safety/source implementation to overlap remaining Phase 2 physical work. Mutation stays unavailable until the arming gates are physically satisfied.
+### Durable mutation/recovery substrate
 
-### Durable mutation and recovery substrate
+Implemented:
 
-Implemented in source:
-
-- concrete SQLite `LatencyPilot.Persistence` journal with compare-and-swap revisions;
+- SQLite journal with compare-and-swap revisions;
 - one unresolved experiment blocks unsafe follow-on mutation;
-- explicit `Prepared → Applying → Applied → Measuring → AwaitingDecision` plus `Reverting/Reverted/Kept/RecoveryRequired/AbortedBeforeApply` states;
-- exact original GPU affinity snapshot and candidate payloads;
-- startup and explicit recovery re-read actual machine state;
-- fail-closed original/candidate/diverged/unknown classification;
-- rollback-biased recovery executor;
-- exact-target GPU restart path with reboot/restart-required detection;
-- pre-write external-change detection that does not claim ownership of someone else’s write;
-- interruption-safe two-value affinity writes using transaction/compensation semantics, with unresolved recovery retained when exact original restoration cannot be proven;
-- owner-only physical-validation harness; public protocol v6 remains mutation-free.
+- explicit mutation lifecycle states;
+- exact original/candidate GPU affinity payloads;
+- fail-closed reclassification from actual state;
+- unknown/diverged/driver-changed rollback refusal;
+- interruption-safe logical two-value affinity write with compensation/recovery ownership;
+- exact-target restart/reboot-required source;
+- owner-only validation harness;
+- retained `Kept` change discovery and ordered global Restore Baseline planning;
+- uninstall/upgrade safety treats `Kept` as an active managed change, not a safe terminal state.
 
-### GPU candidate and synchronized experiment execution
+### GPU experiment source
 
-Implemented in source:
+Implemented:
 
-- topology-aware bounded physical-core candidates from measured DPC+ISR pressure; CPU0 is not hard-excluded;
-- screening may only nominate `ConfirmFinalist`; it cannot directly Keep a screening result;
-- every screening candidate is applied through the journaled transaction, measured, then exact-rolled-back before the next candidate;
-- `BeginMeasurement` and capture are inside the same owned rollback scope, so setup/capture failure cannot leave an active candidate silently behind;
-- one finalist proceeds to the fixed eight-run ABBA+BAAB confirmation schedule;
-- consecutive candidate blocks reuse the active candidate; transitions back to Original perform exact rollback;
-- final candidate reaches `AwaitingDecision` only after the final candidate measurement;
-- `KeepCandidate` re-reads the stored target and driver identity before terminalizing `Kept`; otherwise recovery/rollback remains required;
-- any non-Keep confirmation restores exact original state.
+```text
+stable authoritative baseline
+→ measured bounded candidates
+→ journaled apply/activate
+→ synchronized ETW + raw PresentMon capture
+→ stored-state + runtime ISR placement verification
+→ exact rollback between screening candidates
+→ finalist nomination only
+→ fixed ABBA + BAAB confirmation
+→ verified Keep or exact RestoreOriginal/RecoveryRequired
+```
 
-### Synchronized ETW + PresentMon evidence
-
-`GpuOptimizationEvidenceCollector` now:
-
-- verifies expected original/candidate stored state immediately before and after capture;
-- collects ETW and PresentMon concurrently under one deadline;
-- requires >=95% common requested interval;
-- keeps exact session/workload/environment/source revision and unique capture identity;
-- uses raw DPC duration samples as the primary metric;
-- uses raw PresentMon frame samples for available CPU frame-time / CPU-GPU busy-wait / GPU/display latency / dropped-frame guardrails;
-- rejects workload/process/version/window mismatch, incomplete required samples, short intervals and dirty identities rather than manufacturing evidence.
-
-### Runtime placement proof boundary
-
-Stored registry equality is not runtime proof. Candidate evidence now additionally uses `GpuInterruptRuntimePlacementVerifier` against the same ETW capture:
-
-- GPU-driver ISR events must be attributable to the exact display-adapter driver/module identity;
-- at least one attributed GPU ISR must be observed on the candidate logical processor;
-- attributed GPU ISR on off-target processors makes the candidate run unusable;
-- unresolved ISR attribution remains explicit and does **not** count as evidence that the candidate placement worked.
-
-This source contract is verified deterministically; actual effective placement on the owner’s GPU still requires Gate A physical evidence.
-
-### Decision semantics
-
-The shared comparison path retains explicit `Improved`, `Regressed`, `Tradeoff`, `NoMeasurableDifference` and `Inconclusive` results. Confirmation requires eight compatible runs, verified expected state, clean capture integrity, equal >=30 s requested durations with >=95% completion and >=1,000 samples per required metric/run. A guardrail regression prevents an automatic win. Raw deltas, sample counts, noise/drift reasons and run provenance are retained.
-
-## Current GPU verification evidence
-
-Recent execution-source TDD/CI chain:
-
-- run #660 failed because the orchestration backend/type did not exist;
-- run #661 passed after bounded screening orchestration was added;
-- run #662 failed on the deliberate “finalist exists but confirmation is not executed” stop;
-- run #663 passed after ABBA+BAAB confirmation and verified terminal Keep were implemented;
-- run #664 failed with `RollbackCount` expected 1 / actual 0, exposing a real leak when `BeginMeasurement` failed after apply;
-- run #665 passed after the rollback ownership scope was fixed;
-- run #666 failed because effective GPU ISR-placement evidence was not yet part of the collector contract;
-- exact HEAD `bf71682fd63c74fff02ee161db438d7663e4ec06` passed run **#667 / `34939960176`** after runtime placement evidence was integrated.
-
-Hosted evidence proves deterministic/source contracts only. It does not prove App launch, LocalSystem execution, protected mutation IPC, device restart behavior or latency improvement on physical hardware.
-
-## Phase 3 arming gates
+The shared baseline-readiness contract now requires both `baseline-quality-v2` and `workload-stability-v1`. App candidate preparation uses the same readiness boundary, so a changing or isolated-spike workload does not proceed to candidate generation.
 
 ### Gate A — internal physical substrate proof — OPEN
 
-The prior owner-local read-only preflight on clean `7601d1935aa30fc1a0e416d449ad712382aa779e` found the RTX 3070 and a clean journal but produced an allocated-resource tuple whose semantics were not acceptable as runtime placement proof. The source parser is now defensive and runtime ISR evidence is a separate authoritative layer, but no physical apply/restart/rollback cycle has yet closed this gate.
+The earlier read-only preflight found the owner NVIDIA GeForce RTX 3070 and a clean journal, but returned an allocated-resource tuple:
 
-Gate A still requires on current clean `main`:
+```text
+irq=4294967270
+group=1
+affinity=0x0
+flags=0x0002
+```
 
-1. App + protected Service build/install/launch on the supported owner-local Windows path;
+That tuple was explicitly **not** accepted as proof of effective interrupt placement. Current source separately requires runtime GPU-driver ISR evidence for candidate placement.
+
+Gate A requires on exact current clean `main`:
+
+1. App + protected Service build/install/launch;
 2. clean startup journal with zero unresolved entries;
-3. controlled unresolved entry survives Service restart/reclassification from actual machine state;
-4. exact-target `DICS_PROPCHANGE` and reboot-required behavior are physically verified;
-5. one bounded GPU candidate apply → stored verification → restart → effective ISR evidence → exact rollback;
-6. one deliberate supported failure proves rollback/recovery rather than only the happy path;
-7. final machine state equals the exact original and journal reports zero unresolved entries.
+3. a controlled unresolved entry survives Service restart/reclassification from actual machine state;
+4. exact-target `DICS_PROPCHANGE` / reboot-required behavior is physically verified;
+5. one bounded GPU candidate apply → stored verification → restart → runtime ISR evidence → exact rollback;
+6. one deliberate supported failure proves rollback/recovery;
+7. final machine state equals exact original and journal reports zero unresolved entries.
 
-### Gate B — typed mutation IPC — BLOCKED BY GATE A
+### Gate B — mutation-specific IPC — BLOCKED BY GATE A
 
-Only after Gate A passes may mutation-specific typed/allowlisted protocol commands and authorization be implemented. No arbitrary registry/shell/process primitive. `MutationAvailable` remains false.
+After Gate A only: typed, mutation-specific, allowlisted commands and authorization. No arbitrary registry/shell/process primitive. Product mutation remains unavailable.
 
-### Gate C — physical IPC boundary proof — BLOCKED BY GATE B
+### Gate C — physical IPC proof — BLOCKED BY GATE B
 
-Validate the real App/client → Service mutation path, authorization, target identity, journal ownership, restart/recovery and exact rollback on supported hardware.
+Validate the real App/client → Service mutation path, authorization, target identity, journal ownership and exact rollback.
 
 ### Gate D — product arming — BLOCKED BY GATE C
 
-Only after Gate C and credible target/guardrail evidence may the supported one-click mutation workflow become user reachable.
+Only then may the supported one-click mutation workflow become user reachable.
 
-## Phases 4–7 source-completion sequence
+## Phase 4 — USB/xHCI/input source frontier
 
-The approved remaining source plan is `docs/superpowers/plans/2026-09-15-remaining-1.0-source-completion.md`.
+Implemented read-only/readiness source:
 
-Execution order:
+- Raw Input → stable PnP route;
+- documented USB hub interface/IOCTL enumeration;
+- unique driver-key → exact hub/port correlation with explicit ambiguity/unavailability;
+- exact xHCI controller identity;
+- bounded Raw Input report timestamp capture;
+- median/p95/p99 interval, observed report rate, tail jitter, long-gap and burst/coalescing analysis;
+- explicit `host-observable-raw-input-dispatch-timing` scope rather than click-to-photon claims;
+- xHCI DPC/ISR module attribution and readiness metrics/guardrails;
+- App inspector surface for route/port evidence and explicit on-demand five-second host timing capture.
 
-1. authoritative Raw Input → USB hub/port → xHCI route evidence and host-observable input report timing;
-2. xHCI ETW attribution/readiness without arming mutation;
-3. authoritative StandardCimv2 NIC/RSS inventory and local-network benchmark/readiness contracts;
-4. transparent workload profiles, Pareto/trade-off policy and journal-aware global Restore Baseline planning;
-5. recovery-aware release/upgrade/uninstall and redacted diagnostics;
-6. final roadmap/system-design/docs reconciliation and exact-final-HEAD test-only CI.
+Still open:
 
-Source implementation of a later subsystem is not permission to perform or expose its physical mutation before the applicable safety gate exists.
+- xHCI/controller-affinity mutation source after Gate A authorizes reuse of the physical mutation substrate;
+- physical high-polling route/timing/experiment/rollback evidence.
 
-## Exact next owner-local closure sequence
+## Phase 5 — NIC/RSS source frontier
 
-Repository source work can continue independently, but true 1.0 requires this evidence order:
+Implemented read-only/readiness source:
+
+- `Root\StandardCimv2` `MSFT_NetAdapterRssSettingData` reader;
+- enabled/MSI/MSI-X/queue/message/profile/processor/indirection evidence;
+- conservative provider→PnP correlation;
+- vendor driver vs generic NDIS attribution;
+- local RTT/jitter/loss/throughput/CPU metric contract;
+- Internet observations explicitly supplemental;
+- readiness target/guardrail contract;
+- App inspector RSS provider/PnP surface.
+
+Still open:
+
+- supported RSS/affinity mutation source after Gate A;
+- physical local-network benchmark/apply/revert evidence.
+
+## Phase 6 — profile/Pareto/restore source
+
+Implemented:
+
+- `CompetitiveGaming`, `General`, `AudioSensitive` versioned profiles;
+- explicit subsystem opt-out;
+- named raw metrics and guardrails;
+- Pareto Dominates/Dominated/Equivalent/Tradeoff/Inconclusive policy;
+- no arbitrary weighted score;
+- workload-stability optimizer eligibility;
+- newest-first retained-change planning;
+- fail-closed global Restore Baseline planner;
+- GPU restore execution reuses the existing subsystem transaction/restart/verification path.
+
+An armed multi-subsystem auto-optimizer remains physically gated by the unsupported/unarmed USB/NIC mutation paths.
+
+## Phase 7 — release/recovery source hardening
+
+Implemented source:
+
+- exact-main/clean-tree/exact-green-tests release gate;
+- owner-local Release restore/build/publish and WinUI launch-smoke path;
+- self-contained App/Service payload and Inno Setup/portable sources;
+- pre-replacement journal safety checks for upgrade/manual Service replacement;
+- pre-removal safety checks for uninstall;
+- recovery tools are retained when state is unreadable, unresolved or `Kept`;
+- canonical payload SHA-256 manifest and package checksums;
+- Authenticode signing/verification hook using SHA-256 digests and RFC 3161 timestamps;
+- final release requires signing configuration;
+- redacted local diagnostics ZIP with no automatic upload.
+
+Owner-local package closure remains open: actual Release build, signing credential use, installer/portable smoke, clean-machine install, blocked/safe upgrade/uninstall, reboot/crash recovery and representative hardware validation.
+
+## Current verification discipline
+
+The permanent suite is intentionally split into 15 durable tests so USB, input timing, NIC/RSS, profile/Pareto and restore failures remain independently diagnosable. The current owner rule permits up to 20 only for materially safer separation or the 1200-line file limit.
+
+Every final source-completion claim requires a successful **Tests** workflow on the exact final HEAD. Hosted success proves deterministic/source contracts only.
+
+## Exact owner-local closure sequence
 
 ```text
-finish remaining Phase 2 read-only physical audit
-→ build/install/launch current exact main
-→ Gate A internal physical GPU substrate proof
-→ Gate B mutation-specific IPC source
+finish Phase 2 read-only physical audit
+→ build/install/launch exact current main
+→ Gate A internal GPU substrate proof
+→ implement Gate B typed mutation IPC
 → Gate C physical App/client → Service proof
 → Gate D user-facing GPU arming
-→ physical USB/xHCI and NIC/RSS experiment/rollback evidence
-→ App UI/accessibility validation
-→ package/installer/signing/upgrade/uninstall validation
-→ representative supported hardware audit
+→ implement/physically validate supported USB/xHCI mutation experiment
+→ implement/physically validate supported NIC/RSS mutation experiment
+→ validate bounded multi-subsystem profile flow + Restore Baseline
+→ UI/accessibility pass
+→ signed package + clean install/upgrade/uninstall/reboot/crash recovery audit
+→ representative supported-hardware audit
 → final 1.0 tag audit
 ```
 
