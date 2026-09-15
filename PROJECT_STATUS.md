@@ -32,7 +32,7 @@ The remaining 1.0 source-completion tranche is now implemented across:
 - workload-stability eligibility, including per-window system CPU activity when available, so changing/spiky repeated workloads cannot enter optimizer candidate planning;
 - recovery-aware install/upgrade/uninstall source;
 - deterministic release provenance/checksum/signing hooks and local redacted diagnostic bundle;
-- read-only App inspector wiring for representative interrupt evidence, exact USB input routes, RSS state and on-demand host Raw Input timing;
+- read-only App inspector wiring for representative interrupt evidence, exact USB input routes, RSS state and on-demand host Raw Input timing, with optional evidence providers isolated so one unavailable layer no longer discards the rest of the inspector result;
 - owner-local `LatencyPilot.ReadOnlyClosure` preflight that reconciles exact local/remote HEAD, exact-green Tests, Service state/path, clean journal, stale ETW, representative devices, USB/RSS and exact-revision baseline SHA/provenance without arming mutation;
 - owner-local WinApp CLI evidence capture for Light/Dark/High Contrast/TextScale/Narrow/Keyboard UI states, including UIA trees, screenshots and SHA-256 manifests for later Accessibility Insights/Narrator review.
 
@@ -51,7 +51,8 @@ Quick diagnostic snapshot
   never a health or optimizer verdict
 
 Repeated decision baseline — baseline-quality-v2
-  workload already warmed/repeatable when applicable
+  one steady workload/scene/action loop already warmed/repeatable when applicable
+  phase-changing built-in benchmark != five equivalent steady windows
   5 s LatencyPilot/service settle
   5 × 20 s authoritative windows
   750 ms inter-window settle
@@ -61,12 +62,17 @@ Repeated decision baseline — baseline-quality-v2
   bounded noise/drift/extreme-window checks
 
 Optimizer workload readiness — workload-stability-v1
-  exactly the same five-window sequence
+  exactly the same five-window steady sequence
   DPC event-rate stability
   ISR event-rate stability
   CPU-busy stability when available
   early/late drift gate
   isolated extreme-window activity gate
+
+Phase-changing scripted benchmark
+  diagnostic/useful only under the current five-window flow
+  compare repeated whole runs or matched phases under fixed settings
+  not a current Gate A candidate source
 
 p99.9
   shown only with >=10,000 samples for that distribution
@@ -78,13 +84,13 @@ p99.9
 
 Repository source includes processor-group-aware topology, present PnP/driver/interrupt inventory, stored-vs-allocated-vs-runtime evidence separation, protected Service/Named Pipe v6, ETW DPC/ISR capture, module/processor attribution, repeated baseline gates, evidence-v8 provenance/SHA verification and adaptive evidence UI.
 
-The owner-local closure path is now consolidated in `tools/LatencyPilot.ReadOnlyClosure` and `docs/OWNER_CLOSURE.md`. It can record exact local/remote revision, exact-green CI, protected Service state, journal cleanliness, stale ETW absence, representative GPU/NIC/xHCI presence, USB topology, RSS provider state, and exact-revision Real-world/Controlled-idle baseline SHA/provenance in one read-only JSON audit. `scripts/Capture-UiAccessibilityEvidence.ps1` separately captures repeatable UIA/screenshot evidence for required display and keyboard states. These tools reduce manual closure work; they do not convert unexecuted owner-local checks into evidence.
+The owner-local closure path is now consolidated in `tools/LatencyPilot.ReadOnlyClosure` and `docs/OWNER_CLOSURE.md`. It can record exact local/remote revision, exact-green CI, protected Service state, journal cleanliness, stale ETW absence, representative GPU/NIC/xHCI presence, USB topology, RSS provider state, and exact-revision steady Real-world/Controlled-idle baseline SHA/provenance in one read-only JSON audit. `scripts/Capture-UiAccessibilityEvidence.ps1` separately captures repeatable UIA/screenshot evidence for required display and keyboard states. These tools reduce manual closure work; they do not convert unexecuted owner-local checks into evidence.
 
 Prior physical evidence includes a valid Real-world five-window decision baseline on clean historical revision `a4b4ff36c875982d5a263665860853462d0b055b`. That evidence authorized later source work under ADR 0004; it did not close Phase 2.
 
 Remaining owner-local Phase 2 obligations:
 
-1. valid Real-world and Controlled-idle five-window baselines on the exact closure revision, with the consolidated audit passing;
+1. valid steady Real-world and Controlled-idle five-window baselines on the exact closure revision, with the consolidated audit passing;
 2. representative GPU/NIC/xHCI inspector sanity, including current USB/RSS read-only surfaces, recorded by the audit and visually sanity-checked;
 3. attribution plausibility against an independent observer where practical;
 4. App-close/Service-restart/stale-ETW cleanup and active-session rejection checks;
@@ -126,7 +132,7 @@ stable authoritative baseline
 → verified Keep or exact RestoreOriginal/RecoveryRequired
 ```
 
-The shared baseline-readiness contract now requires both `baseline-quality-v2` and `workload-stability-v1`. App candidate preparation uses the same readiness boundary and the actual per-window runtime CPU-busy evidence when available, so CPU drift, a changing interrupt workload, partial runtime activity evidence or an isolated spike does not proceed to candidate generation. The App also exposes the readiness outcome rather than silently withholding candidates.
+The shared baseline-readiness contract now requires both `baseline-quality-v2` and `workload-stability-v1`. App candidate preparation uses the same readiness boundary and the actual per-window runtime CPU-busy evidence when available, so CPU drift, a changing interrupt workload, partial runtime activity evidence or an isolated spike does not proceed to candidate generation. The App now labels the `RealWorld` path as a steady real-world workload and explicitly warns that a phase-changing built-in benchmark must not be treated as five equivalent windows. The App also exposes the readiness outcome rather than silently withholding candidates.
 
 The owner-only Gate A placement command now fails closed unless the exact stored candidate is verified immediately before and after a clean capture **and** runtime evidence contains at least one resolved GPU-driver ISR on the requested processor with zero resolved GPU-driver ISR events off target. ConfigMgr allocated resources remain independent provenance when readable; they cannot substitute for, or by themselves block/pass, the runtime placement proof. Missing/unavailable correlation is not a successful placement proof.
 
@@ -244,7 +250,7 @@ Every final source-completion claim requires a successful **Tests** workflow on 
 ## Exact owner-local closure sequence
 
 ```text
-run exact-revision Phase 2 baselines + consolidated read-only audit
+run exact-revision steady Phase 2 Real-world + Controlled-idle baselines + consolidated read-only audit
 → capture/review WinApp UIA evidence + Accessibility Insights/Narrator/manual read-only checks
 → build/install/launch exact current main
 → Gate A internal GPU substrate proof
