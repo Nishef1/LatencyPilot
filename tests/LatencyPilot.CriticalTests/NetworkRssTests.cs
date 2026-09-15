@@ -7,6 +7,8 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class NetworkRssTests
 {
+    private static readonly string[] ExpectedRssProcessors = ["0:2", "0:4", "0:6", "0:8"];
+
     [TestMethod]
     public void RssProviderMappingPreservesAuthoritativeFieldsAndPnpCorrelation()
     {
@@ -27,8 +29,8 @@ public sealed class NetworkRssTests
             ["MaxProcessorNumber"] = (byte)14,
             ["MaxProcessors"] = 8u,
             ["NumaNode"] = (ushort)0,
-            ["IndirectionTable"] = new[] { "0:2", "0:4", "0:6", "0:8" },
-            ["RssProcessorArray"] = new[] { "0:2", "0:4", "0:6", "0:8" },
+            ["IndirectionTable"] = ExpectedRssProcessors,
+            ["RssProcessorArray"] = ExpectedRssProcessors,
         });
 
         Assert.AreEqual("Ethernet", mapped.Name);
@@ -46,8 +48,8 @@ public sealed class NetworkRssTests
         Assert.AreEqual((byte)14, mapped.MaxProcessorNumber);
         Assert.AreEqual(8u, mapped.MaxProcessors);
         Assert.AreEqual((ushort)0, mapped.NumaNode);
-        CollectionAssert.AreEqual(new[] { "0:2", "0:4", "0:6", "0:8" }, mapped.IndirectionTable.ToArray());
-        CollectionAssert.AreEqual(new[] { "0:2", "0:4", "0:6", "0:8" }, mapped.RssProcessorArray.ToArray());
+        CollectionAssert.AreEqual(ExpectedRssProcessors, mapped.IndirectionTable.ToArray());
+        CollectionAssert.AreEqual(ExpectedRssProcessors, mapped.RssProcessorArray.ToArray());
 
         var correlated = NetworkRssPnpCorrelator.Resolve(
             mapped.InterfaceDescription,
