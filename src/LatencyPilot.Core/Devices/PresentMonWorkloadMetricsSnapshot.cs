@@ -58,3 +58,32 @@ public sealed record PresentMonWorkloadMetricsSnapshot(
         chain.GpuLatencyMilliseconds is not null ||
         chain.DisplayLatencyMilliseconds is not null);
 }
+
+public sealed record PresentMonFrameMetricsSnapshot(
+    ulong SwapChainAddress,
+    double? CpuFrameTimeMilliseconds,
+    double? CpuBusyMilliseconds,
+    double? CpuWaitMilliseconds,
+    double? GpuTimeMilliseconds,
+    double? GpuBusyMilliseconds,
+    double? GpuWaitMilliseconds,
+    bool? DroppedFrame,
+    double? GpuLatencyMilliseconds,
+    double? DisplayLatencyMilliseconds);
+
+public sealed record PresentMonFrameCaptureSnapshot(
+    PresentMonWorkloadCaptureStatus Status,
+    uint ProcessId,
+    double RequestedWindowMilliseconds,
+    double ActualWindowMilliseconds,
+    PresentMonApiVersionSnapshot? ApiVersion,
+    IReadOnlyList<PresentMonFrameMetricsSnapshot> Frames,
+    IReadOnlyList<string> UnavailableOptionalMetrics,
+    string? ApiPath,
+    int? NativeStatusCode,
+    string? Error,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset EndedAtUtc)
+{
+    public bool IsAvailable => Status == PresentMonWorkloadCaptureStatus.Available;
+}
