@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Platform.Windows.Interop;
 
@@ -8,6 +7,14 @@ internal static class InterruptResourceReader
 {
     public static InterruptResourceSnapshot Capture(uint deviceInstance)
     {
+        // The ConfigMgr resource-descriptor APIs return CR_CALL_NOT_IMPLEMENTED
+        // under WOW64 on Windows 8+, and the product supports Windows 11 x64.
+        // Never reinterpret a 32-bit descriptor as the 64-bit placement shape.
+        if (!Environment.Is64BitProcess)
+        {
+            return InterruptResourceSnapshot.ApiUnavailable(ConfigurationManager.CallNotImplemented);
+        }
+
         var result = ConfigurationManager.CM_Get_First_Log_Conf(
             out var logConfiguration,
             deviceInstance,
@@ -143,8 +150,7 @@ internal static class InterruptResourceReader
             return false;
         }
 
-        var descriptorSize = checked((uint)Marshal.SizeOf<IrqDescriptor64>());
-        if (size < descriptorSize || size > int.MaxValue)
+        if (size < AllocatedIrqDescriptorParser.Descriptor64Size || size > int.MaxValue)
         {
             resource = default!;
             failureStatus = null;
@@ -164,12 +170,12 @@ internal static class InterruptResourceReader
             return false;
         }
 
-        var descriptor = MemoryMarshal.Read<IrqDescriptor64>(buffer);
-        resource = new AllocatedInterruptResourceSnapshot(
-            descriptor.AllocatedIrq,
-            descriptor.Group,
-            descriptor.Affinity,
-            descriptor.Flags);
+        if (!AllocatedIrqDescriptorParser.TryParseResourceList(buffer, out resource))
+        {
+            failureStatus = null;
+            return false;
+        }
+
         failureStatus = null;
         return true;
     }
