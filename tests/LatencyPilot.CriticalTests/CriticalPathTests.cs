@@ -9,8 +9,10 @@ using LatencyPilot.Core.Metrics;
 using LatencyPilot.Core.Results;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Platform.Windows.Interop;
 using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Protocol;
+using Microsoft.Win32;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -33,6 +35,8 @@ public sealed class CriticalPathTests
 
         Assert.ThrowsExactly<InvalidOperationException>(() =>
             ExperimentStateMachine.EnsureTransition(ExperimentState.Planned, ExperimentState.Kept));
+
+        AssertTransactionalRegistryCommitAndRollback();
 
         var tempDirectory = Path.Combine(Path.GetTempPath(), "LatencyPilot.CriticalTests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDirectory);
@@ -426,6 +430,42 @@ public sealed class CriticalPathTests
             new SystemLoadSnapshot(200, 800, 500));
         Assert.IsNotNull(calculatedBusy);
         Assert.AreEqual(80d, calculatedBusy.Value, 0.000001d);
+    }
+
+    private static void AssertTransactionalRegistryCommitAndRollback()
+    {
+        var subKeyPath = $"Software\\LatencyPilot.CriticalTests\\TxR-{Guid.NewGuid():N}";
+        try
+        {
+            using (var transaction = TransactionalRegistry.Begin("LatencyPilot critical-test rollback"))
+            {
+                using var key = transaction.CreateOrOpenKey(RegistryHive.CurrentUser, subKeyPath);
+                key.SetValue("first", 1, RegistryValueKind.DWord);
+                key.SetValue("second", 2, RegistryValueKind.DWord);
+            }
+
+            using (var rolledBack = Registry.CurrentUser.OpenSubKey(subKeyPath, writable: false))
+            {
+                Assert.IsNull(rolledBack, "Closing an uncommitted registry transaction must roll back all values.");
+            }
+
+            using (var transaction = TransactionalRegistry.Begin("LatencyPilot critical-test commit"))
+            {
+                using var key = transaction.CreateOrOpenKey(RegistryHive.CurrentUser, subKeyPath);
+                key.SetValue("first", 1, RegistryValueKind.DWord);
+                key.SetValue("second", 2, RegistryValueKind.DWord);
+                transaction.Commit();
+            }
+
+            using var committed = Registry.CurrentUser.OpenSubKey(subKeyPath, writable: false);
+            Assert.IsNotNull(committed);
+            Assert.AreEqual(1, committed.GetValue("first"));
+            Assert.AreEqual(2, committed.GetValue("second"));
+        }
+        finally
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(subKeyPath, throwOnMissingSubKey: false);
+        }
     }
 
     private static BaselineWindowEvidence Window(int number, double dpcP99, double isrP99) =>
