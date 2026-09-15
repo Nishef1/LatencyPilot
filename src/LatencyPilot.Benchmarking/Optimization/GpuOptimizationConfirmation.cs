@@ -15,7 +15,30 @@ public sealed record GpuOptimizationBaselineEvidence(
     Guid SessionId,
     string WorkloadIdentity,
     string EnvironmentIdentity,
-    string SourceRevisionId);
+    string SourceRevisionId,
+    WorkloadStabilityResult? WorkloadStability = null)
+{
+    public bool IsEligibleForExperiment =>
+        Quality is
+        {
+            IsValidForComparison: true,
+            MethodVersion: BaselineQualityAnalyzer.MethodVersion,
+            TotalWindowCount: 5,
+            ValidCaptureWindowCount: 5,
+        } quality &&
+        quality.DpcP99.IsStable &&
+        quality.IsrP99.IsStable &&
+        quality.Reasons.Count == 0 &&
+        quality.DpcP99.EligibleWindowCount == 5 &&
+        quality.IsrP99.EligibleWindowCount == 5 &&
+        WorkloadStability is
+        {
+            MethodVersion: WorkloadStabilityAnalyzer.MethodVersion,
+            Status: WorkloadStabilityStatus.Stable,
+            IsEligibleForExperiment: true,
+        } workload &&
+        workload.Reasons.Count == 0;
+}
 
 public sealed record GpuOptimizationConfirmationRun(
     int RunNumber,
@@ -96,14 +119,11 @@ public static class GpuOptimizationConfirmation
         {
             reasons.Add("The finalist is outside the supported group-0 physical-core boundary.");
         }
-        var quality = baseline.Quality;
-        if (quality is null || !quality.IsValidForComparison ||
-            quality.MethodVersion != BaselineQualityAnalyzer.MethodVersion ||
-            quality.TotalWindowCount != 5 || quality.ValidCaptureWindowCount != 5 ||
-            !quality.DpcP99.IsStable || !quality.IsrP99.IsStable || quality.Reasons.Count != 0 ||
-            quality.DpcP99.EligibleWindowCount != 5 || quality.IsrP99.EligibleWindowCount != 5)
+
+        if (!baseline.IsEligibleForExperiment)
         {
-            reasons.Add("Confirmation requires a valid, complete baseline-quality-v2 decision baseline.");
+            reasons.Add(
+                "Confirmation requires both a valid baseline-quality-v2 decision baseline and a stable workload-stability-v1 activity assessment.");
         }
 
         ValidateRuns(finalist, baseline, capturedRuns, reasons);
@@ -114,7 +134,8 @@ public static class GpuOptimizationConfirmation
                 capturedRuns, policy, metrics, reasons);
             foreach (var name in template.Guardrails.Keys.Order(StringComparer.Ordinal))
             {
-                EvaluateMetric(name, isPrimary: false, capturedRuns, policy, metrics, reasons);
+                EvaluateMetric(name, isPrimary: false,
+                    capturedRuns, policy, metrics, reasons);
             }
         }
 
@@ -245,7 +266,8 @@ public static class GpuOptimizationConfirmation
         double? evaluationPercentile = isDropRatio ? null : direction == MetricDirection.LowerIsBetter ? 0.99 : 0.01;
         foreach (var run in runs)
         {
-            var series = isPrimary ? run.Measurement.Primary : run.Measurement.Guardrails[name];
+            var series = isPrimary ? runs[0].Measurement.Primary : runs[0].Measurement.Guardrails[name];
+            series = isPrimary ? run.Measurement.Primary : run.Measurement.Guardrails[name];
             if (series.Samples.Count < minimumSamples || series.Samples.Any(value =>
                     value < 0 || !double.IsFinite(value) || (isDropRatio && value > 1)) ||
                 (isDropRatio && direction != MetricDirection.LowerIsBetter))
