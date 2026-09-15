@@ -39,6 +39,10 @@ public sealed record InputDeviceRouteSnapshot(
     public bool IsUsbBacked => UsbHostControllerInstanceId is not null;
 
     public bool IsBluetoothBacked => BluetoothAncestorInstanceId is not null;
+
+    public string? UsbDeviceInstanceId { get; init; }
+
+    public UsbPortRouteEvidence? UsbPortRoute { get; init; }
 }
 
 public sealed record UserInputRouteInventory(
@@ -60,4 +64,6 @@ public sealed record UserInputRouteInventory(
     public int UsbBackedRouteCount => Routes.Count(static route => route.IsUsbBacked);
 
     public int BluetoothBackedRouteCount => Routes.Count(static route => route.IsBluetoothBacked);
+
+    public int ExactUsbPortRouteCount => Routes.Count(static route => route.UsbPortRoute?.IsAvailable == true);
 }

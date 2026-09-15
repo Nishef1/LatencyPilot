@@ -6,7 +6,7 @@ using LatencyPilot.Platform.Windows.Interop;
 
 namespace LatencyPilot.Platform.Windows.Devices;
 
-public static class InputDeviceRouteReader
+public static partial class InputDeviceRouteReader
 {
     private const int MaximumRawInputDevices = 512;
     private const uint DevPropTypeString = 0x00000012;
@@ -18,20 +18,86 @@ public static class InputDeviceRouteReader
     public static UserInputRouteInventory Capture()
     {
         var inventory = DeviceInventoryReader.CapturePresentDevices();
-        return Capture(inventory);
+        var usbTopology = UsbTopologyReader.Capture(inventory);
+        return Capture(inventory, usbTopology);
     }
 
     public static UserInputRouteInventory Capture(DeviceInventorySnapshot inventory)
     {
         ArgumentNullException.ThrowIfNull(inventory);
+        return Capture(inventory, UsbTopologyReader.Capture(inventory));
+    }
+
+    public static UserInputRouteInventory Capture(
+        DeviceInventorySnapshot inventory,
+        UsbTopologySnapshot usbTopology)
+    {
+        ArgumentNullException.ThrowIfNull(inventory);
+        ArgumentNullException.ThrowIfNull(usbTopology);
 
         var graph = new DeviceRelationshipGraph(inventory);
         var rawDevices = EnumerateRawInputDevices();
         var routes = rawDevices
             .Select(rawDevice => BuildRoute(rawDevice, graph))
+            .Select(route => EnrichUsbPortRoute(route, graph, usbTopology))
             .ToArray();
 
         return new UserInputRouteInventory(routes, DateTimeOffset.UtcNow);
+    }
+
+    private static InputDeviceRouteSnapshot EnrichUsbPortRoute(
+        InputDeviceRouteSnapshot route,
+        DeviceRelationshipGraph graph,
+        UsbTopologySnapshot usbTopology)
+    {
+        if (!route.IsUsbBacked || route.RawInputDevice.PnPInstanceId is null)
+        {
+            return route;
+        }
+
+        var device = graph.TryGetDevice(route.RawInputDevice.PnPInstanceId);
+        if (device is null)
+        {
+            return route;
+        }
+
+        var chain = new[] { device }.Concat(graph.GetKnownAncestors(device.InstanceId)).ToArray();
+        var usbDevice = chain.FirstOrDefault(static candidate =>
+            candidate.InstanceId.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(candidate.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase) &&
+            !candidate.InstanceId.StartsWith("USB\\ROOT_HUB", StringComparison.OrdinalIgnoreCase));
+        var driverKeyTarget = usbDevice ?? device;
+
+        try
+        {
+            var driverKey = UsbTopologyReader.TryReadDriverKeyName(driverKeyTarget.InstanceId, out var driverKeyError);
+            var portRoute = driverKey is null && driverKeyError is not null
+                ? new UsbPortRouteEvidence(
+                    UsbPortRouteResolutionStatus.DriverKeyUnavailable,
+                    null,
+                    driverKeyError)
+                : UsbPortRouteCorrelator.Resolve(
+                    driverKey,
+                    route.UsbHostControllerInstanceId,
+                    usbTopology.Ports);
+
+            return route with
+            {
+                UsbDeviceInstanceId = usbDevice?.InstanceId,
+                UsbPortRoute = portRoute,
+            };
+        }
+        catch (Exception exception) when (IsRecoverableUsbMetadataException(exception))
+        {
+            return route with
+            {
+                UsbDeviceInstanceId = usbDevice?.InstanceId,
+                UsbPortRoute = new UsbPortRouteEvidence(
+                    UsbPortRouteResolutionStatus.DriverKeyUnavailable,
+                    null,
+                    $"Unable to read the exact USB transport driver-key identity: {exception.Message}"),
+            };
+        }
     }
 
     private static InputDeviceRouteSnapshot BuildRoute(
@@ -299,6 +365,13 @@ public static class InputDeviceRouteReader
         var byteCount = Math.Min(checked((int)requiredBytes), buffer.Length);
         return Encoding.Unicode.GetString(buffer, 0, byteCount).TrimEnd('\0');
     }
+
+    private static bool IsRecoverableUsbMetadataException(Exception exception) =>
+        exception is Win32Exception or
+        InvalidDataException or
+        IOException or
+        UnauthorizedAccessException or
+        global::System.Security.SecurityException;
 
     private sealed record HidIdentity(
         uint VendorId,
