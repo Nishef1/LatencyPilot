@@ -31,13 +31,15 @@ internal sealed record GpuOptimizationEvidenceCollectionResult(
     GpuOptimizationConfirmationRun? Run,
     string? Reason,
     DateTimeOffset StartedAtUtc,
-    DateTimeOffset EndedAtUtc)
+    DateTimeOffset EndedAtUtc,
+    GpuInterruptRuntimePlacementEvidence? RuntimePlacement)
 {
     internal static GpuOptimizationEvidenceCollectionResult Unusable(
         string reason,
         DateTimeOffset startedAtUtc,
-        DateTimeOffset endedAtUtc) =>
-        new(false, null, reason, startedAtUtc, endedAtUtc);
+        DateTimeOffset endedAtUtc,
+        GpuInterruptRuntimePlacementEvidence? runtimePlacement = null) =>
+        new(false, null, reason, startedAtUtc, endedAtUtc, runtimePlacement);
 }
 
 internal sealed class GpuOptimizationEvidenceCollector
@@ -82,17 +84,49 @@ internal sealed class GpuOptimizationEvidenceCollector
             deadline.Token);
 
         await Task.WhenAll(kernelTask, presentMonTask).ConfigureAwait(false);
+        var kernelCapture = await kernelTask.ConfigureAwait(false);
+        var presentMonCapture = await presentMonTask.ConfigureAwait(false);
         var after = VerifyExpectedStoredState(request, originalState);
         var combinedVerification = after with
         {
             IsVerified = before.IsVerified && after.IsVerified,
         };
 
+        GpuInterruptRuntimePlacementEvidence? runtimePlacement = null;
+        if (request.Role == GpuConfirmationOrder.Candidate && combinedVerification.IsVerified)
+        {
+            try
+            {
+                runtimePlacement = GpuInterruptRuntimePlacementVerifier.Analyze(
+                    kernelCapture,
+                    originalState.DeviceInstanceId,
+                    new GpuInterruptAffinityCandidate(
+                        request.Finalist.Processor.Group,
+                        request.Finalist.Processor.Number,
+                        1UL << request.Finalist.Processor.Number));
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or
+                NotSupportedException or
+                System.ComponentModel.Win32Exception)
+            {
+                var startedAt = Max(kernelCapture.StartedAtUtc, presentMonCapture.StartedAtUtc);
+                var endedAt = Min(
+                    kernelCapture.StartedAtUtc + kernelCapture.ActualDuration,
+                    presentMonCapture.EndedAtUtc);
+                return GpuOptimizationEvidenceCollectionResult.Unusable(
+                    $"Effective GPU ISR placement evidence could not be established: {exception.Message}",
+                    startedAt,
+                    endedAt < startedAt ? startedAt : endedAt);
+            }
+        }
+
         return TryCreateRun(
             request,
             combinedVerification,
-            await kernelTask.ConfigureAwait(false),
-            await presentMonTask.ConfigureAwait(false),
+            kernelCapture,
+            presentMonCapture,
+            runtimePlacement,
             Guid.NewGuid());
     }
 
@@ -101,6 +135,7 @@ internal sealed class GpuOptimizationEvidenceCollector
         GpuOptimizationStateVerification verification,
         KernelLatencyCaptureResult kernelCapture,
         PresentMonFrameCaptureSnapshot presentMonCapture,
+        GpuInterruptRuntimePlacementEvidence? runtimePlacement,
         Guid captureId)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -136,6 +171,25 @@ internal sealed class GpuOptimizationEvidenceCollector
                  : verification.AppliedProcessor is not null)))
         {
             invalidReason = "Expected GPU affinity state was not verified for this run role.";
+        }
+
+        if (invalidReason is null && request.Role == GpuConfirmationOrder.Candidate &&
+            (runtimePlacement is null ||
+             !string.Equals(
+                 runtimePlacement.DeviceInstanceId,
+                 verification.TargetDeviceInstanceId,
+                 StringComparison.OrdinalIgnoreCase) ||
+             runtimePlacement.TargetProcessorNumber != request.Finalist.Processor.Number ||
+             !runtimePlacement.HasRuntimeEvidence ||
+             runtimePlacement.ObservedOnlyOnTarget != true))
+        {
+            invalidReason =
+                "Candidate run lacks direct GPU-driver ISR evidence confined to the requested target processor.";
+        }
+
+        if (invalidReason is null && request.Role == GpuConfirmationOrder.Original && runtimePlacement is not null)
+        {
+            invalidReason = "Original-state runs must not claim candidate runtime-placement evidence.";
         }
 
         if (invalidReason is null &&
@@ -188,7 +242,8 @@ internal sealed class GpuOptimizationEvidenceCollector
             return GpuOptimizationEvidenceCollectionResult.Unusable(
                 invalidReason,
                 startedAt,
-                endedAt < startedAt ? startedAt : endedAt);
+                endedAt < startedAt ? startedAt : endedAt,
+                runtimePlacement);
         }
 
         var primary = new MetricSeries(
@@ -216,7 +271,8 @@ internal sealed class GpuOptimizationEvidenceCollector
             run,
             null,
             startedAt,
-            endedAt);
+            endedAt,
+            runtimePlacement);
     }
 
     private static GpuOptimizationStateVerification VerifyExpectedStoredState(
