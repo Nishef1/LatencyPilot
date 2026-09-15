@@ -22,6 +22,11 @@ public sealed record GpuInterruptRuntimePlacementEvidence(
         HasRuntimeEvidence
             ? OffTargetIsrEventCount == 0
             : null;
+
+    public bool ConfirmsRequestedPlacement =>
+        HasRuntimeEvidence &&
+        TargetProcessorIsrEventCount == MatchingResolvedIsrEventCount &&
+        OffTargetIsrEventCount == 0;
 }
 
 public static class GpuInterruptRuntimePlacementVerifier
