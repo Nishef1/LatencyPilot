@@ -16,7 +16,7 @@ internal sealed record BaselineEvidenceCandidatePlanResult(
 
 internal static class BaselineEvidenceCandidatePlan
 {
-    private const string EvidenceSchema = "latencypilot-evidence-v8";
+    private const string EvidenceSchema = "latencypilot-evidence-v9";
     private const string BaselinePurpose = "repeated-decision-baseline";
     private const string RealWorldScenario = "RealWorld";
     private const long MaximumEvidenceBytes = 32L * 1024L * 1024L;
@@ -115,13 +115,12 @@ internal static class BaselineEvidenceCandidatePlan
             RequireInt32(persistedQuality, "validCaptureWindowCount", quality.ValidCaptureWindowCount);
 
             var workloadStability = ReadWorkloadStability(root, windows);
-            if (!GpuOptimizationBaselineReadiness.IsEligible(quality, workloadStability))
+            var optimizerEligibility = GpuOptimizationBaselineReadiness.Evaluate(quality, workloadStability);
+            ValidatePersistedReadiness(root, workloadStability, optimizerEligibility);
+            if (!optimizerEligibility.IsEligible)
             {
-                var reason = workloadStability.Reasons.Count == 0
-                    ? string.Empty
-                    : $" {string.Join(" ", workloadStability.Reasons)}";
                 throw new InvalidDataException(
-                    $"Baseline evidence is not eligible for GPU optimization because {WorkloadStabilityAnalyzer.MethodVersion} is {workloadStability.Status}.{reason}");
+                    $"Baseline evidence is not eligible for GPU optimization. {optimizerEligibility.Reason}");
             }
 
             var pressureWindows = ReadProcessorWindows(root, windows, topology);
@@ -201,6 +200,26 @@ internal static class BaselineEvidenceCandidatePlan
         }
 
         return WorkloadStabilityAnalyzer.Analyze(evidence);
+    }
+
+    private static void ValidatePersistedReadiness(
+        JsonElement root,
+        WorkloadStabilityResult workloadStability,
+        GpuOptimizationBaselineEligibility optimizerEligibility)
+    {
+        var persistedWorkload = RequireProperty(root, "workloadStability");
+        RequireObject(persistedWorkload, "workloadStability");
+        RequireString(persistedWorkload, "methodVersion", WorkloadStabilityAnalyzer.MethodVersion);
+        RequireString(persistedWorkload, "status", workloadStability.Status.ToString());
+        RequireBoolean(
+            persistedWorkload,
+            "isEligibleForExperiment",
+            workloadStability.IsEligibleForExperiment);
+
+        var persistedOptimizer = RequireProperty(root, "optimizerEligibility");
+        RequireObject(persistedOptimizer, "optimizerEligibility");
+        RequireString(persistedOptimizer, "target", GpuOptimizationBaselineReadiness.Target);
+        RequireBoolean(persistedOptimizer, "isEligible", optimizerEligibility.IsEligible);
     }
 
     private static List<IReadOnlyList<ProcessorInterruptCountEvidence>> ReadProcessorWindows(
@@ -368,6 +387,17 @@ internal static class BaselineEvidenceCandidatePlan
         {
             throw new InvalidDataException(
                 $"Baseline evidence '{propertyName}' must be '{expected}'.");
+        }
+    }
+
+    private static void RequireBoolean(JsonElement parent, string propertyName, bool expected)
+    {
+        var value = RequireProperty(parent, propertyName);
+        if (value.ValueKind is not JsonValueKind.True and not JsonValueKind.False ||
+            value.GetBoolean() != expected)
+        {
+            throw new InvalidDataException(
+                $"Baseline evidence '{propertyName}' is inconsistent with recomputed readiness.");
         }
     }
 
