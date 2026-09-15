@@ -124,7 +124,7 @@ stable authoritative baseline
 
 The shared baseline-readiness contract now requires both `baseline-quality-v2` and `workload-stability-v1`. App candidate preparation uses the same readiness boundary, so a changing or isolated-spike workload does not proceed to candidate generation.
 
-The owner-only Gate A placement command now fails closed unless the exact target's allocated affinity matches the candidate **and** clean runtime evidence contains at least one resolved GPU-driver ISR on the requested processor with zero resolved GPU-driver ISR events off target. Missing/unavailable correlation is not a successful placement proof.
+The owner-only Gate A placement command now fails closed unless the exact stored candidate is verified immediately before and after a clean capture **and** runtime evidence contains at least one resolved GPU-driver ISR on the requested processor with zero resolved GPU-driver ISR events off target. ConfigMgr allocated resources remain independent provenance when readable; they cannot substitute for, or by themselves block/pass, the runtime placement proof. Missing/unavailable correlation is not a successful placement proof.
 
 ### Gate A — internal physical substrate proof — OPEN
 
