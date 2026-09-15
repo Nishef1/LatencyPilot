@@ -15,7 +15,7 @@ public sealed class MetricSeries
 
         Name = name;
         Direction = direction;
-        Samples = materialized;
+        Samples = Array.AsReadOnly(materialized);
     }
 
     public string Name { get; }

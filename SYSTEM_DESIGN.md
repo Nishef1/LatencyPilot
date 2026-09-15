@@ -1,7 +1,7 @@
 # LatencyPilot System Design
 
 Status: **Authoritative architecture baseline**  
-Last updated: 2026-09-14
+Last updated: 2026-09-15
 
 `ROADMAP.md` defines required product/phase outcomes. `PROJECT_STATUS.md` records current evidence and the execution ladder. ADRs record accepted architecture changes.
 
@@ -445,9 +445,11 @@ Required end-to-end structure remains:
 
 PresentMon metrics are guardrails/targets where they actually observe the relevant graphics workload; they are not synthesized into a universal score.
 
+`GpuOptimizationDecisionEngine` implements screening interpretation only; it nominates `ConfirmFinalist`. `GpuOptimizationConfirmation` separately implements the versioned eight-run decision/noise/provenance contract in `docs/BENCHMARK_METHODOLOGY.md`, preserving every run and each metric's deltas. It does not execute device writes, collect observations or close journal entries. The current PresentMon series builder requires complete comparable aggregate windows; those aggregates do not satisfy raw per-frame sampling requirements. Actual workload selection, synchronized ETW/PresentMon collection and experiment orchestration remain unfinished.
+
 ## 21. Permanent test strategy
 
-**Hard maximum: 10 permanent automated tests repository-wide.** Current count: **9**.
+**Hard maximum: 10 permanent automated tests repository-wide.** Current count: **10**.
 
 Permanent tests protect high-blast-radius contracts, not files or coverage percentages. Scenario matrices should be consolidated into durable tests where practical.
 

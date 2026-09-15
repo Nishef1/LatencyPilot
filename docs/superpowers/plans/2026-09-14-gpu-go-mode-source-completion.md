@@ -10,12 +10,20 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-14-product-1.0-source-completion-design.md`
 
+## Current execution record — 2026-09-15
+
+The original plan below described source preparation and did not implement the actual one-click execution loop. That loop remains required by the owner and canonical roadmap. Tasks 1–3 have implementation on `main` through `c574897`, with hosted Tests run `34899224926`; the suite actually contains **10** permanent methods, within the hard cap. No additional test methods may be added.
+
+Second-pass correction: screening now returns `ConfirmFinalist`, never `KeepCandidate`. A separate `gpu-affinity-confirmation-v1` interpreter consumes all eight verified observations, enforces provenance/sample/duration/noise/drift checks, and preserves per-metric results. The PresentMon projection no longer discards unsuccessful windows or mixes workload/swapchain identities. Its dynamic window aggregates still do not supply raw frame distributions or prove guardrail adequacy. Current local verification passes 10/10.
+
+Task 4's locked preview is not an execution implementation and cannot close GPU Go mode. Next work follows the `PROJECT_STATUS.md` ladder: atomic affinity storage/interruption handling, actual collector/experiment integration and Gate A proof, then Gate B/C/D. Do not advance to unrelated source completion merely because these pure interpretation tests pass. Later USB, NIC, profiles and release obligations remain part of the full goal.
+
 ## Global Constraints
 
 - Work directly on `main`.
 - Public protocol stays v6/read-only in this plan.
 - `ServiceBoundary.MutationAvailable` stays `false`.
-- Permanent tests stay at 9/10; extend an existing high-blast-radius test instead of adding another test method.
+- Permanent tests stay at 10/10; extend an existing high-blast-radius test instead of adding another test method.
 - Hosted CI stays test-only.
 - No hardware improvement, restart, runtime placement or PresentMon availability claim is inferred from hosted CI.
 - Missing target or guardrail evidence fails closed; no weighted composite score.
@@ -63,7 +71,7 @@ var tradeoff = new GpuOptimizationCandidateMeasurement(
 
 var screening = GpuOptimizationDecisionEngine.Screen(original, [tradeoff, clean], Policy);
 Assert.AreEqual(clean.Candidate, screening.Finalist?.Candidate);
-Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, screening.Recommendation);
+Assert.AreEqual(GpuOptimizationRecommendation.ConfirmFinalist, screening.Recommendation);
 Assert.AreEqual(ExperimentVerdict.Tradeoff, screening.Evaluations[0].Comparison.Verdict);
 Assert.AreEqual(ExperimentVerdict.Improved, screening.Evaluations[1].Comparison.Verdict);
 
@@ -120,6 +128,7 @@ public enum GpuOptimizationRecommendation
 {
     RestoreOriginal,
     KeepCandidate,
+    ConfirmFinalist,
 }
 
 public enum GpuConfirmationOrder
@@ -149,7 +158,7 @@ Only `ExperimentVerdict.Improved` with no regressed guardrails is eligible. Rank
 
 - [ ] **Step 4: Implement recommendation**
 
-A clean finalist yields `KeepCandidate`. No eligible finalist yields `RestoreOriginal`, preserving all candidate evaluations and an explanatory reason.
+A clean screening finalist yields `ConfirmFinalist`. Only the separate completed confirmation interpreter can yield `KeepCandidate`. No eligible finalist yields `RestoreOriginal`, preserving all candidate evaluations and an explanatory reason.
 
 - [ ] **Step 5: Implement balanced confirmation schedule**
 
@@ -164,7 +173,7 @@ The method schedules evidence collection only; it does not claim confirmation wi
 
 - [ ] **Step 6: Run hosted Tests and verify GREEN**
 
-Expected: existing permanent total remains 9 and all pass.
+Expected: current permanent total remains 10 and all pass.
 
 - [ ] **Step 7: Commit**
 
@@ -201,7 +210,7 @@ For each available snapshot, derive one representative value per metric from its
 
 - [ ] **Step 4: Verify GREEN**
 
-All 9 permanent tests pass.
+All 10 permanent tests pass.
 
 - [ ] **Step 5: Commit**
 
@@ -254,7 +263,7 @@ Candidate screening/decision scheduling/PresentMon guardrail conversion may be s
 
 - [ ] **Step 2: Record exact commits and CI runs**
 
-Include RED/GREEN evidence and final 9-test count.
+Include actual verification evidence and final 10-test count.
 
 - [ ] **Step 3: Set the next source slice to USB/xHCI/input analysis**
 

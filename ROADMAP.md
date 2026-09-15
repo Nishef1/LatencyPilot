@@ -1,7 +1,7 @@
 # LatencyPilot Product Roadmap
 
 Status: **Authoritative completion plan**  
-Last updated: 2026-09-14
+Last updated: 2026-09-15
 
 LatencyPilot is complete only when it can safely measure a Windows 11 system, identify latency pressure, run narrowly scoped experiments, quantify target and collateral effects, and let the user keep or revert supported changes with trustworthy recovery.
 
@@ -121,7 +121,7 @@ Decision baseline:    baseline-quality-v2
                       >=1,000 DPC and >=1,000 ISR events/window
 p99.9:                >=10,000 samples/distribution
 Mutation:             unavailable/unarmed
-Permanent tests:      9/10
+Permanent tests:      10/10
 ```
 
 ### 2.1 Inventory and evidence provenance
@@ -298,6 +298,9 @@ Optimize GPU
 - [x] journaled source transaction prepares before apply, verifies stored candidate/original state, and keeps incomplete rollback unresolved;
 - [x] mutation commands remain unarmed until journal/recovery/restart safety passes owner-local validation;
 - [ ] candidate screening loop;
+- [x] deterministic screening interpreter nominates only a finalist; no Keep recommendation from screening;
+- [x] versioned ABBA + BAAB confirmation interpreter with identity/duration/sample/integrity/state/noise/drift gates and per-metric deltas;
+- [x] complete-window PresentMon aggregate-series conversion, with missing/changed workload evidence rejected;
 - [ ] finalist confirmation using balanced/interleaved A/B ordering such as ABBA/BAAB;
 - [ ] ETW DPC/ISR target metrics integrated into the mutation experiment;
 - [ ] PresentMon frame-time / CPU-GPU busy-wait / GPU-display latency / dropped-frame metrics integrated where applicable;
@@ -444,6 +447,6 @@ Run the final 1.0 audit against the full product definition, every phase exit ga
 
 Repository-wide permanent automated tests may not exceed **10** unless the owner explicitly approves an exception and an ADR explains why remaining at 10 would be more harmful.
 
-Current count: **9**.
+Current count: **10**.
 
 Test count is not a quality target. Consolidate scenario matrices inside durable high-value tests. Temporary implementation/debug tests may be created, run and deleted before finalization. Hardware validation is separate from this cap.

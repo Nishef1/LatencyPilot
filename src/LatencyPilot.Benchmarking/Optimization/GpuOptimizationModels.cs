@@ -32,7 +32,7 @@ public sealed record GpuOptimizationMeasurementSet
         }
 
         Primary = primary;
-        Guardrails = validatedGuardrails;
+        Guardrails = validatedGuardrails.AsReadOnly();
     }
 
     public MetricSeries Primary { get; }
@@ -65,6 +65,7 @@ public enum GpuOptimizationRecommendation
 {
     RestoreOriginal,
     KeepCandidate,
+    ConfirmFinalist,
 }
 
 public enum GpuConfirmationOrder

@@ -60,6 +60,18 @@ public static class BenchmarkComparer
 
             if (guardrailBaselineValue == 0)
             {
+                if (guardrailCandidateValue == 0)
+                {
+                    continue;
+                }
+
+                if ((guardrailBaseline.Direction == MetricDirection.LowerIsBetter && guardrailCandidateValue > 0) ||
+                    (guardrailBaseline.Direction == MetricDirection.HigherIsBetter && guardrailCandidateValue < 0))
+                {
+                    regressedGuardrails.Add(guardrailBaseline.Name);
+                    continue;
+                }
+
                 return Inconclusive($"Guardrail '{guardrailBaseline.Name}' has a zero baseline percentile.");
             }
 

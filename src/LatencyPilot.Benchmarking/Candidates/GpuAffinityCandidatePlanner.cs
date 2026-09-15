@@ -30,6 +30,7 @@ public sealed record GpuAffinityCandidate(
 public static class GpuAffinityCandidatePlanner
 {
     public const int DefaultMaximumCandidates = 4;
+    public const int MaximumCandidates = 16;
 
     public static IReadOnlyList<GpuAffinityCandidate> Create(
         ProcessorTopologySnapshot topology,
@@ -46,7 +47,7 @@ public static class GpuAffinityCandidatePlanner
         ArgumentNullException.ThrowIfNull(topology);
         ArgumentNullException.ThrowIfNull(pressureEvidence);
 
-        if (maximumCandidates is < 1 or > 16)
+        if (maximumCandidates is < 1 or > MaximumCandidates)
         {
             throw new ArgumentOutOfRangeException(nameof(maximumCandidates));
         }

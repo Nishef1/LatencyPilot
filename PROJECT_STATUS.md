@@ -2,12 +2,12 @@
 
 This file is the live execution ledger for `ROADMAP.md`. Current source/runtime evidence owns actual state; plans and historical chat do not.
 
-Last updated: 2026-09-14
+Last updated: 2026-09-15
 
 ## Overall
 
 - Product version: **0.0.2 pre-alpha**
-- Product completion: **Phases 0–1 closed; Phase 2 physical closure open; Phase 3 Gate A source/harness preparation complete and owner-local physical validation next**
+- Product completion: **Phases 0–1 closed; Phase 2 physical closure open; Phase 3 decision interpretation implemented, execution and physical arming incomplete**
 - User-visible mutation capability: **Unavailable / unarmed**
 - Supported target: **Windows 11 x64, active local interactive desktop session**
 - Desktop UI: **WinUI 3 / Windows App SDK 2.4 Stable / unpackaged self-contained**
@@ -15,9 +15,17 @@ Last updated: 2026-09-14
 - Observation protocol: **v6** (`LatencyPilot.Observation.v6`)
 - Evidence schema: **`latencypilot-evidence-v8`**
 - Baseline method: **`baseline-quality-v2`**
-- Permanent automated tests: **9 / hard maximum 10**
+- Permanent automated tests: **10 / hard maximum 10**
 - Normal hosted CI: **test-only**; temporary Phase 3 compile/smoke/test surfaces were removed after evidence
-- Current source handoff: **rollback-biased recovery and the owner-only non-shipping Gate A harness are implemented and hosted-compile/smoke-verified; no mutation IPC or physical mutation is yet proven**
+- Current source handoff: **bounded screening and balanced confirmation interpretation exist; real capture orchestration, atomic registry-write interruption handling, mutation IPC and physical mutation proof remain open**
+
+## Current execution ladder
+
+1. **Completed now:** screening only nominates a finalist (`ConfirmFinalist`); it cannot recommend keeping a screening result. `gpu-affinity-confirmation-v1` interprets eight ABBA + BAAB observations, rejects missing/short/dirty/unverified or identity-mismatched runs, reports metric deltas/sample counts/noise/drift and recommends Keep only for a confirmed primary improvement without guardrail regression. PresentMon aggregate conversion retains complete comparable windows; failed windows and changed process/swapchain sets cannot disappear silently. Uninstall safety and post-device-restart stored-state rechecks are present from `f0d8d7b`.
+2. **Evidence:** exact prior head `c574897a8ace3f02581e9ffcc65b6879a26f445b` passed hosted Tests run `34899224926`. Current owner-local Debug critical suite passes **10/10** including confirmation failure/identity/noise/tail/drop scenarios. `dotnet build LatencyPilot.slnx --configuration Debug --no-restore` passes, including App and Service, with **0 warnings/errors**. These prove compilation and deterministic interpretation, not App launch, Service installation, or an improvement on hardware.
+3. **Still open:** the decision engine has no App/Service execution caller. PresentMon currently provides dynamic window aggregates, not the adequately sampled per-frame distributions required by confirmation; adapter/workload correlation, all required GPU guardrails and common ETW/PresentMon intervals remain unintegrated. The existing two-value registry apply/restore is non-atomic: interrupted partial writes can become `Diverged` and require manual recovery. Keep public mutation unarmed. Gate A/B/C/D and the remaining Phase 2 physical record remain open.
+4. **Next stage:** fix and verify atomic affinity storage/interruption semantics without weakening external-divergence refusal; validate current App/Service/harness startup; integrate actual ETW and PresentMon workload evidence with the candidate experiment/confirmation sequence; complete Gate A physical apply, exact rollback and controlled failure recovery before Gate B IPC.
+5. **After that:** Gate B typed authorization/IPC → Gate C real boundary validation → Gate D supported GPU one-click execution. Complete USB/input and NIC/RSS experiments, whole-system profiles/restore, then release/signing/upgrade and representative physical validation. Source-only progress does not replace any of these product requirements.
 
 ## Measurement authority
 
@@ -145,7 +153,13 @@ Implemented as source evidence, not yet integrated into an armed experiment:
 
 ### PresentMon
 
-PresentMon API discovery, graphics-device correlation and workload metric capture exist in source. Available workload metrics include frame/FPS plus optional CPU/GPU busy/wait, GPU/display latency and dropped-frame evidence where the installed PresentMon API exposes them. These are not yet wired into the candidate screening/finalist orchestration.
+PresentMon API discovery, graphics-device correlation and workload metric capture exist in source. Available workload metrics include frame/FPS plus optional CPU/GPU busy/wait, GPU/display latency and dropped-frame evidence where the installed PresentMon API exposes them. The aggregate-series builder now requires available windows from one process/API version/window duration and the same nonempty swapchain set. Each emitted metric covers every supplied window and swapchain; an optional incomplete metric is omitted as a whole. Failed sequences produce no comparable series. These aggregates are not raw frame samples and are not yet wired into the candidate screening/finalist orchestration.
+
+### GPU decision interpretation — implemented, execution not closed
+
+`GpuOptimizationDecisionEngine.Screen` ranks clean candidates but returns only `ConfirmFinalist` or `RestoreOriginal`. `GpuOptimizationConfirmation` consumes a valid decision baseline and eight completed run records from the same session/workload/environment/source. It requires verified expected state and capture integrity, equal requested durations of at least 30 seconds with >=95% actual completion, and at least 1,000 samples per metric per run. It preserves all run records and per-metric results. Duration tails use p99, higher-is-better throughput tails use p01, and dropped-frame ratios use the mean so rare drops are not hidden by p99. Noise/drift screens and effective thresholds are explicit in `docs/BENCHMARK_METHODOLOGY.md`.
+
+This deterministic recommendation is not permission to change hardware, close a journal, or expose a product Keep command. The collection layer must establish the recorded identities/verification from actual machine evidence and select all required workload guardrails. That collection/execution integration and physical calibration remain open.
 
 ## Current verification evidence
 

@@ -1,7 +1,7 @@
 # Benchmark Methodology
 
-Status: **V0.4 benchmark contract**  
-Last updated: 2026-09-13
+Status: **V0.5 benchmark contract**
+Last updated: 2026-09-15
 
 LatencyPilot exists to distinguish measurable improvement from placebo, ordinary run-to-run variation, drift, or a trade-off hidden by one headline number. It is an experimental optimization platform, not a collection of assumed Windows tweaks.
 
@@ -392,6 +392,20 @@ The statistical method, practical-effect threshold and noise interpretation must
 
 ## 18. Verdict model
 
+### Implemented GPU confirmation interpretation — `gpu-affinity-confirmation-v1`
+
+Screening chooses a finalist for confirmation; it never produces a Keep recommendation. The confirmation interpreter requires the already-valid five-window `baseline-quality-v2` result and exactly eight completed runs in `ABBA + BAAB` order. Baseline and runs must share session, workload, environment and exact source-revision provenance. Each run has its own capture identity and explicitly verified actual original/candidate state and capture integrity. An Original run means the exact captured original was verified, not merely that a default policy was requested.
+
+Every requested interval is equal and at least 30 seconds; actual duration must reach 95% of the request. Each primary and guardrail distribution requires at least 1,000 samples per run (or the higher configured minimum). Missing/incompatible metrics, reused capture IDs, dirty captures, changed environment/workload/source, unverified placement or a partial/reordered sequence yield `Inconclusive` and `RestoreOriginal`. The collection layer must supply all required workload guardrails and derive every identity/verification field from actual evidence; the interpreter is not an authorization or hardware-verification mechanism.
+
+For nonnegative latency/duration samples the per-run statistic is p99; higher-is-better throughput distributions use p01 to preserve adverse low-throughput tails. The named dropped-frame-ratio metric uses its arithmetic mean over [0,1] observations, so rare dropped frames do not disappear below a p99 cutoff. A PresentMon dynamic aggregate is one aggregate observation, not hundreds of raw frame samples: the current aggregate reader cannot by itself satisfy the per-frame confirmation contract.
+
+The four Original and four Candidate run statistics are retained separately. Each side uses its median, `(P90-P10)/median` noise, first-two/last-two median drift and extreme deviation. Noise >30%, drift >20% or any run >50% from its side's median makes evidence inconclusive. A zero median is stable only when every run statistic on that side is zero.
+
+The effective practical threshold is the maximum of the configured primary/guardrail threshold and measured noise/drift from both sides. A positive effect must exceed this threshold to count as improved; a negative effect beyond it is regressed. This is a conservative versioned practical-noise rule, **not a confidence interval or statistical-significance claim**. Zero-to-zero is unchanged; a new adverse value from a zero control is a regression with an undefined percentage, preserving its raw delta. Undefined favorable relative changes remain inconclusive.
+
+Results retain raw metric deltas, statistic/percentile identity, original/candidate sample counts, noise/drift, effective thresholds, the run evidence and explicit five-way verdict. Only `Improved` without a guardrail regression recommends `KeepCandidate`; all other verdicts recommend exact restoration. A recommendation never terminalizes a journal: actual keep/rollback verification belongs to the execution layer. Physical calibration, full guardrail selection and the real measurement/execution loop remain required before arming.
+
 The authoritative verdict set remains exactly:
 
 ### `Improved`
@@ -499,4 +513,4 @@ Phase 2 closes only when the read-only measurement substrate has physical eviden
 - required device evidence, cleanup/recovery and accessibility checks pass;
 - no mutation path is exposed.
 
-Only then may Phase 3 introduce state-changing experiments. The first mutation implementation must preserve the same principle that motivated this revision: measure the machine, do not assume the tweak.
+ADR 0004 supersedes strict source-development sequencing: internal Phase 3 work may overlap the remaining Phase 2 physical record after the required Real-world baseline exists. Public mutation still follows the separate Gate A → B → C → D physical/authorization sequence in `PROJECT_STATUS.md`. The first mutation implementation must preserve the same principle that motivated this revision: measure the machine, do not assume the tweak.

@@ -1,4 +1,5 @@
 using LatencyPilot.Benchmarking.Comparisons;
+using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Core.Metrics;
 using LatencyPilot.Core.Results;
 
@@ -28,7 +29,16 @@ public static class GpuOptimizationDecisionEngine
         ArgumentNullException.ThrowIfNull(policy);
         policy.Validate();
 
-        var candidateArray = candidates.ToArray();
+        var candidateArray = candidates.Take(GpuAffinityCandidatePlanner.MaximumCandidates + 1).ToArray();
+        if (candidateArray.Length > GpuAffinityCandidatePlanner.MaximumCandidates ||
+            candidateArray.Any(static candidate => candidate is null ||
+                candidate.Candidate.Processor.Group != 0 || candidate.Candidate.Processor.Number >= 64 ||
+                candidate.Candidate.PhysicalCoreIndex < 0) ||
+            candidateArray.Select(static candidate => candidate.Candidate.Processor).Distinct().Count() != candidateArray.Length ||
+            candidateArray.Select(static candidate => candidate.Candidate.PhysicalCoreIndex).Distinct().Count() != candidateArray.Length)
+        {
+            throw new ArgumentException("Screening requires a bounded set of distinct group-0 physical-core candidates.", nameof(candidates));
+        }
         var evaluations = candidateArray
             .Select(candidate => new GpuOptimizationCandidateEvaluation(
                 candidate.Candidate,
@@ -61,7 +71,7 @@ public static class GpuOptimizationDecisionEngine
         return new GpuOptimizationScreeningResult(
             evaluations,
             finalist,
-            GpuOptimizationRecommendation.KeepCandidate,
+            GpuOptimizationRecommendation.ConfirmFinalist,
             "A clean improved candidate is eligible for balanced finalist confirmation before any keep decision is finalized.");
     }
 
@@ -76,6 +86,11 @@ public static class GpuOptimizationDecisionEngine
         if (!MetricsMatch(original.Primary, candidate.Primary))
         {
             return Inconclusive("Primary metric identity or direction does not match the original evidence.");
+        }
+
+        if (original.Guardrails.Count == 0)
+        {
+            return Inconclusive("GPU screening requires workload guardrail evidence in addition to its primary metric.");
         }
 
         if (original.Guardrails.Count != candidate.Guardrails.Count ||
