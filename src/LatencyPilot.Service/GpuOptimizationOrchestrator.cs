@@ -31,6 +31,15 @@ internal sealed record GpuOptimizationOrchestrationResult(
 
 internal interface IGpuOptimizationExecutionBackend
 {
+    GpuGraphicsTargetIdentityResolution ResolveGraphicsTarget(
+        string deviceInstanceId,
+        string? presentMonApiPath,
+        string? presentMonControlPipeName) =>
+        GpuGraphicsTargetIdentityResolver.Capture(
+            deviceInstanceId,
+            presentMonApiPath,
+            presentMonControlPipeName);
+
     GpuInterruptAffinitySnapshot CaptureOriginal(string deviceInstanceId);
 
     Guid ApplyCandidate(string deviceInstanceId, GpuAffinityCandidate candidate);
@@ -81,6 +90,21 @@ internal sealed class GpuOptimizationOrchestrator
                 null,
                 [],
                 ["No bounded GPU affinity candidate is available for measurement."]);
+        }
+
+        var graphicsTarget = backend.ResolveGraphicsTarget(
+            request.DeviceInstanceId,
+            request.PresentMonApiPath,
+            request.PresentMonControlPipeName);
+        if (!graphicsTarget.IsUsable || graphicsTarget.Identity is null)
+        {
+            return new GpuOptimizationOrchestrationResult(
+                GpuOptimizationRecommendation.RestoreOriginal,
+                null,
+                null,
+                [],
+                [graphicsTarget.Reason ??
+                 "The GPU workload target could not be proven safely before mutation."]);
         }
 
         var originalState = backend.CaptureOriginal(request.DeviceInstanceId);
