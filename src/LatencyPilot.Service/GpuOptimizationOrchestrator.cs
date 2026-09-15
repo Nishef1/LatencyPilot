@@ -113,11 +113,11 @@ internal sealed class GpuOptimizationOrchestrator
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = candidates[index];
             var experimentId = backend.ApplyCandidate(request.DeviceInstanceId, candidate);
-            backend.BeginMeasurement(experimentId);
 
             GpuOptimizationEvidenceCollectionResult candidateEvidence;
             try
             {
+                backend.BeginMeasurement(experimentId);
                 candidateEvidence = await backend.CaptureAsync(
                     CreateEvidenceRequest(
                         request,
