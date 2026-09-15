@@ -1,5 +1,6 @@
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
+using LatencyPilot.Platform.Windows.Devices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -60,5 +61,25 @@ public sealed class InputTimingTests
             new InputReportTimestampSeries("mouse-1", 1_000_000_000L, [0L, 2_000_000L, 1_000_000L])));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => InputTimingAnalyzer.Analyze(
             new InputReportTimestampSeries("mouse-1", 0L, stableTicks)));
+    }
+
+    [TestMethod]
+    public void SelectedRawInputDeviceRemovalEndsCaptureButOtherChangesDoNot()
+    {
+        var selectedHandle = new nint(0x1234);
+        var otherHandle = new nint(0x5678);
+
+        Assert.IsTrue(RawInputTimingCapture.IsSelectedDeviceRemoval(
+            selectedHandle,
+            RawInputTimingCapture.DeviceRemovalChangeCode,
+            selectedHandle));
+        Assert.IsFalse(RawInputTimingCapture.IsSelectedDeviceRemoval(
+            selectedHandle,
+            RawInputTimingCapture.DeviceArrivalChangeCode,
+            selectedHandle));
+        Assert.IsFalse(RawInputTimingCapture.IsSelectedDeviceRemoval(
+            selectedHandle,
+            RawInputTimingCapture.DeviceRemovalChangeCode,
+            otherHandle));
     }
 }
