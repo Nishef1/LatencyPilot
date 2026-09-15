@@ -221,23 +221,24 @@ public sealed class GpuAffinityCandidatePlannerTests
             "scene-v1",
             "environment-v1",
             new string('a', 40));
+        var policy = new ComparisonPolicy(
+            MinimumSamples: 20,
+            MinimumRelativeChange: 0.03,
+            GuardrailRegressionLimit: 0.05,
+            EvaluationPercentile: 0.99);
+        var orchestrationRequest = new GpuOptimizationOrchestrationRequest(
+            "PCI\\VEN_10DE&DEV_TEST",
+            77,
+            baseline,
+            candidates,
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(30),
+            policy);
+
         var backend = new FakeGpuOptimizationExecutionBackend(
             OrchestrationMeasurement(100, 10),
             OrchestrationMeasurement(100, 10));
-        var orchestrator = new GpuOptimizationOrchestrator(backend);
-        var orchestration = await orchestrator.RunAsync(
-            new GpuOptimizationOrchestrationRequest(
-                "PCI\\VEN_10DE&DEV_TEST",
-                77,
-                baseline,
-                candidates,
-                TimeSpan.FromSeconds(30),
-                TimeSpan.FromSeconds(30),
-                new ComparisonPolicy(
-                    MinimumSamples: 20,
-                    MinimumRelativeChange: 0.03,
-                    GuardrailRegressionLimit: 0.05,
-                    EvaluationPercentile: 0.99)));
+        var orchestration = await new GpuOptimizationOrchestrator(backend).RunAsync(orchestrationRequest);
 
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, orchestration.Recommendation);
         Assert.IsNotNull(orchestration.Screening);
@@ -246,6 +247,23 @@ public sealed class GpuAffinityCandidatePlannerTests
         Assert.AreEqual(2, backend.RollbackCount);
         Assert.AreEqual(0, backend.KeepCount);
         Assert.AreEqual(0, backend.ActiveExperimentCount);
+
+        var keepBackend = new FakeGpuOptimizationExecutionBackend(
+            OrchestrationMeasurement(100, 10),
+            OrchestrationMeasurement(85, 10));
+        var keepResult = await new GpuOptimizationOrchestrator(keepBackend).RunAsync(orchestrationRequest);
+
+        Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, keepResult.Recommendation);
+        Assert.IsNotNull(keepResult.Screening?.Finalist);
+        Assert.IsNotNull(keepResult.Confirmation);
+        Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, keepResult.Confirmation.Recommendation);
+        Assert.AreEqual(5, keepBackend.ApplyCount);
+        Assert.AreEqual(4, keepBackend.RollbackCount);
+        Assert.AreEqual(1, keepBackend.AwaitDecisionCount);
+        Assert.AreEqual(1, keepBackend.KeepCount);
+        Assert.AreEqual(0, keepBackend.ActiveExperimentCount);
+        Assert.IsTrue(keepBackend.AppliedCandidates.Skip(candidates.Count)
+            .All(candidate => candidate == keepResult.Screening.Finalist.Candidate));
     }
 
     private static GpuOptimizationMeasurementSet OrchestrationMeasurement(double primary, double frameTime) =>
@@ -280,9 +298,13 @@ public sealed class GpuAffinityCandidatePlannerTests
 
         internal int RollbackCount { get; private set; }
 
+        internal int AwaitDecisionCount { get; private set; }
+
         internal int KeepCount { get; private set; }
 
         internal int ActiveExperimentCount => activeExperiments.Count;
+
+        internal List<GpuAffinityCandidate> AppliedCandidates { get; } = [];
 
         public GpuInterruptAffinitySnapshot CaptureOriginal(string deviceInstanceId) =>
             new(
@@ -299,6 +321,7 @@ public sealed class GpuAffinityCandidatePlannerTests
             ArgumentNullException.ThrowIfNull(candidate);
             var id = Guid.NewGuid();
             activeExperiments.Add(id);
+            AppliedCandidates.Add(candidate);
             ApplyCount++;
             return id;
         }
@@ -345,6 +368,7 @@ public sealed class GpuAffinityCandidatePlannerTests
         public void AwaitDecision(Guid experimentId)
         {
             Assert.IsTrue(activeExperiments.Contains(experimentId));
+            AwaitDecisionCount++;
         }
 
         public void KeepCandidate(Guid experimentId)
