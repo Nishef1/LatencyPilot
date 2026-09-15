@@ -11,9 +11,10 @@ Last updated: 2026-09-15
 - Public protocol: **v6 / observation-only** (`LatencyPilot.Observation.v6`).
 - Public commands: **`GetStatus`, `CaptureKernelLatency` only**.
 - `ServiceBoundary.MutationAvailable`: **false**.
-- Evidence schema: **`latencypilot-evidence-v8`**.
+- Evidence schema: **`latencypilot-evidence-v9`**.
 - Decision baseline: **`baseline-quality-v2`**.
 - Optimizer workload readiness: **`workload-stability-v1`**.
+- GPU optimizer eligibility target: **`gpu-affinity-v1`**.
 - Permanent deterministic suite: **18 tests**; target 10, owner-authorized maximum 20 only for line-limit or materially safer durable subsystem separation.
 - Hosted GitHub Actions: **test-only**. It does not prove App/Service launch, UI/accessibility, installer/package/signing or physical hardware behavior.
 
@@ -30,6 +31,8 @@ The remaining 1.0 source-completion tranche is now implemented across:
 - authoritative StandardCimv2 NIC/RSS inventory, PnP correlation, network attribution and local benchmark interpretation;
 - transparent workload profiles, subsystem opt-out and Pareto trade-off policy without a hidden score;
 - workload-stability eligibility, including per-window system CPU activity when available, so changing/spiky repeated workloads cannot enter optimizer candidate planning;
+- evidence-v9 serialization of workload stability plus explicit GPU optimizer eligibility/reason, so comparison validity and optimizer readiness are no longer conflated;
+- App baseline summary that exposes comparison validity and optimizer readiness separately in visible text, tooltip/accessibility semantics, and does not use color as the only cue;
 - recovery-aware install/upgrade/uninstall source;
 - deterministic release provenance/checksum/signing hooks and local redacted diagnostic bundle;
 - read-only App inspector wiring for representative interrupt evidence, exact USB input routes, RSS state and on-demand host Raw Input timing, with optional evidence providers isolated so one unavailable layer no longer discards the rest of the inspector result;
@@ -69,6 +72,11 @@ Optimizer workload readiness — workload-stability-v1
   early/late drift gate
   isolated extreme-window activity gate
 
+Optimizer eligibility — gpu-affinity-v1
+  baseline-quality-v2 valid
+  AND workload-stability-v1 Stable
+  explicit serialized eligibility + reason in evidence-v9
+
 Phase-changing scripted benchmark
   diagnostic/useful only under the current five-window flow
   compare repeated whole runs or matched phases under fixed settings
@@ -78,11 +86,11 @@ p99.9
   shown only with >=10,000 samples for that distribution
 ```
 
-`Valid` means repeatable enough for the relevant method. It never means the machine is globally healthy or optimal.
+`Valid` means repeatable enough for the relevant comparison method. It never means the machine is globally healthy, optimal, or automatically eligible for an optimizer experiment.
 
 ## Phase 2 — read-only physical closure OPEN
 
-Repository source includes processor-group-aware topology, present PnP/driver/interrupt inventory, stored-vs-allocated-vs-runtime evidence separation, protected Service/Named Pipe v6, ETW DPC/ISR capture, module/processor attribution, repeated baseline gates, evidence-v8 provenance/SHA verification and adaptive evidence UI.
+Repository source includes processor-group-aware topology, present PnP/driver/interrupt inventory, stored-vs-allocated-vs-runtime evidence separation, protected Service/Named Pipe v6, ETW DPC/ISR capture, module/processor attribution, repeated baseline gates, evidence-v9 provenance/SHA/workload-readiness verification and adaptive evidence UI.
 
 The owner-local closure path is now consolidated in `tools/LatencyPilot.ReadOnlyClosure` and `docs/OWNER_CLOSURE.md`. It records exact local/remote revision, exact-green CI, protected Service state, exact protected executable path and embedded exact source revision from the installed Service binary, journal cleanliness, stale ETW absence, representative GPU/NIC/xHCI presence, USB topology, RSS provider state, and exact-revision steady Real-world/Controlled-idle baseline SHA/provenance in one read-only JSON audit. A stale Service binary at the correct directory no longer satisfies exact-revision closure. `scripts/Capture-UiAccessibilityEvidence.ps1` separately captures repeatable UIA/screenshot evidence for required display and keyboard states. These tools reduce manual closure work; they do not convert unexecuted owner-local checks into evidence.
 
@@ -93,10 +101,10 @@ Remaining owner-local Phase 2 obligations:
 1. valid steady Real-world and Controlled-idle five-window baselines on the exact closure revision, with the consolidated audit passing;
 2. representative GPU/NIC/xHCI inspector sanity, including current USB/RSS read-only surfaces, recorded by the audit and visually sanity-checked;
 3. attribution plausibility against an independent observer where practical;
-4. App-close/Service-restart/stale-ETW cleanup and active-session rejection checks;
-5. Light/Dark/High Contrast, narrow/text-scaling, keyboard and UI Automation/screen-reader sanity using the captured UI evidence plus Accessibility Insights/Narrator review;
+4. App-close/Service-restart/stale-ETW cleanup + active-session rejection checks;
+5. Light/Dark/High Contrast/narrow/text scaling/keyboard/UIA/screen reader sanity, including baseline validity/readiness status exposure as text/automation semantics;
 6. JSON-visible-data/SHA/source-revision reconciliation recorded by the consolidated audit;
-7. proof read-only validation performs zero unrelated system mutation.
+7. proof read-only validation performs zero unrelated mutation.
 
 ## Phase 3 — GPU execution source implemented; physical arming OPEN
 
@@ -132,7 +140,7 @@ stable authoritative baseline
 → verified Keep or exact RestoreOriginal/RecoveryRequired
 ```
 
-The shared baseline-readiness contract now requires both `baseline-quality-v2` and `workload-stability-v1`. App candidate preparation uses the same readiness boundary and the actual per-window runtime CPU-busy evidence when available, so CPU drift, a changing interrupt workload, partial runtime activity evidence or an isolated spike does not proceed to candidate generation. The App now labels the `RealWorld` path as a steady real-world workload and explicitly warns that a phase-changing built-in benchmark must not be treated as five equivalent windows. The App also exposes the readiness outcome rather than silently withholding candidates.
+The shared baseline-readiness contract now requires both `baseline-quality-v2` and `workload-stability-v1`. App candidate preparation uses the same readiness boundary and the actual per-window runtime CPU-busy evidence when available, so CPU drift, a changing interrupt workload, partial runtime activity evidence or an isolated spike does not proceed to candidate generation. Evidence-v9 serializes the workload result and `gpu-affinity-v1` eligibility/reason, and the App surfaces the same contract directly rather than making the user infer readiness from a generic baseline label. The `RealWorld` path is labeled as a steady real-world workload and explicitly warns that a phase-changing built-in benchmark must not be treated as five equivalent windows.
 
 The owner-only Gate A placement command now fails closed unless the exact stored candidate is verified immediately before and after a clean capture **and** runtime evidence contains at least one resolved GPU-driver ISR on the requested processor with zero resolved GPU-driver ISR events off target. ConfigMgr allocated resources remain independent provenance when readable; they cannot substitute for, or by themselves block/pass, the runtime placement proof. Missing/unavailable correlation is not a successful placement proof.
 
