@@ -52,6 +52,9 @@ public static class MutationJournalStateMachine
         (MutationJournalState.AwaitingDecision, MutationJournalState.Kept) => true,
         (MutationJournalState.AwaitingDecision, MutationJournalState.Reverting) => true,
         (MutationJournalState.AwaitingDecision, MutationJournalState.RecoveryRequired) => true,
+        // Kept is terminal for an individual optimization decision, but an explicit
+        // global Restore Baseline action is allowed to unwind it through verified rollback.
+        (MutationJournalState.Kept, MutationJournalState.Reverting) => true,
         (MutationJournalState.Reverting, MutationJournalState.Reverted) => true,
         (MutationJournalState.Reverting, MutationJournalState.RecoveryRequired) => true,
         // Recovery deliberately resumes only through rollback in v1. A future
@@ -293,6 +296,26 @@ public sealed class MutationJournal
             SELECT * FROM mutation_journal
             WHERE state NOT IN ('Reverted', 'Kept', 'AbortedBeforeApply')
             ORDER BY created_utc ASC;
+            """;
+        using var reader = command.ExecuteReader();
+        var entries = new List<MutationJournalEntry>();
+        while (reader.Read())
+        {
+            entries.Add(ReadEntry(reader));
+        }
+
+        return entries;
+    }
+
+    public IReadOnlyList<MutationJournalEntry> GetRetainedChangesNewestFirst()
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT * FROM mutation_journal
+            WHERE state = 'Kept'
+            ORDER BY created_utc DESC, experiment_id DESC;
             """;
         using var reader = command.ExecuteReader();
         var entries = new List<MutationJournalEntry>();
