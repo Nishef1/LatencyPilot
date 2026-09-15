@@ -99,6 +99,19 @@ public sealed class OptimizationProfileTests
         Assert.IsFalse(incompleteWorkload.IsEligibleForExperiment);
         Assert.IsFalse(GpuOptimizationBaselineReadiness.IsEligible(stableQuality, incompleteWorkload));
 
+        var partialCpuWorkload = WorkloadStabilityAnalyzer.Analyze(
+        [
+            new WorkloadWindowEvidence(1, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(2, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(3, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(4, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(5, 20_000, 30_000, 12_000, null),
+        ]);
+        Assert.AreEqual(WorkloadStabilityStatus.Insufficient, partialCpuWorkload.Status);
+        Assert.IsFalse(partialCpuWorkload.IsEligibleForExperiment);
+        Assert.IsTrue(partialCpuWorkload.Reasons.Any(static reason =>
+            reason.Contains("CPU", StringComparison.OrdinalIgnoreCase)));
+
         var dominates = ParetoDecisionPolicy.Evaluate(
         [
             new ParetoMetricOutcome("input-report-p99", ExperimentVerdict.Improved),
