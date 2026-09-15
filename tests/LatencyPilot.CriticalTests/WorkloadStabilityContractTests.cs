@@ -50,16 +50,32 @@ public sealed class WorkloadStabilityContractTests
 
     private static void AssertEvidenceVerifierRejectsContradictorySerializedReadiness()
     {
+        var stable = RunEvidenceVerifier([50, 50, 50, 50, 50]);
+        Assert.AreEqual(
+            0,
+            stable.ExitCode,
+            "Control evidence fixture must pass the canonical verifier before the contradiction check is meaningful.\n" +
+            stable.StandardOutput + "\n" + stable.StandardError);
+
+        var contradictory = RunEvidenceVerifier([80, 80, 20, 20, 20]);
+        Assert.AreNotEqual(
+            0,
+            contradictory.ExitCode,
+            "Verifier accepted serialized Stable workload readiness even though the source windows contain material CPU activity drift.\n" +
+            contradictory.StandardOutput + "\n" + contradictory.StandardError);
+    }
+
+    private static VerifierResult RunEvidenceVerifier(double[] cpuBusy)
+    {
         const string sourceRevision = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         var tempPath = Path.Combine(
             Path.GetTempPath(),
             "LatencyPilot.CriticalTests",
-            $"contradictory-readiness-{Guid.NewGuid():N}.json");
+            $"workload-readiness-{Guid.NewGuid():N}.json");
         Directory.CreateDirectory(Path.GetDirectoryName(tempPath)!);
 
         try
         {
-            var cpuBusy = new[] { 80d, 80d, 20d, 20d, 20d };
             var captures = Enumerable.Range(1, 5)
                 .Select(CreateCapture)
                 .ToArray();
@@ -84,6 +100,12 @@ public sealed class WorkloadStabilityContractTests
                     context = new { systemCpuBusyPercent = cpuBusy[number - 1] },
                 })
                 .ToArray();
+            var stableSignals = new[]
+            {
+                CreateStableSignal("DPC event rate", 50d),
+                CreateStableSignal("ISR event rate", 50d),
+                CreateStableSignal("System CPU busy", 50d),
+            };
 
             var evidence = new
             {
@@ -103,20 +125,30 @@ public sealed class WorkloadStabilityContractTests
                 captures,
                 windows,
                 runtimeWindows,
-                quality = new { },
+                quality = new
+                {
+                    methodVersion = "baseline-quality-v2",
+                    status = "Valid",
+                    totalWindowCount = 5,
+                    validCaptureWindowCount = 5,
+                    isValidForComparison = true,
+                    dpcP99 = new { isStable = true, eligibleWindowCount = 5 },
+                    isrP99 = new { isStable = true, eligibleWindowCount = 5 },
+                    reasons = Array.Empty<string>(),
+                },
                 workloadStability = new
                 {
                     methodVersion = "workload-stability-v1",
                     status = "Stable",
                     isEligibleForExperiment = true,
-                    signals = Array.Empty<object>(),
+                    signals = stableSignals,
                     reasons = Array.Empty<string>(),
                 },
                 optimizerEligibility = new
                 {
                     target = "gpu-affinity-v1",
-                    isEligible = false,
-                    reason = "Test fixture intentionally leaves optimizer eligibility false.",
+                    isEligible = true,
+                    reason = "Latency repeatability passed baseline-quality-v2 and workload activity is Stable under workload-stability-v1.",
                 },
             };
 
@@ -148,12 +180,7 @@ public sealed class WorkloadStabilityContractTests
             var stderr = process.StandardError.ReadToEndAsync();
             process.WaitForExit();
             Task.WaitAll(stdout, stderr);
-
-            Assert.AreNotEqual(
-                0,
-                process.ExitCode,
-                "Verifier accepted serialized Stable workload readiness even though the source windows contain material CPU activity drift.\n" +
-                stdout.Result + "\n" + stderr.Result);
+            return new VerifierResult(process.ExitCode, stdout.Result, stderr.Result);
         }
         finally
         {
@@ -167,6 +194,18 @@ public sealed class WorkloadStabilityContractTests
             }
         }
     }
+
+    private static object CreateStableSignal(string name, double value) => new
+    {
+        signalName = name,
+        median = value,
+        earlyMedian = value,
+        lateMedian = value,
+        relativeDrift = 0d,
+        hasMaterialDrift = false,
+        maximumRelativeDeviation = 0d,
+        hasExtremeWindow = false,
+    };
 
     private static object CreateDistribution() => new
     {
@@ -233,4 +272,9 @@ public sealed class WorkloadStabilityContractTests
         throw new FileNotFoundException(
             "Unable to locate repository file: " + Path.Combine(relativeParts));
     }
+
+    private sealed record VerifierResult(
+        int ExitCode,
+        string StandardOutput,
+        string StandardError);
 }
