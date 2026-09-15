@@ -113,7 +113,7 @@ A mutation without verified rollback and recovery is incomplete and must not be 
 
 ## Testing policy
 
-LatencyPilot intentionally keeps a small permanent suite. The repository-wide hard maximum is **10 permanent automated tests** unless the owner explicitly approves an exception and an ADR explains why remaining within the cap creates greater risk.
+LatencyPilot intentionally keeps a small permanent suite. The default/target repository size is **10 permanent automated tests**. The repository owner has explicitly authorized growth to at most **20 permanent automated tests** only when a separate durable subsystem contract materially improves failure isolation or when needed to keep every test source file at or below **1200 lines**. This is a ceiling for justified separation, not a target to grow toward.
 
 Do **not** add one permanent test per file, branch, bug fix, getter, label, parser case, or framework behavior. A permanent test needs a credible high-blast-radius correctness or safety contract. Prefer folding scenario matrices into an existing durable test or replacing a lower-value permanent test when a more important risk appears.
 
