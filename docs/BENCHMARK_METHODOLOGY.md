@@ -78,7 +78,15 @@ workload-stability-v1 = stable
 
 The App uses this same readiness boundary before preparing GPU candidates. A clean latency distribution from a materially changing workload is not candidate evidence.
 
-`latencypilot-evidence-v9` serializes `workloadStability` and baseline-scoped `optimizerEligibility` explicitly. This keeps the two meanings auditable: `quality.isValidForComparison` reports latency-repeatability validity, while optimizer eligibility additionally requires a steady `RealWorld` workload under `workload-stability-v1`. A transient tail warning remains diagnostic context and does not silently rewrite either verdict.
+`latencypilot-evidence-v9` serializes both the `workload-stability-v1` result and the explicit `gpu-affinity-v1` eligibility result/reason. The serialized contract intentionally distinguishes:
+
+```text
+quality.isValidForComparison
+!=
+optimizerEligibility.isEligible
+```
+
+A baseline may therefore be valid for comparison and still be ineligible for optimizer candidate planning. The verifier must reject inconsistent serialized readiness rather than silently reinterpreting the artifact.
 
 ### 1.4 Controlled A/B experiment
 
@@ -360,7 +368,7 @@ Avoid unnecessary per-event heap allocation, high-volume logging, synchronous fi
 - Current durable suite: **18** tests.
 - Every test source file: **<=1200 lines**.
 - Owner-authorized maximum: **20**, only for the file-size limit or materially safer durable subsystem separation.
-- Current separate USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness and GPU runtime-placement contracts intentionally use that authorization.
+- Current separate USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness, GPU runtime-placement and installed-Service source-provenance contracts intentionally use that authorization.
 - Temporary/obsolete tests are removed rather than accumulated.
 
 Hardware validation is separate from automated-test count.
