@@ -1,6 +1,7 @@
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Platform.Windows.System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -76,5 +77,11 @@ public sealed class InputTimingTests
             selectedHandle,
             RawInputTimingCapture.DeviceRemovalChangeCode,
             otherHandle));
+
+        var awakeBefore = new SystemAwakeTimeSnapshot(1_000, 10_000_000);
+        var awakeAfter = new SystemAwakeTimeSnapshot(6_000, 60_000_000);
+        var sleptAfter = new SystemAwakeTimeSnapshot(11_000, 60_000_000);
+        Assert.IsTrue(RawInputTimingCapture.IsAwakeIntervalUsable(awakeBefore, awakeAfter));
+        Assert.IsFalse(RawInputTimingCapture.IsAwakeIntervalUsable(awakeBefore, sleptAfter));
     }
 }
