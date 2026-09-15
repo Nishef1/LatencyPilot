@@ -96,15 +96,18 @@ internal sealed class GpuOptimizationOrchestrator
             request.DeviceInstanceId,
             request.PresentMonApiPath,
             request.PresentMonControlPipeName);
-        if (!graphicsTarget.IsUsable || graphicsTarget.Identity is null)
+        if (!TryAcceptInitialTargetPreflight(
+                request.DeviceInstanceId,
+                graphicsTarget,
+                out var targetIdentity,
+                out var preflightReason))
         {
             return new GpuOptimizationOrchestrationResult(
                 GpuOptimizationRecommendation.RestoreOriginal,
                 null,
                 null,
                 [],
-                [graphicsTarget.Reason ??
-                 "The GPU workload target could not be proven safely before mutation."]);
+                [preflightReason!]);
         }
 
         var originalState = backend.CaptureOriginal(request.DeviceInstanceId);
@@ -136,6 +139,20 @@ internal sealed class GpuOptimizationOrchestrator
         {
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = candidates[index];
+            if (!TryVerifyTargetPreflight(request, targetIdentity!, out var mutationPreflightReason))
+            {
+                candidateRuns.Add(new GpuOptimizationCandidateRunRecord(
+                    candidate,
+                    false,
+                    mutationPreflightReason));
+                return new GpuOptimizationOrchestrationResult(
+                    GpuOptimizationRecommendation.RestoreOriginal,
+                    null,
+                    null,
+                    candidateRuns.AsReadOnly(),
+                    [mutationPreflightReason!]);
+            }
+
             var experimentId = backend.ApplyCandidate(request.DeviceInstanceId, candidate);
 
             GpuOptimizationEvidenceCollectionResult candidateEvidence;
@@ -193,6 +210,7 @@ internal sealed class GpuOptimizationOrchestrator
         return await ConfirmFinalistAsync(
             request,
             originalState,
+            targetIdentity!,
             screening,
             screening.Finalist.Candidate,
             candidateRuns.AsReadOnly(),
@@ -202,6 +220,7 @@ internal sealed class GpuOptimizationOrchestrator
     private async Task<GpuOptimizationOrchestrationResult> ConfirmFinalistAsync(
         GpuOptimizationOrchestrationRequest request,
         GpuInterruptAffinitySnapshot originalState,
+        GpuGraphicsTargetIdentitySnapshot targetIdentity,
         GpuOptimizationScreeningResult screening,
         GpuAffinityCandidate finalist,
         IReadOnlyList<GpuOptimizationCandidateRunRecord> candidateRuns,
@@ -225,6 +244,23 @@ internal sealed class GpuOptimizationOrchestrator
                 }
                 else if (role == GpuConfirmationOrder.Candidate && activeExperimentId is null)
                 {
+                    if (!TryVerifyTargetPreflight(request, targetIdentity, out var mutationPreflightReason))
+                    {
+                        var partial = GpuOptimizationConfirmation.Confirm(
+                            finalist,
+                            request.Baseline,
+                            runs,
+                            request.Policy);
+                        var reasons = new List<string> { mutationPreflightReason! };
+                        reasons.AddRange(partial.Reasons);
+                        return new GpuOptimizationOrchestrationResult(
+                            GpuOptimizationRecommendation.RestoreOriginal,
+                            screening,
+                            partial,
+                            candidateRuns,
+                            reasons.AsReadOnly());
+                    }
+
                     activeExperimentId = backend.ApplyCandidate(request.DeviceInstanceId, finalist);
                     backend.BeginMeasurement(activeExperimentId.Value);
                 }
@@ -300,6 +336,20 @@ internal sealed class GpuOptimizationOrchestrator
                         "Balanced confirmation recommended Keep, but no verified candidate experiment remains active.");
                 }
 
+                if (!TryVerifyTargetPreflight(request, targetIdentity, out var keepPreflightReason))
+                {
+                    backend.Rollback(activeExperimentId.Value);
+                    activeExperimentId = null;
+                    var reasons = new List<string> { keepPreflightReason! };
+                    reasons.AddRange(confirmation.Reasons);
+                    return new GpuOptimizationOrchestrationResult(
+                        GpuOptimizationRecommendation.RestoreOriginal,
+                        screening,
+                        confirmation,
+                        candidateRuns,
+                        reasons.AsReadOnly());
+                }
+
                 backend.KeepCandidate(activeExperimentId.Value);
                 activeExperimentId = null;
                 return new GpuOptimizationOrchestrationResult(
@@ -343,6 +393,65 @@ internal sealed class GpuOptimizationOrchestrator
             throw;
         }
     }
+
+    private bool TryVerifyTargetPreflight(
+        GpuOptimizationOrchestrationRequest request,
+        GpuGraphicsTargetIdentitySnapshot expected,
+        out string? reason)
+    {
+        var current = backend.ResolveGraphicsTarget(
+            request.DeviceInstanceId,
+            request.PresentMonApiPath,
+            request.PresentMonControlPipeName);
+        if (!current.IsUsable || current.Identity is null)
+        {
+            reason = $"GPU target preflight rejected mutation: {current.Reason ?? "target identity is unavailable."}";
+            return false;
+        }
+
+        if (!TargetIdentityMatches(expected, current.Identity))
+        {
+            reason = "GPU target preflight rejected mutation because the PnP/DXGI/PresentMon identity changed since the original-state preflight.";
+            return false;
+        }
+
+        reason = null;
+        return true;
+    }
+
+    private static bool TryAcceptInitialTargetPreflight(
+        string requestedDeviceInstanceId,
+        GpuGraphicsTargetIdentityResolution resolution,
+        out GpuGraphicsTargetIdentitySnapshot? identity,
+        out string? reason)
+    {
+        identity = resolution.Identity;
+        if (!resolution.IsUsable || identity is null)
+        {
+            reason = $"GPU target preflight rejected the experiment before any mutation: {resolution.Reason ?? "target identity is unavailable."}";
+            return false;
+        }
+
+        if (identity.HardwareAdapterCount != 1 ||
+            !string.Equals(identity.DeviceInstanceId, requestedDeviceInstanceId, StringComparison.OrdinalIgnoreCase))
+        {
+            identity = null;
+            reason = "GPU target preflight rejected the experiment before any mutation because a unique single-adapter target identity was not proven.";
+            return false;
+        }
+
+        reason = null;
+        return true;
+    }
+
+    private static bool TargetIdentityMatches(
+        GpuGraphicsTargetIdentitySnapshot expected,
+        GpuGraphicsTargetIdentitySnapshot current) =>
+        expected.HardwareAdapterCount == 1 &&
+        current.HardwareAdapterCount == 1 &&
+        string.Equals(expected.DeviceInstanceId, current.DeviceInstanceId, StringComparison.OrdinalIgnoreCase) &&
+        expected.Luid == current.Luid &&
+        expected.PresentMonDeviceId == current.PresentMonDeviceId;
 
     private static GpuOptimizationEvidenceRequest CreateEvidenceRequest(
         GpuOptimizationOrchestrationRequest request,
