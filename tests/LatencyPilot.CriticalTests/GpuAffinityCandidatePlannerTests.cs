@@ -1,7 +1,10 @@
 using System.Buffers.Binary;
+using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Benchmarking.Candidates;
+using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
+using LatencyPilot.Core.Metrics;
 using LatencyPilot.Core.Observation;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.Devices;
@@ -14,7 +17,7 @@ namespace LatencyPilot.CriticalTests;
 public sealed class GpuAffinityCandidatePlannerTests
 {
     [TestMethod]
-    public void BaselineInterruptSharesDrivePhysicalCoreCandidateRanking()
+    public async Task BaselineInterruptSharesDrivePhysicalCoreCandidateRanking()
     {
         var cpu0 = new LogicalProcessorId(0, 0);
         var cpu1 = new LogicalProcessorId(0, 1);
@@ -198,5 +201,162 @@ public sealed class GpuAffinityCandidatePlannerTests
             kernel,
             rawFrames,
             Guid.NewGuid()).IsUsable);
+
+        var quality = BaselineQualityAnalyzer.Analyze(Enumerable.Range(1, 5)
+            .Select(number => new BaselineWindowEvidence(
+                number,
+                startedAt.AddSeconds((number - 1) * 21),
+                20_000,
+                20_000,
+                true,
+                null,
+                1_000,
+                100,
+                1_000,
+                10))
+            .ToArray());
+        var baseline = new GpuOptimizationBaselineEvidence(
+            quality,
+            Guid.NewGuid(),
+            "scene-v1",
+            "environment-v1",
+            new string('a', 40));
+        var backend = new FakeGpuOptimizationExecutionBackend(
+            OrchestrationMeasurement(100, 10),
+            OrchestrationMeasurement(100, 10));
+        var orchestrator = new GpuOptimizationOrchestrator(backend);
+        var orchestration = await orchestrator.RunAsync(
+            new GpuOptimizationOrchestrationRequest(
+                "PCI\\VEN_10DE&DEV_TEST",
+                77,
+                baseline,
+                candidates,
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(30),
+                new ComparisonPolicy(
+                    MinimumSamples: 20,
+                    MinimumRelativeChange: 0.03,
+                    GuardrailRegressionLimit: 0.05,
+                    EvaluationPercentile: 0.99)));
+
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, orchestration.Recommendation);
+        Assert.IsNotNull(orchestration.Screening);
+        Assert.IsNull(orchestration.Confirmation);
+        Assert.AreEqual(2, backend.ApplyCount);
+        Assert.AreEqual(2, backend.RollbackCount);
+        Assert.AreEqual(0, backend.KeepCount);
+        Assert.AreEqual(0, backend.ActiveExperimentCount);
+    }
+
+    private static GpuOptimizationMeasurementSet OrchestrationMeasurement(double primary, double frameTime) =>
+        new(
+            new MetricSeries(
+                "DPC duration (us)",
+                MetricDirection.LowerIsBetter,
+                Enumerable.Repeat(primary, 1_000)),
+            new Dictionary<string, MetricSeries>(StringComparer.Ordinal)
+            {
+                ["Frame time"] = new(
+                    "Frame time",
+                    MetricDirection.LowerIsBetter,
+                    Enumerable.Repeat(frameTime, 1_000)),
+            });
+
+    private sealed class FakeGpuOptimizationExecutionBackend : IGpuOptimizationExecutionBackend
+    {
+        private readonly GpuOptimizationMeasurementSet original;
+        private readonly GpuOptimizationMeasurementSet candidate;
+        private readonly HashSet<Guid> activeExperiments = [];
+
+        internal FakeGpuOptimizationExecutionBackend(
+            GpuOptimizationMeasurementSet original,
+            GpuOptimizationMeasurementSet candidate)
+        {
+            this.original = original;
+            this.candidate = candidate;
+        }
+
+        internal int ApplyCount { get; private set; }
+
+        internal int RollbackCount { get; private set; }
+
+        internal int KeepCount { get; private set; }
+
+        internal int ActiveExperimentCount => activeExperiments.Count;
+
+        public GpuInterruptAffinitySnapshot CaptureOriginal(string deviceInstanceId) =>
+            new(
+                deviceInstanceId,
+                "Test GPU",
+                "1.0.0",
+                false,
+                RegistryValueSnapshot.Missing,
+                RegistryValueSnapshot.Missing);
+
+        public Guid ApplyCandidate(string deviceInstanceId, GpuAffinityCandidate candidate)
+        {
+            _ = deviceInstanceId;
+            ArgumentNullException.ThrowIfNull(candidate);
+            var id = Guid.NewGuid();
+            activeExperiments.Add(id);
+            ApplyCount++;
+            return id;
+        }
+
+        public void BeginMeasurement(Guid experimentId)
+        {
+            Assert.IsTrue(activeExperiments.Contains(experimentId));
+        }
+
+        public Task<GpuOptimizationEvidenceCollectionResult> CaptureAsync(
+            GpuOptimizationEvidenceRequest request,
+            GpuInterruptAffinitySnapshot originalState,
+            string? presentMonApiPath,
+            string? presentMonControlPipeName,
+            CancellationToken cancellationToken)
+        {
+            _ = originalState;
+            _ = presentMonApiPath;
+            _ = presentMonControlPipeName;
+            cancellationToken.ThrowIfCancellationRequested();
+            var measurement = request.Role == GpuConfirmationOrder.Original ? original : candidate;
+            var run = new GpuOptimizationConfirmationRun(
+                request.RunNumber,
+                request.Role,
+                request.SessionId,
+                Guid.NewGuid(),
+                request.WorkloadIdentity,
+                request.EnvironmentIdentity,
+                request.SourceRevisionId,
+                request.Role == GpuConfirmationOrder.Candidate ? request.Finalist.Processor : null,
+                true,
+                true,
+                checked((int)request.RequestedDuration.TotalMilliseconds),
+                request.RequestedDuration.TotalMilliseconds,
+                measurement);
+            return Task.FromResult(new GpuOptimizationEvidenceCollectionResult(
+                true,
+                run,
+                null,
+                DateTimeOffset.UnixEpoch,
+                DateTimeOffset.UnixEpoch + request.RequestedDuration));
+        }
+
+        public void AwaitDecision(Guid experimentId)
+        {
+            Assert.IsTrue(activeExperiments.Contains(experimentId));
+        }
+
+        public void KeepCandidate(Guid experimentId)
+        {
+            Assert.IsTrue(activeExperiments.Remove(experimentId));
+            KeepCount++;
+        }
+
+        public void Rollback(Guid experimentId)
+        {
+            Assert.IsTrue(activeExperiments.Remove(experimentId));
+            RollbackCount++;
+        }
     }
 }
