@@ -132,7 +132,7 @@ public static class NetworkEnvironmentContinuity
             PlatformNotSupportedException or
             InvalidOperationException or
             UnauthorizedAccessException or
-            System.ComponentModel.Win32Exception)
+            global::System.ComponentModel.Win32Exception)
         {
             return Unavailable(
                 $"Network continuity evidence could not be captured: {exception.GetType().Name}: {exception.Message}");
