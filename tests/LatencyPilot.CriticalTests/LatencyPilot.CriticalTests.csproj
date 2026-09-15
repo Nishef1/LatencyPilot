@@ -17,5 +17,7 @@
                       ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../tools/LatencyPilot.ReadOnlyClosure/LatencyPilot.ReadOnlyClosure.csproj"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../tools/LatencyPilot.GateAValidation/LatencyPilot.GateAValidation.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>
