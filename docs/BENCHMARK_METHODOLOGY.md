@@ -1,6 +1,6 @@
 # Benchmark Methodology
 
-Status: **V0.7 benchmark contract**  
+Status: **V0.8 benchmark contract**  
 Last updated: 2026-09-15
 
 LatencyPilot exists to distinguish measurable improvement from placebo, ordinary run-to-run variation, workload drift, isolated workload spikes, or a trade-off hidden by one headline number. It is an experimental optimization platform, not a collection of assumed Windows tweaks.
@@ -78,7 +78,7 @@ workload-stability-v1 = stable
 
 The App uses this same readiness boundary before preparing GPU candidates. A clean latency distribution from a materially changing workload is not candidate evidence.
 
-`workload-stability-v1` is an optimizer-readiness method, not a new definition silently embedded in evidence-v8. A future serialized workload-stability field requires a new evidence schema version.
+`latencypilot-evidence-v9` serializes `workloadStability` and baseline-scoped `optimizerEligibility` explicitly. This keeps the two meanings auditable: `quality.isValidForComparison` reports latency-repeatability validity, while optimizer eligibility additionally requires a steady `RealWorld` workload under `workload-stability-v1`. A transient tail warning remains diagnostic context and does not silently rewrite either verdict.
 
 ### 1.4 Controlled A/B experiment
 
@@ -357,7 +357,7 @@ Avoid unnecessary per-event heap allocation, high-volume logging, synchronous fi
 ## 19. Permanent-test policy
 
 - Default/target permanent suite: **10** tests.
-- Current durable suite: **17** tests.
+- Current durable suite: **18** tests.
 - Every test source file: **<=1200 lines**.
 - Owner-authorized maximum: **20**, only for the file-size limit or materially safer durable subsystem separation.
 - Current separate USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness and GPU runtime-placement contracts intentionally use that authorization.
