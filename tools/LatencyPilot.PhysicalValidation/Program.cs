@@ -130,12 +130,17 @@ internal static class PhysicalValidationProgram
 
     private static int PlanGpuAffinity(string[] args)
     {
-        var options = ParseOptions(args, "--evidence");
+        var options = ParseOptions(args, "--evidence", "--expected-commit");
         EnsureWindows();
 
-        var plan = BaselineEvidenceCandidatePlan.Create(options.GetRequiredValue("--evidence"));
+        var expectedCommit = options.GetRequiredValue("--expected-commit");
+        var plan = BaselineEvidenceCandidatePlan.Create(
+            options.GetRequiredValue("--evidence"),
+            expectedCommit);
         Console.WriteLine("GPU affinity candidate plan: READ-ONLY");
-        Console.WriteLine($"evidence-revision={plan.SourceRevisionId ?? "unavailable"}");
+        Console.WriteLine($"expected-commit={expectedCommit}");
+        Console.WriteLine($"evidence-revision={plan.SourceRevisionId}");
+        Console.WriteLine("source-revision-match=exact");
         Console.WriteLine($"validated-windows={plan.WindowCount.ToString(CultureInfo.InvariantCulture)}");
         Console.WriteLine($"workload-stability-method={plan.WorkloadStability.MethodVersion}");
         Console.WriteLine($"workload-stability-status={plan.WorkloadStability.Status}");
@@ -569,7 +574,7 @@ internal static class PhysicalValidationProgram
         Console.WriteLine("Read-only:");
         Console.WriteLine("  inspect");
         Console.WriteLine("  list-gpus");
-        Console.WriteLine("  plan-gpu-affinity --evidence <valid-realworld-baseline.json>");
+        Console.WriteLine("  plan-gpu-affinity --evidence <valid-realworld-baseline.json> --expected-commit <full-40-hex-sha>");
         Console.WriteLine();
         Console.WriteLine("Elevated read-only kernel capture:");
         Console.WriteLine("  verify-gpu-placement --experiment <guid>");
