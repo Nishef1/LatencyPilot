@@ -6,6 +6,9 @@ using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.Metrics;
 using LatencyPilot.Core.Results;
 using LatencyPilot.Core.System;
+using LatencyPilot.Persistence;
+using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Service;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -84,14 +87,38 @@ public sealed class OptimizerSafetyTests
             .Select(number => new BaselineWindowEvidence(number, DateTimeOffset.UnixEpoch,
                 20_000, 20_000, true, null, 1_000, 100, 1_000, 10)).ToArray());
         var runs = ConfirmationRuns(clean.Candidate);
-        var baseline = new GpuOptimizationBaselineEvidence(baselineQuality, runs[0].SessionId,
-            runs[0].WorkloadIdentity, runs[0].EnvironmentIdentity, runs[0].SourceRevisionId);
+        var baseline = new GpuOptimizationBaselineEvidence(
+            baselineQuality,
+            runs[0].SessionId,
+            runs[0].WorkloadIdentity,
+            runs[0].EnvironmentIdentity,
+            runs[0].SourceRevisionId,
+            StableWorkload());
         var confirmation = GpuOptimizationConfirmation.Confirm(clean.Candidate, baseline, runs, Policy);
         Assert.AreEqual(ExperimentVerdict.Improved, confirmation.Verdict);
         Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, confirmation.Recommendation);
         Assert.AreEqual(-15d, confirmation.Metrics[0].RawDelta);
         Assert.AreEqual(4_000L, confirmation.Metrics[0].OriginalSampleCount);
         Assert.AreEqual(4_000L, confirmation.Metrics[0].CandidateSampleCount);
+
+        var changingBaseline = baseline with { WorkloadStability = ChangingWorkload() };
+        var changingConfirmation = GpuOptimizationConfirmation.Confirm(clean.Candidate, changingBaseline, runs, Policy);
+        Assert.AreEqual(ExperimentVerdict.Inconclusive, changingConfirmation.Verdict);
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, changingConfirmation.Recommendation);
+        Assert.IsTrue(changingConfirmation.Reasons.Any(static reason =>
+            reason.Contains("workload", StringComparison.OrdinalIgnoreCase)));
+
+        var blockedOrchestrator = new GpuOptimizationOrchestrator(new FailIfCalledBackend());
+        var blockedRequest = new GpuOptimizationOrchestrationRequest(
+            "PCI\\VEN_TEST&DEV_TEST",
+            42,
+            changingBaseline,
+            [clean.Candidate],
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromSeconds(30),
+            Policy);
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            blockedOrchestrator.RunAsync(blockedRequest).GetAwaiter().GetResult());
 
         var regressedGuardrail = runs.Select(run => run.Role == GpuConfirmationOrder.Candidate
             ? run with { Measurement = ConfirmationMeasurement(85, 12) } : run).ToArray();
@@ -232,6 +259,26 @@ public sealed class OptimizerSafetyTests
         Assert.AreEqual(2, partialSeries[PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric].Samples.Count);
     }
 
+    private static WorkloadStabilityResult StableWorkload() =>
+        WorkloadStabilityAnalyzer.Analyze(
+        [
+            new WorkloadWindowEvidence(1, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(2, 20_000, 30_500, 12_100, 10.2),
+            new WorkloadWindowEvidence(3, 20_000, 30_200, 12_050, 10.1),
+            new WorkloadWindowEvidence(4, 20_000, 29_900, 11_950, 9.9),
+            new WorkloadWindowEvidence(5, 20_000, 30_100, 12_000, 10.0),
+        ]);
+
+    private static WorkloadStabilityResult ChangingWorkload() =>
+        WorkloadStabilityAnalyzer.Analyze(
+        [
+            new WorkloadWindowEvidence(1, 20_302.5, 39_533, 17_003, 12.519),
+            new WorkloadWindowEvidence(2, 20_302.5, 28_979, 11_158, 13.383),
+            new WorkloadWindowEvidence(3, 20_302.5, 27_815, 11_315, 9.493),
+            new WorkloadWindowEvidence(4, 20_302.5, 27_537, 11_645, 7.537),
+            new WorkloadWindowEvidence(5, 20_302.5, 26_604, 11_207, 6.423),
+        ]);
+
     private static GpuOptimizationMeasurementSet Measurement(double primary, double frameTime) =>
         new(
             Series("DPC p99", primary),
@@ -297,4 +344,33 @@ public sealed class OptimizerSafetyTests
 
     private static MetricSeries Series(string name, double value, int count = 20) =>
         new(name, MetricDirection.LowerIsBetter, Enumerable.Repeat(value, count));
+
+    private sealed class FailIfCalledBackend : IGpuOptimizationExecutionBackend
+    {
+        public GpuInterruptAffinitySnapshot CaptureOriginal(string deviceInstanceId) =>
+            throw new InvalidOperationException("Optimizer backend must not be reached for an ineligible workload baseline.");
+
+        public Guid ApplyCandidate(string deviceInstanceId, GpuAffinityCandidate candidate) =>
+            throw new InvalidOperationException("Optimizer backend must not be reached for an ineligible workload baseline.");
+
+        public void BeginMeasurement(Guid experimentId) =>
+            throw new InvalidOperationException("Optimizer backend must not be reached for an ineligible workload baseline.");
+
+        public Task<GpuOptimizationEvidenceCollectionResult> CaptureAsync(
+            GpuOptimizationEvidenceRequest request,
+            GpuInterruptAffinitySnapshot originalState,
+            string? presentMonApiPath,
+            string? presentMonControlPipeName,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Optimizer backend must not be reached for an ineligible workload baseline.");
+
+        public void AwaitDecision(Guid experimentId) =>
+            throw new InvalidOperationException("Optimizer backend must not be reached for an ineligible workload baseline.");
+
+        public void KeepCandidate(Guid experimentId) =>
+            throw new InvalidOperationException("Optimizer backend must not be reached for an ineligible workload baseline.");
+
+        public void Rollback(Guid experimentId) =>
+            throw new InvalidOperationException("Optimizer backend must not be reached for an ineligible workload baseline.");
+    }
 }
