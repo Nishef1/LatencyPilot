@@ -215,14 +215,15 @@ internal static class ReadOnlyClosureAudit
 
         RunCheck(checks, "network-rss", () =>
         {
-            var rss = NetworkRssReader.Capture();
-            if (!rss.IsAvailable)
+            var coverage = NetworkRssInspectionCoverage.Evaluate(NetworkRssReader.Capture());
+            if (!coverage.IsUsable)
             {
-                throw new InvalidOperationException($"RSS provider read is {rss.Status}: {rss.Error}");
+                throw new InvalidOperationException(
+                    $"RSS inspection is not closure-ready: {coverage.Reason} " +
+                    $"rows={coverage.ProviderRowCount}, PnP-correlated={coverage.PnpCorrelatedRowCount}.");
             }
 
-            var correlated = rss.Adapters.Count(static adapter => adapter.PnpCorrelation.IsAvailable);
-            return $"provider=Available, rows={rss.Adapters.Count}, PnP-correlated={correlated}";
+            return $"provider=Available, rows={coverage.ProviderRowCount}, PnP-correlated={coverage.PnpCorrelatedRowCount}";
         });
 
         RunCheck(checks, "realworld-baseline", () => VerifyBaseline(
