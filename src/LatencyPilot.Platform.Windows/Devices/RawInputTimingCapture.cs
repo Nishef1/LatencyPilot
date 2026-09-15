@@ -30,6 +30,8 @@ public sealed record RawInputTimingCaptureResult(
 public static class RawInputTimingCapture
 {
     private const int MaximumRawInputDevices = 512;
+    private const int MaximumRawInputRegistrations = 512;
+    private const int MaximumEnumerationAttempts = 4;
     private const int MaximumReports = 100_001;
     private const int MinimumDurationMilliseconds = 100;
     private const int MaximumDurationMilliseconds = 60_000;
@@ -362,43 +364,58 @@ public static class RawInputTimingCapture
     private static unsafe nint FindRawInputDeviceHandle(string deviceInterfacePath)
     {
         var entrySize = checked((uint)Marshal.SizeOf<RawInputDeviceListEntry>());
-        uint count = 0;
-        if (User32RawInput.GetRawInputDeviceList(null, ref count, entrySize) == User32RawInput.ErrorResult)
-        {
-            throw new Win32Exception(Marshal.GetLastPInvokeError(), "Unable to determine the Raw Input device count.");
-        }
 
-        if (count == 0)
+        for (var attempt = 0; attempt < MaximumEnumerationAttempts; attempt++)
         {
+            uint count = 0;
+            if (User32RawInput.GetRawInputDeviceList(null, ref count, entrySize) == User32RawInput.ErrorResult)
+            {
+                throw new Win32Exception(Marshal.GetLastPInvokeError(), "Unable to determine the Raw Input device count.");
+            }
+
+            if (count == 0)
+            {
+                return 0;
+            }
+
+            if (count > MaximumRawInputDevices)
+            {
+                throw new InvalidDataException($"Raw Input reported {count} devices, above the safety limit of {MaximumRawInputDevices}.");
+            }
+
+            var entries = new RawInputDeviceListEntry[checked((int)count)];
+            fixed (RawInputDeviceListEntry* entriesPointer = entries)
+            {
+                var capacity = count;
+                var returned = User32RawInput.GetRawInputDeviceList(entriesPointer, ref capacity, entrySize);
+                if (returned == User32RawInput.ErrorResult)
+                {
+                    var error = unchecked((uint)Marshal.GetLastPInvokeError());
+                    if (error == ErrorInsufficientBuffer)
+                    {
+                        continue;
+                    }
+
+                    throw new Win32Exception(
+                        unchecked((int)error),
+                        "Unable to enumerate Raw Input devices for timing capture.");
+                }
+
+                foreach (var entry in entries.Take(checked((int)Math.Min(returned, count))))
+                {
+                    var path = ReadRawInputDeviceInterfacePath(entry.DeviceHandle);
+                    if (string.Equals(path, deviceInterfacePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return entry.DeviceHandle;
+                    }
+                }
+            }
+
             return 0;
         }
 
-        if (count > MaximumRawInputDevices)
-        {
-            throw new InvalidDataException($"Raw Input reported {count} devices, above the safety limit of {MaximumRawInputDevices}.");
-        }
-
-        var entries = new RawInputDeviceListEntry[checked((int)count)];
-        fixed (RawInputDeviceListEntry* entriesPointer = entries)
-        {
-            var capacity = count;
-            var returned = User32RawInput.GetRawInputDeviceList(entriesPointer, ref capacity, entrySize);
-            if (returned == User32RawInput.ErrorResult)
-            {
-                throw new Win32Exception(Marshal.GetLastPInvokeError(), "Unable to enumerate Raw Input devices for timing capture.");
-            }
-
-            foreach (var entry in entries.Take(checked((int)returned)))
-            {
-                var path = ReadRawInputDeviceInterfacePath(entry.DeviceHandle);
-                if (string.Equals(path, deviceInterfacePath, StringComparison.OrdinalIgnoreCase))
-                {
-                    return entry.DeviceHandle;
-                }
-            }
-        }
-
-        return 0;
+        throw new InvalidOperationException(
+            "The Raw Input device list kept changing while timing capture was starting.");
     }
 
     private static unsafe string? ReadRawInputDeviceInterfacePath(nint deviceHandle)
@@ -438,39 +455,62 @@ public static class RawInputTimingCapture
     private static unsafe bool IsTopLevelCollectionRegistered(ushort usagePage, ushort usage)
     {
         var registrationSize = checked((uint)Marshal.SizeOf<RawInputDeviceRegistration>());
-        uint count = 0;
-        var result = User32RawInput.GetRegisteredRawInputDevices(null, ref count, registrationSize);
-        if (result == User32RawInput.ErrorResult)
-        {
-            var error = unchecked((uint)Marshal.GetLastPInvokeError());
-            if (error != ErrorInsufficientBuffer)
-            {
-                throw new Win32Exception(unchecked((int)error), "Unable to inspect existing Raw Input registrations.");
-            }
-        }
 
-        if (count == 0)
+        for (var attempt = 0; attempt < MaximumEnumerationAttempts; attempt++)
         {
-            return false;
-        }
-
-        var registrations = new RawInputDeviceRegistration[checked((int)count)];
-        fixed (RawInputDeviceRegistration* registrationsPointer = registrations)
-        {
-            var capacity = count;
-            result = User32RawInput.GetRegisteredRawInputDevices(
-                registrationsPointer,
-                ref capacity,
-                registrationSize);
+            uint count = 0;
+            var result = User32RawInput.GetRegisteredRawInputDevices(null, ref count, registrationSize);
             if (result == User32RawInput.ErrorResult)
             {
-                throw new Win32Exception(Marshal.GetLastPInvokeError(), "Unable to enumerate existing Raw Input registrations.");
+                var error = unchecked((uint)Marshal.GetLastPInvokeError());
+                if (error != ErrorInsufficientBuffer)
+                {
+                    throw new Win32Exception(
+                        unchecked((int)error),
+                        "Unable to inspect existing Raw Input registrations.");
+                }
             }
 
-            return registrations
-                .Take(checked((int)Math.Min(result, capacity)))
-                .Any(item => item.UsagePage == usagePage && item.Usage == usage);
+            if (count == 0)
+            {
+                return false;
+            }
+
+            if (count > MaximumRawInputRegistrations)
+            {
+                throw new InvalidDataException(
+                    $"Raw Input reported {count} registrations, above the safety limit of {MaximumRawInputRegistrations}.");
+            }
+
+            var registrations = new RawInputDeviceRegistration[checked((int)count)];
+            fixed (RawInputDeviceRegistration* registrationsPointer = registrations)
+            {
+                var capacity = count;
+                result = User32RawInput.GetRegisteredRawInputDevices(
+                    registrationsPointer,
+                    ref capacity,
+                    registrationSize);
+                if (result == User32RawInput.ErrorResult)
+                {
+                    var error = unchecked((uint)Marshal.GetLastPInvokeError());
+                    if (error == ErrorInsufficientBuffer)
+                    {
+                        continue;
+                    }
+
+                    throw new Win32Exception(
+                        unchecked((int)error),
+                        "Unable to enumerate existing Raw Input registrations.");
+                }
+
+                return registrations
+                    .Take(checked((int)Math.Min(result, count)))
+                    .Any(item => item.UsagePage == usagePage && item.Usage == usage);
+            }
         }
+
+        throw new InvalidOperationException(
+            "The Raw Input registration list kept changing while timing capture was starting.");
     }
 
     private static unsafe void RegisterTopLevelCollection(
