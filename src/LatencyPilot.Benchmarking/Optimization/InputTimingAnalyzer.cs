@@ -72,9 +72,10 @@ public static class InputTimingAnalyzer
                 $"At least {MinimumIntervals} report intervals are required; observed {intervals.Length}.");
         }
 
-        var median = Percentiles.Calculate(intervals, 0.50);
-        var p95 = Percentiles.Calculate(intervals, 0.95);
-        var p99 = Percentiles.Calculate(intervals, 0.99);
+        var sortedIntervals = intervals.Order().ToArray();
+        var median = Percentiles.CalculateSorted(sortedIntervals, 0.50);
+        var p95 = Percentiles.CalculateSorted(sortedIntervals, 0.95);
+        var p99 = Percentiles.CalculateSorted(sortedIntervals, 0.99);
         var longGapThreshold = median * LongGapMultiplier;
         var burstThreshold = median * BurstMultiplier;
         var longGapCount = intervals.Count(interval => interval > longGapThreshold);
