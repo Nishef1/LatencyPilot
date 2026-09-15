@@ -1,87 +1,114 @@
 # LatencyPilot Release Procedure
 
 Status: **Owner-run release contract**  
-Last updated: 2026-09-13
+Last updated: 2026-09-15
 
-LatencyPilot keeps GitHub Actions **test-only**. The hosted workflow runs the permanent critical suite, but it does not build/publish the Windows App or Service, build production distributions, run GUI smoke, upload release artifacts or publish releases.
+LatencyPilot keeps GitHub Actions **test-only**. Hosted CI runs the permanent critical suite; it does not publish the Windows App/Service, create production distributions, run GUI smoke, sign binaries, upload release assets or prove physical hardware behavior.
 
-Release compilation, packaging and publication are explicit owner actions from a clean, up-to-date `main` checkout using:
+Release compilation, packaging and publication are explicit owner actions from a clean, up-to-date `main` checkout:
 
 ```powershell
 .\scripts\Publish-Release.ps1
 ```
 
-The script builds the Windows hosts/distributions locally, launch-smoke-tests the published WinUI App, and publishes the GitHub prerelease through the authenticated GitHub CLI account.
+## Evidence model
 
-## Why this model
+A release has three separate evidence layers:
 
-The repository separates three kinds of evidence:
+1. **Hosted Tests** — deterministic repository/source contracts on the exact commit.
+2. **Owner-local Windows release build** — restore/build/publish, WinUI resource presence, launch smoke, packaging, optional signing and package hashing.
+3. **Physical supported-machine validation** — Service/ETW/device behavior, mutation/recovery gates, UI/accessibility, upgrade/uninstall and representative hardware evidence.
 
-- GitHub Actions supplies reproducible automated correctness evidence for the permanent critical suite only.
-- The repository owner supplies real Windows compile/publish/package/startup evidence from the exact validated `main` revision.
-- Physical Windows 11 validation supplies Service/ETW/hardware evidence that hosted CI cannot prove.
-
-This avoids an implicit cloud build/publish/release pipeline while preserving the requirement that a release commit itself has green deterministic Tests evidence and that the actual WinUI/Service payload is built and exercised on the owner Windows machine before publication.
+None of these substitutes for the others.
 
 ## Prerequisites
 
 The release machine must have:
 
 - Windows 11 x64;
-- the .NET SDK version pinned by `global.json`;
+- the .NET SDK pinned by `global.json`;
 - Git;
-- GitHub CLI (`gh`) authenticated to the repository owner account;
-- Inno Setup 6 (`ISCC.exe`).
+- authenticated GitHub CLI (`gh`);
+- Inno Setup 6 (`ISCC.exe`);
+- for signed/final releases, a current Windows SDK containing `SignTool.exe` and an accessible Authenticode code-signing certificate.
 
-Before publishing, update `Directory.Build.props` and `RELEASE_VERSION` together when changing the product version. `RELEASE_REVISION` is optional build-attempt metadata for a semantic product version; it does not change the Git tag name.
+`Directory.Build.props` and `RELEASE_VERSION` must change together when the semantic product version changes. `RELEASE_REVISION` is optional build-attempt metadata and does not change the tag.
 
-Published semantic versions are immutable. A version remains reserved after public publication even if its release/tag is later removed from GitHub. Do not reuse that version for different binaries.
+Published versions are immutable. Never reuse a published semantic version for different binaries.
 
-Historical note: `v0.0.1` was previously published and is therefore reserved, even though it is no longer present on the current Releases page. Current `main` advances to `0.0.2`.
+## Exact publisher gates
 
-## Safety checks performed by the publisher
+`Publish-Release.ps1` refuses publication unless:
 
-`Publish-Release.ps1` refuses to publish unless:
+1. branch is exactly `main`;
+2. working tree is clean;
+3. local `HEAD` exactly equals fetched `origin/main`;
+4. version is exact `MAJOR.MINOR.PATCH` and matches the project `Version`;
+5. GitHub CLI authentication is valid;
+6. the exact commit has a successful **Tests** workflow;
+7. release/tag identity is unused;
+8. owner-local Release restore/build/publish succeeds;
+9. self-contained WinUI output contains non-empty `LatencyPilot.pri`;
+10. the published App opens the expected `LatencyPilot` main window and survives the startup-smoke interval without a startup-failure report;
+11. packaging completes from the explicit payload;
+12. final releases are Authenticode-signed and verified.
 
-1. the current branch is exactly `main`;
-2. the working tree is clean;
-3. local `HEAD` exactly matches `origin/main` after fetch;
-4. the requested version has exactly `MAJOR.MINOR.PATCH` form;
-5. the requested version matches the project `Version` property;
-6. GitHub CLI authentication is available;
-7. a successful **test-only** `Tests` workflow run exists for the exact release commit;
-8. neither the release nor remote tag already exists;
-9. the owner-local Release build/publish steps succeed;
-10. the self-contained WinUI publish contains a non-empty `LatencyPilot.pri`;
-11. the published `LatencyPilot.exe` opens the expected `LatencyPilot` main window and remains alive for the local startup-smoke interval without writing a startup-failure report.
+The App launch smoke is intentionally narrow. It does not prove privileged Service, ETW, physical mutation, performance improvement or accessibility correctness.
 
-The matching hosted `Tests` workflow is deterministic test evidence only. It is not App/Service compile, publish, package, GUI, Service, ETW or physical-hardware evidence.
+## Signing contract
 
-These checks are release gates, not convenience warnings.
+Prereleases may remain unsigned when signing credentials are intentionally unavailable. A final release may not.
 
-The script deliberately has no replacement/delete mode. If a version has already been published, advance the semantic version instead of replacing the public artifact identity.
+Signing configuration uses:
 
-The App launch smoke is deliberately narrow. It catches publish/XAML/resource/startup breakage before packaging, but it does **not** prove that the privileged Service, ETW capture, baseline quality or physical hardware evidence is correct. Those remain Stage B/C owner-local validation work.
-
-## Build and package outputs
-
-The script performs the release-oriented build locally:
-
-```text
-dotnet restore win-x64 graph
-→ Release solution build
-→ self-contained WinUI App publish
-→ verify LatencyPilot.pri
-→ launch-smoke the published App
-→ self-contained Service publish
-→ prepare version/build/validation/diagnostics metadata
-→ build Inno Setup EXE
-→ build portable ZIP
-→ calculate SHA-256 companions
-→ publish GitHub prerelease
+```powershell
+$env:LATENCYPILOT_SIGNING_CERT_SHA1 = '<40-hex certificate thumbprint>'
+$env:LATENCYPILOT_TIMESTAMP_URL = 'https://<rfc3161-service>'
 ```
 
-The output assets are:
+Then publish a signing-required prerelease with:
+
+```powershell
+.\scripts\Publish-Release.ps1 -RequireSigning
+```
+
+or a final release with:
+
+```powershell
+.\scripts\Publish-Release.ps1 -FinalRelease
+```
+
+`-FinalRelease` implicitly requires signing. The publisher signs LatencyPilot-owned App/Service PE files and the final setup EXE, then verifies their Authenticode signatures with SignTool. The signing invocation uses SHA-256 file digests and RFC 3161 timestamps with SHA-256 timestamp digests:
+
+```text
+/fd SHA256 /tr <timestamp-url> /td SHA256
+```
+
+Do not claim a release is signed from source existence alone. The owner-local release record must contain successful signing/verification evidence from the exact package build.
+
+## Build and package flow
+
+The owner-local publisher performs:
+
+```text
+exact-main + clean-tree + exact-green-Tests gate
+→ win-x64 restore/build
+→ self-contained WinUI App publish
+→ optional Authenticode sign/verify of LatencyPilot-owned App files
+→ WinUI .pri verification + App launch smoke
+→ self-contained Service publish
+→ optional Authenticode sign/verify of LatencyPilot-owned Service files
+→ explicit release/support payload assembly
+→ BUILD_INFO.txt
+→ deterministic PAYLOAD_SHA256.txt over the canonical payload tree
+→ Inno Setup build
+→ optional Authenticode sign/verify of setup EXE
+→ setup SHA-256 companion
+→ portable ZIP + SHA-256 companion
+→ GitHub prerelease or final release publication
+```
+
+Release assets are:
 
 ```text
 LatencyPilot-<version>-win-x64-setup.exe
@@ -90,52 +117,89 @@ LatencyPilot-<version>-win-x64-portable.zip
 LatencyPilot-<version>-win-x64-portable.zip.sha256
 ```
 
-`BUILD_INFO.txt` records the exact commit, `RELEASE_REVISION`, matching GitHub Actions Tests run, `build_mode=owner-local`, and `app_launch_smoke=passed` for the packaged payload.
+`PAYLOAD_SHA256.txt` is the canonical pre-packaging payload manifest. The setup and portable archive each additionally have their own package-level SHA-256 companion, which is the integrity identity for the distributed artifact itself.
 
-## Publishing a new version
+`BUILD_INFO.txt` records:
 
-From a clean checkout at the latest `main`:
+- product version and optional release revision;
+- exact Git commit;
+- exact successful Tests workflow run;
+- release channel;
+- signing mode;
+- payload manifest identity;
+- owner-local build mode;
+- self-contained deployment mode;
+- App launch-smoke result.
+
+## Recovery-aware upgrade and uninstall
+
+Recovery tooling must never be overwritten or removed while LatencyPilot still owns a retained/unresolved machine change.
+
+Installer upgrades therefore run the installed Service's read-only `--check-uninstall` journal safety check **before** payload replacement. When the Service is running, setup stops it and performs the same check again after shutdown so a last-moment journal transition cannot be missed.
+
+Portable/manual Service replacement has the same double-check in `Install-Service.ps1` before the protected `%ProgramFiles%\LatencyPilot\Service` payload is replaced.
+
+Uninstall remains fail-closed: `Uninstall-Service.ps1` requires `LATENCYPILOT_UNINSTALL_SAFE_V1`, stops the Service, checks again, and only then removes the Service registration and protected recovery payload.
+
+A blocked upgrade/uninstall is a safety outcome, not a packaging failure to bypass. Restore Baseline/recover the journal first.
+
+## Diagnostics support bundle
+
+Packaged distributions include `Export-Diagnostics.ps1`. It creates a local ZIP only; it performs no upload. The exporter reads a bounded number of recent structured App/Service log records and writes only an explicit safe-field allowlist. Rendered messages, exception text, device inventory and evidence artifacts are excluded by default.
+
+Example:
+
+```powershell
+.\Export-Diagnostics.ps1
+```
+
+The output is support evidence, not benchmark evidence and not a substitute for the evidence JSON/verifier path.
+
+## Publishing examples
+
+Prerelease, default repository version:
 
 ```powershell
 gh auth status
 .\scripts\Publish-Release.ps1
 ```
 
-The script uses `RELEASE_VERSION` by default. A version can be supplied explicitly only when it still matches the repository project version:
+Explicit matching version:
 
 ```powershell
 .\scripts\Publish-Release.ps1 -Version 0.0.2
 ```
 
-The publisher uses:
+Signed release candidate:
 
-```text
-gh release create <tag> ... --target <exact-commit>
+```powershell
+.\scripts\Publish-Release.ps1 -Version 0.0.2 -RequireSigning
 ```
 
-GitHub CLI creates the missing tag at the specified target commit when the tag does not already exist. The script intentionally does not use `--verify-tag`, because that option requires the remote tag to exist before release creation. This avoids the earlier GitHub Actions token failure mode where a separate tag push was rejected for workflow-changing commits.
+Final release after every physical 1.0 gate is actually closed:
 
-The prerelease is explicitly published with `--latest=false`; pre-alpha validation artifacts must not become the repository's latest stable release signal.
+```powershell
+.\scripts\Publish-Release.ps1 -Version 1.0.0 -FinalRelease
+```
 
-## Relation to Stage B physical validation
+Do **not** use the final-release switch merely because source work is complete. Physical validation, signing credentials and release evidence must all exist for the exact final package.
 
-A Stage B validation record must refer to the exact source/package it tested. Record at minimum:
+## Stage B / physical release record
 
-- product version;
-- release revision when present;
-- Git commit from build/package metadata;
-- matching green **test-only** Tests workflow run;
+Record at minimum:
+
+- product version and release revision;
+- exact Git commit;
+- exact green Tests workflow run;
 - owner-local App/Service build result;
-- App launch-smoke result when validating a published payload;
-- setup/portable SHA-256 when applicable;
-- physical-machine evidence required by `PHYSICAL_VALIDATION.md`.
+- App launch-smoke result;
+- signing and signature-verification result when required;
+- setup and portable SHA-256 values;
+- upgrade/uninstall safety result;
+- required physical-machine evidence from `PHYSICAL_VALIDATION.md` and `PHASE3_PHYSICAL_VALIDATION.md`.
 
-A green hosted Tests run plus a successful local build/startup smoke still does not prove ETW correctness on the target PC or hardware-level validity. Conversely, a locally built release without green hosted deterministic tests for the exact commit is not an approved LatencyPilot release candidate.
+A green hosted test run is never package/signing/hardware proof. An owner-local build without exact-commit green hosted tests is also not an approved release candidate.
 
 ## Failure discipline
 
-If publication fails after local artifacts are built, preserve the local artifacts/checksums and inspect the exact failing command. Do not weaken tests, version checks, branch checks, startup checks or release identity checks merely to make publication pass.
-
-If publication fails after a missing tag was created as part of `gh release create`, inspect the resulting repository state before retrying. Do not delete or replace an already-public artifact merely to make the next attempt convenient. Advance the version when public identity has already escaped.
-
-Do not attach unrelated binaries to a historical tag merely to make the Releases page look populated.
+Do not weaken branch, identity, tests, recovery, signing, startup or version gates to make publication succeed. If publication fails after artifacts are built, preserve the exact artifacts/checksums and diagnose the failing command. If a public release/tag identity has escaped, advance the semantic version rather than replacing historical binaries.
