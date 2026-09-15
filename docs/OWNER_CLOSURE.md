@@ -34,7 +34,7 @@ The command is deliberately read-only except for writing the requested audit JSO
 - GitHub `main` matches that SHA;
 - an exact-SHA successful `Tests` workflow exists;
 - `ServiceBoundary.MutationAvailable=false`;
-- the installed observation Service is running from the protected LatencyPilot Service path;
+- the installed observation Service is running from the exact protected LatencyPilot Service path **and its physical binary ProductVersion embeds the exact expected 40-hex source revision**;
 - the mutation journal has zero unresolved entries;
 - no stale `LatencyPilot-Kernel-*` ETW session is active;
 - representative GPU, NIC and xHCI devices are present;
@@ -42,6 +42,8 @@ The command is deliberately read-only except for writing the requested audit JSO
 - the Windows RSS provider can be read;
 - both baseline files match the exact source revision and expected scenario;
 - both baseline files pass the canonical `scripts/Verify-Evidence.ps1` clean-capture/valid-baseline check and SHA-256 reconciliation.
+
+The Service provenance check reads version metadata from the executable actually configured in Windows Service Control Manager. A correctly named or correctly located stale Service binary is therefore not accepted as exact-revision closure evidence.
 
 `logman query -ets` and Windows service inspection are used only as observation surfaces; the audit does not start/stop a Service, ETW session, device, or mutation experiment.
 
