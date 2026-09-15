@@ -75,6 +75,19 @@ public sealed class OptimizationProfileTests
         Assert.IsTrue(changingWorkload.Reasons.Any(static reason =>
             reason.Contains("workload activity", StringComparison.OrdinalIgnoreCase)));
 
+        var spikyWorkload = WorkloadStabilityAnalyzer.Analyze(
+        [
+            new WorkloadWindowEvidence(1, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(2, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(3, 20_000, 80_000, 40_000, 35.0),
+            new WorkloadWindowEvidence(4, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(5, 20_000, 30_000, 12_000, 10.0),
+        ]);
+        Assert.AreEqual(WorkloadStabilityStatus.Changing, spikyWorkload.Status);
+        Assert.IsFalse(spikyWorkload.IsEligibleForExperiment);
+        Assert.IsTrue(spikyWorkload.Signals.Any(static signal => signal.HasExtremeWindow));
+        Assert.IsFalse(GpuOptimizationBaselineReadiness.IsEligible(stableQuality, spikyWorkload));
+
         var incompleteWorkload = WorkloadStabilityAnalyzer.Analyze(
         [
             new WorkloadWindowEvidence(1, 20_000, 30_000, 12_000, 10.0),
