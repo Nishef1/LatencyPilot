@@ -62,6 +62,9 @@ internal sealed class GpuOptimizationEvidenceCollector
         var continuityStartedAt = DateTimeOffset.UtcNow;
         if (!GpuOptimizationCaptureContinuity.TryCapture(
                 request.WorkloadProcessId,
+                originalState.DeviceInstanceId,
+                presentMonApiPath,
+                presentMonControlPipeName,
                 out var continuityBefore,
                 out var continuityBeforeReason) || continuityBefore is null)
         {
@@ -110,6 +113,9 @@ internal sealed class GpuOptimizationEvidenceCollector
             presentMonCapture.EndedAtUtc);
         if (!GpuOptimizationCaptureContinuity.TryCapture(
                 request.WorkloadProcessId,
+                originalState.DeviceInstanceId,
+                presentMonApiPath,
+                presentMonControlPipeName,
                 out var continuityAfter,
                 out var continuityAfterReason) || continuityAfter is null)
         {
