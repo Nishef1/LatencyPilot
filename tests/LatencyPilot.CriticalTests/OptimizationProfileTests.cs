@@ -7,6 +7,13 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class OptimizationProfileTests
 {
+    private static readonly string[] ExpectedDominatingMetricOrder =
+    [
+        "input-report-p99",
+        "frame-time-p99",
+        "network-jitter-p99",
+    ];
+
     [TestMethod]
     public void ProfilesAndParetoPolicyRemainTransparentAndFailClosed()
     {
@@ -39,7 +46,7 @@ public sealed class OptimizationProfileTests
         ]);
         Assert.AreEqual(ParetoRelation.Dominates, dominates.Relation);
         CollectionAssert.AreEqual(
-            new[] { "input-report-p99", "frame-time-p99", "network-jitter-p99" },
+            ExpectedDominatingMetricOrder,
             dominates.Outcomes.Select(static outcome => outcome.MetricName).ToArray());
 
         Assert.AreEqual(
