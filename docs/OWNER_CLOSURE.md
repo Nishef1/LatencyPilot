@@ -11,7 +11,7 @@ Use a clean `main` checkout whose exact HEAD already has a successful `Tests` wo
 
 For the steady Real-world baseline, hold one warmed scene, action loop or workload pattern through all five windows. A scripted benchmark that intentionally changes scenes/phases is not a substitute for this closure baseline; repeated whole benchmark runs are a separate experiment shape and are not currently Gate A candidate evidence.
 
-Both files must be closure-grade `latencypilot-evidence-v8` evidence from the exact 40-hex source revision. Do not reuse an older baseline after source changes.
+Both files must be closure-grade `latencypilot-evidence-v9` evidence from the exact 40-hex source revision. Baseline v9 serializes `baseline-quality-v2`, `workload-stability-v1`, and the explicit GPU optimizer-eligibility result so `Valid for comparison` cannot be confused with `Ready for optimization`. Do not reuse an older baseline after source changes.
 
 ## 2. Run the consolidated read-only audit
 
@@ -41,7 +41,7 @@ The command is deliberately read-only except for writing the requested audit JSO
 - USB topology is readable with connected/xHCI-linked ports;
 - the Windows RSS provider can be read;
 - both baseline files match the exact source revision and expected scenario;
-- both baseline files pass the canonical `scripts/Verify-Evidence.ps1` clean-capture/valid-baseline check and SHA-256 reconciliation.
+- both baseline files pass the canonical `scripts/Verify-Evidence.ps1` clean-capture/valid-baseline check, including v9 workload/readiness consistency, and SHA-256 reconciliation.
 
 The Service provenance check reads version metadata from the executable actually configured in Windows Service Control Manager. A correctly named or correctly located stale Service binary is therefore not accepted as exact-revision closure evidence.
 
