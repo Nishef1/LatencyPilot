@@ -14,7 +14,7 @@ Last updated: 2026-09-15
 - Evidence schema: **`latencypilot-evidence-v8`**.
 - Decision baseline: **`baseline-quality-v2`**.
 - Optimizer workload readiness: **`workload-stability-v1`**.
-- Permanent deterministic suite: **15 tests**; target 10, owner-authorized maximum 20 only for line-limit or materially safer durable subsystem separation.
+- Permanent deterministic suite: **16 tests**; target 10, owner-authorized maximum 20 only for line-limit or materially safer durable subsystem separation.
 - Hosted GitHub Actions: **test-only**. It does not prove App/Service launch, UI/accessibility, installer/package/signing or physical hardware behavior.
 
 ## Completion summary
@@ -124,6 +124,8 @@ stable authoritative baseline
 
 The shared baseline-readiness contract now requires both `baseline-quality-v2` and `workload-stability-v1`. App candidate preparation uses the same readiness boundary, so a changing or isolated-spike workload does not proceed to candidate generation.
 
+The owner-only Gate A placement command now fails closed unless the exact target's allocated affinity matches the candidate **and** clean runtime evidence contains at least one resolved GPU-driver ISR on the requested processor with zero resolved GPU-driver ISR events off target. Missing/unavailable correlation is not a successful placement proof.
+
 ### Gate A — internal physical substrate proof — OPEN
 
 The earlier read-only preflight found the owner NVIDIA GeForce RTX 3070 and a clean journal, but returned an allocated-resource tuple:
@@ -231,7 +233,7 @@ Owner-local package closure remains open: actual Release build, signing credenti
 
 ## Current verification discipline
 
-The permanent suite is intentionally split into 15 durable tests so USB, input timing, NIC/RSS, profile/Pareto and restore failures remain independently diagnosable. The current owner rule permits up to 20 only for materially safer separation or the 1200-line file limit.
+The permanent suite is intentionally split into 16 durable tests so USB, input timing, NIC/RSS, profile/Pareto, restore and GPU runtime-placement failures remain independently diagnosable. The current owner rule permits up to 20 only for materially safer separation or the 1200-line file limit.
 
 Every final source-completion claim requires a successful **Tests** workflow on the exact final HEAD. Hosted success proves deterministic/source contracts only.
 
