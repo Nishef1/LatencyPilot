@@ -272,21 +272,37 @@ internal static class PhysicalValidationProgram
 
             Console.WriteLine(
                 $"service-module-correlation={(placement.HasRuntimeEvidence ? "observed" : "not-observed")}");
+
+            if (!placement.ConfirmsRequestedPlacement)
+            {
+                Console.WriteLine(
+                    "placement-proof=failed; direct resolved GPU-driver ISR evidence was not confined to the requested target processor.");
+                return 3;
+            }
         }
         catch (Exception exception) when (exception is
             InvalidOperationException or
             Win32Exception or
-            InvalidDataException)
+            InvalidDataException or
+            NotSupportedException)
         {
             Console.WriteLine("service-module-correlation=unavailable");
             Console.WriteLine($"service-module-correlation-reason={exception.Message}");
+            Console.WriteLine(
+                "placement-proof=incomplete; authoritative GPU-driver ISR runtime placement could not be established.");
+            return 3;
+        }
+
+        if (!capture.IsValid)
+        {
+            Console.WriteLine(
+                "placement-proof=incomplete; runtime placement matched, but ETW capture integrity was not clean.");
+            return 3;
         }
 
         Console.WriteLine(
-            capture.IsValid
-                ? "placement-proof=exact-target allocated affinity confirmed; clean ETW runtime observation captured. Service-module ISR correlation is supplementary evidence only."
-                : "placement-proof=incomplete; allocated affinity matched, but ETW capture integrity was not clean.");
-        return capture.IsValid ? 0 : 3;
+            "placement-proof=confirmed; exact-target allocated affinity and direct GPU-driver ISR runtime placement agree on the requested target processor.");
+        return 0;
     }
 
     private static int PrepareGpuAffinity(string[] args)
