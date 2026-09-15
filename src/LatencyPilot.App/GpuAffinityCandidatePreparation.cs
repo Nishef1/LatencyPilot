@@ -16,6 +16,8 @@ public sealed partial class MainWindow
 
     private void PrepareGpuAffinityCandidatePlan(
         IReadOnlyList<KernelLatencyCaptureResponse> captures,
+        IReadOnlyList<BaselineWindowEvidence> windows,
+        IReadOnlyList<MeasurementRuntimeWindow> runtimeWindows,
         BaselineQualityResult quality,
         bool isPartial,
         MeasurementScenario scenario)
@@ -28,13 +30,19 @@ public sealed partial class MainWindow
             return;
         }
 
+        if (captures.Count != windows.Count || captures.Count != runtimeWindows.Count)
+        {
+            Logger.Warning(
+                "GPU affinity candidate preparation skipped because baseline evidence is misaligned. Captures={CaptureCount}, Windows={WindowCount}, RuntimeWindows={RuntimeWindowCount}.",
+                captures.Count,
+                windows.Count,
+                runtimeWindows.Count);
+            return;
+        }
+
         var workloadStability = WorkloadStabilityAnalyzer.Analyze(
-            captures.Select((capture, index) => new WorkloadWindowEvidence(
-                index + 1,
-                capture.ActualDurationMilliseconds,
-                capture.Dpc.Count,
-                capture.Isr.Count,
-                SystemCpuBusyPercent: null)).ToArray());
+            windows,
+            runtimeWindows.Select(static window => window.Context?.SystemCpuBusyPercent).ToArray());
         if (!GpuOptimizationBaselineReadiness.IsEligible(quality, workloadStability))
         {
             Logger.Information(
