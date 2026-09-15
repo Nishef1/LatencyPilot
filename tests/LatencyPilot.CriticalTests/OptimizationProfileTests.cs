@@ -1,3 +1,4 @@
+using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Results;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -37,6 +38,41 @@ public sealed class OptimizationProfileTests
         Assert.IsTrue(networkOptOut.IsSubsystemEnabled(OptimizationSubsystem.Gpu));
         Assert.AreEqual(competitive.ComparisonPolicy, networkOptOut.ComparisonPolicy);
         Assert.AreEqual(competitive.Id, networkOptOut.Id);
+
+        var stableWorkload = WorkloadStabilityAnalyzer.Analyze(
+        [
+            new WorkloadWindowEvidence(1, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(2, 20_000, 31_000, 12_200, 10.4),
+            new WorkloadWindowEvidence(3, 20_000, 29_500, 11_900, 9.8),
+            new WorkloadWindowEvidence(4, 20_000, 30_500, 12_100, 10.2),
+            new WorkloadWindowEvidence(5, 20_000, 30_200, 12_050, 10.1),
+        ]);
+        Assert.AreEqual(WorkloadStabilityStatus.Stable, stableWorkload.Status);
+        Assert.IsTrue(stableWorkload.IsEligibleForExperiment);
+        Assert.AreEqual(0, stableWorkload.Reasons.Count);
+
+        var changingWorkload = WorkloadStabilityAnalyzer.Analyze(
+        [
+            new WorkloadWindowEvidence(1, 20_302.5, 39_533, 17_003, 12.519),
+            new WorkloadWindowEvidence(2, 20_302.5, 28_979, 11_158, 13.383),
+            new WorkloadWindowEvidence(3, 20_302.5, 27_815, 11_315, 9.493),
+            new WorkloadWindowEvidence(4, 20_302.5, 27_537, 11_645, 7.537),
+            new WorkloadWindowEvidence(5, 20_302.5, 26_604, 11_207, 6.423),
+        ]);
+        Assert.AreEqual(WorkloadStabilityStatus.Changing, changingWorkload.Status);
+        Assert.IsFalse(changingWorkload.IsEligibleForExperiment);
+        Assert.IsTrue(changingWorkload.Reasons.Any(static reason =>
+            reason.Contains("workload activity", StringComparison.OrdinalIgnoreCase)));
+
+        var incompleteWorkload = WorkloadStabilityAnalyzer.Analyze(
+        [
+            new WorkloadWindowEvidence(1, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(2, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(3, 20_000, 30_000, 12_000, 10.0),
+            new WorkloadWindowEvidence(4, 20_000, 30_000, 12_000, 10.0),
+        ]);
+        Assert.AreEqual(WorkloadStabilityStatus.Insufficient, incompleteWorkload.Status);
+        Assert.IsFalse(incompleteWorkload.IsEligibleForExperiment);
 
         var dominates = ParetoDecisionPolicy.Evaluate(
         [
