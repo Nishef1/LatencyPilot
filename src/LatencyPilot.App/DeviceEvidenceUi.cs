@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Platform.Windows.Devices;
@@ -21,40 +23,125 @@ public sealed partial class MainWindow
 
         try
         {
-            var inspection = await Task.Run(() =>
-            {
-                var inventory = DeviceInventoryReader.CapturePresentDevices();
-                var representativeDevices = RepresentativeDeviceEvidenceSelector.Select(inventory);
-                var usbTopology = UsbTopologyReader.Capture(inventory);
-                var inputRoutes = InputDeviceRouteReader.Capture(inventory, usbTopology);
-                var rss = NetworkRssReader.Capture();
-                return new DeviceEvidenceInspection(
-                    inventory,
-                    representativeDevices,
-                    usbTopology,
-                    inputRoutes,
-                    rss);
-            });
+            var inspection = await Task.Run(CaptureDeviceEvidenceInspection);
 
             var rssSummary = inspection.NetworkRss.IsAvailable
                 ? string.Create(CultureInfo.InvariantCulture, $"{inspection.NetworkRss.Adapters.Count:N0} RSS row(s)")
                 : $"RSS {inspection.NetworkRss.Status}";
+            var warningSummary = inspection.Warnings.Count == 0
+                ? string.Empty
+                : string.Create(CultureInfo.InvariantCulture, $" · {inspection.Warnings.Count:N0} partial-read warning(s)");
             DeviceEvidenceStatusText.Text = string.Create(
                 CultureInfo.InvariantCulture,
-                $"{inspection.Inventory.PresentDeviceCount:N0} present · {inspection.Inventory.DevicesWithDriverMetadataCount:N0} with driver metadata · {inspection.InputRoutes.ExactUsbPortRouteCount:N0} exact USB input port route(s) · {rssSummary}.");
+                $"{inspection.Inventory.PresentDeviceCount:N0} present · {inspection.Inventory.DevicesWithDriverMetadataCount:N0} with driver metadata · {inspection.InputRoutes.ExactUsbPortRouteCount:N0} exact USB input port route(s) · {rssSummary}{warningSummary}.");
 
             await ShowDeviceEvidenceDialogAsync(inspection);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (IsRecoverableDeviceEvidenceException(exception))
         {
-            Logger.Error(exception, "Detailed device evidence inspection failed.");
-            DeviceEvidenceStatusText.Text = "Detailed device evidence could not be read. See the diagnostics log for details.";
+            Logger.Error(exception, "Required present-device inventory could not be read for detailed evidence inspection.");
+            DeviceEvidenceStatusText.Text =
+                $"Present-device inventory could not be read: {exception.Message} See the diagnostics log for details.";
         }
         finally
         {
             InspectDeviceEvidenceButton.IsEnabled = true;
         }
     }
+
+    private static DeviceEvidenceInspection CaptureDeviceEvidenceInspection()
+    {
+        // Present PnP inventory is the required authority for this view. Optional
+        // evidence layers are isolated below so one unavailable provider does not
+        // discard otherwise trustworthy device evidence.
+        var inventory = DeviceInventoryReader.CapturePresentDevices();
+        var representativeDevices = RepresentativeDeviceEvidenceSelector.Select(inventory);
+        var warnings = new List<string>();
+
+        var usbTopology = CaptureUsbTopologyOrUnavailable(inventory, warnings);
+        foreach (var error in usbTopology.Errors)
+        {
+            warnings.Add($"USB topology: {error}");
+        }
+
+        var inputRoutes = CaptureInputRoutesOrUnavailable(inventory, usbTopology, warnings);
+        var rss = CaptureNetworkRssOrUnavailable(warnings);
+
+        return new DeviceEvidenceInspection(
+            inventory,
+            representativeDevices,
+            usbTopology,
+            inputRoutes,
+            rss,
+            warnings.AsReadOnly());
+    }
+
+    private static UsbTopologySnapshot CaptureUsbTopologyOrUnavailable(
+        DeviceInventorySnapshot inventory,
+        List<string> warnings)
+    {
+        try
+        {
+            return UsbTopologyReader.Capture(inventory);
+        }
+        catch (Exception exception) when (IsRecoverableDeviceEvidenceException(exception))
+        {
+            warnings.Add($"USB topology unavailable: {exception.Message}");
+            return new UsbTopologySnapshot(
+                [],
+                DateTimeOffset.UtcNow,
+                [$"USB topology capture failed: {exception.Message}"]);
+        }
+    }
+
+    private static UserInputRouteInventory CaptureInputRoutesOrUnavailable(
+        DeviceInventorySnapshot inventory,
+        UsbTopologySnapshot usbTopology,
+        List<string> warnings)
+    {
+        try
+        {
+            return InputDeviceRouteReader.Capture(inventory, usbTopology);
+        }
+        catch (Exception exception) when (IsRecoverableDeviceEvidenceException(exception))
+        {
+            warnings.Add($"Raw Input route evidence unavailable: {exception.Message}");
+            return new UserInputRouteInventory([], DateTimeOffset.UtcNow);
+        }
+    }
+
+    private static NetworkRssSnapshot CaptureNetworkRssOrUnavailable(List<string> warnings)
+    {
+        try
+        {
+            var rss = NetworkRssReader.Capture();
+            if (!rss.IsAvailable && !string.IsNullOrWhiteSpace(rss.Error))
+            {
+                warnings.Add($"RSS provider: {rss.Error}");
+            }
+
+            return rss;
+        }
+        catch (Exception exception) when (IsRecoverableDeviceEvidenceException(exception))
+        {
+            warnings.Add($"RSS provider unavailable: {exception.Message}");
+            return new NetworkRssSnapshot(
+                NetworkRssReadStatus.ReadFailed,
+                [],
+                DateTimeOffset.UtcNow,
+                exception.Message);
+        }
+    }
+
+    private static bool IsRecoverableDeviceEvidenceException(Exception exception) =>
+        exception is ArgumentException or
+            InvalidDataException or
+            InvalidOperationException or
+            Win32Exception or
+            IOException or
+            UnauthorizedAccessException or
+            OverflowException or
+            COMException;
 
     private async Task ShowDeviceEvidenceDialogAsync(DeviceEvidenceInspection inspection)
     {
@@ -66,6 +153,22 @@ public sealed partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
             Foreground = ThemeBrush("MutedTextBrush"),
         });
+
+        if (inspection.Warnings.Count > 0)
+        {
+            AddSectionHeading(content, "Partial-read warnings");
+            content.Children.Add(CreateMutedText(
+                "Available sections remain usable. An unavailable optional provider is not silently promoted to evidence."));
+            foreach (var warning in inspection.Warnings.Take(MaximumInspectorRowsPerSection))
+            {
+                content.Children.Add(CreateMutedText($"• {warning}"));
+            }
+            if (inspection.Warnings.Count > MaximumInspectorRowsPerSection)
+            {
+                content.Children.Add(CreateMutedText(
+                    $"Showing the first {MaximumInspectorRowsPerSection} warnings; {inspection.Warnings.Count} were recorded."));
+            }
+        }
 
         AddSectionHeading(content, "Representative interrupt devices");
         if (inspection.RepresentativeDevices.Count == 0)
@@ -240,7 +343,7 @@ public sealed partial class MainWindow
             ArgumentException or
             InvalidDataException or
             InvalidOperationException or
-            System.ComponentModel.Win32Exception or
+            Win32Exception or
             IOException or
             UnauthorizedAccessException)
         {
@@ -480,5 +583,6 @@ public sealed partial class MainWindow
         IReadOnlyList<RepresentativeDeviceEvidence> RepresentativeDevices,
         UsbTopologySnapshot UsbTopology,
         UserInputRouteInventory InputRoutes,
-        NetworkRssSnapshot NetworkRss);
+        NetworkRssSnapshot NetworkRss,
+        IReadOnlyList<string> Warnings);
 }
