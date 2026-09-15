@@ -1,5 +1,7 @@
+using System.Buffers.Binary;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Core.System;
+using LatencyPilot.Platform.Windows.Devices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -46,5 +48,33 @@ public sealed class GpuAffinityCandidatePlannerTests
         Assert.AreEqual(cpu3, candidates[0].Processor);
         Assert.AreEqual(cpu1, candidates[1].Processor);
         Assert.IsTrue(candidates[0].ObservedPressureScore < candidates[1].ObservedPressureScore);
+
+        Span<byte> descriptor = stackalloc byte[AllocatedIrqDescriptorParser.Descriptor64Size];
+        BinaryPrimitives.WriteUInt32LittleEndian(descriptor[0..4], 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(descriptor[4..8], AllocatedIrqDescriptorParser.IrqTypeRange);
+        BinaryPrimitives.WriteUInt16LittleEndian(descriptor[8..10], 0x0002);
+        BinaryPrimitives.WriteUInt16LittleEndian(descriptor[10..12], 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(descriptor[12..16], 42);
+        BinaryPrimitives.WriteUInt64LittleEndian(descriptor[16..24], 1UL << 3);
+
+        Assert.IsTrue(AllocatedIrqDescriptorParser.TryParseResourceList(descriptor, out var parsed));
+        Assert.AreEqual(42u, parsed.Irq);
+        Assert.AreEqual((ushort)0, parsed.ProcessorGroup);
+        Assert.AreEqual(1UL << 3, parsed.AffinityMask);
+        Assert.AreEqual((ushort)0x0002, parsed.RawFlags);
+
+        Assert.IsFalse(AllocatedIrqDescriptorParser.TryParseResourceList(descriptor[..^1], out _));
+
+        var requirementsList = descriptor.ToArray();
+        BinaryPrimitives.WriteUInt32LittleEndian(requirementsList.AsSpan(0, 4), 1);
+        Assert.IsFalse(AllocatedIrqDescriptorParser.TryParseResourceList(requirementsList, out _));
+
+        var wrongType = descriptor.ToArray();
+        BinaryPrimitives.WriteUInt32LittleEndian(wrongType.AsSpan(4, 4), 8);
+        Assert.IsFalse(AllocatedIrqDescriptorParser.TryParseResourceList(wrongType, out _));
+
+        var noProcessorTarget = descriptor.ToArray();
+        BinaryPrimitives.WriteUInt64LittleEndian(noProcessorTarget.AsSpan(16, 8), 0);
+        Assert.IsFalse(AllocatedIrqDescriptorParser.TryParseResourceList(noProcessorTarget, out _));
     }
 }
