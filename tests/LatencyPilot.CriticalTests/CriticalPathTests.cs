@@ -108,7 +108,6 @@ public sealed class CriticalPathTests
             Assert.IsTrue(reverted.IsTerminal);
             Assert.IsFalse(journal.HasUnresolved());
 
-            // Terminal recovery must unblock the next experiment; stale revisions must not.
             var second = journal.CreatePrepared(
                 Guid.NewGuid(),
                 "gpu-interrupt-affinity",
@@ -464,6 +463,23 @@ public sealed class CriticalPathTests
             [usbPorts[0], usbPorts[0] with { ConnectionIndex = 4 }]);
         Assert.AreEqual(UsbPortRouteResolutionStatus.Ambiguous, duplicateUsbRoute.Status);
         Assert.IsNull(duplicateUsbRoute.Port);
+
+        var usbTopology = UsbTopologyReader.Capture(devices);
+        Assert.IsTrue(usbTopology.Ports.All(static port =>
+            port.ConnectionIndex > 0 && !string.IsNullOrWhiteSpace(port.HubDevicePath)));
+        var inputRoutes = InputDeviceRouteReader.Capture(devices, usbTopology);
+        foreach (var route in inputRoutes.Routes.Where(static route => route.UsbPortRoute?.IsAvailable == true))
+        {
+            Assert.IsNotNull(route.RawInputDevice.PnPInstanceId);
+            Assert.IsNotNull(route.UsbPortRoute?.Port);
+            if (route.UsbHostControllerInstanceId is not null)
+            {
+                Assert.AreEqual(
+                    route.UsbHostControllerInstanceId,
+                    route.UsbPortRoute?.Port?.HostControllerInstanceId,
+                    ignoreCase: true);
+            }
+        }
     }
 
     private static void AssertTransactionalRegistryCommitAndRollback()
