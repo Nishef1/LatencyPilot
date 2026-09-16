@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using LatencyPilot.Core.Benchmarking;
 using LatencyPilot.Core.System;
 
 namespace LatencyPilot.GpuBenchmark;
@@ -81,16 +82,32 @@ internal sealed class BenchmarkWorkload
             options.Height));
     }
 
-    internal Task<BenchmarkTrialArtifact> RunTrialAsync(D3D12BenchmarkRenderer renderer, FrozenBenchmarkWorkload workload, CancellationToken cancellationToken = default)
+    internal Task<BenchmarkTrialArtifact> RunTrialAsync(
+        D3D12BenchmarkRenderer renderer,
+        FrozenBenchmarkWorkload workload,
+        CancellationToken cancellationToken = default) =>
+        RunTrialAsync(renderer, workload, options.Duration, cancellationToken);
+
+    internal Task<BenchmarkTrialArtifact> RunTrialAsync(
+        D3D12BenchmarkRenderer renderer,
+        FrozenBenchmarkWorkload workload,
+        TimeSpan duration,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(workload);
-        var expectedFrames = checked((int)Math.Clamp(Math.Ceiling(options.Duration.TotalSeconds * 240d), 1d, 150_000d));
+        if (duration.TotalMilliseconds is < GpuBenchmarkControlProtocol.MinimumTrialDurationMilliseconds or
+            > GpuBenchmarkControlProtocol.MaximumTrialDurationMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(nameof(duration));
+        }
+
+        var expectedFrames = checked((int)Math.Clamp(Math.Ceiling(duration.TotalSeconds * 240d), 1d, 150_000d));
         var frames = new List<BenchmarkFrameTelemetry>(expectedFrames);
         var startedAtUtc = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
         var lastProgress = TimeSpan.Zero;
 
-        while (stopwatch.Elapsed < options.Duration)
+        while (stopwatch.Elapsed < duration)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var frame = renderer.RenderFrame(workload.SimulationIterationsPerWorker, workload.CommandBatchesPerWorker);
@@ -108,7 +125,7 @@ internal sealed class BenchmarkWorkload
                     output,
                     options.SessionId,
                     "measuring",
-                    Math.Clamp(stopwatch.Elapsed.TotalMilliseconds / options.Duration.TotalMilliseconds, 0d, 1d),
+                    Math.Clamp(stopwatch.Elapsed.TotalMilliseconds / duration.TotalMilliseconds, 0d, 1d),
                     $"Measured {frames.Count} frames with frozen workload.");
             }
         }
