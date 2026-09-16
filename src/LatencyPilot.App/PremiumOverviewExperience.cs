@@ -8,7 +8,7 @@ namespace LatencyPilot.App;
 
 public sealed partial class MainWindow
 {
-    // Category colors identify data. Traffic-light colors identify evidence state.
+    // Data colors identify what is measured. Traffic-light colors identify evidence state.
     private const string BrandActionBrush = "BrandActionBrush";
     private const string SemanticGoodBrush = "SemanticGoodBrush";
     private const string SemanticAttentionBrush = "SemanticAttentionBrush";
@@ -38,6 +38,7 @@ public sealed partial class MainWindow
         PromoteSystemSummary();
         RestylePremiumOverview();
         BuildPremiumBottomRow();
+        ConfigurePremiumChartAccessibility();
         ForcePremiumOverviewContentVisible();
 
         OverviewEmptyState.RegisterPropertyChangedCallback(
@@ -46,7 +47,6 @@ public sealed partial class MainWindow
         OverviewDataContent.RegisterPropertyChangedCallback(
             UIElement.VisibilityProperty,
             (_, _) => ForcePremiumOverviewContentVisible());
-
         RecentSnapshotStatusText.RegisterPropertyChangedCallback(
             TextBlock.TextProperty,
             (_, _) => SyncPremiumRecentSnapshot());
@@ -83,13 +83,21 @@ public sealed partial class MainWindow
                 SyncPremiumRecentSnapshot();
                 SyncPremiumDeviceEvidence();
             });
-
         RootGrid.SizeChanged += (_, _) => ReflowPremiumBottomRow();
 
         SyncPremiumRecentSnapshot();
         SyncPremiumDeviceEvidence();
         ApplyPremiumBaselineState();
+        ApplyDashboardLayout();
         ReflowPremiumBottomRow();
+    }
+
+    private void ConfigurePremiumChartAccessibility()
+    {
+        AutomationProperties.SetName(LatencyProfileChart, "DPC and ISR latency profile");
+        AutomationProperties.SetName(CpuDistributionChart, "CPU interrupt distribution");
+        AutomationProperties.SetName(ModuleContributionChart, "Top kernel modules by attributed time");
+        AutomationProperties.SetName(CpuInterruptMap, "CPU DPC and ISR interrupt map");
     }
 
     private void PromoteSystemSummary()
@@ -101,8 +109,6 @@ public sealed partial class MainWindow
             return;
         }
 
-        // The system context is the last card in the XAML overview. Move it directly below the header,
-        // matching the approved hierarchy without duplicating inventory state or measurement logic.
         var systemSummary = rootStack.Children[rootStack.Children.Count - 1];
         rootStack.Children.Remove(systemSummary);
         rootStack.Children.Insert(1, systemSummary);
@@ -153,15 +159,11 @@ public sealed partial class MainWindow
             return;
         }
 
-        // Reuse the real module chart instead of creating a second visualization/data path.
+        // Keep one real module chart and one real data path; only its visual placement changes.
         var moduleCard = MeasureAnchor.Children[2];
         MeasureAnchor.Children.Remove(moduleCard);
 
-        _premiumBottomGrid = new Grid
-        {
-            ColumnSpacing = 12,
-            RowSpacing = 12,
-        };
+        _premiumBottomGrid = new Grid { ColumnSpacing = 12, RowSpacing = 12 };
         _premiumBottomGrid.Children.Add(moduleCard);
         _premiumBottomGrid.Children.Add(BuildPremiumRecentSnapshotCard());
         _premiumBottomGrid.Children.Add(BuildPremiumDeviceEvidenceCard());
@@ -193,16 +195,12 @@ public sealed partial class MainWindow
             Foreground = ThemeBrush("TextBrush"),
         });
         header.Children.Add(title);
-        var evidenceButton = BuildPremiumLink("View evidence", EvidenceNavItem);
-        Grid.SetColumn(evidenceButton, 1);
-        header.Children.Add(evidenceButton);
+        var evidenceLink = BuildPremiumLink("View evidence", EvidenceNavItem);
+        Grid.SetColumn(evidenceLink, 1);
+        header.Children.Add(evidenceLink);
         root.Children.Add(header);
 
-        _premiumRecentStatusText = new TextBlock
-        {
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
-        };
+        _premiumRecentStatusText = new TextBlock { FontSize = 11, FontWeight = FontWeights.SemiBold };
         _premiumRecentStatusPill = new Border
         {
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -237,9 +235,9 @@ public sealed partial class MainWindow
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
         });
-        var devicesButton = BuildPremiumLink("View devices", DevicesNavItem);
-        Grid.SetColumn(devicesButton, 1);
-        header.Children.Add(devicesButton);
+        var devicesLink = BuildPremiumLink("View devices", DevicesNavItem);
+        Grid.SetColumn(devicesLink, 1);
+        header.Children.Add(devicesLink);
         root.Children.Add(header);
 
         root.Children.Add(BuildEvidenceRow("Graphics", out _premiumGraphicsEvidenceDot, out _premiumGraphicsEvidenceText));
@@ -335,32 +333,17 @@ public sealed partial class MainWindow
         var status = RecentSnapshotStatusText.Text ?? "No snapshot yet";
         _premiumRecentStatusText.Text = status;
         _premiumRecentSummaryText.Text = RecentSnapshotSummaryText.Text;
-
         var failure = status.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
                       status.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
                       status.Contains("warning", StringComparison.OrdinalIgnoreCase);
         var attention = !failure && _snapshotEvidenceBadgeText is not null &&
                         (_snapshotEvidenceBadgeText.Text.Contains("exceeded", StringComparison.OrdinalIgnoreCase) ||
                          _snapshotEvidenceBadgeText.Text.Contains("ms bucket", StringComparison.OrdinalIgnoreCase));
-        var good = !failure && !attention &&
-                   status.Contains("ready", StringComparison.OrdinalIgnoreCase);
-
-        var foreground = failure
-            ? SemanticFailureBrush
-            : attention
-                ? SemanticAttentionBrush
-                : good
-                    ? SemanticGoodBrush
-                    : "MutedTextBrush";
-        var background = failure
-            ? "SemanticFailureSoftBrush"
-            : attention
-                ? "SemanticAttentionSoftBrush"
-                : good
-                    ? "SemanticGoodSoftBrush"
-                    : "SurfaceAltBrush";
-        _premiumRecentStatusText.Foreground = ThemeBrush(foreground);
-        _premiumRecentStatusPill.Background = ThemeBrush(background);
+        var good = !failure && !attention && status.Contains("ready", StringComparison.OrdinalIgnoreCase);
+        _premiumRecentStatusText.Foreground = ThemeBrush(
+            failure ? SemanticFailureBrush : attention ? SemanticAttentionBrush : good ? SemanticGoodBrush : "MutedTextBrush");
+        _premiumRecentStatusPill.Background = ThemeBrush(
+            failure ? "SemanticFailureSoftBrush" : attention ? "SemanticAttentionSoftBrush" : good ? "SemanticGoodSoftBrush" : "SurfaceAltBrush");
     }
 
     private void SyncPremiumDeviceEvidence()
@@ -412,38 +395,13 @@ public sealed partial class MainWindow
                       verdict.Contains("invalid", StringComparison.OrdinalIgnoreCase);
         var good = verdict.Equals("Valid", StringComparison.OrdinalIgnoreCase) && !attention;
 
-        var borderBrush = failure
-            ? SemanticFailureBrush
-            : attention
-                ? SemanticAttentionBrush
-                : good
-                    ? SemanticGoodBrush
-                    : "BorderBrush";
-        var backgroundBrush = failure
-            ? "SemanticFailureSoftBrush"
-            : attention
-                ? "SemanticAttentionSoftBrush"
-                : good
-                    ? "SemanticGoodSoftBrush"
-                    : "PremiumOverviewCardBrush";
-
-        baselineCard.Background = ThemeBrush(backgroundBrush);
-        baselineCard.BorderBrush = ThemeBrush(borderBrush);
+        var foreground = failure ? SemanticFailureBrush : attention ? SemanticAttentionBrush : good ? SemanticGoodBrush : "TextBrush";
+        var background = failure ? "SemanticFailureSoftBrush" : attention ? "SemanticAttentionSoftBrush" : good ? "SemanticGoodSoftBrush" : "PremiumOverviewCardBrush";
+        baselineCard.Background = ThemeBrush(background);
+        baselineCard.BorderBrush = ThemeBrush(foreground == "TextBrush" ? "BorderBrush" : foreground);
         baselineCard.BorderThickness = new Thickness(1, 1, 1, 2);
         baselineCard.CornerRadius = new CornerRadius(11);
-
-        if (good)
-        {
-            BaselineSummaryText.Foreground = ThemeBrush(SemanticGoodBrush);
-        }
-        else if (attention)
-        {
-            BaselineSummaryText.Foreground = ThemeBrush(SemanticAttentionBrush);
-        }
-        else if (failure)
-        {
-            BaselineSummaryText.Foreground = ThemeBrush(SemanticFailureBrush);
-        }
+        BaselineSummaryText.Foreground = ThemeBrush(foreground);
     }
 
     private void ReflowPremiumBottomRow()
@@ -453,8 +411,8 @@ public sealed partial class MainWindow
             return;
         }
 
-        var contentWidth = Math.Max(0d, OverviewContent.ActualWidth);
-        var columns = contentWidth >= 1050d ? 3 : contentWidth >= 640d ? 2 : 1;
+        var width = Math.Max(0d, OverviewContent.ActualWidth);
+        var columns = width >= 1050d ? 3 : width >= 640d ? 2 : 1;
         _premiumBottomGrid.ColumnDefinitions.Clear();
         _premiumBottomGrid.RowDefinitions.Clear();
         for (var index = 0; index < columns; index++)
@@ -471,8 +429,11 @@ public sealed partial class MainWindow
         }
         for (var index = 0; index < _premiumBottomGrid.Children.Count; index++)
         {
-            Grid.SetColumn(_premiumBottomGrid.Children[index], index % columns);
-            Grid.SetRow(_premiumBottomGrid.Children[index], index / columns);
+            if (_premiumBottomGrid.Children[index] is FrameworkElement child)
+            {
+                Grid.SetColumn(child, index % columns);
+                Grid.SetRow(child, index / columns);
+            }
         }
     }
 }
