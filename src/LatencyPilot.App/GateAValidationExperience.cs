@@ -1,7 +1,12 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.Json;
-using LatencyPilot.App.Services;
+using LatencyPilot.Benchmarking.Candidates;
+using LatencyPilot.Core.Benchmarking;
+using LatencyPilot.Platform.Windows.System;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -10,6 +15,7 @@ namespace LatencyPilot.App;
 
 public sealed partial class MainWindow
 {
+    private static readonly JsonSerializerOptions GateAJsonOptions = new(JsonSerializerDefaults.Web);
     private Button? _gateAValidationButton;
     private string? _gateARepositoryRoot;
 
@@ -31,10 +37,10 @@ public sealed partial class MainWindow
         AutomationProperties.SetName(_gateAValidationButton, "Run GPU Gate A development validation");
         AutomationProperties.SetHelpText(
             _gateAValidationButton,
-            "Development-only owner validation. Captures a fresh steady real-world baseline, requests administrator consent once, tests one bounded reversible GPU interrupt-affinity candidate, verifies runtime placement, restores the original state, exercises recovery, and saves a JSON report. This is a Gate A substrate check, not a product optimizer.");
+            "Development-only owner validation. Launches the deterministic Direct3D 12 benchmark as a normal-user process, asks for administrator consent once, screens eligible physical cores, refines SMT siblings, confirms the finalist with direct ISR placement evidence, and preserves journal-owned rollback/recovery.");
         ToolTipService.SetToolTip(
             _gateAValidationButton,
-            "Development Gate A: fresh baseline → candidate → apply → runtime proof → automatic restore/recovery → JSON report. Keep the same warmed game/workload active; UAC appears once.");
+            "Development Gate A: deterministic benchmark → all-core screening → SMT refinement → balanced confirmation. The main window minimizes and a live Stop safely progress window remains available.");
         _gateAValidationButton.Click += GateAValidationButton_Click;
         HeaderActions.Children.Add(_gateAValidationButton);
     }
@@ -49,53 +55,114 @@ public sealed partial class MainWindow
             return;
         }
 
-        var windowHiddenForWorkload = false;
+        Process? benchmarkProcess = null;
+        Task<string>? benchmarkStdoutTask = null;
+        Task<string>? benchmarkStderrTask = null;
+        GpuOptimizationProgressWindow? progressWindow = null;
+        var mainMinimized = false;
         _gateAValidationButton.IsEnabled = false;
+
         try
         {
-            if (_measurementScenarioComboBox is not null)
+            var sourceRevision = await ReadCleanSourceRevisionAsync(_gateARepositoryRoot);
+            var topology = ProcessorTopologyReader.Capture();
+            if (topology.ProcessorGroupCount != 1 || topology.PhysicalCoreCount <= 0)
             {
-                _measurementScenarioComboBox.SelectedIndex = 0;
+                throw new NotSupportedException(
+                    "GPU Gate A v1 requires one Windows processor group with at least one physical core.");
             }
+
+            var workerCount = Math.Min(
+                topology.PhysicalCoreCount,
+                GpuAffinityCandidatePlanner.MaximumCandidates);
+            var sessionId = Guid.NewGuid();
+            var benchmarkToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            var benchmarkPipe = $"LatencyPilot.GpuBenchmark.{sessionId:N}";
+            var benchmarkSeed = RandomNumberGenerator.GetInt32(int.MaxValue);
+            var validationDirectory = GetValidationDirectory();
+            var stamp = DateTimeOffset.UtcNow.ToString(
+                "yyyyMMddTHHmmssfffZ",
+                CultureInfo.InvariantCulture);
+            var sessionDirectory = Path.Combine(
+                validationDirectory,
+                $"gpu-auto-affinity-{stamp}-{sessionId:N}");
+            var benchmarkOutputDirectory = Path.Combine(sessionDirectory, "benchmark");
+            var reportPath = Path.Combine(sessionDirectory, "gpu-auto-affinity-report.json");
+            var progressPath = Path.Combine(sessionDirectory, "progress.json");
+            var cancelPath = Path.Combine(sessionDirectory, "stop.request");
+            Directory.CreateDirectory(benchmarkOutputDirectory);
 
             var dotnetExecutable = ResolveDotnetExecutable();
-            EvidenceExportStatusText.Text =
-                "GPU Gate A development validation started. LatencyPilot will hide itself so the same warmed game/scene stays foreground, capture the baseline, request UAC once, test one candidate, restore the original state, and write a report.";
-
-            AppWindow.Hide();
-            windowHiddenForWorkload = true;
-            await Task.Delay(TimeSpan.FromSeconds(2));
-
-            await CaptureBaselineAsync();
-            if (string.IsNullOrWhiteSpace(_latestEvidenceJson))
-            {
-                throw new InvalidOperationException("A completed baseline evidence document was not produced.");
-            }
-
-            var sourceRevision = ReadExactSourceRevision(_latestEvidenceJson);
-            var validationDirectory = GetValidationDirectory();
-            Directory.CreateDirectory(validationDirectory);
-            var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssfffZ", System.Globalization.CultureInfo.InvariantCulture);
-            var baselinePath = Path.Combine(validationDirectory, $"gate-a-baseline-{stamp}.json");
-            var reportPath = Path.Combine(validationDirectory, $"gate-a-report-{stamp}.json");
-            await File.WriteAllTextAsync(baselinePath, _latestEvidenceJson);
-
+            var benchmarkProject = Path.Combine(
+                _gateARepositoryRoot,
+                "src",
+                "LatencyPilot.GpuBenchmark",
+                "LatencyPilot.GpuBenchmark.csproj");
             var helperProject = Path.Combine(
                 _gateARepositoryRoot,
                 "tools",
                 "LatencyPilot.GateAValidation",
                 "LatencyPilot.GateAValidation.csproj");
-            if (!File.Exists(helperProject))
+            if (!File.Exists(benchmarkProject) || !File.Exists(helperProject))
             {
-                throw new FileNotFoundException("The development Gate A validation helper project was not found.", helperProject);
+                throw new FileNotFoundException(
+                    "The GPU benchmark or Gate A validation project was not found in this development checkout.");
             }
 
-            var dotnetDirectory = Path.GetDirectoryName(dotnetExecutable)
-                ?? throw new InvalidOperationException("The resolved dotnet executable has no parent directory.");
-            var startInfo = new ProcessStartInfo
+            EvidenceExportStatusText.Text =
+                "GPU Gate A is starting the deterministic normal-user benchmark. A compact progress window will remain available while the main window is minimized.";
+
+            var benchmarkStartInfo = new ProcessStartInfo
             {
                 FileName = dotnetExecutable,
-                WorkingDirectory = dotnetDirectory,
+                WorkingDirectory = _gateARepositoryRoot,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            foreach (var argument in new[]
+                     {
+                         "run",
+                         "--project", benchmarkProject,
+                         "--configuration", "Release",
+                         "--",
+                         "--session-id", sessionId.ToString("D"),
+                         "--width", "1280",
+                         "--height", "720",
+                         "--worker-count", workerCount.ToString(CultureInfo.InvariantCulture),
+                         "--seed", benchmarkSeed.ToString(CultureInfo.InvariantCulture),
+                         "--control-pipe", benchmarkPipe,
+                         "--control-token", benchmarkToken,
+                         "--output-directory", benchmarkOutputDirectory,
+                     })
+            {
+                benchmarkStartInfo.ArgumentList.Add(argument);
+            }
+
+            benchmarkProcess = Process.Start(benchmarkStartInfo)
+                ?? throw new InvalidOperationException("The normal-user GPU benchmark process could not be started.");
+            benchmarkStdoutTask = benchmarkProcess.StandardOutput.ReadToEndAsync();
+            benchmarkStderrTask = benchmarkProcess.StandardError.ReadToEndAsync();
+
+            progressWindow = new GpuOptimizationProgressWindow(
+                sessionId,
+                progressPath,
+                cancelPath,
+                RootGrid.ActualTheme);
+            progressWindow.StartMonitoring();
+            progressWindow.Activate();
+
+            if (AppWindow.Presenter is OverlappedPresenter presenter)
+            {
+                presenter.Minimize();
+                mainMinimized = true;
+            }
+
+            var helperStartInfo = new ProcessStartInfo
+            {
+                FileName = dotnetExecutable,
+                WorkingDirectory = _gateARepositoryRoot,
                 UseShellExecute = true,
                 Verb = "runas",
             };
@@ -105,80 +172,239 @@ public sealed partial class MainWindow
                          "--project", helperProject,
                          "--configuration", "Release",
                          "--",
+                         "--auto-affinity",
                          "--repo-root", _gateARepositoryRoot,
-                         "--evidence", baselinePath,
                          "--expected-commit", sourceRevision,
                          "--output", reportPath,
+                         "--progress", progressPath,
+                         "--cancel", cancelPath,
+                         "--session-id", sessionId.ToString("D"),
+                         "--benchmark-pipe", benchmarkPipe,
+                         "--benchmark-token", benchmarkToken,
                          "--confirm-physical-mutation",
                      })
             {
-                startInfo.ArgumentList.Add(argument);
+                helperStartInfo.ArgumentList.Add(argument);
             }
 
-            using var helper = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("The elevated Gate A validation helper could not be started.");
+            using var helper = Process.Start(helperStartInfo)
+                ?? throw new InvalidOperationException("The elevated GPU Gate A helper could not be started.");
             await helper.WaitForExitAsync();
+            await progressWindow.StopMonitoringAsync();
+
+            await EnsureBenchmarkExitedAsync(benchmarkProcess);
+            var benchmarkStandardError = benchmarkStderrTask is null
+                ? string.Empty
+                : await benchmarkStderrTask;
+            _ = benchmarkStdoutTask is null ? string.Empty : await benchmarkStdoutTask;
 
             if (!File.Exists(reportPath))
             {
+                var benchmarkDetails = string.IsNullOrWhiteSpace(benchmarkStandardError)
+                    ? string.Empty
+                    : $" Benchmark: {benchmarkStandardError.Trim()}";
                 throw new InvalidOperationException(
-                    $"Gate A helper exited with code {helper.ExitCode}, but did not produce its JSON report.");
+                    $"GPU Gate A helper exited with code {helper.ExitCode}, but no report was produced.{benchmarkDetails}");
             }
 
-            using var reportDocument = JsonDocument.Parse(await File.ReadAllTextAsync(reportPath));
-            var reportRoot = reportDocument.RootElement;
-            var status = reportRoot.TryGetProperty("status", out var statusElement)
-                ? statusElement.GetString() ?? "Unknown"
-                : "Unknown";
-            var passed = reportRoot.TryGetProperty("passed", out var passedElement) && passedElement.GetBoolean();
-            EvidenceExportStatusText.Text = passed
-                ? $"GPU Gate A development validation passed and the original state was restored. Report: {reportPath}"
-                : $"GPU Gate A development validation finished safely with status {status}. The report contains the exact blocker and recovery evidence: {reportPath}";
+            var report = JsonSerializer.Deserialize<GpuAutoAffinityReport>(
+                    await File.ReadAllTextAsync(reportPath),
+                    GateAJsonOptions)
+                ?? throw new InvalidDataException("GPU Gate A report is empty or invalid.");
+            if (!string.Equals(report.Schema, GpuAutoAffinityReport.SchemaId, StringComparison.Ordinal) ||
+                report.SessionId != sessionId)
+            {
+                throw new InvalidDataException("GPU Gate A report schema or session identity does not match the owner run.");
+            }
 
+            var summary = BuildFinalSummary(report);
+            progressWindow.ShowFinalOutcome(summary, reportPath, report.FinalStateVerified);
+            EvidenceExportStatusText.Text = report.FinalStateVerified
+                ? $"GPU Gate A finished with verified final state. {summary} Report: {reportPath}"
+                : $"GPU Gate A requires recovery attention. {summary} Report: {reportPath}";
             TryRevealReport(reportPath);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
-            EvidenceExportStatusText.Text = "GPU Gate A development validation was cancelled at the UAC prompt. No Gate A mutation was started.";
+            if (progressWindow is not null)
+            {
+                await progressWindow.StopMonitoringAsync();
+                progressWindow.ShowStartupFailure(
+                    "GPU Gate A was cancelled at the UAC prompt. The normal-user benchmark will be stopped; no privileged mutation helper was started.");
+            }
+            EvidenceExportStatusText.Text =
+                "GPU Gate A was cancelled at the UAC prompt. No privileged mutation helper was started.";
         }
         catch (Exception exception) when (exception is
             IOException or
             UnauthorizedAccessException or
             InvalidDataException or
             InvalidOperationException or
+            NotSupportedException or
             JsonException or
             Win32Exception)
         {
-            Logger.Error(exception, "Development Gate A validation failed before a complete report could be presented.");
-            EvidenceExportStatusText.Text = $"GPU Gate A development validation could not complete: {exception.Message}";
+            Logger.Error(exception, "Development GPU Gate A validation failed before a complete verified result could be presented.");
+            if (progressWindow is not null)
+            {
+                await progressWindow.StopMonitoringAsync();
+                progressWindow.ShowStartupFailure(
+                    $"GPU Gate A could not complete: {exception.Message}");
+            }
+            EvidenceExportStatusText.Text = $"GPU Gate A could not complete: {exception.Message}";
         }
         finally
         {
-            if (windowHiddenForWorkload && !AppWindow.IsVisible)
+            if (benchmarkProcess is not null)
             {
-                AppWindow.Show(true);
+                try
+                {
+                    if (!benchmarkProcess.HasExited)
+                    {
+                        benchmarkProcess.Kill(entireProcessTree: true);
+                        await benchmarkProcess.WaitForExitAsync();
+                    }
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+                {
+                    Logger.Warning(exception, "The owner benchmark process could not be terminalized cleanly after Gate A.");
+                }
+                benchmarkProcess.Dispose();
+            }
+
+            if (progressWindow is not null)
+            {
+                await progressWindow.StopMonitoringAsync();
+            }
+
+            if (mainMinimized && AppWindow.Presenter is OverlappedPresenter presenter)
+            {
+                presenter.Restore(activateWindow: false);
             }
 
             _gateAValidationButton.IsEnabled = true;
         }
     }
 
-    private static string ReadExactSourceRevision(string json)
+    private static async Task<string> ReadCleanSourceRevisionAsync(string repositoryRoot)
     {
-        using var document = JsonDocument.Parse(json);
-        if (!document.RootElement.TryGetProperty("sourceRevisionId", out var revisionElement))
+        var head = (await RunGitAsync(repositoryRoot, "rev-parse", "HEAD")).Trim();
+        var branch = (await RunGitAsync(repositoryRoot, "branch", "--show-current")).Trim();
+        var status = await RunGitAsync(repositoryRoot, "status", "--porcelain");
+        if (head.Length != 40 || !head.All(Uri.IsHexDigit) ||
+            !string.Equals(branch, "main", StringComparison.Ordinal) ||
+            !string.IsNullOrWhiteSpace(status))
         {
-            throw new InvalidDataException("The baseline does not contain sourceRevisionId provenance.");
+            throw new InvalidOperationException(
+                "GPU Gate A requires a clean main checkout at one exact 40-character source revision.");
         }
 
-        var revision = revisionElement.GetString()?.Trim();
-        if (revision is not { Length: 40 } || !revision.All(Uri.IsHexDigit))
+        return head.ToLowerInvariant();
+    }
+
+    private static async Task<string> RunGitAsync(string workingDirectory, params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo
         {
-            throw new InvalidDataException(
-                "Gate A development validation requires a fresh baseline from an exact clean 40-character source revision. Pull/build the current main and capture again.");
+            FileName = "git",
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
         }
 
-        return revision.ToLowerInvariant();
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Could not start git for GPU Gate A source verification.");
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"git {string.Join(' ', arguments)} failed: {stderr.Trim()}");
+        }
+
+        return stdout;
+    }
+
+    private static async Task EnsureBenchmarkExitedAsync(Process benchmarkProcess)
+    {
+        if (benchmarkProcess.HasExited)
+        {
+            return;
+        }
+
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        try
+        {
+            await benchmarkProcess.WaitForExitAsync(deadline.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            benchmarkProcess.Kill(entireProcessTree: true);
+            await benchmarkProcess.WaitForExitAsync();
+        }
+    }
+
+    private static string BuildFinalSummary(GpuAutoAffinityReport report)
+    {
+        var confirmation = report.Candidates.LastOrDefault(static candidate =>
+            string.Equals(candidate.Phase, "confirmation", StringComparison.Ordinal));
+        var headline = string.Equals(
+                report.FinalRecommendation,
+                "KeepCandidate",
+                StringComparison.Ordinal)
+            ? $"Verified finalist: CPU {report.FinalProcessor?.Number.ToString(CultureInfo.InvariantCulture) ?? "—"}."
+            : report.OriginalStateRestored
+                ? "Original GPU affinity state is verified/restored."
+                : $"Final recommendation: {report.FinalRecommendation}.";
+
+        var relative = confirmation?.RelativeFrameP99Improvement is { } improvement && double.IsFinite(improvement)
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $" Canonical frame-p99 improvement: {improvement * 100d:F2}%.")
+            : string.Empty;
+
+        var originalP99 = AverageTrialMetric(report, "Original", static trial => trial.FrameP99Milliseconds);
+        var candidateP99 = AverageTrialMetric(report, "Candidate", static trial => trial.FrameP99Milliseconds);
+        var rawP99 = originalP99 is { } original && candidateP99 is { } candidate
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $" Confirmation trial p99 average: {original:F2} ms → {candidate:F2} ms (Δ {candidate - original:+0.00;-0.00;0.00} ms).")
+            : string.Empty;
+
+        var originalLow = AverageTrialMetric(report, "Original", static trial => trial.OnePercentLowFps);
+        var candidateLow = AverageTrialMetric(report, "Candidate", static trial => trial.OnePercentLowFps);
+        var rawLow = originalLow is { } originalFps && candidateLow is { } candidateFps
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $" Confirmation 1% low average: {originalFps:F1} → {candidateFps:F1} FPS (Δ {candidateFps - originalFps:+0.0;-0.0;0.0}).")
+            : string.Empty;
+
+        return $"{headline}{relative}{rawP99}{rawLow}";
+    }
+
+    private static double? AverageTrialMetric(
+        GpuAutoAffinityReport report,
+        string role,
+        Func<GpuAutoAffinityTrialReport, double?> selector)
+    {
+        var values = report.Trials
+            .Where(trial =>
+                string.Equals(trial.Phase, "confirmation", StringComparison.Ordinal) &&
+                string.Equals(trial.Role, role, StringComparison.Ordinal))
+            .Select(selector)
+            .Where(static value => value is { } item && double.IsFinite(item))
+            .Select(static value => value!.Value)
+            .ToArray();
+        return values.Length == 0 ? null : values.Average();
     }
 
     private static string GetValidationDirectory()
@@ -250,7 +476,7 @@ public sealed partial class MainWindow
         }
 
         throw new FileNotFoundException(
-            "dotnet.exe could not be resolved for the elevated Gate A helper. Install the .NET 10 SDK or ensure DOTNET_ROOT/PATH points to it.");
+            "dotnet.exe could not be resolved for the benchmark/Gate A helper. Install the .NET 10 SDK or ensure DOTNET_ROOT/PATH points to it.");
     }
 
     private static void TryRevealReport(string reportPath)
@@ -266,7 +492,7 @@ public sealed partial class MainWindow
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
         {
-            Logger.Warning(exception, "Gate A report was written, but File Explorer could not reveal it.");
+            Logger.Warning(exception, "GPU Gate A report was written, but File Explorer could not reveal it.");
         }
     }
 }
