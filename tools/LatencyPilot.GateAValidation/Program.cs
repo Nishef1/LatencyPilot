@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using LatencyPilot.GateAValidation;
 using LatencyPilot.Service;
 
 return await GateAOneClickProgram.RunAsync(args);
@@ -16,6 +17,11 @@ internal static partial class GateAOneClickProgram
 
     internal static async Task<int> RunAsync(string[] args)
     {
+        if (args.Contains(GpuAutoAffinityGateARunner.ModeFlag, StringComparer.Ordinal))
+        {
+            return await GpuAutoAffinityGateARunner.RunAsync(args);
+        }
+
         GateAOptions? options = null;
         var steps = new List<GateAStepReport>();
         var startedAtUtc = DateTimeOffset.UtcNow;
