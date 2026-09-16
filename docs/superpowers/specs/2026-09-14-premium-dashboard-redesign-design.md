@@ -131,9 +131,9 @@ Header:
 
 - `Latency health`,
 - one-line explanatory subtitle,
-- primary capture action,
-- secondary capture action,
-- evidence export as a lower-priority action.
+- **Quick snapshot** as the only primary action on Overview.
+
+`Build baseline` belongs to **Measure**. `Export JSON` belongs to **Evidence**. Development-only Gate A validation belongs to **Measure** and must never compete with the normal-user Overview action hierarchy.
 
 Status summary must represent separately:
 
@@ -148,7 +148,7 @@ Key metrics remain decision-useful only:
 - DPC p99,
 - ISR p99,
 - busiest-CPU interrupt concentration,
-- dominant module / readiness summary.
+- baseline/readiness summary.
 
 Reuse the existing real-data charts:
 
@@ -157,7 +157,9 @@ Reuse the existing real-data charts:
 - top modules by kernel time,
 - CPU DPC/ISR map.
 
-Replace the large persistent `This PC` rail with a compact system context surface showing Windows build, CPU summary, primary GPU/driver, and observation-service state.
+The no-evidence state must not render four large empty charts. Before the first usable capture or baseline, Overview shows one compact onboarding/empty-state surface with the next action. The metric/chart dashboard appears only once evidence exists.
+
+Replace the large persistent `This PC` rail with a compact system context surface showing Windows build, CPU summary, primary GPU/driver, and observation mode. Decorative Windows wallpaper artwork is not required; prefer a Fluent system/device icon and real machine facts.
 
 ### Measure
 
@@ -179,6 +181,8 @@ Baseline:
 - workload-stability result,
 - optimizer-readiness result,
 - specific retry guidance when workload changed.
+
+Development-only physical Gate A controls may appear here when the existing repository-development precondition is satisfied. They use secondary/quiet visual priority and do not appear in packaged end-user builds.
 
 No internal gate terminology in primary copy unless it materially helps troubleshooting.
 
@@ -211,7 +215,8 @@ Bounded top-N lists must size to their content instead of creating nested scroll
 
 Use native non-modal patterns.
 
-- Persistent normal state: compact status in shell/header.
+- Healthy connected service state does **not** consume a full-width banner on every page. It is represented compactly in shell state.
+- Service checking/degraded/disconnected states may surface a compact inline status row or `InfoBar` with Refresh.
 - Actionable warning/error: `InfoBar` on the relevant view.
 - Long operation: inline progress with duplicate actions disabled.
 - No fake toast-like success message for ordinary local capture completion.
@@ -225,6 +230,18 @@ Status colors retain existing semantics:
 - danger = failed/severe signal.
 
 Text/labels always accompany status color.
+
+## Native Windows visual language
+
+The final visual pass follows Windows theme semantics rather than a fixed branded light palette:
+
+- Default appearance follows the Windows setting (`ElementTheme.Default`) unless the user explicitly saved Light or Dark.
+- The active accent comes from the Windows system accent resources for buttons, selection, and compact emphasis.
+- Primary/secondary text, card fills, strokes and subtle fills should map to WinUI theme resources such as `TextFillColorPrimaryBrush`, `TextFillColorSecondaryBrush`, `CardBackgroundFillColorDefaultBrush`, `CardStrokeColorDefaultBrush`, and system accent resources.
+- DPC/ISR chart colors may remain stable analytical colors so comparisons are consistent across Windows accent choices.
+- Metric icon containers are compact rounded tiles rather than oversized circles.
+- Corners, card padding and title-bar height follow the denser Windows 11 utility aesthetic; premium means calm precision rather than oversized web-dashboard chrome.
+- The runtime must not replace the declared Acrylic backdrop with Mica.
 
 ## Code boundaries
 
@@ -241,6 +258,7 @@ Do not duplicate analyzer or readiness rules in visual code.
 Add/revise semantic resources for:
 
 - Acrylic-compatible shell/page surfaces,
+- native system accent and Windows theme text/card brushes,
 - navigation selection,
 - compact status backgrounds,
 - hero/metric spacing,
