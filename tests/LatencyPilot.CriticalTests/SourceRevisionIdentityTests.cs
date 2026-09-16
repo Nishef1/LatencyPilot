@@ -65,6 +65,21 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(gateAProgressSource, "\"failed-safely\"");
         StringAssert.Contains(gateAProgressSource, "\"stopped-safely\"");
 
+        var benchmarkControlClientSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "LatencyPilot.GateAValidation",
+            "GpuBenchmarkControlClient.cs"));
+        var connectAwaitIndex = benchmarkControlClientSource.IndexOf(
+            "await pipe.ConnectAsync",
+            StringComparison.Ordinal);
+        var clientConstructionIndex = benchmarkControlClientSource.IndexOf(
+            "new GpuBenchmarkControlClient",
+            StringComparison.Ordinal);
+        Assert.IsTrue(
+            connectAwaitIndex >= 0 && clientConstructionIndex > connectAwaitIndex,
+            "GPU benchmark control streams must not be created before the named pipe is connected.");
+
         var complete = new GateAValidationFacts(
             ExactRevision: true,
             BaselineEligible: true,
