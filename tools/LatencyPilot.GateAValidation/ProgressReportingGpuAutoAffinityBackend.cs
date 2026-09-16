@@ -1,11 +1,12 @@
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Optimization;
+using LatencyPilot.Core.Benchmarking;
 
 namespace LatencyPilot.GateAValidation;
 
 internal sealed class ProgressReportingGpuAutoAffinityBackend(
     IGpuAutoAffinitySessionBackend inner,
-    GpuGateAProgressFile progress) : IGpuAutoAffinitySessionBackend
+    GpuGateAProgressFile progress) : IGpuAutoAffinitySessionBackend, IGpuAutoAffinitySessionObserver
 {
     private readonly Dictionary<Guid, GpuAffinityCandidate> activeCandidates = [];
 
@@ -68,4 +69,7 @@ internal sealed class ProgressReportingGpuAutoAffinityBackend(
         GpuAffinityCandidate candidate,
         CancellationToken cancellationToken) =>
         inner.VerifyCandidateStateAsync(experimentId, candidate, cancellationToken);
+
+    public Task CandidateEvaluatedAsync(GpuAutoAffinityCandidateReport report) =>
+        progress.ReportCandidateEvaluatedAsync(report);
 }
