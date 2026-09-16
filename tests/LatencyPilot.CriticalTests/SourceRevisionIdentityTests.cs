@@ -82,6 +82,8 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(gateASource, "BuildGateATerminalSummary");
         StringAssert.Contains(gateASource, "GPU Gate A failed safely");
         StringAssert.Contains(gateASource, "GPU Gate A stopped safely");
+        StringAssert.Contains(gateASource, "Directory.Exists(Path.Combine(directory.FullName, \".git\"))");
+        StringAssert.Contains(gateASource, "File.Exists(Path.Combine(directory.FullName, \".git\"))");
         Assert.IsFalse(gateASource.Contains("Validate GPU · one click", StringComparison.Ordinal));
         Assert.IsFalse(gateASource.Contains("Auto-optimize GPU", StringComparison.Ordinal));
 

@@ -462,7 +462,8 @@ public sealed partial class MainWindow
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
             if (File.Exists(Path.Combine(directory.FullName, "LatencyPilot.slnx")) &&
-                Directory.Exists(Path.Combine(directory.FullName, ".git")))
+                (Directory.Exists(Path.Combine(directory.FullName, ".git")) ||
+                 File.Exists(Path.Combine(directory.FullName, ".git"))))
             {
                 return directory.FullName;
             }
