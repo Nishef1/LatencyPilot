@@ -1,4 +1,7 @@
 using LatencyPilot.Benchmarking.Optimization;
+using LatencyPilot.Benchmarking.Statistics;
+using LatencyPilot.Core.Benchmarking;
+using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -51,5 +54,80 @@ public sealed class GpuBenchmarkContractTests
                 50_000,
                 96,
                 0x51A7));
+    }
+
+    [TestMethod]
+    public void BenchmarkEvidenceUsesRawFramesAndInternalGpuTimestamps()
+    {
+        var startedAt = DateTimeOffset.UnixEpoch;
+        var frameTimes = Enumerable.Range(0, 1_000)
+            .Select(index => 8d + (index / 1_000d))
+            .ToArray();
+        var capture = new PresentMonFrameCaptureSnapshot(
+            PresentMonWorkloadCaptureStatus.Available,
+            77,
+            30_000,
+            30_000,
+            new PresentMonApiVersionSnapshot(3, 4, 0),
+            frameTimes.Select((frameTime, index) => new PresentMonFrameMetricsSnapshot(
+                1,
+                frameTime,
+                frameTime * 0.7d,
+                frameTime * 0.3d,
+                null,
+                5d + (index / 10_000d),
+                null,
+                false,
+                null,
+                null)).ToArray(),
+            [PresentMonGuardrailSeriesBuilder.DisplayLatencyMetric],
+            "PresentMonAPI2.dll",
+            null,
+            null,
+            startedAt,
+            startedAt.AddSeconds(30));
+
+        var evidence = new GpuBenchmarkEvidence(
+            GpuBenchmarkEvidence.SchemaId,
+            new string('a', 40),
+            "gpu-affinity-benchmark-v1",
+            "windows-test",
+            "gpu-test",
+            "driver-test",
+            "topology-test",
+            77,
+            "Original",
+            1,
+            null,
+            "workload-test",
+            [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 2)],
+            0x51A7,
+            1_000_000,
+            Enumerable.Repeat(4d, 1_000).ToArray(),
+            capture,
+            "2.5.1",
+            Guid.NewGuid(),
+            true,
+            0,
+            []);
+
+        var interpreted = GpuBenchmarkEvidenceInterpreter.Interpret(evidence);
+        Assert.IsTrue(interpreted.IsValid, string.Join("; ", interpreted.ValidityReasons));
+        Assert.AreEqual(
+            Percentiles.Calculate(frameTimes, 0.99),
+            interpreted.FrameP99Milliseconds,
+            0.000001d);
+        Assert.AreEqual(
+            1000d / interpreted.FrameP99Milliseconds,
+            interpreted.OnePercentLowFps,
+            0.000001d);
+        Assert.AreEqual(1_000, interpreted.PrimaryFrameTime.Samples.Count);
+        Assert.AreEqual(1_000, interpreted.D3D12GpuWork.Samples.Count);
+        Assert.IsTrue(interpreted.Context.ContainsKey(PresentMonGuardrailSeriesBuilder.GpuBusyMetric));
+        Assert.IsFalse(interpreted.Guardrails.ContainsKey(PresentMonGuardrailSeriesBuilder.GpuBusyMetric));
+        Assert.IsFalse(interpreted.Guardrails.ContainsKey(PresentMonGuardrailSeriesBuilder.DisplayLatencyMetric));
+
+        var oldPresentMon = GpuBenchmarkEvidenceInterpreter.Interpret(evidence with { PresentMonBinaryVersion = "2.4.1" });
+        Assert.IsFalse(oldPresentMon.IsValid);
     }
 }
