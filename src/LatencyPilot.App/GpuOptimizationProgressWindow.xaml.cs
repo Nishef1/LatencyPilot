@@ -18,6 +18,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
     private bool monitoring;
     private bool stopRequested;
     private bool terminal;
+    private bool terminalSnapshotReceived;
 
     internal GpuOptimizationProgressWindow(
         Guid sessionId,
@@ -66,6 +67,11 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         {
             await monitorTask;
         }
+
+        if (!terminalSnapshotReceived)
+        {
+            _ = await TryApplyLatestSnapshotAsync();
+        }
     }
 
     internal void ShowFinalOutcome(string summary, string reportPath, bool finalStateVerified)
@@ -74,15 +80,25 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         ArgumentException.ThrowIfNullOrWhiteSpace(reportPath);
 
         terminal = true;
-        PhaseText.Text = finalStateVerified ? "Complete · final state verified" : "Complete · recovery attention required";
-        StatusText.Text = $"{summary}\nReport: {reportPath}";
-        if (!finalStateVerified)
+        if (terminalSnapshotReceived)
         {
-            IsrPlacementText.Text = "Final state not verified — inspect recovery evidence";
+            StatusText.Text = $"{StatusText.Text}\n{summary}\nReport: {reportPath}";
         }
+        else
+        {
+            PhaseText.Text = finalStateVerified
+                ? "Ended early · final state verified"
+                : "Ended early · recovery attention required";
+            StatusText.Text = $"{summary}\nReport: {reportPath}";
+            if (!finalStateVerified)
+            {
+                IsrPlacementText.Text = "Final state not verified — inspect recovery evidence";
+            }
+        }
+
         StopButton.Content = "Close";
         StopButton.IsEnabled = true;
-        UpdateAutomationStatus(100d);
+        UpdateAutomationStatus(OptimizationProgressBar.Value);
     }
 
     internal void ShowStartupFailure(string message)
@@ -100,40 +116,56 @@ public sealed partial class GpuOptimizationProgressWindow : Window
     {
         while (monitoring && !terminal)
         {
-            try
+            if (await TryApplyLatestSnapshotAsync() && terminalSnapshotReceived)
             {
-                if (File.Exists(progressPath))
-                {
-                    var json = await File.ReadAllTextAsync(progressPath);
-                    var snapshot = JsonSerializer.Deserialize<GpuOptimizationProgressSnapshot>(json, JsonOptions);
-                    if (snapshot is not null &&
-                        string.Equals(snapshot.Schema, GpuOptimizationProgressSnapshot.SchemaId, StringComparison.Ordinal) &&
-                        snapshot.SessionId == sessionId)
-                    {
-                        ApplySnapshot(snapshot);
-                        if (snapshot.IsTerminal)
-                        {
-                            terminal = true;
-                            StopButton.Content = "Close";
-                            StopButton.IsEnabled = true;
-                            return;
-                        }
-                    }
-                }
-            }
-            catch (IOException)
-            {
-                // Atomic replacement can briefly move the file between directory entries.
-            }
-            catch (JsonException)
-            {
-                // Ignore a transient unreadable snapshot; the next atomic write supersedes it.
+                return;
             }
 
             if (monitoring && !terminal)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(250));
             }
+        }
+    }
+
+    private async Task<bool> TryApplyLatestSnapshotAsync()
+    {
+        try
+        {
+            if (!File.Exists(progressPath))
+            {
+                return false;
+            }
+
+            var json = await File.ReadAllTextAsync(progressPath);
+            var snapshot = JsonSerializer.Deserialize<GpuOptimizationProgressSnapshot>(json, JsonOptions);
+            if (snapshot is null ||
+                !string.Equals(snapshot.Schema, GpuOptimizationProgressSnapshot.SchemaId, StringComparison.Ordinal) ||
+                snapshot.SessionId != sessionId)
+            {
+                return false;
+            }
+
+            ApplySnapshot(snapshot);
+            if (snapshot.IsTerminal)
+            {
+                terminalSnapshotReceived = true;
+                terminal = true;
+                StopButton.Content = "Close";
+                StopButton.IsEnabled = true;
+            }
+
+            return true;
+        }
+        catch (IOException)
+        {
+            // Atomic replacement can briefly move the file between directory entries.
+            return false;
+        }
+        catch (JsonException)
+        {
+            // Ignore a transient unreadable snapshot; the next atomic write supersedes it.
+            return false;
         }
     }
 
@@ -144,7 +176,9 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 ? $"Candidate {index} / {count} · CPU {processor.Number} · Physical core {snapshot.PhysicalCore?.ToString(CultureInfo.InvariantCulture) ?? "—"}"
                 : $"CPU {processor.Number} · Physical core {snapshot.PhysicalCore?.ToString(CultureInfo.InvariantCulture) ?? "—"}"
             : "Original/default control";
-        PhaseText.Text = $"{FormatPhase(snapshot.Phase)} · {snapshot.Message}";
+        PhaseText.Text = snapshot.IsTerminal
+            ? FormatTerminalPhase(snapshot)
+            : $"{FormatPhase(snapshot.Phase)} · {snapshot.Message}";
         OptimizationProgressBar.Value = snapshot.PercentComplete;
         ProgressPercentText.Text = $"{snapshot.PercentComplete:F0}%";
         FrameP99Text.Text = snapshot.FrameP99Milliseconds is { } frameP99 && double.IsFinite(frameP99)
@@ -244,6 +278,26 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         AutomationProperties.SetItemStatus(StatusText, StatusText.Text);
     }
 
+    private static string FormatTerminalPhase(GpuOptimizationProgressSnapshot snapshot)
+    {
+        var finalStateVerified = string.Equals(
+            snapshot.IsrPlacementState,
+            "Final state verified",
+            StringComparison.Ordinal);
+        return snapshot.Phase switch
+        {
+            "failed-safely" => finalStateVerified
+                ? "Failed safely · original state verified"
+                : "Failed · recovery attention required",
+            "stopped-safely" => finalStateVerified
+                ? "Stopped safely · original state verified"
+                : "Stopped · recovery attention required",
+            _ => finalStateVerified
+                ? "Complete · final state verified"
+                : "Complete · recovery attention required",
+        };
+    }
+
     private static string FormatPhase(string phase) => phase switch
     {
         "initializing" => "Initializing",
@@ -253,6 +307,8 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         "confirmation" => "Finalist confirmation",
         "stopping-safely" => "Stopping safely",
         "restoring-original" => "Restoring original state",
+        "failed-safely" => "Failed safely",
+        "stopped-safely" => "Stopped safely",
         "complete" => "Complete",
         _ => phase,
     };
