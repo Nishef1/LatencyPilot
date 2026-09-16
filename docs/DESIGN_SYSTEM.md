@@ -10,7 +10,7 @@ LatencyPilot should look like a calm, premium, native Windows 11 performance too
 
 - `src/LatencyPilot.App/Design/DesignTokens.xaml` — semantic colors, chart palette, spacing, type scale, radii, dimensions, and shared padding.
 - `src/LatencyPilot.App/Design/ComponentStyles.xaml` — reusable text, card, chart, metric, button, pill, and list recipes.
-- `src/LatencyPilot.App/MainWindow.xaml` — Acrylic-backed application shell, native `NavigationView`, and the four product views.
+- `src/LatencyPilot.App/MainWindow.xaml` — Mica-backed application shell, native `NavigationView`, and the four product views.
 - `src/LatencyPilot.App/DashboardShell.cs` — view routing, adaptive card reflow, appearance and shell coordination. It does not own measurement rules.
 - `src/LatencyPilot.App/App.xaml` — resource composition only.
 - `src/LatencyPilot.App/Controls/*Chart.cs` — focused native WinUI visualizations. They render display models only and never call ETW/service/persistence directly.
@@ -30,17 +30,19 @@ LatencyPilot should look like a calm, premium, native Windows 11 performance too
 11. Charts visualize evidence the current protocol actually provides. Never synthesize a continuous timeline, time-bucket heatmap, performance delta or health score merely to match a mockup.
 12. Missing evidence renders an intentional empty state. Placeholder values that could be mistaken for real measurements are prohibited.
 13. Comparison quality and optimizer readiness are separate truths. A valid baseline may still be not ready for an optimization experiment.
+14. Visible copy is literal and short. Avoid marketing language, motivational filler, duplicated instructions, vague phrases such as “what deserves attention”, and text that merely narrates an obvious control.
+15. A user-facing action appears once per page unless repetition materially prevents an error or supports a separate workflow stage.
 
 ## Shell and material
 
 The active shell is native WinUI 3:
 
-- `DesktopAcrylicBackdrop` is the window-level material.
+- `MicaBackdrop` is the long-lived window material.
 - The root content is transparent so the system backdrop can remain visible.
-- A compact custom title bar carries product identity and the real observation-only state.
+- Acrylic is reserved for transient surfaces such as flyouts or menus when it improves hierarchy; do not turn every card into independent glass.
+- A compact custom title bar carries product identity and the real read-only state.
 - A native `NavigationView` owns adaptive primary navigation.
 - Content cards use semantic surfaces and borders so the application remains readable when Windows transparency is disabled.
-- Acrylic is environmental material, not a blur effect applied independently to every card.
 
 High Contrast never depends on translucency and continues to use Windows system colors.
 
@@ -72,7 +74,7 @@ Optical targets:
 - section/status icons: 18–20 px,
 - metric/hero icons: 20–24 px.
 
-Ambiguous or safety-relevant actions keep visible text; color or icon alone is never the only meaning.
+Ambiguous or safety-relevant actions keep visible text; color or icon alone is never the only meaning. Colored icon tiles are used only when the color carries semantic or chart identity; routine decorative tiles stay neutral.
 
 ## Truthful chart contract
 
@@ -89,7 +91,7 @@ If a future protocol adds timestamped event buckets, a temporal chart may use th
 
 The default consumer view prioritizes:
 
-1. measurement availability and capture actions,
+1. measurement availability and one primary snapshot action,
 2. DPC p99, ISR p99, CPU concentration, and baseline/readiness state,
 3. latency profile and CPU distribution,
 4. module contribution and CPU interrupt map,
@@ -97,13 +99,13 @@ The default consumer view prioritizes:
 
 Exact counts, p99.9/max detail, long quality explanations, provenance and baseline windows live in Evidence. Baseline preparation belongs in Measure. Detailed device/provider state belongs in Devices.
 
-Phase names, mutation implementation details and engineering gate terminology remain in status/engineering documentation unless they materially affect a user decision.
+Phase names, mutation implementation details and engineering gate terminology remain in development-only UI or engineering documentation unless they materially affect a user decision.
 
 ## Surface hierarchy
 
 Use three visual levels at most:
 
-1. system Acrylic shell,
+1. system Mica shell,
 2. semantic page/section surface,
 3. metric/action tile where grouping genuinely helps.
 
@@ -131,7 +133,7 @@ Desktop intent:
 - medium: compact navigation plus one/two-column content,
 - narrow: overlay/compact navigation and stacked content.
 
-No visible control should be parked in a zero-width column as a substitute for responsive layout.
+All four primary destinations must remain usable at narrow effective content widths. Header actions relocate below their heading instead of being parked in zero-width columns. Devices and Evidence grids reflow rather than clipping or creating horizontal scroll.
 
 ## Change checklist
 
@@ -142,6 +144,7 @@ Before adding or changing visual behavior, ask:
 - Does a Fluent system icon already communicate this action?
 - Does the visualization map directly to evidence we collect?
 - Is this information important enough for Overview, or should it live in Measure/Devices/Evidence?
+- Does the visible copy change a decision, prevent a mistake, or identify a value? If not, remove it.
 - Does the change preserve measurement/safety semantics?
 
 If evidence does not exist, change the visual rather than fabricate the data.
