@@ -101,23 +101,44 @@ public static class GpuGraphicsTargetIdentityResolver
                 "The target PnP display adapter could not be mapped uniquely to one DXGI hardware adapter.");
         }
 
-        if (!presentMon.IsAvailable || !presentMon.HasGraphicsLuidEvidence)
+        if (!presentMon.IsAvailable)
         {
             return GpuGraphicsTargetIdentityResolution.Unusable(
-                "PresentMon graphics-device LUID evidence is unavailable.");
+                "PresentMon graphics-device evidence is unavailable.");
         }
 
         var dxgi = dxgiMatches[0];
-        var presentMonMatches = presentMon.GraphicsDevices
-            .Where(device => device.Luid == dxgi.Luid)
-            .ToArray();
-        if (presentMonMatches.Length != 1)
+        PresentMonGraphicsDeviceSnapshot presentMonDevice;
+        if (presentMon.HasGraphicsLuidEvidence)
         {
-            return GpuGraphicsTargetIdentityResolution.Unusable(
-                "The DXGI target could not be mapped uniquely to one PresentMon graphics device by LUID.");
+            var presentMonMatches = presentMon.GraphicsDevices
+                .Where(device => device.Luid == dxgi.Luid)
+                .ToArray();
+            if (presentMonMatches.Length != 1)
+            {
+                return GpuGraphicsTargetIdentityResolution.Unusable(
+                    "The DXGI target could not be mapped uniquely to one PresentMon graphics device by LUID.");
+            }
+
+            presentMonDevice = presentMonMatches[0];
+        }
+        else
+        {
+            if (presentMon.GraphicsDevices.Count != 1)
+            {
+                return GpuGraphicsTargetIdentityResolution.Unusable(
+                    "PresentMon did not expose a LUID and reported more than one graphics device, so the target cannot be correlated uniquely.");
+            }
+
+            presentMonDevice = presentMon.GraphicsDevices[0];
+            if (!MatchesVendor(dxgi.VendorId, presentMonDevice.NativeVendor) ||
+                !string.Equals(dxgi.Description, presentMonDevice.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                return GpuGraphicsTargetIdentityResolution.Unusable(
+                    "PresentMon did not expose a LUID and its unique graphics device did not match the DXGI vendor and adapter name.");
+            }
         }
 
-        var presentMonDevice = presentMonMatches[0];
         return new GpuGraphicsTargetIdentityResolution(
             true,
             new GpuGraphicsTargetIdentitySnapshot(
@@ -128,6 +149,15 @@ public static class GpuGraphicsTargetIdentityResolver
                 hardwareAdapters.Count),
             null);
     }
+
+    private static bool MatchesVendor(uint pciVendorId, int presentMonVendor) =>
+        presentMonVendor switch
+        {
+            0 => pciVendorId == 0x8086,
+            1 => pciVendorId == 0x10DE,
+            2 => pciVendorId is 0x1002 or 0x1022,
+            _ => false,
+        };
 
     private static bool TryReadPciToken(
         string instanceId,

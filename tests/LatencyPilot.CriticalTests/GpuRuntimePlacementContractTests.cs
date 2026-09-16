@@ -134,6 +134,17 @@ public sealed class GpuRuntimePlacementContractTests
         Assert.IsNotNull(resolved.Identity);
         Assert.AreEqual((uint)7, resolved.Identity.PresentMonDeviceId);
 
+        Assert.IsTrue(GpuGraphicsTargetIdentityResolver.Resolve(
+            target,
+            new GraphicsAdapterInventory([dxgi], DateTimeOffset.UnixEpoch),
+            presentMon with
+            {
+                GraphicsDevices =
+                [
+                    new PresentMonGraphicsDeviceSnapshot(7, 1, "Test NVIDIA GPU", null),
+                ],
+            }).IsUsable);
+
         var secondAdapter = new GraphicsAdapterSnapshot(
             1,
             "Integrated GPU",
