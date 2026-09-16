@@ -230,13 +230,23 @@ public sealed class GpuRuntimePlacementContractTests
                 GraphicsTarget = laterContext.GraphicsTarget with { PresentMonDeviceId = 8 },
             }).IsStable);
 
-        Assert.IsFalse(GpuOptimizationCaptureContinuity.Evaluate(
+        Assert.IsTrue(GpuOptimizationCaptureContinuity.Evaluate(
             stableContext,
             laterContext with
             {
                 GraphicsTarget = laterContext.GraphicsTarget with
                 {
                     Luid = new GraphicsAdapterLuid(0xDEADBEEF, 0x10203040),
+                },
+            }).IsStable);
+
+        Assert.IsFalse(GpuOptimizationCaptureContinuity.Evaluate(
+            stableContext,
+            laterContext with
+            {
+                GraphicsTarget = laterContext.GraphicsTarget with
+                {
+                    DeviceInstanceId = "PCI\\VEN_10DE&DEV_OTHER",
                 },
             }).IsStable);
 

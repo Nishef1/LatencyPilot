@@ -450,7 +450,7 @@ internal sealed class GpuOptimizationOrchestrator
         expected.HardwareAdapterCount == 1 &&
         current.HardwareAdapterCount == 1 &&
         string.Equals(expected.DeviceInstanceId, current.DeviceInstanceId, StringComparison.OrdinalIgnoreCase) &&
-        expected.Luid == current.Luid;
+        string.Equals(expected.AdapterName, current.AdapterName, StringComparison.OrdinalIgnoreCase);
 
     private static GpuOptimizationEvidenceRequest CreateEvidenceRequest(
         GpuOptimizationOrchestrationRequest request,
