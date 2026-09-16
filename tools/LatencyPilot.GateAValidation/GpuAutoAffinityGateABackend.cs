@@ -405,7 +405,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         return reasons;
     }
 
-    private IReadOnlyList<double> FilterDriverDurations(
+    private double[] FilterDriverDurations(
         KernelLatencyCaptureResult capture,
         KernelLatencyEventKind kind) =>
         capture.Events
