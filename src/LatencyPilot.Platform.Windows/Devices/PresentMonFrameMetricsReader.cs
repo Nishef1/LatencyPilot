@@ -16,6 +16,8 @@ public static class PresentMonFrameMetricsReader
     private const ushort MinimumApiMinor = 3;
     private const int FrameBatchCapacity = 4_096;
     private const int MaximumFrames = 500_000;
+    private const int MaximumPostFlushDrainAttempts = 20;
+    private static readonly TimeSpan PostFlushDrainDelay = TimeSpan.FromMilliseconds(100);
     private const double MinimumWindowMilliseconds = 250;
     private const double MaximumWindowMilliseconds = 60_000;
 
@@ -300,7 +302,15 @@ public static class PresentMonFrameMetricsReader
                     unavailable);
             }
 
-            var frames = ConsumeAll(query, processId, consumeFrames, blobSize, selected, elements);
+            var frames = await ConsumeAfterFlushAsync(
+                    query,
+                    processId,
+                    consumeFrames,
+                    blobSize,
+                    selected,
+                    elements,
+                    cancellationToken)
+                .ConfigureAwait(false);
             stopwatch.Stop();
             var endedAt = DateTimeOffset.UtcNow;
             if (frames.Count == 0)
@@ -384,6 +394,29 @@ public static class PresentMonFrameMetricsReader
 
     private static bool IsVersionMismatch(int status) =>
         status is MiddlewareVersionLowStatus or MiddlewareVersionHighStatus or MiddlewareServiceMismatchStatus;
+
+    private static async Task<List<PresentMonFrameMetricsSnapshot>> ConsumeAfterFlushAsync(
+        nint query,
+        uint processId,
+        PresentMonConsumeFrames consumeFrames,
+        uint blobSize,
+        IReadOnlyList<FrameMetric> metrics,
+        IReadOnlyList<NativeQueryElement> elements,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < MaximumPostFlushDrainAttempts; attempt++)
+        {
+            var frames = ConsumeAll(query, processId, consumeFrames, blobSize, metrics, elements);
+            if (frames.Count > 0 || attempt == MaximumPostFlushDrainAttempts - 1)
+            {
+                return frames;
+            }
+
+            await Task.Delay(PostFlushDrainDelay, cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new InvalidOperationException("PresentMon raw-frame drain retry loop exited unexpectedly.");
+    }
 
     private static bool TryRegisterProbe(
         nint session,
