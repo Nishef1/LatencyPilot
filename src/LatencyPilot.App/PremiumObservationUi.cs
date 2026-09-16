@@ -61,15 +61,6 @@ public sealed partial class MainWindow
 
     private void InitializePremiumObservationUi()
     {
-        try
-        {
-            SystemBackdrop = new MicaBackdrop();
-        }
-        catch (Exception exception)
-        {
-            Logger.Warning(exception, "Mica backdrop could not be enabled; continuing with the solid theme fallback.");
-        }
-
         RebuildPremiumObservationCard();
         RootGrid.ActualThemeChanged += (_, _) => RebuildPremiumObservationCard();
         TryRegisterHighContrastChanged(RebuildPremiumObservationCard);
@@ -130,31 +121,31 @@ public sealed partial class MainWindow
     {
         var card = new Border
         {
-            Padding = new Thickness(18),
-            CornerRadius = new CornerRadius(17),
+            Padding = new Thickness(16),
+            CornerRadius = new CornerRadius(8),
             Background = ThemeBrush("PremiumSurfaceBrush"),
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(1),
         };
 
-        var root = new StackPanel { Spacing = 15 };
+        var root = new StackPanel { Spacing = 13 };
         card.Child = root;
 
         var header = new Grid { ColumnSpacing = 12 };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var heading = new StackPanel { Spacing = 3 };
+        var heading = new StackPanel { Spacing = 2 };
         heading.Children.Add(new TextBlock
         {
             Text = "Snapshot evidence",
-            FontSize = 18,
+            FontSize = 16,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
         });
         heading.Children.Add(new TextBlock
         {
-            Text = "Diagnostic context for this exact DPC/ISR snapshot. Decision claims require the repeated baseline.",
+            Text = "Diagnostic context for this snapshot. Stability claims require the repeated baseline.",
             FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
@@ -164,13 +155,13 @@ public sealed partial class MainWindow
         _snapshotEvidenceBadgeText = new TextBlock
         {
             Text = "Not captured",
-            FontSize = 12,
+            FontSize = 11,
             FontWeight = FontWeights.SemiBold,
         };
         _snapshotEvidenceBadge = new Border
         {
-            Padding = new Thickness(10, 5, 10, 5),
-            CornerRadius = new CornerRadius(11),
+            Padding = new Thickness(8, 4, 8, 4),
+            CornerRadius = new CornerRadius(999),
             VerticalAlignment = VerticalAlignment.Center,
             Child = _snapshotEvidenceBadgeText,
         };
@@ -181,7 +172,7 @@ public sealed partial class MainWindow
         _snapshotEvidenceTitleText = new TextBlock
         {
             Text = "Capture a quick snapshot to inspect the tail.",
-            FontSize = 20,
+            FontSize = 18,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
             TextWrapping = TextWrapping.Wrap,
@@ -191,7 +182,7 @@ public sealed partial class MainWindow
         _snapshotEvidenceSummaryText = new TextBlock
         {
             Text = "Exact measurements remain authoritative. A five-second snapshot is diagnostic evidence, not a stability or optimization verdict.",
-            FontSize = 14,
+            FontSize = 13,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
         };
@@ -199,13 +190,13 @@ public sealed partial class MainWindow
 
         var chartCard = new Border
         {
-            Padding = new Thickness(15),
-            CornerRadius = new CornerRadius(13),
+            Padding = new Thickness(14),
+            CornerRadius = new CornerRadius(8),
             Background = ThemeBrush("SurfaceAltBrush"),
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(1),
         };
-        var chartStack = new StackPanel { Spacing = 12 };
+        var chartStack = new StackPanel { Spacing = 11 };
         chartCard.Child = chartStack;
 
         var chartHeader = new Grid();
