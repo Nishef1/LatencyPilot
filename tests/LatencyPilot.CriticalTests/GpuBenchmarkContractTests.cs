@@ -197,4 +197,32 @@ public sealed class GpuBenchmarkContractTests
                 evidence,
                 GpuBenchmarkContaminationContext.Clean with { DeviceResetDetected = true }).State);
     }
+
+    [TestMethod]
+    public void ControlledBenchmarkProtocolIsSessionBoundAndTrialBounded()
+    {
+        var sessionId = Guid.NewGuid();
+        const string token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        var run = GpuBenchmarkControlCommand.RunTrial(
+            sessionId,
+            token,
+            runNumber: 7,
+            TimeSpan.FromSeconds(15));
+
+        Assert.AreEqual(GpuBenchmarkControlCommand.SchemaId, run.Schema);
+        Assert.AreEqual(GpuBenchmarkControlCommandKind.RunTrial, run.Kind);
+        Assert.IsTrue(GpuBenchmarkControlProtocol.TryValidate(run, sessionId, token, out var reason), reason);
+        Assert.IsFalse(GpuBenchmarkControlProtocol.TryValidate(run, Guid.NewGuid(), token, out _));
+        Assert.IsFalse(GpuBenchmarkControlProtocol.TryValidate(run, sessionId, new string('f', 64), out _));
+        Assert.IsFalse(GpuBenchmarkControlProtocol.TryValidate(
+            run with { DurationMilliseconds = 4_999 }, sessionId, token, out _));
+        Assert.IsFalse(GpuBenchmarkControlProtocol.TryValidate(
+            run with { RunNumber = 0 }, sessionId, token, out _));
+
+        var stop = GpuBenchmarkControlCommand.Stop(sessionId, token);
+        Assert.AreEqual(GpuBenchmarkControlCommandKind.Stop, stop.Kind);
+        Assert.IsTrue(GpuBenchmarkControlProtocol.TryValidate(stop, sessionId, token, out var stopReason), stopReason);
+        Assert.AreEqual(0, stop.RunNumber);
+        Assert.AreEqual(0, stop.DurationMilliseconds);
+    }
 }
