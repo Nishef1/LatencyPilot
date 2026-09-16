@@ -20,6 +20,7 @@ internal static class PresentMonApiLocator
         [
             Path.Combine(programFiles, "Intel", "PresentMon", "PresentMonAPI2.dll"),
             Path.Combine(programFiles, "Intel", "PresentMon", "SDK", "PresentMonAPI2.dll"),
+            Path.Combine(programFiles, "Intel", "PresentMonSharedService", "PresentMonAPI2.dll"),
         ];
 
         return candidates.FirstOrDefault(File.Exists);
