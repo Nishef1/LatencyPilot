@@ -1,3 +1,4 @@
+using LatencyPilot.Protocol;
 using LatencyPilot.Service;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -28,6 +29,20 @@ public sealed class SourceRevisionIdentityTests
         Assert.IsFalse(SourceRevisionIdentity.MatchesExpectedCommit(null, expected));
         Assert.ThrowsExactly<ArgumentException>(() =>
             SourceRevisionIdentity.MatchesExpectedCommit("0.0.2+abc", "abc"));
+
+        Assert.IsFalse(ServiceBoundary.MutationAvailable);
+        Assert.AreEqual(6, ProtocolVersion.Current);
+
+        var repositoryRoot = FindRepositoryRoot();
+        var gateASource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "GateAValidationExperience.cs"));
+        StringAssert.Contains(gateASource, "Run GPU Gate A");
+        StringAssert.Contains(gateASource, "IsDevelopmentGateAAvailable");
+        Assert.IsFalse(gateASource.Contains("Validate GPU · one click", StringComparison.Ordinal));
+        Assert.IsFalse(gateASource.Contains("Auto-optimize GPU", StringComparison.Ordinal));
 
         var complete = new GateAValidationFacts(
             ExactRevision: true,
@@ -63,5 +78,18 @@ public sealed class SourceRevisionIdentityTests
             Assert.IsFalse(result.Passed);
             Assert.IsFalse(string.IsNullOrWhiteSpace(result.Reason));
         }
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "LatencyPilot.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new DirectoryNotFoundException("LatencyPilot repository root could not be resolved from the test output directory.");
     }
 }
