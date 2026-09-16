@@ -86,6 +86,13 @@ public sealed class GpuBenchmarkContractTests
             null,
             startedAt,
             startedAt.AddSeconds(30));
+        var frozenWorkload = new GpuBenchmarkArtifactWorkload(
+            96,
+            50_000,
+            [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 2)],
+            0x51A7,
+            1920,
+            1080);
 
         var evidence = new GpuBenchmarkEvidence(
             GpuBenchmarkEvidence.SchemaId,
@@ -109,7 +116,8 @@ public sealed class GpuBenchmarkContractTests
             Guid.NewGuid(),
             true,
             0,
-            []);
+            [],
+            frozenWorkload);
 
         var interpreted = GpuBenchmarkEvidenceInterpreter.Interpret(evidence);
         Assert.IsTrue(interpreted.IsValid, string.Join("; ", interpreted.ValidityReasons));
@@ -126,6 +134,21 @@ public sealed class GpuBenchmarkContractTests
         Assert.IsTrue(interpreted.Context.ContainsKey(PresentMonGuardrailSeriesBuilder.GpuBusyMetric));
         Assert.IsFalse(interpreted.Guardrails.ContainsKey(PresentMonGuardrailSeriesBuilder.GpuBusyMetric));
         Assert.IsFalse(interpreted.Guardrails.ContainsKey(PresentMonGuardrailSeriesBuilder.DisplayLatencyMetric));
+
+        var provenance = GpuAutoAffinityReportProvenance.FromEvidence(evidence);
+        Assert.AreEqual(evidence.SourceRevisionId, provenance.SourceRevisionId);
+        Assert.AreEqual(evidence.GpuIdentity, provenance.GpuIdentity);
+        Assert.AreEqual(evidence.DriverIdentity, provenance.DriverIdentity);
+        Assert.AreEqual(evidence.TopologyIdentity, provenance.TopologyIdentity);
+        Assert.AreEqual(evidence.BenchmarkProcessId, provenance.BenchmarkProcessId);
+        Assert.AreEqual(evidence.FrozenWorkloadIdentity, provenance.FrozenWorkloadIdentity);
+        Assert.AreEqual(evidence.PresentMonBinaryVersion, provenance.PresentMonBinaryVersion);
+        Assert.AreEqual(evidence.D3D12TimestampFrequency, provenance.D3D12TimestampFrequency);
+        Assert.AreEqual(96, provenance.FrozenWorkload.CommandBatchesPerWorker);
+        Assert.AreEqual(50_000, provenance.FrozenWorkload.SimulationIterationsPerWorker);
+        Assert.AreEqual(1920, provenance.FrozenWorkload.Width);
+        Assert.AreEqual(1080, provenance.FrozenWorkload.Height);
+        CollectionAssert.AreEqual(evidence.WorkerMap.ToArray(), provenance.FrozenWorkload.WorkerMap.ToArray());
 
         var oldPresentMon = GpuBenchmarkEvidenceInterpreter.Interpret(evidence with { PresentMonBinaryVersion = "2.4.1" });
         Assert.IsFalse(oldPresentMon.IsValid);
