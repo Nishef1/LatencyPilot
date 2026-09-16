@@ -144,20 +144,76 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         var experimentId = mutation.ApplyCandidate(deviceInstanceId, candidate);
         ownedCandidates[experimentId] = candidate;
 
-        var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
-        var verified = string.Equals(
-                current.DriverVersion,
-                originalState.DriverVersion,
-                StringComparison.OrdinalIgnoreCase) &&
-            GpuInterruptAffinityStateComparer.MatchesCandidate(current, ToMutationCandidate(candidate));
-        mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
-            DateTimeOffset.UtcNow,
-            "ApplyCandidate",
-            experimentId,
-            candidate.Processor,
-            verified,
-            ToStoredStateReport(current)));
-        return Task.FromResult(experimentId);
+        try
+        {
+            var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+            var verified = string.Equals(
+                    current.DriverVersion,
+                    originalState.DriverVersion,
+                    StringComparison.OrdinalIgnoreCase) &&
+                GpuInterruptAffinityStateComparer.MatchesCandidate(current, ToMutationCandidate(candidate));
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow,
+                "ApplyCandidate",
+                experimentId,
+                candidate.Processor,
+                verified,
+                ToStoredStateReport(current)));
+            if (!verified)
+            {
+                throw new InvalidOperationException(
+                    "GPU candidate post-apply verification failed before ownership could be transferred to the session.");
+            }
+
+            return Task.FromResult(experimentId);
+        }
+        catch (Exception postApplyFailure)
+        {
+            RollbackCandidateAfterPostApplyFailure(experimentId, candidate, postApplyFailure);
+            throw;
+        }
+    }
+
+    private void RollbackCandidateAfterPostApplyFailure(
+        Guid experimentId,
+        GpuAffinityCandidate candidate,
+        Exception postApplyFailure)
+    {
+        try
+        {
+            mutation.Rollback(experimentId);
+            var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+            var verified = string.Equals(
+                    current.DriverVersion,
+                    originalState.DriverVersion,
+                    StringComparison.OrdinalIgnoreCase) &&
+                GpuInterruptAffinityStateComparer.MatchesOriginal(current, originalState);
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow,
+                "RollbackAfterPostApplyFailure",
+                experimentId,
+                candidate.Processor,
+                verified,
+                ToStoredStateReport(current),
+                postApplyFailure.Message));
+            if (!verified)
+            {
+                throw new InvalidOperationException(
+                    "GPU candidate post-apply verification failed and rollback completed without an exact-original verification.");
+            }
+        }
+        catch (Exception rollbackFailure)
+        {
+            throw new AggregateException(
+                "GPU candidate post-apply verification failed and exact rollback also failed.",
+                postApplyFailure,
+                rollbackFailure);
+        }
+        finally
+        {
+            measuringExperiments.Remove(experimentId);
+            ownedCandidates.Remove(experimentId);
+        }
     }
 
     public Task<GpuAutoAffinityTrialObservation> CaptureCandidateAsync(
@@ -223,7 +279,6 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         }
 
         mutation.AwaitDecision(experimentId);
-        mutation.KeepCandidate(experimentId);
         var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
         var verified = string.Equals(
                 current.DriverVersion,
@@ -232,10 +287,24 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             GpuInterruptAffinityStateComparer.MatchesCandidate(current, ToMutationCandidate(candidate));
         mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
             DateTimeOffset.UtcNow,
-            "KeepCandidate",
+            "KeepCandidatePreflight",
             experimentId,
             candidate.Processor,
             verified,
+            ToStoredStateReport(current)));
+        if (!verified)
+        {
+            throw new InvalidOperationException(
+                "GPU candidate pre-keep verification failed; the keep decision was not terminalized.");
+        }
+
+        mutation.KeepCandidate(experimentId);
+        mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+            DateTimeOffset.UtcNow,
+            "KeepCandidate",
+            experimentId,
+            candidate.Processor,
+            StoredStateVerified: true,
             ToStoredStateReport(current)));
         measuringExperiments.Remove(experimentId);
         ownedCandidates.Remove(experimentId);
