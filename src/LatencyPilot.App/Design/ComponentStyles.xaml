@@ -2,7 +2,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- Reusable component recipes. Keep screens declarative and token-driven. -->
+    <!-- Reusable, restrained component recipes. Screens stay declarative and token-driven. -->
 
     <Style x:Key="HeroTitleTextStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="{StaticResource FontHero}" />
@@ -15,12 +15,14 @@
         <Setter Property="FontSize" Value="{StaticResource FontHeading}" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{ThemeResource TextBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
     <Style x:Key="SubsectionTitleTextStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="{StaticResource FontSection}" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{ThemeResource TextBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
     <Style x:Key="BodyTextStyle" TargetType="TextBlock">
@@ -44,7 +46,7 @@
     <Style x:Key="MetricLabelTextStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="{StaticResource FontBodySmall}" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{ThemeResource TextBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource MutedTextBrush}" />
         <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
@@ -64,7 +66,7 @@
 
     <Style x:Key="DashboardCardStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource CardPadding}" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusXLarge}" />
         <Setter Property="Background" Value="{ThemeResource PremiumSurfaceBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -72,7 +74,7 @@
 
     <Style x:Key="ChartCardStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource ChartCardPadding}" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusXLarge}" />
         <Setter Property="Background" Value="{ThemeResource PremiumSurfaceBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -81,31 +83,31 @@
 
     <Style x:Key="SubtleCardStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource CompactCardPadding}" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}" />
         <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
 
     <Style x:Key="EmptyStateStyle" TargetType="Border">
-        <Setter Property="Padding" Value="18" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
-        <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
+        <Setter Property="Padding" Value="24" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusXLarge}" />
+        <Setter Property="Background" Value="{ThemeResource SurfaceRaisedBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
 
     <Style x:Key="MetricTileStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource MetricTilePadding}" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}" />
         <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource DividerBrush}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
 
     <Style x:Key="DashboardMetricStyle" TargetType="Border">
-        <Setter Property="Padding" Value="{StaticResource CardPadding}" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}" />
+        <Setter Property="Padding" Value="{StaticResource MetricTilePadding}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusXLarge}" />
         <Setter Property="Background" Value="{ThemeResource PremiumSurfaceBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -115,15 +117,15 @@
     <Style x:Key="MetricIconStyle" TargetType="Border">
         <Setter Property="Width" Value="{StaticResource MetricIconSize}" />
         <Setter Property="Height" Value="{StaticResource MetricIconSize}" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
+        <Setter Property="CornerRadius" Value="10" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
 
     <Style x:Key="IconTileStyle" TargetType="Border">
-        <Setter Property="Width" Value="32" />
-        <Setter Property="Height" Value="32" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
+        <Setter Property="Width" Value="34" />
+        <Setter Property="Height" Value="34" />
+        <Setter Property="CornerRadius" Value="10" />
         <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
     </Style>
 

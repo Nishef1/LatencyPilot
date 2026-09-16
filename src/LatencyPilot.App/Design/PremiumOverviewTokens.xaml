@@ -3,59 +3,61 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
-        Premium Overview palette.
-        Category colors identify data; semantic colors identify state.
-        Green/yellow/red are never used as arbitrary latency health thresholds.
+        Overview-specific palette and interaction recipes.
+        Category colors identify measured datasets; semantic colors identify state.
+        Large surfaces stay neutral so the data, not decoration, owns attention.
     -->
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
-            <SolidColorBrush x:Key="BrandActionBrush" Color="#FF0067C0" />
-            <SolidColorBrush x:Key="BrandActionHoverBrush" Color="#FF005FB8" />
-            <SolidColorBrush x:Key="BrandActionPressedBrush" Color="#FF00549F" />
-            <SolidColorBrush x:Key="BrandActionSoftBrush" Color="#140067C0" />
+            <SolidColorBrush x:Key="BrandActionBrush" Color="{ThemeResource SystemAccentColor}" />
+            <SolidColorBrush x:Key="BrandActionHoverBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.90" />
+            <SolidColorBrush x:Key="BrandActionPressedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.82" />
+            <SolidColorBrush x:Key="BrandActionSoftBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.09" />
 
-            <SolidColorBrush x:Key="DpcCategoryBrush" Color="#FFFF7A00" />
-            <SolidColorBrush x:Key="DpcCategorySoftBrush" Color="#12FF7A00" />
-            <SolidColorBrush x:Key="IsrCategoryBrush" Color="#FF7C5CFC" />
-            <SolidColorBrush x:Key="IsrCategorySoftBrush" Color="#127C5CFC" />
-            <SolidColorBrush x:Key="CpuCategoryBrush" Color="#FF1683E8" />
-            <SolidColorBrush x:Key="CpuCategorySoftBrush" Color="#121683E8" />
+            <SolidColorBrush x:Key="DpcCategoryBrush" Color="#FFD97706" />
+            <SolidColorBrush x:Key="DpcCategorySoftBrush" Color="#FFD97706" Opacity="0.09" />
+            <SolidColorBrush x:Key="IsrCategoryBrush" Color="#FF7357D5" />
+            <SolidColorBrush x:Key="IsrCategorySoftBrush" Color="#FF7357D5" Opacity="0.09" />
+            <SolidColorBrush x:Key="CpuCategoryBrush" Color="#FF087CCF" />
+            <SolidColorBrush x:Key="CpuCategorySoftBrush" Color="#FF087CCF" Opacity="0.09" />
 
-            <SolidColorBrush x:Key="SemanticGoodBrush" Color="#FF107C10" />
-            <SolidColorBrush x:Key="SemanticGoodSoftBrush" Color="#12107C10" />
-            <SolidColorBrush x:Key="SemanticAttentionBrush" Color="#FF9D5D00" />
-            <SolidColorBrush x:Key="SemanticAttentionSoftBrush" Color="#16D68A00" />
+            <SolidColorBrush x:Key="SemanticGoodBrush" Color="#FF157A19" />
+            <SolidColorBrush x:Key="SemanticGoodSoftBrush" Color="#FF157A19" Opacity="0.09" />
+            <SolidColorBrush x:Key="SemanticAttentionBrush" Color="#FF9A5A00" />
+            <SolidColorBrush x:Key="SemanticAttentionSoftBrush" Color="#FFD98700" Opacity="0.10" />
             <SolidColorBrush x:Key="SemanticFailureBrush" Color="#FFC42B1C" />
-            <SolidColorBrush x:Key="SemanticFailureSoftBrush" Color="#14C42B1C" />
+            <SolidColorBrush x:Key="SemanticFailureSoftBrush" Color="#FFC42B1C" Opacity="0.09" />
 
-            <SolidColorBrush x:Key="PremiumOverviewCardBrush" Color="#F7FFFFFF" />
-            <SolidColorBrush x:Key="PremiumOverviewRaisedBrush" Color="#FCFFFFFF" />
-            <SolidColorBrush x:Key="PremiumOverviewDividerBrush" Color="#14000000" />
+            <StaticResource x:Key="PremiumOverviewCardBrush" ResourceKey="CardBackgroundFillColorDefaultBrush" />
+            <SolidColorBrush x:Key="PremiumOverviewRaisedBrush" Color="#ECFFFFFF" />
+            <SolidColorBrush x:Key="PremiumOverviewDividerBrush" Color="#10000000" />
+            <SolidColorBrush x:Key="PremiumOverviewQuietBrush" Color="#09000000" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Dark">
-            <SolidColorBrush x:Key="BrandActionBrush" Color="#FF60CDFF" />
-            <SolidColorBrush x:Key="BrandActionHoverBrush" Color="#FF76D4FF" />
-            <SolidColorBrush x:Key="BrandActionPressedBrush" Color="#FF4CB8E8" />
-            <SolidColorBrush x:Key="BrandActionSoftBrush" Color="#1860CDFF" />
+            <SolidColorBrush x:Key="BrandActionBrush" Color="{ThemeResource SystemAccentColor}" />
+            <SolidColorBrush x:Key="BrandActionHoverBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.92" />
+            <SolidColorBrush x:Key="BrandActionPressedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.84" />
+            <SolidColorBrush x:Key="BrandActionSoftBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.14" />
 
-            <SolidColorBrush x:Key="DpcCategoryBrush" Color="#FFFF9F4A" />
-            <SolidColorBrush x:Key="DpcCategorySoftBrush" Color="#18FF9F4A" />
-            <SolidColorBrush x:Key="IsrCategoryBrush" Color="#FFB39DFF" />
-            <SolidColorBrush x:Key="IsrCategorySoftBrush" Color="#18B39DFF" />
-            <SolidColorBrush x:Key="CpuCategoryBrush" Color="#FF60CDFF" />
-            <SolidColorBrush x:Key="CpuCategorySoftBrush" Color="#1860CDFF" />
+            <SolidColorBrush x:Key="DpcCategoryBrush" Color="#FFFFA85C" />
+            <SolidColorBrush x:Key="DpcCategorySoftBrush" Color="#FFFFA85C" Opacity="0.11" />
+            <SolidColorBrush x:Key="IsrCategoryBrush" Color="#FFAB98FF" />
+            <SolidColorBrush x:Key="IsrCategorySoftBrush" Color="#FFAB98FF" Opacity="0.13" />
+            <SolidColorBrush x:Key="CpuCategoryBrush" Color="#FF64D2FF" />
+            <SolidColorBrush x:Key="CpuCategorySoftBrush" Color="#FF64D2FF" Opacity="0.12" />
 
-            <SolidColorBrush x:Key="SemanticGoodBrush" Color="#FF6CCB5F" />
-            <SolidColorBrush x:Key="SemanticGoodSoftBrush" Color="#186CCB5F" />
-            <SolidColorBrush x:Key="SemanticAttentionBrush" Color="#FFFCE100" />
-            <SolidColorBrush x:Key="SemanticAttentionSoftBrush" Color="#18FCE100" />
-            <SolidColorBrush x:Key="SemanticFailureBrush" Color="#FFFF99A4" />
-            <SolidColorBrush x:Key="SemanticFailureSoftBrush" Color="#18FF99A4" />
+            <SolidColorBrush x:Key="SemanticGoodBrush" Color="#FF78D56E" />
+            <SolidColorBrush x:Key="SemanticGoodSoftBrush" Color="#FF78D56E" Opacity="0.12" />
+            <SolidColorBrush x:Key="SemanticAttentionBrush" Color="#FFF1C75B" />
+            <SolidColorBrush x:Key="SemanticAttentionSoftBrush" Color="#FFF1C75B" Opacity="0.11" />
+            <SolidColorBrush x:Key="SemanticFailureBrush" Color="#FFFF9EA8" />
+            <SolidColorBrush x:Key="SemanticFailureSoftBrush" Color="#FFFF9EA8" Opacity="0.10" />
 
-            <SolidColorBrush x:Key="PremiumOverviewCardBrush" Color="#F2272727" />
-            <SolidColorBrush x:Key="PremiumOverviewRaisedBrush" Color="#F72B2B2B" />
-            <SolidColorBrush x:Key="PremiumOverviewDividerBrush" Color="#22FFFFFF" />
+            <StaticResource x:Key="PremiumOverviewCardBrush" ResourceKey="CardBackgroundFillColorDefaultBrush" />
+            <SolidColorBrush x:Key="PremiumOverviewRaisedBrush" Color="#E62D2D30" />
+            <SolidColorBrush x:Key="PremiumOverviewDividerBrush" Color="#18FFFFFF" />
+            <SolidColorBrush x:Key="PremiumOverviewQuietBrush" Color="#0AFFFFFF" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="HighContrast">
@@ -78,16 +80,28 @@
             <SolidColorBrush x:Key="PremiumOverviewCardBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="PremiumOverviewRaisedBrush" Color="{ThemeResource SystemColorWindowColor}" />
             <SolidColorBrush x:Key="PremiumOverviewDividerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="PremiumOverviewQuietBrush" Color="{ThemeResource SystemColorWindowColor}" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
     <Style x:Key="PremiumPrimaryButtonStyle" TargetType="Button">
         <Setter Property="Background" Value="{ThemeResource BrandActionBrush}" />
-        <Setter Property="Foreground" Value="#FFFFFFFF" />
+        <Setter Property="Foreground" Value="{ThemeResource OnAccentBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="17,9" />
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style x:Key="PremiumLinkButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{ThemeResource BrandActionBrush}" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="Padding" Value="16,8" />
-        <Setter Property="MinHeight" Value="38" />
+        <Setter Property="Padding" Value="8,5" />
+        <Setter Property="MinHeight" Value="30" />
+        <Setter Property="FontSize" Value="12" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
 </ResourceDictionary>
