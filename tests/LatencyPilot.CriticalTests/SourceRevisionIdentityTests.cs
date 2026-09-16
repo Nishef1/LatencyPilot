@@ -105,6 +105,32 @@ public sealed class SourceRevisionIdentityTests
             "tools",
             "LatencyPilot.GateAValidation",
             "GpuAutoAffinityGateABackend.cs"));
+        var keepStartIndex = gateABackendSource.IndexOf(
+            "public Task KeepAsync",
+            StringComparison.Ordinal);
+        var keepEndIndex = gateABackendSource.IndexOf(
+            "public Task<bool> VerifyOriginalStateAsync",
+            keepStartIndex,
+            StringComparison.Ordinal);
+        Assert.IsTrue(
+            keepStartIndex >= 0 && keepEndIndex > keepStartIndex,
+            "Gate A Keep lifecycle source could not be located.");
+        var keepSource = gateABackendSource[keepStartIndex..keepEndIndex];
+        var keepVerificationIndex = keepSource.IndexOf(
+            "GpuInterruptAffinityPolicyStore.Capture",
+            StringComparison.Ordinal);
+        var keepCommitIndex = keepSource.IndexOf(
+            "mutation.KeepCandidate(experimentId)",
+            StringComparison.Ordinal);
+        Assert.IsTrue(
+            keepVerificationIndex >= 0 && keepCommitIndex > keepVerificationIndex,
+            "Gate A must perform throwing stored-state verification before the journal terminalizes Keep.");
+        Assert.IsFalse(
+            keepSource[(keepCommitIndex + "mutation.KeepCandidate(experimentId)".Length)..]
+                .Contains("GpuInterruptAffinityPolicyStore.Capture", StringComparison.Ordinal),
+            "Gate A must not perform throwing external state reads after Keep becomes terminal.");
+        StringAssert.Contains(keepSource, "pre-keep verification failed");
+
         var applyCandidateIndex = gateABackendSource.IndexOf(
             "public Task<Guid> ApplyCandidateAsync",
             StringComparison.Ordinal);
