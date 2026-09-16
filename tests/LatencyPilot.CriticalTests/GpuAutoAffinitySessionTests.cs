@@ -60,6 +60,40 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.AreEqual(14, nonSmtProgressPlan.InitialTotalUnits);
         Assert.AreEqual(14, nonSmtProgressPlan.GetTotalUnitsForFinalist(0));
 
+        var boundedCores = Enumerable.Range(0, 8)
+            .Select(index => new ProcessorCoreSnapshot(
+                index,
+                0,
+                [
+                    new LogicalProcessorId(0, checked((byte)(index * 2))),
+                    new LogicalProcessorId(0, checked((byte)(index * 2 + 1))),
+                ]))
+            .ToArray();
+        var boundedLogical = boundedCores.SelectMany(static core => core.LogicalProcessors).ToArray();
+        var boundedTopology = new ProcessorTopologySnapshot(
+            [new ProcessorPackageSnapshot(0, boundedLogical)],
+            boundedCores,
+            DateTimeOffset.UnixEpoch);
+        var boundedPressure = boundedLogical
+            .Select(processor => new ProcessorPressureEvidence(processor, processor.Number / 100d))
+            .ToArray();
+        var boundedCandidates = GpuAffinityCandidatePlanner.Create(boundedTopology, boundedPressure);
+        Assert.AreEqual(8, boundedCandidates.Count);
+        CollectionAssert.AreEquivalent(
+            Enumerable.Range(0, 8).ToArray(),
+            boundedCandidates.Select(static candidate => candidate.PhysicalCoreIndex).ToArray());
+        Assert.IsTrue(boundedCandidates.Any(static candidate =>
+            candidate.Processor == new LogicalProcessorId(0, 0)));
+        var boundedWinner = boundedCandidates.Single(static candidate => candidate.PhysicalCoreIndex == 3);
+        CollectionAssert.AreEquivalent(
+            new[] { new LogicalProcessorId(0, 6), new LogicalProcessorId(0, 7) },
+            GpuAffinityCandidatePlanner.CreateSiblingRefinement(
+                    boundedTopology,
+                    boundedPressure,
+                    boundedWinner)
+                .Select(static candidate => candidate.Processor)
+                .ToArray());
+
         var request = new GpuAutoAffinitySessionRequest(
             Guid.NewGuid(),
             topology,
