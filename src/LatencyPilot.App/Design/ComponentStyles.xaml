@@ -83,7 +83,16 @@
         <Setter Property="Padding" Value="{StaticResource CompactCardPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
         <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
-        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style x:Key="EmptyStateStyle" TargetType="Border">
+        <Setter Property="Padding" Value="24" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusXLarge}" />
+        <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
     </Style>
 
     <Style x:Key="MetricTileStyle" TargetType="Border">
@@ -106,14 +115,15 @@
     <Style x:Key="MetricIconStyle" TargetType="Border">
         <Setter Property="Width" Value="{StaticResource MetricIconSize}" />
         <Setter Property="Height" Value="{StaticResource MetricIconSize}" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
         <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
 
     <Style x:Key="IconTileStyle" TargetType="Border">
-        <Setter Property="Width" Value="42" />
-        <Setter Property="Height" Value="42" />
-        <Setter Property="CornerRadius" Value="13" />
+        <Setter Property="Width" Value="34" />
+        <Setter Property="Height" Value="34" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
         <Setter Property="Background" Value="{ThemeResource AccentSoftBrush}" />
     </Style>
 
@@ -131,7 +141,7 @@
     </Style>
 
     <Style x:Key="SecondaryButtonStyle" TargetType="Button">
-        <Setter Property="Background" Value="{ThemeResource AccentSofterBrush}" />
+        <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
         <Setter Property="Foreground" Value="{ThemeResource TextBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -142,12 +152,12 @@
     </Style>
 
     <Style x:Key="QuietButtonStyle" TargetType="Button">
-        <Setter Property="Background" Value="{ThemeResource PremiumSurfaceBrush}" />
+        <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{ThemeResource TextBrush}" />
-        <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="MinHeight" Value="38" />
-        <Setter Property="Padding" Value="14,7" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="Padding" Value="10,6" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
@@ -156,5 +166,9 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="0" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.VerticalScrollMode" Value="Disabled" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Disabled" />
     </Style>
 </ResourceDictionary>
