@@ -459,13 +459,22 @@ public sealed partial class MainWindow
 
     private static string? TryFindRepositoryRoot()
     {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        var startingDirectories = new[]
         {
-            if (File.Exists(Path.Combine(directory.FullName, "LatencyPilot.slnx")) &&
-                (Directory.Exists(Path.Combine(directory.FullName, ".git")) ||
-                 File.Exists(Path.Combine(directory.FullName, ".git"))))
+            new DirectoryInfo(AppContext.BaseDirectory),
+            new DirectoryInfo(Environment.CurrentDirectory),
+        };
+
+        foreach (var startingDirectory in startingDirectories)
+        {
+            for (var directory = startingDirectory; directory is not null; directory = directory.Parent)
             {
-                return directory.FullName;
+                if (File.Exists(Path.Combine(directory.FullName, "LatencyPilot.slnx")) &&
+                    (Directory.Exists(Path.Combine(directory.FullName, ".git")) ||
+                     File.Exists(Path.Combine(directory.FullName, ".git"))))
+                {
+                    return directory.FullName;
+                }
             }
         }
 
