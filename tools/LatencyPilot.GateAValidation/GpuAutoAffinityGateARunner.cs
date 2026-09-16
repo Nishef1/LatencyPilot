@@ -145,21 +145,23 @@ internal static class GpuAutoAffinityGateARunner
 
             var unresolvedAfter = MutationJournalReadOnlyInspector.GetUnresolved(
                 MutationJournal.GetDefaultDatabasePath());
+            var finalReport = rawBackend.CompleteReport(result.Report, unresolvedAfter.Count);
             if (unresolvedAfter.Count != 0)
             {
                 throw new InvalidOperationException(
                     $"GPU auto-affinity Gate A ended with {unresolvedAfter.Count} unresolved journal entries.");
             }
-            if (!result.Report.FinalStateVerified)
+            if (finalReport.Provenance is null)
+            {
+                throw new InvalidOperationException(
+                    "GPU auto-affinity Gate A completed without benchmark provenance for the saved report.");
+            }
+            if (!finalReport.FinalStateVerified)
             {
                 throw new InvalidOperationException(
                     "GPU auto-affinity Gate A completed without verified final machine state.");
             }
 
-            var provenance = rawBackend.ReportProvenance
-                ?? throw new InvalidOperationException(
-                    "GPU auto-affinity Gate A completed without benchmark provenance for the saved report.");
-            var finalReport = result.Report with { Provenance = provenance };
             await WriteReportAsync(options.OutputPath, finalReport).ConfigureAwait(false);
             await progress.ReportTerminalAsync(
                 result.Recommendation.ToString(),
@@ -206,6 +208,7 @@ internal static class GpuAutoAffinityGateARunner
                         ? "Stop safely was requested; future trials were cancelled and the exact original state was verified."
                         : "Stop safely was requested, but exact rollback/recovery could not be verified automatically."],
                     Provenance: rawBackend?.ReportProvenance);
+                stoppedReport = TryCompleteReport(rawBackend, stoppedReport);
                 await WriteReportAsync(options.OutputPath, stoppedReport).ConfigureAwait(false);
             }
 
@@ -232,6 +235,7 @@ internal static class GpuAutoAffinityGateARunner
                     OriginalStateRestored: safe,
                     [$"{exception.GetType().Name}: {exception.Message}"],
                     Provenance: rawBackend?.ReportProvenance);
+                fallback = TryCompleteReport(rawBackend, fallback);
                 try
                 {
                     await WriteReportAsync(options.OutputPath, fallback).ConfigureAwait(false);
@@ -240,8 +244,8 @@ internal static class GpuAutoAffinityGateARunner
                         await progress.ReportTerminalAsync(
                             "Failed safely",
                             null,
-                            safe,
-                            safe
+                            fallback.FinalStateVerified,
+                            fallback.FinalStateVerified
                                 ? "The session failed, but the exact original state is verified and no unresolved mutation remains."
                                 : "The session failed and automatic recovery is not fully verified.").ConfigureAwait(false);
                     }
@@ -281,6 +285,33 @@ internal static class GpuAutoAffinityGateARunner
             {
                 await benchmark.DisposeAsync().ConfigureAwait(false);
             }
+        }
+    }
+
+    private static GpuAutoAffinityReport TryCompleteReport(
+        GpuAutoAffinityGateABackend? backend,
+        GpuAutoAffinityReport report)
+    {
+        if (backend is null)
+        {
+            return report;
+        }
+
+        try
+        {
+            var unresolved = MutationJournalReadOnlyInspector.GetUnresolved(
+                MutationJournal.GetDefaultDatabasePath());
+            return backend.CompleteReport(report, unresolved.Count);
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            InvalidDataException or
+            InvalidOperationException or
+            UnauthorizedAccessException or
+            Win32Exception)
+        {
+            Console.Error.WriteLine($"Unable to enrich Gate A terminal report with final machine state: {exception.Message}");
+            return report with { RecoveryStatus = "final-state-capture-failed" };
         }
     }
 

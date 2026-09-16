@@ -36,6 +36,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private readonly string topologyIdentity;
     private readonly string driverServiceName;
     private readonly HashSet<Guid> measuringExperiments = [];
+    private readonly Dictionary<Guid, GpuAffinityCandidate> ownedCandidates = [];
+    private readonly List<GpuAutoAffinityMutationAuditEntry> mutationAudit = [];
     private double? referenceControlP99Milliseconds;
     private GpuAutoAffinityReportProvenance? reportProvenance;
 
@@ -69,9 +71,67 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         journal.Initialize();
         mutation = new GpuOptimizationExecutionBackend(journal);
         originalState = mutation.CaptureOriginal(deviceInstanceId);
+        mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+            DateTimeOffset.UtcNow,
+            "CaptureOriginalState",
+            null,
+            null,
+            StoredStateVerified: true,
+            ToStoredStateReport(originalState)));
     }
 
     internal GpuAutoAffinityReportProvenance? ReportProvenance => reportProvenance;
+
+    internal GpuAutoAffinityReport CompleteReport(GpuAutoAffinityReport report, int unresolvedCount)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        if (unresolvedCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(unresolvedCount));
+        }
+
+        var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        var driverStable = string.Equals(
+            current.DriverVersion,
+            originalState.DriverVersion,
+            StringComparison.OrdinalIgnoreCase);
+        var matchesOriginal = driverStable &&
+            GpuInterruptAffinityStateComparer.MatchesOriginal(current, originalState);
+
+        var expectsCandidate =
+            string.Equals(
+                report.FinalRecommendation,
+                GpuOptimizationRecommendation.KeepCandidate.ToString(),
+                StringComparison.Ordinal) &&
+            report.FinalProcessor is not null;
+        var matchesExpected = expectsCandidate
+            ? driverStable && GpuInterruptAffinityStateComparer.MatchesCandidate(
+                current,
+                new GpuInterruptAffinityCandidate(
+                    report.FinalProcessor!.Group,
+                    report.FinalProcessor.Number,
+                    1UL << report.FinalProcessor.Number))
+            : matchesOriginal;
+
+        var finalStateVerified = report.FinalStateVerified && unresolvedCount == 0 && matchesExpected;
+        var originalStateRestored = report.OriginalStateRestored && unresolvedCount == 0 && matchesOriginal;
+        var recoveryStatus = unresolvedCount != 0
+            ? $"unresolved-journal:{unresolvedCount.ToString(CultureInfo.InvariantCulture)}"
+            : finalStateVerified
+                ? "clean-zero-unresolved"
+                : "final-state-unverified";
+
+        return report with
+        {
+            FinalStateVerified = finalStateVerified,
+            OriginalStateRestored = originalStateRestored,
+            Provenance = reportProvenance,
+            OriginalStoredState = ToStoredStateReport(originalState),
+            FinalStoredState = ToStoredStateReport(current),
+            MutationAudit = mutationAudit.ToArray(),
+            RecoveryStatus = recoveryStatus,
+        };
+    }
 
     public Task<GpuAutoAffinityTrialObservation> CaptureOriginalAsync(
         GpuAutoAffinityTrialRequest request,
@@ -84,7 +144,23 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(candidate);
-        return Task.FromResult(mutation.ApplyCandidate(deviceInstanceId, candidate));
+        var experimentId = mutation.ApplyCandidate(deviceInstanceId, candidate);
+        ownedCandidates[experimentId] = candidate;
+
+        var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        var verified = string.Equals(
+                current.DriverVersion,
+                originalState.DriverVersion,
+                StringComparison.OrdinalIgnoreCase) &&
+            GpuInterruptAffinityStateComparer.MatchesCandidate(current, ToMutationCandidate(candidate));
+        mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+            DateTimeOffset.UtcNow,
+            "ApplyCandidate",
+            experimentId,
+            candidate.Processor,
+            verified,
+            ToStoredStateReport(current)));
+        return Task.FromResult(experimentId);
     }
 
     public Task<GpuAutoAffinityTrialObservation> CaptureCandidateAsync(
@@ -103,8 +179,35 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     public Task RollbackAsync(Guid experimentId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        mutation.Rollback(experimentId);
-        measuringExperiments.Remove(experimentId);
+        ownedCandidates.TryGetValue(experimentId, out var candidate);
+        try
+        {
+            mutation.Rollback(experimentId);
+            var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+            var verified = string.Equals(
+                    current.DriverVersion,
+                    originalState.DriverVersion,
+                    StringComparison.OrdinalIgnoreCase) &&
+                GpuInterruptAffinityStateComparer.MatchesOriginal(current, originalState);
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow,
+                "Rollback",
+                experimentId,
+                candidate?.Processor,
+                verified,
+                ToStoredStateReport(current)));
+            if (!verified)
+            {
+                throw new InvalidOperationException(
+                    "GPU candidate rollback completed, but the exact original stored state could not be verified.");
+            }
+        }
+        finally
+        {
+            measuringExperiments.Remove(experimentId);
+            ownedCandidates.Remove(experimentId);
+        }
+
         return Task.CompletedTask;
     }
 
@@ -116,10 +219,29 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             throw new InvalidOperationException(
                 "GPU candidate cannot be kept before a measurement-owned experiment reaches Measuring state.");
         }
+        if (!ownedCandidates.TryGetValue(experimentId, out var candidate))
+        {
+            throw new InvalidOperationException(
+                "GPU candidate cannot be kept because its owned candidate identity is unavailable.");
+        }
 
         mutation.AwaitDecision(experimentId);
         mutation.KeepCandidate(experimentId);
+        var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        var verified = string.Equals(
+                current.DriverVersion,
+                originalState.DriverVersion,
+                StringComparison.OrdinalIgnoreCase) &&
+            GpuInterruptAffinityStateComparer.MatchesCandidate(current, ToMutationCandidate(candidate));
+        mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+            DateTimeOffset.UtcNow,
+            "KeepCandidate",
+            experimentId,
+            candidate.Processor,
+            verified,
+            ToStoredStateReport(current)));
         measuringExperiments.Remove(experimentId);
+        ownedCandidates.Remove(experimentId);
         return Task.CompletedTask;
     }
 
@@ -192,8 +314,6 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             request.Duration,
             cancellationToken: deadline.Token);
 
-        // Give ETW and PresentMon a bounded head start so the controlled benchmark
-        // interval is contained by the independent measurement windows.
         await Task.Delay(TimeSpan.FromMilliseconds(150), deadline.Token).ConfigureAwait(false);
         var artifactPathTask = benchmark.RunTrialAsync(
             request.RunNumber,
@@ -437,6 +557,21 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             candidate.Processor.Group,
             candidate.Processor.Number,
             1UL << candidate.Processor.Number);
+
+    private static GpuAutoAffinityStoredStateReport ToStoredStateReport(GpuInterruptAffinitySnapshot state) =>
+        new(
+            state.DeviceInstanceId,
+            state.DisplayName,
+            state.DriverVersion,
+            state.AffinityPolicyKeyExisted,
+            ToStoredValueReport(state.DevicePolicy),
+            ToStoredValueReport(state.AssignmentSetOverride));
+
+    private static GpuAutoAffinityStoredValueReport ToStoredValueReport(RegistryValueSnapshot value) =>
+        new(
+            value.Exists,
+            value.Kind?.ToString(),
+            Convert.ToHexString(value.Data));
 
     private static string ResolveDriverServiceName(string deviceInstanceId)
     {

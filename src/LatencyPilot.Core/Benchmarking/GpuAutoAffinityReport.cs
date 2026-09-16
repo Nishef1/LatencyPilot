@@ -59,6 +59,28 @@ public sealed record GpuAutoAffinityReportProvenance(
         evidence.FrozenWorkload is null ? null : FromEvidence(evidence);
 }
 
+public sealed record GpuAutoAffinityStoredValueReport(
+    bool Exists,
+    string? Kind,
+    string DataHex);
+
+public sealed record GpuAutoAffinityStoredStateReport(
+    string DeviceInstanceId,
+    string DisplayName,
+    string? DriverVersion,
+    bool AffinityPolicyKeyExisted,
+    GpuAutoAffinityStoredValueReport DevicePolicy,
+    GpuAutoAffinityStoredValueReport AssignmentSetOverride);
+
+public sealed record GpuAutoAffinityMutationAuditEntry(
+    DateTimeOffset TimestampUtc,
+    string Action,
+    Guid? ExperimentId,
+    LogicalProcessorId? Processor,
+    bool StoredStateVerified,
+    GpuAutoAffinityStoredStateReport StoredState,
+    string? Error = null);
+
 public sealed record GpuAutoAffinityTrialReport(
     int RunNumber,
     string Phase,
@@ -98,7 +120,11 @@ public sealed record GpuAutoAffinityReport(
     bool FinalStateVerified,
     bool OriginalStateRestored,
     IReadOnlyList<string> Reasons,
-    GpuAutoAffinityReportProvenance? Provenance = null)
+    GpuAutoAffinityReportProvenance? Provenance = null,
+    GpuAutoAffinityStoredStateReport? OriginalStoredState = null,
+    GpuAutoAffinityStoredStateReport? FinalStoredState = null,
+    IReadOnlyList<GpuAutoAffinityMutationAuditEntry>? MutationAudit = null,
+    string? RecoveryStatus = null)
 {
     public const string SchemaId = "latencypilot-gpu-auto-affinity-report-v1";
 }
