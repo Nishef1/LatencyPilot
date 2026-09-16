@@ -178,10 +178,20 @@ internal sealed class GpuGateAProgressFile
     {
         lock (writeLock)
         {
-            completedUnits = totalUnits;
+            var terminalPhase = recommendation switch
+            {
+                "Failed safely" => "failed-safely",
+                "Stopped safely" => "stopped-safely",
+                _ => "complete",
+            };
+            if (string.Equals(terminalPhase, "complete", StringComparison.Ordinal))
+            {
+                completedUnits = totalUnits;
+            }
+
             lastCompletedCandidateVerdict = recommendation;
             return WriteAsync(Create(
-                "complete",
+                terminalPhase,
                 candidate,
                 null,
                 null,
