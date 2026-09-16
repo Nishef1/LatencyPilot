@@ -41,6 +41,25 @@ public sealed class GpuAutoAffinitySessionTests
             new ProcessorPressureEvidence(new LogicalProcessorId(0, 2), 0.1),
             new ProcessorPressureEvidence(new LogicalProcessorId(0, 3), 0.2),
         };
+        var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets: null);
+        Assert.AreEqual(2, progressPlan.PhysicalCandidateCount);
+        Assert.AreEqual(2, progressPlan.MaximumRefinementCandidateCount);
+        Assert.AreEqual(18, progressPlan.InitialTotalUnits);
+        Assert.AreEqual(2, progressPlan.GetRefinementCandidateCount(0));
+        Assert.AreEqual(18, progressPlan.GetTotalUnitsForFinalist(1));
+
+        var nonSmtTopology = new ProcessorTopologySnapshot(
+            [new ProcessorPackageSnapshot(0, [new LogicalProcessorId(0, 0)])],
+            [new ProcessorCoreSnapshot(0, 0, [new LogicalProcessorId(0, 0)])],
+            DateTimeOffset.UnixEpoch);
+        var nonSmtProgressPlan = GpuAutoAffinityProgressPlan.Create(
+            nonSmtTopology,
+            [new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0d)],
+            cpuSets: null);
+        Assert.AreEqual(1, nonSmtProgressPlan.MaximumRefinementCandidateCount);
+        Assert.AreEqual(14, nonSmtProgressPlan.InitialTotalUnits);
+        Assert.AreEqual(14, nonSmtProgressPlan.GetTotalUnitsForFinalist(0));
+
         var request = new GpuAutoAffinitySessionRequest(
             Guid.NewGuid(),
             topology,
