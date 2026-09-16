@@ -251,27 +251,19 @@ internal static class GpuAutoAffinityGateARunner
                     Provenance: rawBackend?.ReportProvenance);
                 fallback = TryCompleteReport(rawBackend, fallback);
                 safe = IsVerifiedOriginalTerminalState(fallback);
-                try
-                {
-                    await WriteReportAsync(options.OutputPath, fallback).ConfigureAwait(false);
-                    if (progress is not null)
-                    {
-                        await progress.ReportTerminalAsync(
-                            "Failed safely",
-                            null,
-                            safe,
-                            safe
-                                ? "The session failed, but the exact original state is verified and no unresolved mutation remains."
-                                : "The session failed and automatic recovery is not fully verified.").ConfigureAwait(false);
-                    }
-                }
-                catch (Exception writeFailure) when (writeFailure is
-                    IOException or
-                    UnauthorizedAccessException or
-                    JsonException)
-                {
-                    Console.Error.WriteLine($"Unable to write Gate A failure report: {writeFailure.Message}");
-                }
+                await TryWriteTerminalReportAsync(options.OutputPath, fallback).ConfigureAwait(false);
+            }
+
+            if (progress is not null)
+            {
+                await TryReportTerminalAsync(
+                    progress,
+                    "Failed safely",
+                    null,
+                    safe,
+                    safe
+                        ? "The session failed, but the exact original state is verified and no unresolved mutation remains."
+                        : "The session failed and automatic recovery is not fully verified.").ConfigureAwait(false);
             }
 
             return safe ? 1 : 4;
