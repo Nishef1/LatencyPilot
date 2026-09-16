@@ -189,16 +189,6 @@ internal static class GpuAutoAffinityGateARunner
         {
             await TryStopBenchmarkAsync(benchmark).ConfigureAwait(false);
             var safe = await VerifyStoppedStateAsync(rawBackend, preMutationOriginalState).ConfigureAwait(false);
-            if (progress is not null)
-            {
-                await progress.ReportTerminalAsync(
-                    "Stopped safely",
-                    null,
-                    safe,
-                    safe
-                        ? "Stopped safely. The exact original GPU affinity state is verified and no unresolved mutation remains."
-                        : "Stop completed, but final machine state could not be verified automatically. Inspect recovery evidence before continuing.").ConfigureAwait(false);
-            }
 
             if (options is not null)
             {
@@ -219,7 +209,19 @@ internal static class GpuAutoAffinityGateARunner
                         : "Stop safely was requested, but exact rollback/recovery could not be verified automatically."],
                     Provenance: rawBackend?.ReportProvenance);
                 stoppedReport = TryCompleteReport(rawBackend, stoppedReport);
+                safe = IsVerifiedOriginalTerminalState(stoppedReport);
                 await WriteReportAsync(options.OutputPath, stoppedReport).ConfigureAwait(false);
+            }
+
+            if (progress is not null)
+            {
+                await progress.ReportTerminalAsync(
+                    "Stopped safely",
+                    null,
+                    safe,
+                    safe
+                        ? "Stopped safely. The exact original GPU affinity state is verified and no unresolved mutation remains."
+                        : "Stop completed, but final machine state could not be verified automatically. Inspect recovery evidence before continuing.").ConfigureAwait(false);
             }
 
             Console.WriteLine(safe ? "gpu-auto-affinity=stopped-safely" : "gpu-auto-affinity=manual-recovery-required");
@@ -247,6 +249,7 @@ internal static class GpuAutoAffinityGateARunner
                     [$"{exception.GetType().Name}: {exception.Message}"],
                     Provenance: rawBackend?.ReportProvenance);
                 fallback = TryCompleteReport(rawBackend, fallback);
+                safe = IsVerifiedOriginalTerminalState(fallback);
                 try
                 {
                     await WriteReportAsync(options.OutputPath, fallback).ConfigureAwait(false);
@@ -255,8 +258,8 @@ internal static class GpuAutoAffinityGateARunner
                         await progress.ReportTerminalAsync(
                             "Failed safely",
                             null,
-                            fallback.FinalStateVerified,
-                            fallback.FinalStateVerified
+                            safe,
+                            safe
                                 ? "The session failed, but the exact original state is verified and no unresolved mutation remains."
                                 : "The session failed and automatic recovery is not fully verified.").ConfigureAwait(false);
                     }
@@ -337,6 +340,16 @@ internal static class GpuAutoAffinityGateARunner
             return report with { RecoveryStatus = "final-state-capture-failed" };
         }
     }
+
+    private static bool IsVerifiedOriginalTerminalState(GpuAutoAffinityReport report) =>
+        report.FinalStateVerified &&
+        report.OriginalStateRestored &&
+        string.Equals(
+            report.FinalRecommendation,
+            GpuOptimizationRecommendation.RestoreOriginal.ToString(),
+            StringComparison.Ordinal) &&
+        report.FinalProcessor is null &&
+        !string.Equals(report.RecoveryStatus, "final-state-capture-failed", StringComparison.Ordinal);
 
     private static async Task WatchCancellationAsync(
         string cancelPath,
