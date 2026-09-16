@@ -37,6 +37,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private readonly string driverServiceName;
     private readonly HashSet<Guid> measuringExperiments = [];
     private double? referenceControlP99Milliseconds;
+    private GpuAutoAffinityReportProvenance? reportProvenance;
 
     internal GpuAutoAffinityGateABackend(
         string deviceInstanceId,
@@ -69,6 +70,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         mutation = new GpuOptimizationExecutionBackend(journal);
         originalState = mutation.CaptureOriginal(deviceInstanceId);
     }
+
+    internal GpuAutoAffinityReportProvenance? ReportProvenance => reportProvenance;
 
     public Task<GpuAutoAffinityTrialObservation> CaptureOriginalAsync(
         GpuAutoAffinityTrialRequest request,
@@ -290,7 +293,9 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             Guid.NewGuid(),
             kernel.IsValid,
             kernel.EventsLost,
-            reasons.AsReadOnly());
+            reasons.AsReadOnly(),
+            artifact.FrozenWorkload);
+        reportProvenance ??= GpuAutoAffinityReportProvenance.FromEvidence(evidence);
 
         var interpretation = GpuBenchmarkEvidenceInterpreter.Interpret(evidence);
         var controlDrifted = false;
