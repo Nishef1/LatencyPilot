@@ -86,20 +86,9 @@ public sealed class GpuBenchmarkFrozenWorkload
                 nameof(workerProcessors));
         }
 
-        if (simulationIterationsPerWorker <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(simulationIterationsPerWorker));
-        }
-
-        if (commandBatchesPerWorker <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(commandBatchesPerWorker));
-        }
-
-        if (seed < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(seed));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(simulationIterationsPerWorker);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(commandBatchesPerWorker);
+        ArgumentOutOfRangeException.ThrowIfNegative(seed);
 
         var frozenWorkers = Array.AsReadOnly(workers);
         return new GpuBenchmarkFrozenWorkload(
