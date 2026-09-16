@@ -52,7 +52,7 @@ public static class GpuBenchmarkEvidenceInterpreter
         Require(capture.IsAvailable && capture.Frames.Count > 0,
             "Raw PresentMon frame capture is unavailable or empty.", reasons);
         Require(IsSupportedPresentMonApi(capture.ApiVersion),
-            "PresentMon API 3.4 or later is required for authoritative GPU benchmark evidence.", reasons);
+            "PresentMon API 3.3 or later is required for authoritative GPU benchmark evidence.", reasons);
         Require(IsSupportedPresentMonBinary(evidence.PresentMonBinaryVersion),
             "PresentMon 2.5.1 or later is required for authoritative GPU benchmark evidence.", reasons);
         Require(capture.ActualWindowMilliseconds > 0 && capture.EndedAtUtc >= capture.StartedAtUtc,
@@ -114,7 +114,7 @@ public static class GpuBenchmarkEvidenceInterpreter
         revision is { Length: 40 } && revision.All(Uri.IsHexDigit);
 
     private static bool IsSupportedPresentMonApi(LatencyPilot.Core.Devices.PresentMonApiVersionSnapshot? version) =>
-        version is not null && (version.Major > 3 || (version.Major == 3 && version.Minor >= 4));
+        version is not null && (version.Major > 3 || (version.Major == 3 && version.Minor >= 3));
 
     private static bool IsSupportedPresentMonBinary(string? value)
     {

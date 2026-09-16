@@ -13,7 +13,7 @@ public static class PresentMonFrameMetricsReader
     private const int MiddlewareVersionHighStatus = 19;
     private const int MiddlewareServiceMismatchStatus = 20;
     private const ushort SupportedApiMajor = 3;
-    private const ushort MinimumApiMinor = 4;
+    private const ushort MinimumApiMinor = 3;
     private const int FrameBatchCapacity = 4_096;
     private const int MaximumFrames = 500_000;
     private const double MinimumWindowMilliseconds = 250;

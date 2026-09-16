@@ -68,7 +68,7 @@ public sealed class GpuBenchmarkContractTests
             77,
             30_000,
             30_000,
-            new PresentMonApiVersionSnapshot(3, 4, 0),
+            new PresentMonApiVersionSnapshot(3, 3, 0),
             frameTimes.Select((frameTime, index) => new PresentMonFrameMetricsSnapshot(
                 1,
                 frameTime,
