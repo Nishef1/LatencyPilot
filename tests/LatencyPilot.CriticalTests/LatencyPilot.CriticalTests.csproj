@@ -13,6 +13,8 @@
     <ProjectReference Include="../../src/LatencyPilot.Service/LatencyPilot.Service.csproj" />
     <ProjectReference Include="../../src/LatencyPilot.App/LatencyPilot.App.csproj"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../src/LatencyPilot.GpuBenchmark/LatencyPilot.GpuBenchmark.csproj"
+                      ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../tools/LatencyPilot.PhysicalValidation/LatencyPilot.PhysicalValidation.csproj"
                       ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../tools/LatencyPilot.ReadOnlyClosure/LatencyPilot.ReadOnlyClosure.csproj"
