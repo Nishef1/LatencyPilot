@@ -29,6 +29,11 @@ internal static class GpuAutoAffinityGateARunner
     {
         AutoOptions? options = null;
         GpuBenchmarkControlClient? benchmark = null;
+        GpuAutoAffinityGateABackend? rawBackend = null;
+        GpuGateAProgressFile? progress = null;
+        CancellationTokenSource? sessionCancellation = null;
+        CancellationTokenSource? watcherShutdown = null;
+        Task? cancelWatcher = null;
         try
         {
             options = AutoOptions.Parse(args);
@@ -79,18 +84,41 @@ internal static class GpuAutoAffinityGateARunner
                 .SelectMany(static core => core.LogicalProcessors)
                 .Select(static processor => new ProcessorPressureEvidence(processor, 0d))
                 .ToArray();
+            var physicalCandidates = GpuAffinityCandidatePlanner.Create(topology, pressure, cpuSets);
+            if (physicalCandidates.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "GPU auto-affinity Gate A has no eligible physical-core candidates after topology/CPU-set exclusions.");
+            }
+
+            progress = new GpuGateAProgressFile(
+                options.SessionId,
+                options.ProgressPath,
+                physicalCandidates.Count);
+            await progress.ReportInitializingAsync(
+                "Preparing the benchmark-backed GPU affinity session.").ConfigureAwait(false);
+
+            sessionCancellation = new CancellationTokenSource();
+            watcherShutdown = new CancellationTokenSource();
+            cancelWatcher = WatchCancellationAsync(
+                options.CancelPath,
+                progress,
+                sessionCancellation,
+                watcherShutdown.Token);
 
             benchmark = await GpuBenchmarkControlClient.ConnectAsync(
                 options.BenchmarkPipeName,
                 options.SessionId,
-                options.BenchmarkToken).ConfigureAwait(false);
-            var backend = new GpuAutoAffinityGateABackend(
+                options.BenchmarkToken,
+                sessionCancellation.Token).ConfigureAwait(false);
+            rawBackend = new GpuAutoAffinityGateABackend(
                 target[0].InstanceId,
                 options.ExpectedCommit,
                 options.SessionId,
                 benchmark.ProcessId,
                 topology,
                 benchmark);
+            var reportingBackend = new ProgressReportingGpuAutoAffinityBackend(rawBackend, progress);
             var shuffleSeed = RandomNumberGenerator.GetInt32(int.MaxValue);
             var request = new GpuAutoAffinitySessionRequest(
                 options.SessionId,
@@ -107,11 +135,12 @@ internal static class GpuAutoAffinityGateARunner
             Console.WriteLine($"benchmark-pid={benchmark.ProcessId.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"device={target[0].InstanceId}");
             Console.WriteLine($"physical-cores={topology.PhysicalCoreCount.ToString(CultureInfo.InvariantCulture)}");
+            Console.WriteLine($"candidate-count={physicalCandidates.Count.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"shuffle-seed={shuffleSeed.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine("gpu-auto-affinity=running");
 
-            var session = new GpuAutoAffinitySession(backend);
-            var result = await session.RunAsync(request).ConfigureAwait(false);
+            var session = new GpuAutoAffinitySession(reportingBackend, reportingBackend);
+            var result = await session.RunAsync(request, sessionCancellation.Token).ConfigureAwait(false);
             await benchmark.StopAsync().ConfigureAwait(false);
 
             var unresolvedAfter = MutationJournalReadOnlyInspector.GetUnresolved(
@@ -128,6 +157,13 @@ internal static class GpuAutoAffinityGateARunner
             }
 
             await WriteReportAsync(options.OutputPath, result.Report).ConfigureAwait(false);
+            await progress.ReportTerminalAsync(
+                result.Recommendation.ToString(),
+                result.Finalist,
+                result.Report.FinalStateVerified,
+                result.Recommendation == GpuOptimizationRecommendation.KeepCandidate
+                    ? "GPU auto-affinity finished with a verified finalist candidate."
+                    : "GPU auto-affinity finished with the verified original state.").ConfigureAwait(false);
             Console.WriteLine($"recommendation={result.Recommendation}");
             Console.WriteLine($"final-processor={result.Finalist?.Processor.ToString() ?? "original"}");
             Console.WriteLine("unresolved=0");
@@ -136,11 +172,45 @@ internal static class GpuAutoAffinityGateARunner
         }
         catch (OperationCanceledException)
         {
-            throw;
+            var safe = await VerifyStoppedStateAsync(rawBackend).ConfigureAwait(false);
+            if (progress is not null)
+            {
+                await progress.ReportTerminalAsync(
+                    "Stopped safely",
+                    null,
+                    safe,
+                    safe
+                        ? "Stopped safely. The exact original GPU affinity state is verified and no unresolved mutation remains."
+                        : "Stop completed, but final machine state could not be verified automatically. Inspect recovery evidence before continuing.").ConfigureAwait(false);
+            }
+
+            if (options is not null)
+            {
+                var stoppedReport = new GpuAutoAffinityReport(
+                    GpuAutoAffinityReport.SchemaId,
+                    options.SessionId,
+                    DateTimeOffset.UtcNow,
+                    DateTimeOffset.UtcNow,
+                    0,
+                    [],
+                    [],
+                    GpuOptimizationRecommendation.RestoreOriginal.ToString(),
+                    null,
+                    FinalStateVerified: safe,
+                    OriginalStateRestored: safe,
+                    [safe
+                        ? "Stop safely was requested; future trials were cancelled and the exact original state was verified."
+                        : "Stop safely was requested, but exact rollback/recovery could not be verified automatically."]);
+                await WriteReportAsync(options.OutputPath, stoppedReport).ConfigureAwait(false);
+            }
+
+            Console.WriteLine(safe ? "gpu-auto-affinity=stopped-safely" : "gpu-auto-affinity=manual-recovery-required");
+            return safe ? 3 : 4;
         }
         catch (Exception exception)
         {
             Console.Error.WriteLine($"{exception.GetType().Name}: {exception.Message}");
+            var safe = await VerifyStoppedStateAsync(rawBackend).ConfigureAwait(false);
             if (options is not null)
             {
                 var fallback = new GpuAutoAffinityReport(
@@ -153,12 +223,22 @@ internal static class GpuAutoAffinityGateARunner
                     [],
                     GpuOptimizationRecommendation.RestoreOriginal.ToString(),
                     null,
-                    FinalStateVerified: false,
-                    OriginalStateRestored: false,
+                    FinalStateVerified: safe,
+                    OriginalStateRestored: safe,
                     [$"{exception.GetType().Name}: {exception.Message}"]);
                 try
                 {
                     await WriteReportAsync(options.OutputPath, fallback).ConfigureAwait(false);
+                    if (progress is not null)
+                    {
+                        await progress.ReportTerminalAsync(
+                            "Failed safely",
+                            null,
+                            safe,
+                            safe
+                                ? "The session failed, but the exact original state is verified and no unresolved mutation remains."
+                                : "The session failed and automatic recovery is not fully verified.").ConfigureAwait(false);
+                    }
                 }
                 catch (Exception writeFailure) when (writeFailure is
                     IOException or
@@ -169,14 +249,79 @@ internal static class GpuAutoAffinityGateARunner
                 }
             }
 
-            return 1;
+            return safe ? 1 : 4;
         }
         finally
         {
+            if (watcherShutdown is not null)
+            {
+                watcherShutdown.Cancel();
+            }
+            if (cancelWatcher is not null)
+            {
+                try
+                {
+                    await cancelWatcher.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected when the helper terminalizes before a stop request arrives.
+                }
+            }
+            watcherShutdown?.Dispose();
+            sessionCancellation?.Dispose();
+
             if (benchmark is not null)
             {
                 await benchmark.DisposeAsync().ConfigureAwait(false);
             }
+        }
+    }
+
+    private static async Task WatchCancellationAsync(
+        string cancelPath,
+        GpuGateAProgressFile progress,
+        CancellationTokenSource sessionCancellation,
+        CancellationToken shutdownToken)
+    {
+        var fullPath = Path.GetFullPath(cancelPath);
+        while (true)
+        {
+            shutdownToken.ThrowIfCancellationRequested();
+            if (File.Exists(fullPath))
+            {
+                await progress.ReportStopRequestedAsync().ConfigureAwait(false);
+                sessionCancellation.Cancel();
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250), shutdownToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<bool> VerifyStoppedStateAsync(GpuAutoAffinityGateABackend? backend)
+    {
+        try
+        {
+            var unresolved = MutationJournalReadOnlyInspector.GetUnresolved(
+                MutationJournal.GetDefaultDatabasePath());
+            if (unresolved.Count != 0)
+            {
+                return false;
+            }
+
+            return backend is null ||
+                await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            InvalidDataException or
+            InvalidOperationException or
+            UnauthorizedAccessException or
+            Win32Exception)
+        {
+            Console.Error.WriteLine($"Final safe-state verification failed: {exception.Message}");
+            return false;
         }
     }
 
@@ -256,6 +401,8 @@ internal static class GpuAutoAffinityGateARunner
         string RepositoryRoot,
         string ExpectedCommit,
         string OutputPath,
+        string ProgressPath,
+        string CancelPath,
         Guid SessionId,
         string BenchmarkPipeName,
         string BenchmarkToken)
@@ -281,7 +428,7 @@ internal static class GpuAutoAffinityGateARunner
                 }
 
                 if (token is not ("--repo-root" or "--expected-commit" or "--output" or
-                    "--session-id" or "--benchmark-pipe" or "--benchmark-token"))
+                    "--progress" or "--cancel" or "--session-id" or "--benchmark-pipe" or "--benchmark-token"))
                 {
                     throw new ArgumentException($"Unknown GPU auto-affinity Gate A option '{token}'.");
                 }
@@ -328,6 +475,8 @@ internal static class GpuAutoAffinityGateARunner
                 repoRoot,
                 expectedCommit,
                 Path.GetFullPath(Required("--output")),
+                Path.GetFullPath(Required("--progress")),
+                Path.GetFullPath(Required("--cancel")),
                 sessionId,
                 Required("--benchmark-pipe"),
                 benchmarkToken);
