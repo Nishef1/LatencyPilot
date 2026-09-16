@@ -218,11 +218,10 @@ public sealed partial class MainWindow
                 throw new InvalidDataException("GPU Gate A report schema or session identity does not match the owner run.");
             }
 
-            var summary = BuildFinalSummary(report);
-            progressWindow.ShowFinalOutcome(summary, reportPath, report.FinalStateVerified);
-            EvidenceExportStatusText.Text = report.FinalStateVerified
-                ? $"GPU Gate A finished with verified final state. {summary} Report: {reportPath}"
-                : $"GPU Gate A requires recovery attention. {summary} Report: {reportPath}";
+            var terminalSummary = BuildGateATerminalSummary(helper.ExitCode, report);
+            var terminalStateVerified = IsGateATerminalStateVerified(helper.ExitCode, report);
+            progressWindow.ShowFinalOutcome(terminalSummary, reportPath, terminalStateVerified);
+            EvidenceExportStatusText.Text = $"{terminalSummary} Report: {reportPath}";
             TryRevealReport(reportPath);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
@@ -352,6 +351,38 @@ public sealed partial class MainWindow
             benchmarkProcess.Kill(entireProcessTree: true);
             await benchmarkProcess.WaitForExitAsync();
         }
+    }
+
+    private static bool IsGateATerminalStateVerified(int exitCode, GpuAutoAffinityReport report) =>
+        exitCode switch
+        {
+            0 => report.FinalStateVerified,
+            1 or 3 => report.FinalStateVerified && report.OriginalStateRestored,
+            _ => false,
+        };
+
+    private static string BuildGateATerminalSummary(int exitCode, GpuAutoAffinityReport report)
+    {
+        var detail = BuildFinalSummary(report);
+        return exitCode switch
+        {
+            0 when report.FinalStateVerified =>
+                $"GPU Gate A finished with verified final state. {detail}",
+            1 when report.FinalStateVerified && report.OriginalStateRestored =>
+                $"GPU Gate A failed safely. The exact original GPU affinity state is verified and no unresolved mutation remains. {detail}",
+            3 when report.FinalStateVerified && report.OriginalStateRestored =>
+                $"GPU Gate A stopped safely. The exact original GPU affinity state is verified and no unresolved mutation remains. {detail}",
+            4 =>
+                $"GPU Gate A requires recovery attention. The helper could not verify a safe final machine state. {detail}",
+            0 =>
+                $"GPU Gate A returned success, but the final machine state is not verified. Recovery attention is required. {detail}",
+            1 =>
+                $"GPU Gate A failed and exact restoration could not be verified. Recovery attention is required. {detail}",
+            3 =>
+                $"GPU Gate A stop completed without verified exact restoration. Recovery attention is required. {detail}",
+            _ =>
+                $"GPU Gate A ended with unexpected helper exit code {exitCode.ToString(CultureInfo.InvariantCulture)}. Recovery status must be inspected before continuing. {detail}",
+        };
     }
 
     private static string BuildFinalSummary(GpuAutoAffinityReport report)
