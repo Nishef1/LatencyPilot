@@ -100,6 +100,22 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(gateARunnerSource, "TryStopBenchmarkAsync");
         StringAssert.Contains(gateARunnerSource, "benchmark.StopAsync(deadline.Token)");
 
+        var gateABackendSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "LatencyPilot.GateAValidation",
+            "GpuAutoAffinityGateABackend.cs"));
+        var applyCandidateIndex = gateABackendSource.IndexOf(
+            "public Task<Guid> ApplyCandidateAsync",
+            StringComparison.Ordinal);
+        var postApplyRollbackIndex = gateABackendSource.IndexOf(
+            "RollbackCandidateAfterPostApplyFailure",
+            StringComparison.Ordinal);
+        Assert.IsTrue(
+            applyCandidateIndex >= 0 && postApplyRollbackIndex > applyCandidateIndex,
+            "Gate A must retain rollback ownership when post-apply verification fails before the session receives the experiment id.");
+        StringAssert.Contains(gateABackendSource, "post-apply verification failed");
+
         var complete = new GateAValidationFacts(
             ExactRevision: true,
             BaselineEligible: true,
