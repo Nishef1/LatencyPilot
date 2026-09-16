@@ -51,7 +51,8 @@ public sealed class GpuAutoAffinitySessionTests
             TimeSpan.FromSeconds(30),
             new ComparisonPolicy(20, 0.03, 0.05, 0.99));
         var backend = new RecordingBackend();
-        var session = new GpuAutoAffinitySession(backend);
+        var observer = new RecordingObserver();
+        var session = new GpuAutoAffinitySession(backend, observer);
 
         var result = await session.RunAsync(request);
 
@@ -65,6 +66,10 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsFalse(result.Report.OriginalStateRestored);
         Assert.IsTrue(backend.Events.Contains("keep:0:3"));
         Assert.IsTrue(backend.Events.Any(static item => item.StartsWith("rollback:", StringComparison.Ordinal)));
+        Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "screening"));
+        Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "smt-refinement"));
+        Assert.IsTrue(observer.Reports.Any(static report =>
+            report.Phase == "confirmation" && report.Verdict == "Improved"));
 
         var confirmationRoles = result.Report.Trials
             .Where(static trial => trial.Phase == "confirmation")
@@ -78,6 +83,35 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsTrue(cancellingBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)));
         Assert.IsTrue(cancellingBackend.Events.Any(static item => item.StartsWith("rollback:", StringComparison.Ordinal)));
         Assert.IsFalse(cancellingBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
+
+        using var finalStop = new CancellationTokenSource();
+        var finalStopBackend = new RecordingBackend();
+        var finalStopObserver = new RecordingObserver(report =>
+        {
+            if (report.Phase == "confirmation")
+            {
+                finalStop.Cancel();
+            }
+        });
+        var finalStopSession = new GpuAutoAffinitySession(finalStopBackend, finalStopObserver);
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            finalStopSession.RunAsync(request, finalStop.Token));
+        Assert.IsTrue(finalStopObserver.Reports.Any(static report => report.Phase == "confirmation"));
+        Assert.IsTrue(finalStopBackend.Events.Any(static item => item.StartsWith("rollback:", StringComparison.Ordinal)));
+        Assert.IsFalse(finalStopBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
+    }
+
+    private sealed class RecordingObserver(Action<GpuAutoAffinityCandidateReport>? onReport = null)
+        : IGpuAutoAffinitySessionObserver
+    {
+        internal List<GpuAutoAffinityCandidateReport> Reports { get; } = [];
+
+        public Task CandidateEvaluatedAsync(GpuAutoAffinityCandidateReport report)
+        {
+            Reports.Add(report);
+            onReport?.Invoke(report);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingBackend(bool cancelAfterFirstCandidateCapture = false) : IGpuAutoAffinitySessionBackend
