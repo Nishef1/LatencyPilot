@@ -191,6 +191,29 @@ Gate A now requires physical evidence on one exact clean revision for:
 10. one supported failure/recovery exercise;
 11. final exact known machine state and `unresolved=0`.
 
+Latest owner-local Gate A benchmark evidence sampled on 2026-09-16 at source
+revision `245ea18c893996451f1fec3e4005e24eba3c4d3b`:
+
+- the normal-user App, protected LocalSystem Service, explicit UAC helper and
+  deterministic D3D12 benchmark completed one full 31/31 run;
+- the run screened all 8 eligible physical-core candidates with 2 × 15 s per
+  candidate, producing 19 valid trials and 19 raw benchmark artifacts;
+- all 16 candidate trials produced direct WDDM placement proof on the requested
+  processor with 192,030 target ISR events and 0 off-target ISR events;
+- no candidate established a measurable frame-tail improvement without a
+  guardrail regression, so the authoritative recommendation was
+  `RestoreOriginal`;
+- exact original state was verified after the run and the mutation journal
+  reported `clean-zero-unresolved`.
+
+Evidence file:
+`C:\Users\PC\Documents\LatencyPilot\validation\gpu-auto-affinity-20260916T211332640Z-9100c66d2e2f441594765d5c3b88db3c\gpu-auto-affinity-report.json`.
+
+This is a successful full benchmark/search sample on one RTX 3070 system, not
+the complete physical exit gate: the separate Stop-safely interaction,
+rendered keyboard/accessibility/taskbar inspection, and an independent
+reproducibility/failure-recovery exercise remain owner-local closure items.
+
 ### Gate B — mutation-specific IPC — BLOCKED BY GATE A
 
 After Gate A only: add typed/allowlisted mutation-specific Service commands and authorization. No arbitrary registry/shell/process primitive. `MutationAvailable` remains false during source implementation until later arming.
