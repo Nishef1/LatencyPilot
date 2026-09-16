@@ -330,8 +330,18 @@ public sealed class GpuAutoAffinitySession
             cancellationToken.ThrowIfCancellationRequested();
             if (comparison.Verdict == ExperimentVerdict.Improved)
             {
-                await backend.KeepAsync(activeExperiment.Value, CancellationToken.None).ConfigureAwait(false);
+                var keptExperimentId = activeExperiment.Value;
+                await backend.KeepAsync(keptExperimentId, CancellationToken.None).ConfigureAwait(false);
                 activeExperiment = null;
+                if (!await backend.VerifyCandidateStateAsync(
+                        keptExperimentId,
+                        finalist,
+                        CancellationToken.None).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException(
+                        "The finalist was kept, but the exact final GPU affinity state could not be verified afterward.");
+                }
+
                 reasons.Add("Balanced ABBA + BAAB confirmation established a measurable improvement without a guardrail regression.");
                 return CreateResult(
                     request,
