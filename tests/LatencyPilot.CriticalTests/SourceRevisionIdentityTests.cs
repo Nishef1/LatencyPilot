@@ -30,8 +30,12 @@ public sealed class SourceRevisionIdentityTests
         Assert.ThrowsExactly<ArgumentException>(() =>
             SourceRevisionIdentity.MatchesExpectedCommit("0.0.2+abc", "abc"));
 
-        Assert.IsFalse(ServiceBoundary.MutationAvailable);
-        Assert.AreEqual(6, ProtocolVersion.Current);
+        Assert.AreEqual(
+            false,
+            typeof(ServiceBoundary).GetField(nameof(ServiceBoundary.MutationAvailable))?.GetRawConstantValue());
+        Assert.AreEqual(
+            6,
+            typeof(ProtocolVersion).GetField(nameof(ProtocolVersion.Current))?.GetRawConstantValue());
 
         var repositoryRoot = FindRepositoryRoot();
         var gateASource = File.ReadAllText(Path.Combine(
