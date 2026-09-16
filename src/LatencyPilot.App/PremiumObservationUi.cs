@@ -145,7 +145,7 @@ public sealed partial class MainWindow
         });
         heading.Children.Add(new TextBlock
         {
-            Text = "Diagnostic context for this snapshot. Stability claims require the repeated baseline.",
+            Text = "Diagnostic context only. Stability decisions require a baseline.",
             FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
@@ -171,7 +171,7 @@ public sealed partial class MainWindow
 
         _snapshotEvidenceTitleText = new TextBlock
         {
-            Text = "Capture a quick snapshot to inspect the tail.",
+            Text = "No snapshot yet.",
             FontSize = 18,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
@@ -181,7 +181,7 @@ public sealed partial class MainWindow
 
         _snapshotEvidenceSummaryText = new TextBlock
         {
-            Text = "Exact measurements remain authoritative. A five-second snapshot is diagnostic evidence, not a stability or optimization verdict.",
+            Text = "Quick snapshots are diagnostic only. Build a baseline for stability or optimization decisions.",
             FontSize = 13,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
@@ -247,7 +247,7 @@ public sealed partial class MainWindow
 
         chartStack.Children.Add(new TextBlock
         {
-            Text = "Bars are auto-scaled visual aids only. Exact count, denominator and percentage stay visible. Reference lines help form hypotheses; the repeated decision baseline determines stability.",
+            Text = "Bars are auto-scaled. Exact counts and percentages remain visible.",
             FontSize = 12,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
@@ -338,36 +338,36 @@ public sealed partial class MainWindow
         {
             case SnapshotSignal.CaptureWarning:
                 _snapshotEvidenceBadgeText.Text = "Capture warning";
-                _snapshotEvidenceTitleText.Text = "This snapshot is incomplete evidence.";
+                _snapshotEvidenceTitleText.Text = "Snapshot incomplete.";
                 _snapshotEvidenceSummaryText.Text =
-                    $"{integrityIssue} Exact values remain visible for diagnosis, but do not interpret the tail or reference counts until capture integrity is restored.";
+                    $"{integrityIssue} Use these values for diagnosis only.";
                 break;
             case SnapshotSignal.NoReferenceExceedance:
                 _snapshotEvidenceBadgeText.Text = "Diagnostic only";
-                _snapshotEvidenceTitleText.Text = "No driver-reference exceedance was observed in this snapshot.";
+                _snapshotEvidenceTitleText.Text = "No reference exceedance in this snapshot.";
                 _snapshotEvidenceSummaryText.Text =
-                    "No DPC exceeded 100 µs and no ISR exceeded 25 µs in this five-second window. That describes this snapshot only; it is not proof of stable latency or an optimized system. Use the repeated decision baseline for stability claims.";
+                    "No DPC exceeded 100 µs and no ISR exceeded 25 µs in this five-second window. Build a baseline before making stability claims.";
                 break;
             case SnapshotSignal.ReferenceExceeded:
                 var dpcGuidanceRate = Rate(capture.DpcThresholds.GuidanceExceedanceCount, capture.Dpc.Count);
                 var isrGuidanceRate = Rate(capture.IsrThresholds.GuidanceExceedanceCount, capture.Isr.Count);
                 _snapshotEvidenceBadgeText.Text = "Reference exceeded";
-                _snapshotEvidenceTitleText.Text = "Driver-duration reference lines were exceeded in this snapshot.";
+                _snapshotEvidenceTitleText.Text = "Driver-duration references exceeded.";
                 _snapshotEvidenceSummaryText.Text = string.Create(
                     CultureInfo.InvariantCulture,
-                    $"Reference exceedance rates were DPC {dpcGuidanceRate:0.###}% and ISR {isrGuidanceRate:0.###}%. These are Microsoft driver-duration guidance references, not user-impact pass/fail thresholds. Use module attribution, CPU concentration and a repeated decision baseline to test whether the pattern persists.");
+                    $"DPC {dpcGuidanceRate:0.###}% · ISR {isrGuidanceRate:0.###}%. These are driver guidance references, not a system health score.");
                 break;
             case SnapshotSignal.OneMillisecondBucket:
                 _snapshotEvidenceBadgeText.Text = "≥1 ms bucket";
-                _snapshotEvidenceTitleText.Text = "A ≥1 ms local diagnostic-bucket event was observed.";
+                _snapshotEvidenceTitleText.Text = "An event above 1 ms was observed.";
                 _snapshotEvidenceSummaryText.Text =
-                    "At least one DPC/ISR exceeded 1 ms in this snapshot. LatencyPilot retains this as a local tail bucket, not an official Windows impact boundary. Repeat the workload and inspect responsible modules before attributing an effect.";
+                    "This is a local tail bucket, not an official Windows severity threshold. Repeat the workload and inspect attribution before drawing conclusions.";
                 break;
             case SnapshotSignal.ThreeMillisecondBucket:
                 _snapshotEvidenceBadgeText.Text = "≥3 ms bucket";
-                _snapshotEvidenceTitleText.Text = "A ≥3 ms local diagnostic-bucket event was observed.";
+                _snapshotEvidenceTitleText.Text = "An event above 3 ms was observed.";
                 _snapshotEvidenceSummaryText.Text =
-                    "At least one DPC/ISR exceeded 3 ms in this snapshot. This is a local tail bucket rather than an official severity classification. Preserve attribution and confirm the pattern with repeated decision-grade measurement.";
+                    "This is a local tail bucket, not an official Windows severity threshold. Repeat the workload and inspect attribution before drawing conclusions.";
                 break;
             default:
                 ClearPremiumCapture();
@@ -585,10 +585,10 @@ public sealed partial class MainWindow
         _snapshotEvidenceBadge.Background = ThemeBrush("SurfaceStrongBrush");
         _snapshotEvidenceBadgeText.Foreground = ThemeBrush("MutedTextBrush");
         _snapshotEvidenceBadgeText.Text = "Not captured";
-        _snapshotEvidenceTitleText.Text = "Capture a quick snapshot to inspect the tail.";
+        _snapshotEvidenceTitleText.Text = "No snapshot yet.";
         _snapshotEvidenceSummaryText.Text = string.Create(
             CultureInfo.InvariantCulture,
-            $"The app keeps exact p99/max values visible and exposes p99.9 only when at least {ObservationProtocol.MinimumSamplesForP999:N0} samples support it. Quick snapshots remain diagnostic only; use the repeated baseline for stability or optimization decisions.");
+            $"p99.9 appears only with at least {ObservationProtocol.MinimumSamplesForP999:N0} samples. Quick snapshots are diagnostic; baseline evidence decides stability.");
 
         DpcP999Text.Foreground = ThemeBrush("TextBrush");
         IsrP999Text.Foreground = ThemeBrush("TextBrush");
