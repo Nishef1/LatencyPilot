@@ -28,7 +28,7 @@ public sealed partial class MainWindow
 
         UpdateAppearanceMenu();
         RootGrid.SizeChanged += (_, _) => ApplyDashboardLayout();
-        RootGrid.Loaded += (_, _) => ApplyDesktopAcrylicBackdrop();
+        RootGrid.Loaded += (_, _) => ApplyMicaBackdrop();
         ServiceStatusBadgeText.RegisterPropertyChangedCallback(
             TextBlock.TextProperty,
             (_, _) => UpdateServiceStatusVisibility());
@@ -38,18 +38,18 @@ public sealed partial class MainWindow
         ApplyDashboardLayout();
     }
 
-    private void ApplyDesktopAcrylicBackdrop()
+    private void ApplyMicaBackdrop()
     {
         try
         {
-            if (SystemBackdrop is not DesktopAcrylicBackdrop)
+            if (SystemBackdrop is not MicaBackdrop)
             {
-                SystemBackdrop = new DesktopAcrylicBackdrop();
+                SystemBackdrop = new MicaBackdrop();
             }
         }
         catch (Exception exception)
         {
-            Logger.Warning(exception, "Desktop Acrylic backdrop could not be enabled; continuing with the semantic surface fallback.");
+            Logger.Warning(exception, "Mica backdrop could not be enabled; continuing with the semantic surface fallback.");
         }
     }
 
@@ -98,11 +98,12 @@ public sealed partial class MainWindow
         }
 
         var inlineActions = contentWidth >= DesignValue<double>("HeaderInlineThreshold");
-        HeaderActionsColumn.Width = inlineActions ? GridLength.Auto : new GridLength(0);
+        HeaderActionsColumn.Width = GridLength.Auto;
         Grid.SetColumn(HeaderActions, inlineActions ? 1 : 0);
         Grid.SetRow(HeaderActions, inlineActions ? 0 : 1);
         HeaderActions.Orientation = contentWidth < 620d ? Orientation.Vertical : Orientation.Horizontal;
         HeaderActions.HorizontalAlignment = inlineActions ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        HeaderActions.Margin = inlineActions ? new Thickness(0) : new Thickness(0, 8, 0, 0);
 
         ReflowCards(
             SummaryGrid,
@@ -159,7 +160,7 @@ public sealed partial class MainWindow
 
         RootGrid.RequestedTheme = theme;
         UpdateAppearanceMenu();
-        ApplyDesktopAcrylicBackdrop();
+        ApplyMicaBackdrop();
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_appearancePath)!);
