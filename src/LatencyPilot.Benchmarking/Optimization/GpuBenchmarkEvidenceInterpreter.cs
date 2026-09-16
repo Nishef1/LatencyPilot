@@ -51,7 +51,7 @@ public static class GpuBenchmarkEvidenceInterpreter
         var capture = evidence.PresentMonCapture;
         Require(capture.IsAvailable && capture.Frames.Count > 0,
             "Raw PresentMon frame capture is unavailable or empty.", reasons);
-        Require(capture.ApiVersion is { Major: 3, Minor: >= 4 },
+        Require(IsSupportedPresentMonApi(capture.ApiVersion),
             "PresentMon API 3.4 or later is required for authoritative GPU benchmark evidence.", reasons);
         Require(IsSupportedPresentMonBinary(evidence.PresentMonBinaryVersion),
             "PresentMon 2.5.1 or later is required for authoritative GPU benchmark evidence.", reasons);
@@ -113,6 +113,9 @@ public static class GpuBenchmarkEvidenceInterpreter
     private static bool IsExactRevision(string? revision) =>
         revision is { Length: 40 } && revision.All(Uri.IsHexDigit);
 
+    private static bool IsSupportedPresentMonApi(LatencyPilot.Core.Devices.PresentMonApiVersionSnapshot? version) =>
+        version is not null && (version.Major > 3 || (version.Major == 3 && version.Minor >= 4));
+
     private static bool IsSupportedPresentMonBinary(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -124,7 +127,7 @@ public static class GpuBenchmarkEvidenceInterpreter
         return Version.TryParse(normalized, out var version) && version >= MinimumPresentMonBinaryVersion;
     }
 
-    private static void Require(bool condition, string reason, ICollection<string> reasons)
+    private static void Require(bool condition, string reason, List<string> reasons)
     {
         if (!condition && !reasons.Contains(reason, StringComparer.Ordinal))
         {
