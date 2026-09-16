@@ -1,6 +1,7 @@
 using System.Globalization;
 using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Protocol;
+using Microsoft.UI.Xaml.Controls;
 
 namespace LatencyPilot.App;
 
@@ -60,7 +61,7 @@ public sealed partial class MainWindow
         }
 
         BaselineSummaryText.Text = "Valid · transient spike";
-        BaselineSummaryIcon.Glyph = "\uE7BA";
+        BaselineSummaryIcon.Symbol = Symbol.Important;
         BaselineSummaryText.Foreground = ThemeBrush("WarningBrush");
         BaselineSummaryDetailText.Text = FormatTransientDashboardDetail(summary);
     }
