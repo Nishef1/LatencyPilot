@@ -150,6 +150,62 @@ public sealed class GpuBenchmarkContractTests
         Assert.AreEqual(1080, provenance.FrozenWorkload.Height);
         CollectionAssert.AreEqual(evidence.WorkerMap.ToArray(), provenance.FrozenWorkload.WorkerMap.ToArray());
 
+        var originalState = new GpuAutoAffinityStoredStateReport(
+            "PCI\\VEN_10DE&DEV_2484",
+            "NVIDIA GeForce RTX 3070",
+            "test-driver",
+            false,
+            new GpuAutoAffinityStoredValueReport(false, null, string.Empty),
+            new GpuAutoAffinityStoredValueReport(false, null, string.Empty));
+        var candidateState = new GpuAutoAffinityStoredStateReport(
+            originalState.DeviceInstanceId,
+            originalState.DisplayName,
+            originalState.DriverVersion,
+            true,
+            new GpuAutoAffinityStoredValueReport(true, "DWord", "04000000"),
+            new GpuAutoAffinityStoredValueReport(true, "Binary", "0800000000000000"));
+        var experimentId = Guid.NewGuid();
+        var audit = new[]
+        {
+            new GpuAutoAffinityMutationAuditEntry(
+                startedAt,
+                "ApplyCandidate",
+                experimentId,
+                new LogicalProcessorId(0, 3),
+                true,
+                candidateState),
+            new GpuAutoAffinityMutationAuditEntry(
+                startedAt.AddSeconds(1),
+                "Rollback",
+                experimentId,
+                new LogicalProcessorId(0, 3),
+                true,
+                originalState),
+        };
+        var report = new GpuAutoAffinityReport(
+            GpuAutoAffinityReport.SchemaId,
+            Guid.NewGuid(),
+            startedAt,
+            startedAt.AddSeconds(1),
+            1337,
+            [],
+            [],
+            "RestoreOriginal",
+            null,
+            true,
+            true,
+            [],
+            provenance,
+            originalState,
+            originalState,
+            audit,
+            "clean-zero-unresolved");
+        Assert.AreEqual(originalState, report.OriginalStoredState);
+        Assert.AreEqual(originalState, report.FinalStoredState);
+        Assert.AreEqual(2, report.MutationAudit?.Count);
+        Assert.AreEqual("clean-zero-unresolved", report.RecoveryStatus);
+        Assert.AreEqual("Rollback", report.MutationAudit?[1].Action);
+
         var oldPresentMon = GpuBenchmarkEvidenceInterpreter.Interpret(evidence with { PresentMonBinaryVersion = "2.4.1" });
         Assert.IsFalse(oldPresentMon.IsValid);
 
