@@ -153,6 +153,9 @@ public sealed class CriticalPathTests
                 (Policy with { EvaluationPercentile = invalidValue }).Validate());
         }
 
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+            new MetricSeries("DPC p99", MetricDirection.LowerIsBetter, [100, double.NaN]));
+
         AssertVerdict("primary and guardrail regression", 100, 120, ExperimentVerdict.Regressed, guardrailBaseline: 10, guardrailCandidate: 12);
         var baseline = Series("DPC p99", 100);
         var regression = Series("DPC p99", 120);
@@ -273,13 +276,6 @@ public sealed class CriticalPathTests
     }
 
     [TestMethod]
-    public void NonFiniteMeasurementIsRejected()
-    {
-        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
-            new MetricSeries("DPC p99", MetricDirection.LowerIsBetter, [100, double.NaN]));
-    }
-
-    [TestMethod]
     public void PercentileEstimatorUsesOneDocumentedInterpolationRule()
     {
         double[] samples = [1, 2, 3, 4, 100];
@@ -302,6 +298,11 @@ public sealed class CriticalPathTests
     [TestMethod]
     public async Task PipeFramingFailsClosedOnMalformedOrUnknownInput()
     {
+        var commands = Enum.GetValues<ObservationCommand>();
+        CollectionAssert.AreEqual(
+            new[] { ObservationCommand.GetStatus, ObservationCommand.CaptureKernelLatency },
+            commands);
+
         var request = new ObservationRequest(ProtocolVersion.Current, Guid.NewGuid(), ObservationCommand.GetStatus, null);
 
         using (var roundTrip = new MemoryStream())
@@ -378,15 +379,6 @@ public sealed class CriticalPathTests
             truncated.Position = 0;
             await AssertThrowsAsync<EndOfStreamException>(() => PipeMessageFraming.ReadAsync<ObservationRequest>(truncated, 64).AsTask());
         }
-    }
-
-    [TestMethod]
-    public void ObservationProtocolSurfaceRemainsReadOnly()
-    {
-        var commands = Enum.GetValues<ObservationCommand>();
-        CollectionAssert.AreEqual(
-            new[] { ObservationCommand.GetStatus, ObservationCommand.CaptureKernelLatency },
-            commands);
     }
 
     [TestMethod]
