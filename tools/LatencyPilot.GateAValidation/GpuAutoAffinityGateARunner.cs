@@ -156,11 +156,15 @@ internal static class GpuAutoAffinityGateARunner
                     "GPU auto-affinity Gate A completed without verified final machine state.");
             }
 
-            await WriteReportAsync(options.OutputPath, result.Report).ConfigureAwait(false);
+            var provenance = rawBackend.ReportProvenance
+                ?? throw new InvalidOperationException(
+                    "GPU auto-affinity Gate A completed without benchmark provenance for the saved report.");
+            var finalReport = result.Report with { Provenance = provenance };
+            await WriteReportAsync(options.OutputPath, finalReport).ConfigureAwait(false);
             await progress.ReportTerminalAsync(
                 result.Recommendation.ToString(),
                 result.Finalist,
-                result.Report.FinalStateVerified,
+                finalReport.FinalStateVerified,
                 result.Recommendation == GpuOptimizationRecommendation.KeepCandidate
                     ? "GPU auto-affinity finished with a verified finalist candidate."
                     : "GPU auto-affinity finished with the verified original state.").ConfigureAwait(false);
@@ -200,7 +204,8 @@ internal static class GpuAutoAffinityGateARunner
                     OriginalStateRestored: safe,
                     [safe
                         ? "Stop safely was requested; future trials were cancelled and the exact original state was verified."
-                        : "Stop safely was requested, but exact rollback/recovery could not be verified automatically."]);
+                        : "Stop safely was requested, but exact rollback/recovery could not be verified automatically."],
+                    Provenance: rawBackend?.ReportProvenance);
                 await WriteReportAsync(options.OutputPath, stoppedReport).ConfigureAwait(false);
             }
 
@@ -225,7 +230,8 @@ internal static class GpuAutoAffinityGateARunner
                     null,
                     FinalStateVerified: safe,
                     OriginalStateRestored: safe,
-                    [$"{exception.GetType().Name}: {exception.Message}"]);
+                    [$"{exception.GetType().Name}: {exception.Message}"],
+                    Provenance: rawBackend?.ReportProvenance);
                 try
                 {
                     await WriteReportAsync(options.OutputPath, fallback).ConfigureAwait(false);
