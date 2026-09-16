@@ -85,10 +85,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     internal GpuAutoAffinityReport CompleteReport(GpuAutoAffinityReport report, int unresolvedCount)
     {
         ArgumentNullException.ThrowIfNull(report);
-        if (unresolvedCount < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(unresolvedCount));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(unresolvedCount);
 
         var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
         var driverStable = string.Equals(
@@ -104,13 +101,13 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 GpuOptimizationRecommendation.KeepCandidate.ToString(),
                 StringComparison.Ordinal) &&
             report.FinalProcessor is not null;
-        var matchesExpected = expectsCandidate
+        var matchesExpected = expectsCandidate && report.FinalProcessor is { } finalProcessor
             ? driverStable && GpuInterruptAffinityStateComparer.MatchesCandidate(
                 current,
                 new GpuInterruptAffinityCandidate(
-                    report.FinalProcessor!.Group,
-                    report.FinalProcessor.Number,
-                    1UL << report.FinalProcessor.Number))
+                    finalProcessor.Group,
+                    finalProcessor.Number,
+                    1UL << finalProcessor.Number))
             : matchesOriginal;
 
         var finalStateVerified = report.FinalStateVerified && unresolvedCount == 0 && matchesExpected;
