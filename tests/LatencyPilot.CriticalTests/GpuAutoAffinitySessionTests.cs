@@ -118,6 +118,8 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsTrue(result.Report.FinalStateVerified);
         Assert.IsFalse(result.Report.OriginalStateRestored);
         Assert.IsTrue(backend.Events.Contains("keep:0:3"));
+        Assert.IsTrue(backend.Events.Contains("verify-kept:0:3"));
+        Assert.IsTrue(backend.Events.IndexOf("verify-kept:0:3") > backend.Events.IndexOf("keep:0:3"));
         Assert.IsTrue(backend.Events.Any(static item => item.StartsWith("rollback:", StringComparison.Ordinal)));
         Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "screening"));
         Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "smt-refinement"));
@@ -129,6 +131,12 @@ public sealed class GpuAutoAffinitySessionTests
             .Select(static trial => trial.Role)
             .ToArray();
         CollectionAssert.AreEqual(ExpectedConfirmationRoles, confirmationRoles);
+
+        var invalidKeepBackend = new RecordingBackend(failKeptVerification: true);
+        var invalidKeepSession = new GpuAutoAffinitySession(invalidKeepBackend);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => invalidKeepSession.RunAsync(request));
+        Assert.IsTrue(invalidKeepBackend.Events.Contains("keep:0:3"));
+        Assert.IsTrue(invalidKeepBackend.Events.Contains("verify-kept:0:3"));
 
         var cancellingBackend = new RecordingBackend(cancelAfterFirstCandidateCapture: true);
         var cancellingSession = new GpuAutoAffinitySession(cancellingBackend);
@@ -167,11 +175,15 @@ public sealed class GpuAutoAffinitySessionTests
         }
     }
 
-    private sealed class RecordingBackend(bool cancelAfterFirstCandidateCapture = false) : IGpuAutoAffinitySessionBackend
+    private sealed class RecordingBackend(
+        bool cancelAfterFirstCandidateCapture = false,
+        bool failKeptVerification = false) : IGpuAutoAffinitySessionBackend
     {
         private int captureSequence;
         private bool cancelled;
         private readonly Dictionary<Guid, GpuAffinityCandidate> active = [];
+        private Guid? keptExperimentId;
+        private GpuAffinityCandidate? keptCandidate;
 
         internal List<string> Events { get; } = [];
 
@@ -232,6 +244,8 @@ public sealed class GpuAutoAffinitySessionTests
             var candidate = active[experimentId];
             Events.Add($"keep:{candidate.Processor}");
             active.Remove(experimentId);
+            keptExperimentId = experimentId;
+            keptCandidate = candidate;
             return Task.CompletedTask;
         }
 
@@ -239,7 +253,7 @@ public sealed class GpuAutoAffinitySessionTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Events.Add("verify-original");
-            return Task.FromResult(active.Count == 0);
+            return Task.FromResult(active.Count == 0 && keptCandidate is null);
         }
 
         public Task<bool> VerifyCandidateStateAsync(
@@ -248,8 +262,20 @@ public sealed class GpuAutoAffinitySessionTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (active.TryGetValue(experimentId, out var current) && current == candidate)
+            {
+                Events.Add($"verify-candidate:{candidate.Processor}");
+                return Task.FromResult(true);
+            }
+
+            if (keptExperimentId == experimentId && keptCandidate == candidate)
+            {
+                Events.Add($"verify-kept:{candidate.Processor}");
+                return Task.FromResult(!failKeptVerification);
+            }
+
             Events.Add($"verify-candidate:{candidate.Processor}");
-            return Task.FromResult(active.TryGetValue(experimentId, out var current) && current == candidate);
+            return Task.FromResult(false);
         }
 
         private GpuAutoAffinityTrialObservation CreateObservation(
