@@ -58,6 +58,8 @@ Record for the final Gate A evidence set:
 - final unresolved-journal count;
 - progress/taskbar/keyboard/Stop safely observations.
 
+The saved `latencypilot-gpu-auto-affinity-report-v1` is expected to carry source/benchmark provenance, exact original and final stored affinity state, apply/rollback/keep mutation audit entries and terminal recovery status. The report supplements rather than replaces the independent journal and runtime ISR evidence.
+
 No physical validation claim is valid without exact clean source provenance.
 
 ## 1. Freeze the exact revision
@@ -142,11 +144,12 @@ multiple physical-core workers are materially active
 CPU0 is not the only materially active core
 calibration freezes once before measured work
 D3D12 GPU timestamp values are finite/stable
-raw PresentMon capture is available/clean enough for the method
 benchmark exits normally and writes its artifact
 ```
 
-Do not interpret the smoke trial as a candidate winner. It only proves the workload/evidence path can run.
+The standalone smoke intentionally does **not** collect the Gate A raw PresentMon or kernel ETW evidence. Those independent measurement streams are started and synchronized by the controlled Gate A backend during the full search in sections 5–7.
+
+Do not interpret the smoke trial as a candidate winner. It only proves the deterministic workload/artifact path can run.
 
 ## 5. Run the complete benchmark-backed Gate A search
 
@@ -283,7 +286,7 @@ exact source SHA
 exact green Tests run
 ```
 
-`unresolved=0` is mandatory for Gate A closure.
+Inspect the saved auto-affinity report and require `finalStateVerified=true`, `recoveryStatus=clean-zero-unresolved`, populated `originalStoredState` / `finalStoredState`, benchmark `provenance`, and mutation-audit entries consistent with the run. `unresolved=0` from the journal inspector is still mandatory; the JSON report cannot override a conflicting live/journal state.
 
 ## 12. Gate A closure criteria
 
