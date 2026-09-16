@@ -3,6 +3,7 @@ using System.Text.Json;
 using LatencyPilot.Core.Benchmarking;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Windows.Graphics;
 
 namespace LatencyPilot.App;
@@ -81,6 +82,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         }
         StopButton.Content = "Close";
         StopButton.IsEnabled = true;
+        UpdateAutomationStatus(100d);
     }
 
     internal void ShowStartupFailure(string message)
@@ -91,6 +93,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         StatusText.Text = message;
         StopButton.Content = "Close";
         StopButton.IsEnabled = true;
+        UpdateAutomationStatus(null);
     }
 
     private async Task MonitorAsync()
@@ -169,6 +172,8 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             StopButton.IsEnabled = true;
             StopButton.Content = "Stop safely";
         }
+
+        UpdateAutomationStatus(snapshot.PercentComplete);
     }
 
     private async void StopButton_Click(object sender, RoutedEventArgs e)
@@ -204,6 +209,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         StopButton.IsEnabled = false;
         StopButton.Content = "Stopping safely…";
         StatusText.Text = "Stop requested. Future trials will not start; rollback/recovery remains owned until final state verification.";
+        UpdateAutomationStatus(OptimizationProgressBar.Value);
 
         try
         {
@@ -222,7 +228,20 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             StopButton.IsEnabled = true;
             StopButton.Content = "Stop safely";
             StatusText.Text = $"Stop request could not be recorded: {exception.Message}";
+            UpdateAutomationStatus(OptimizationProgressBar.Value);
         }
+    }
+
+    private void UpdateAutomationStatus(double? percentComplete)
+    {
+        AutomationProperties.SetItemStatus(CandidateText, CandidateText.Text);
+        AutomationProperties.SetItemStatus(PhaseText, PhaseText.Text);
+        AutomationProperties.SetItemStatus(
+            OptimizationProgressBar,
+            percentComplete is { } percent
+                ? $"{percent:F0}% complete. {CandidateText.Text}. {PhaseText.Text}"
+                : $"{CandidateText.Text}. {PhaseText.Text}");
+        AutomationProperties.SetItemStatus(StatusText, StatusText.Text);
     }
 
     private static string FormatPhase(string phase) => phase switch
