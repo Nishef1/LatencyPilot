@@ -1,3 +1,4 @@
+using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
 
 namespace LatencyPilot.Core.Benchmarking;
@@ -9,6 +10,53 @@ public sealed record GpuAutoAffinityPlacementProof(
 {
     public bool ConfirmsRequestedPlacement =>
         TargetIsrEventCount > 0 && OffTargetIsrEventCount == 0;
+}
+
+public sealed record GpuAutoAffinityReportProvenance(
+    string SourceRevisionId,
+    string MethodId,
+    string WindowsIdentity,
+    string GpuIdentity,
+    string DriverIdentity,
+    string TopologyIdentity,
+    uint BenchmarkProcessId,
+    string FrozenWorkloadIdentity,
+    GpuBenchmarkArtifactWorkload FrozenWorkload,
+    string? PresentMonBinaryVersion,
+    PresentMonApiVersionSnapshot PresentMonApiVersion,
+    ulong D3D12TimestampFrequency)
+{
+    public static GpuAutoAffinityReportProvenance FromEvidence(GpuBenchmarkEvidence evidence)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        var workload = evidence.FrozenWorkload
+            ?? throw new InvalidOperationException(
+                "GPU auto-affinity report provenance requires the frozen calibrated benchmark workload.");
+        if (workload.Seed != evidence.Seed ||
+            workload.WorkerMap.Count != evidence.WorkerMap.Count ||
+            !workload.WorkerMap.SequenceEqual(evidence.WorkerMap))
+        {
+            throw new InvalidOperationException(
+                "GPU benchmark evidence and frozen-workload provenance disagree on seed or worker placement.");
+        }
+
+        return new GpuAutoAffinityReportProvenance(
+            evidence.SourceRevisionId,
+            evidence.MethodId,
+            evidence.WindowsIdentity,
+            evidence.GpuIdentity,
+            evidence.DriverIdentity,
+            evidence.TopologyIdentity,
+            evidence.BenchmarkProcessId,
+            evidence.FrozenWorkloadIdentity,
+            workload,
+            evidence.PresentMonBinaryVersion,
+            evidence.PresentMonCapture.ApiVersion,
+            evidence.D3D12TimestampFrequency);
+    }
+
+    public static GpuAutoAffinityReportProvenance? TryFromEvidence(GpuBenchmarkEvidence evidence) =>
+        evidence.FrozenWorkload is null ? null : FromEvidence(evidence);
 }
 
 public sealed record GpuAutoAffinityTrialReport(
@@ -25,7 +73,8 @@ public sealed record GpuAutoAffinityTrialReport(
     double? OnePercentLowFps,
     double RequestedDurationMilliseconds,
     double ActualDurationMilliseconds,
-    IReadOnlyList<string> Reasons);
+    IReadOnlyList<string> Reasons,
+    GpuAutoAffinityReportProvenance? Provenance = null);
 
 public sealed record GpuAutoAffinityCandidateReport(
     string Phase,
@@ -48,7 +97,8 @@ public sealed record GpuAutoAffinityReport(
     LogicalProcessorId? FinalProcessor,
     bool FinalStateVerified,
     bool OriginalStateRestored,
-    IReadOnlyList<string> Reasons)
+    IReadOnlyList<string> Reasons,
+    GpuAutoAffinityReportProvenance? Provenance = null)
 {
     public const string SchemaId = "latencypilot-gpu-auto-affinity-report-v1";
 }
