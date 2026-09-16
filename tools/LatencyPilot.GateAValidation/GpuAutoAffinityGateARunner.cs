@@ -210,12 +210,13 @@ internal static class GpuAutoAffinityGateARunner
                     Provenance: rawBackend?.ReportProvenance);
                 stoppedReport = TryCompleteReport(rawBackend, stoppedReport);
                 safe = IsVerifiedOriginalTerminalState(stoppedReport);
-                await WriteReportAsync(options.OutputPath, stoppedReport).ConfigureAwait(false);
+                await TryWriteTerminalReportAsync(options.OutputPath, stoppedReport).ConfigureAwait(false);
             }
 
             if (progress is not null)
             {
-                await progress.ReportTerminalAsync(
+                await TryReportTerminalAsync(
+                    progress,
                     "Stopped safely",
                     null,
                     safe,
@@ -350,6 +351,49 @@ internal static class GpuAutoAffinityGateARunner
             StringComparison.Ordinal) &&
         report.FinalProcessor is null &&
         !string.Equals(report.RecoveryStatus, "final-state-capture-failed", StringComparison.Ordinal);
+
+    private static async Task TryWriteTerminalReportAsync(
+        string outputPath,
+        GpuAutoAffinityReport report)
+    {
+        try
+        {
+            await WriteReportAsync(outputPath, report).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            UnauthorizedAccessException or
+            JsonException or
+            NotSupportedException)
+        {
+            Console.Error.WriteLine($"Unable to write Gate A terminal report: {exception.Message}");
+        }
+    }
+
+    private static async Task TryReportTerminalAsync(
+        GpuGateAProgressFile progress,
+        string recommendation,
+        GpuAffinityCandidate? candidate,
+        bool finalStateVerified,
+        string message)
+    {
+        try
+        {
+            await progress.ReportTerminalAsync(
+                recommendation,
+                candidate,
+                finalStateVerified,
+                message).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            UnauthorizedAccessException or
+            JsonException or
+            NotSupportedException)
+        {
+            Console.Error.WriteLine($"Unable to write Gate A terminal progress: {exception.Message}");
+        }
+    }
 
     private static async Task WatchCancellationAsync(
         string cancelPath,
