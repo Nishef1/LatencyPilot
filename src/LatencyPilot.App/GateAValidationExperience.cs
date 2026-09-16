@@ -30,9 +30,9 @@ public sealed partial class MainWindow
         _gateAValidationButton = new Button
         {
             Content = "Run GPU Gate A",
-            MinHeight = 40,
-            Padding = new Thickness(16, 8, 16, 8),
-            Style = (Style)Application.Current.Resources["SecondaryButtonStyle"],
+            MinHeight = 34,
+            Padding = new Thickness(12, 6, 12, 6),
+            Style = (Style)Application.Current.Resources["QuietButtonStyle"],
         };
         AutomationProperties.SetName(_gateAValidationButton, "Run GPU Gate A development validation");
         AutomationProperties.SetHelpText(
@@ -40,9 +40,10 @@ public sealed partial class MainWindow
             "Development-only owner validation. Launches the deterministic Direct3D 12 benchmark as a normal-user process, asks for administrator consent once, screens eligible physical cores, refines SMT siblings, confirms the finalist with direct ISR placement evidence, and preserves journal-owned rollback/recovery.");
         ToolTipService.SetToolTip(
             _gateAValidationButton,
-            "Development Gate A: deterministic benchmark → all-core screening → SMT refinement → balanced confirmation. The main window minimizes and a live Stop safely progress window remains available.");
+            "Development-only physical GPU affinity validation.");
         _gateAValidationButton.Click += GateAValidationButton_Click;
-        HeaderActions.Children.Add(_gateAValidationButton);
+        DeveloperValidationCard.Visibility = Visibility.Visible;
+        DeveloperValidationHost.Children.Add(_gateAValidationButton);
     }
 
     internal static bool IsDevelopmentGateAAvailable(string? repositoryRoot) =>
