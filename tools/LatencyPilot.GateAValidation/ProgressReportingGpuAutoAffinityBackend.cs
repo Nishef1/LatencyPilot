@@ -46,13 +46,28 @@ internal sealed class ProgressReportingGpuAutoAffinityBackend(
     public async Task RollbackAsync(Guid experimentId, CancellationToken cancellationToken)
     {
         activeCandidates.TryGetValue(experimentId, out var candidate);
-        await progress.ReportRestoringAsync(
-            candidate,
-            candidate is null
-                ? "Restoring exact original GPU affinity state."
-                : $"Restoring exact original state after CPU {candidate.Processor}.").ConfigureAwait(false);
+        Exception? progressFailure = null;
+        try
+        {
+            await progress.ReportRestoringAsync(
+                candidate,
+                candidate is null
+                    ? "Restoring exact original GPU affinity state."
+                    : $"Restoring exact original state after CPU {candidate.Processor}.").ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            progressFailure = exception;
+        }
+
         await inner.RollbackAsync(experimentId, cancellationToken).ConfigureAwait(false);
         activeCandidates.Remove(experimentId);
+        if (progressFailure is not null)
+        {
+            throw new IOException(
+                "GPU affinity rollback completed, but progress reporting failed before rollback.",
+                progressFailure);
+        }
     }
 
     public async Task KeepAsync(Guid experimentId, CancellationToken cancellationToken)
