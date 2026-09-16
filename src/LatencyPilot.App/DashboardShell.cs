@@ -1,6 +1,5 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 
 namespace LatencyPilot.App;
 
@@ -28,7 +27,6 @@ public sealed partial class MainWindow
 
         UpdateAppearanceMenu();
         RootGrid.SizeChanged += (_, _) => ApplyDashboardLayout();
-        RootGrid.Loaded += (_, _) => ApplyMicaBackdrop();
         ServiceStatusBadgeText.RegisterPropertyChangedCallback(
             TextBlock.TextProperty,
             (_, _) => UpdateServiceStatusVisibility());
@@ -36,21 +34,6 @@ public sealed partial class MainWindow
         ShowDashboardView("overview");
         UpdateServiceStatusVisibility();
         ApplyDashboardLayout();
-    }
-
-    private void ApplyMicaBackdrop()
-    {
-        try
-        {
-            if (SystemBackdrop is not MicaBackdrop)
-            {
-                SystemBackdrop = new MicaBackdrop();
-            }
-        }
-        catch (Exception exception)
-        {
-            Logger.Warning(exception, "Mica backdrop could not be enabled; continuing with the semantic surface fallback.");
-        }
     }
 
     private void AppNavigationView_SelectionChanged(
@@ -98,12 +81,16 @@ public sealed partial class MainWindow
         }
 
         var inlineActions = contentWidth >= DesignValue<double>("HeaderInlineThreshold");
-        HeaderActionsColumn.Width = GridLength.Auto;
-        Grid.SetColumn(HeaderActions, inlineActions ? 1 : 0);
-        Grid.SetRow(HeaderActions, inlineActions ? 0 : 1);
+        PlaceHeaderAction(HeaderActions, HeaderActionsColumn, inlineActions);
         HeaderActions.Orientation = contentWidth < 620d ? Orientation.Vertical : Orientation.Horizontal;
         HeaderActions.HorizontalAlignment = inlineActions ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-        HeaderActions.Margin = inlineActions ? new Thickness(0) : new Thickness(0, 8, 0, 0);
+
+        PlaceHeaderAction(MeasureHeaderActions, MeasureHeaderActionsColumn, inlineActions);
+        MeasureHeaderActions.Orientation = contentWidth < 620d ? Orientation.Vertical : Orientation.Horizontal;
+        MeasureHeaderActions.HorizontalAlignment = inlineActions ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+
+        PlaceHeaderAction(ExportEvidenceButton, EvidenceHeaderActionsColumn, inlineActions);
+        ExportEvidenceButton.HorizontalAlignment = inlineActions ? HorizontalAlignment.Right : HorizontalAlignment.Left;
 
         ReflowCards(
             SummaryGrid,
@@ -114,9 +101,42 @@ public sealed partial class MainWindow
         ReflowCards(
             BaselineAnchor,
             contentWidth >= DesignValue<double>("PreparationTwoColumnThreshold") ? 2 : 1);
+        ReflowCards(
+            DevicesSummaryGrid,
+            contentWidth >= 980d ? 3 : contentWidth >= 620d ? 2 : 1);
+        ReflowCards(
+            SystemInventoryGrid,
+            contentWidth >= 760d ? 3 : 1);
+        ReflowCards(
+            EvidenceMetricGrid,
+            contentWidth >= 900d ? 4 : contentWidth >= 620d ? 2 : 1);
+        ReflowCards(
+            EvidenceAttributionGrid,
+            contentWidth >= 760d ? 2 : 1);
+
+        var inventoryActionInline = contentWidth >= 760d;
+        Grid.SetColumn(InspectDeviceEvidenceButton, inventoryActionInline ? 1 : 0);
+        Grid.SetRow(InspectDeviceEvidenceButton, inventoryActionInline ? 0 : 1);
+        InspectDeviceEvidenceButton.HorizontalAlignment = inventoryActionInline
+            ? HorizontalAlignment.Right
+            : HorizontalAlignment.Left;
+        InspectDeviceEvidenceButton.Margin = inventoryActionInline
+            ? new Thickness(0)
+            : new Thickness(0, 4, 0, 0);
 
         ServiceStatusText.Visibility = contentWidth >= 620d ? Visibility.Visible : Visibility.Collapsed;
         ServiceStatusBadgeText.Visibility = contentWidth >= 420d ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static void PlaceHeaderAction(
+        FrameworkElement action,
+        ColumnDefinition actionColumn,
+        bool inline)
+    {
+        actionColumn.Width = GridLength.Auto;
+        Grid.SetColumn(action, inline ? 1 : 0);
+        Grid.SetRow(action, inline ? 0 : 1);
+        action.Margin = inline ? new Thickness(0) : new Thickness(0, 8, 0, 0);
     }
 
     private static void ReflowCards(Grid grid, int columns)
@@ -160,7 +180,6 @@ public sealed partial class MainWindow
 
         RootGrid.RequestedTheme = theme;
         UpdateAppearanceMenu();
-        ApplyMicaBackdrop();
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_appearancePath)!);
