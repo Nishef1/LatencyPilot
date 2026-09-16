@@ -45,6 +45,9 @@ public sealed class SourceRevisionIdentityTests
             "GateAValidationExperience.cs"));
         StringAssert.Contains(gateASource, "Run GPU Gate A");
         StringAssert.Contains(gateASource, "IsDevelopmentGateAAvailable");
+        StringAssert.Contains(gateASource, "BuildGateATerminalSummary");
+        StringAssert.Contains(gateASource, "GPU Gate A failed safely");
+        StringAssert.Contains(gateASource, "GPU Gate A stopped safely");
         Assert.IsFalse(gateASource.Contains("Validate GPU · one click", StringComparison.Ordinal));
         Assert.IsFalse(gateASource.Contains("Auto-optimize GPU", StringComparison.Ordinal));
 
@@ -79,6 +82,23 @@ public sealed class SourceRevisionIdentityTests
         Assert.IsTrue(
             connectAwaitIndex >= 0 && clientConstructionIndex > connectAwaitIndex,
             "GPU benchmark control streams must not be created before the named pipe is connected.");
+
+        var gateARunnerSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "LatencyPilot.GateAValidation",
+            "GpuAutoAffinityGateARunner.cs"));
+        var originalSnapshotIndex = gateARunnerSource.IndexOf(
+            "preMutationOriginalState = GpuInterruptAffinityPolicyStore.Capture",
+            StringComparison.Ordinal);
+        var benchmarkConnectIndex = gateARunnerSource.IndexOf(
+            "GpuBenchmarkControlClient.ConnectAsync",
+            StringComparison.Ordinal);
+        Assert.IsTrue(
+            originalSnapshotIndex >= 0 && benchmarkConnectIndex > originalSnapshotIndex,
+            "Gate A must capture exact original GPU affinity before benchmark-control startup can fail.");
+        StringAssert.Contains(gateARunnerSource, "TryStopBenchmarkAsync");
+        StringAssert.Contains(gateARunnerSource, "benchmark.StopAsync(deadline.Token)");
 
         var complete = new GateAValidationFacts(
             ExactRevision: true,
