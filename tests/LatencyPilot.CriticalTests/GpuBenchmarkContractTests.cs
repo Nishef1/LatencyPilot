@@ -129,5 +129,72 @@ public sealed class GpuBenchmarkContractTests
 
         var oldPresentMon = GpuBenchmarkEvidenceInterpreter.Interpret(evidence with { PresentMonBinaryVersion = "2.4.1" });
         Assert.IsFalse(oldPresentMon.IsValid);
+
+        var cpuBusyOnly = GpuBenchmarkReadiness.Evaluate(
+            evidence,
+            evidence,
+            new GpuBenchmarkContaminationContext(
+                SystemCpuBusyDrifted: true,
+                ControlTrialDrifted: false,
+                SleepOrResumeDetected: false,
+                DeviceResetDetected: false,
+                RetryAttempt: 0));
+        Assert.AreEqual(GpuBenchmarkReadinessState.Ready, cpuBusyOnly.State);
+        Assert.IsTrue(cpuBusyOnly.Context.Any(static item => item.Contains("CPU", StringComparison.OrdinalIgnoreCase)));
+
+        Assert.AreEqual(
+            GpuBenchmarkReadinessState.Inconclusive,
+            GpuBenchmarkReadiness.Evaluate(
+                evidence,
+                evidence with { GpuIdentity = "different-gpu" },
+                GpuBenchmarkContaminationContext.Clean).State);
+        Assert.AreEqual(
+            GpuBenchmarkReadinessState.Inconclusive,
+            GpuBenchmarkReadiness.Evaluate(
+                evidence,
+                evidence with { BenchmarkProcessId = 78, PresentMonCapture = capture with { ProcessId = 78 } },
+                GpuBenchmarkContaminationContext.Clean).State);
+        Assert.AreEqual(
+            GpuBenchmarkReadinessState.Inconclusive,
+            GpuBenchmarkReadiness.Evaluate(
+                evidence,
+                evidence with { EtwLostEventCount = 1 },
+                GpuBenchmarkContaminationContext.Clean).State);
+        Assert.AreEqual(
+            GpuBenchmarkReadinessState.Inconclusive,
+            GpuBenchmarkReadiness.Evaluate(
+                evidence,
+                evidence with { FrozenWorkloadIdentity = "different-workload" },
+                GpuBenchmarkContaminationContext.Clean).State);
+        Assert.AreEqual(
+            GpuBenchmarkReadinessState.Inconclusive,
+            GpuBenchmarkReadiness.Evaluate(
+                evidence,
+                evidence with { WorkerMap = [new LogicalProcessorId(0, 1), new LogicalProcessorId(0, 3)] },
+                GpuBenchmarkContaminationContext.Clean).State);
+
+        var retryableControlDrift = GpuBenchmarkReadiness.Evaluate(
+            evidence,
+            evidence,
+            GpuBenchmarkContaminationContext.Clean with { ControlTrialDrifted = true });
+        Assert.AreEqual(GpuBenchmarkReadinessState.RetryableContamination, retryableControlDrift.State);
+        var repeatedControlDrift = GpuBenchmarkReadiness.Evaluate(
+            evidence,
+            evidence,
+            GpuBenchmarkContaminationContext.Clean with { ControlTrialDrifted = true, RetryAttempt = 1 });
+        Assert.AreEqual(GpuBenchmarkReadinessState.Inconclusive, repeatedControlDrift.State);
+
+        Assert.AreEqual(
+            GpuBenchmarkReadinessState.Inconclusive,
+            GpuBenchmarkReadiness.Evaluate(
+                evidence,
+                evidence,
+                GpuBenchmarkContaminationContext.Clean with { SleepOrResumeDetected = true }).State);
+        Assert.AreEqual(
+            GpuBenchmarkReadinessState.Inconclusive,
+            GpuBenchmarkReadiness.Evaluate(
+                evidence,
+                evidence,
+                GpuBenchmarkContaminationContext.Clean with { DeviceResetDetected = true }).State);
     }
 }
