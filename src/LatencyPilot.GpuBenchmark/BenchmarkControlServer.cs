@@ -11,7 +11,8 @@ internal sealed class BenchmarkControlServer(
     BenchmarkOptions options,
     BenchmarkWorkload benchmark,
     D3D12BenchmarkRenderer renderer,
-    FrozenBenchmarkWorkload frozenWorkload)
+    FrozenBenchmarkWorkload frozenWorkload,
+    Func<D3D12BenchmarkRenderer> rendererFactory)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HashSet<int> completedRuns = [];
@@ -26,25 +27,29 @@ internal sealed class BenchmarkControlServer(
             throw new InvalidOperationException("Benchmark control server requires controlled-session options.");
         }
 
+        ArgumentNullException.ThrowIfNull(rendererFactory);
         Directory.CreateDirectory(outputDirectory);
-        using var pipe = CreatePipe(pipeName);
-        await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
-        using var reader = new StreamReader(
-            pipe,
-            new UTF8Encoding(false),
-            detectEncodingFromByteOrderMarks: false,
-            bufferSize: 4096,
-            leaveOpen: true);
-        using var writer = new StreamWriter(
-            pipe,
-            new UTF8Encoding(false),
-            bufferSize: 4096,
-            leaveOpen: true)
+        var activeRenderer = renderer;
+        try
         {
-            AutoFlush = true,
-        };
+            using var pipe = CreatePipe(pipeName);
+            await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+            using var reader = new StreamReader(
+                pipe,
+                new UTF8Encoding(false),
+                detectEncodingFromByteOrderMarks: false,
+                bufferSize: 4096,
+                leaveOpen: true);
+            using var writer = new StreamWriter(
+                pipe,
+                new UTF8Encoding(false),
+                bufferSize: 4096,
+                leaveOpen: true)
+            {
+                AutoFlush = true,
+            };
 
-        await WriteResponseAsync(
+            await WriteResponseAsync(
             writer,
             new GpuBenchmarkControlResponse(
                 GpuBenchmarkControlResponse.SchemaId,
@@ -56,8 +61,8 @@ internal sealed class BenchmarkControlServer(
                 "Benchmark calibrated once; frozen workload is ready for controlled trials."),
             cancellationToken).ConfigureAwait(false);
 
-        while (true)
-        {
+            while (true)
+            {
             cancellationToken.ThrowIfCancellationRequested();
             var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
             if (line is null)
@@ -124,13 +129,24 @@ internal sealed class BenchmarkControlServer(
                 continue;
             }
 
-            try
-            {
-                var artifact = await benchmark.RunTrialAsync(
-                    renderer,
-                    frozenWorkload,
-                    TimeSpan.FromMilliseconds(command.DurationMilliseconds),
-                    cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    // Applying a GPU interrupt-affinity candidate restarts the
+                    // display adapter. Recreate only the D3D12 device/window
+                    // before every controlled trial so the benchmark does not
+                    // submit work through a device removed by that restart.
+                    // The process, frozen workload, seed and worker map remain
+                    // stable for continuity and comparability checks.
+                    var nextRenderer = rendererFactory();
+                    var previousRenderer = activeRenderer;
+                    activeRenderer = nextRenderer;
+                    previousRenderer.Dispose();
+
+                    var artifact = await benchmark.RunTrialAsync(
+                        activeRenderer,
+                        frozenWorkload,
+                        TimeSpan.FromMilliseconds(command.DurationMilliseconds),
+                        cancellationToken).ConfigureAwait(false);
                 await File.WriteAllTextAsync(
                     artifactPath,
                     JsonSerializer.Serialize(artifact, JsonOptions),
@@ -147,9 +163,9 @@ internal sealed class BenchmarkControlServer(
                         artifactPath,
                         "Frozen benchmark trial completed."),
                     cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
                 completedRuns.Remove(command.RunNumber);
                 await WriteResponseAsync(
                     writer,
@@ -162,7 +178,12 @@ internal sealed class BenchmarkControlServer(
                         null,
                         $"Benchmark trial failed: {exception.GetType().Name}: {exception.Message}"),
                     cancellationToken).ConfigureAwait(false);
+                }
             }
+        }
+        finally
+        {
+            activeRenderer.Dispose();
         }
     }
 

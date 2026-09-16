@@ -59,7 +59,12 @@ try
             "waiting-control",
             0d,
             "Frozen benchmark session is waiting for the authenticated Gate A controller.");
-        var server = new BenchmarkControlServer(options, benchmark, renderer, frozen);
+        var server = new BenchmarkControlServer(
+            options,
+            benchmark,
+            renderer,
+            frozen,
+            () => new D3D12BenchmarkRenderer(options.Width, options.Height, workerMap, options.Seed));
         await server.RunAsync();
         BenchmarkProtocol.WriteProgress(
             Console.Out,

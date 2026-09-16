@@ -193,6 +193,8 @@ PresentMon's own current documentation warns that `msGPUActive`/related GPU exec
 
 A benchmark trial requires stable source/GPU/driver/topology/benchmark-process/frozen-workload identity, clean ETW capture, valid D3D12 timestamp evidence, expected stored state before/after a Candidate trial, and comparable repeated control behavior. The screening sequence first records one original-state warm-up whole-run after benchmark startup, then records two decision-grade original controls; the warm-up is retained as evidence but is not used as the control reference. Missing optional PresentMon fields stay missing. Background applications are context unless they actually break GPU/benchmark comparability.
 
+Because applying a GPU interrupt-affinity candidate restarts the display adapter, the controlled benchmark recreates its D3D12 renderer before every trial while preserving the same process, frozen workload, worker map and seed. This prevents a stale `DXGI_ERROR_DEVICE_REMOVED` renderer from being mistaken for benchmark evidence failure.
+
 `latencypilot-gpu-benchmark-v1` is repeated **whole-run** evidence. It is not `baseline-quality-v2` five-window RealWorld evidence and must never be converted into that schema merely to reuse an eligibility gate.
 
 ## 9. GPU effective ISR-placement validity
