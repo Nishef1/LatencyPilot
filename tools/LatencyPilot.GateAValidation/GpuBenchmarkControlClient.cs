@@ -10,21 +10,19 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly Guid sessionId;
     private readonly string token;
-    private readonly uint expectedProcessId;
     private readonly NamedPipeClientStream pipe;
     private readonly StreamReader reader;
     private readonly StreamWriter writer;
+    private uint processId;
     private bool stopped;
 
     private GpuBenchmarkControlClient(
         Guid sessionId,
         string token,
-        uint expectedProcessId,
         NamedPipeClientStream pipe)
     {
         this.sessionId = sessionId;
         this.token = token;
-        this.expectedProcessId = expectedProcessId;
         this.pipe = pipe;
         reader = new StreamReader(
             pipe,
@@ -42,16 +40,18 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
         };
     }
 
+    internal uint ProcessId => processId != 0
+        ? processId
+        : throw new InvalidOperationException("Benchmark control handshake has not established a process identity yet.");
+
     internal static async Task<GpuBenchmarkControlClient> ConnectAsync(
         string pipeName,
         Guid sessionId,
         string token,
-        uint expectedProcessId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
-        if (sessionId == Guid.Empty || expectedProcessId == 0 ||
-            !GpuBenchmarkControlProtocol.IsValidToken(token))
+        if (sessionId == Guid.Empty || !GpuBenchmarkControlProtocol.IsValidToken(token))
         {
             throw new ArgumentException("Benchmark control identity is incomplete or invalid.");
         }
@@ -61,13 +61,13 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
             pipeName,
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
-        var client = new GpuBenchmarkControlClient(sessionId, token, expectedProcessId, pipe);
+        var client = new GpuBenchmarkControlClient(sessionId, token, pipe);
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(TimeSpan.FromSeconds(45));
             await pipe.ConnectAsync(deadline.Token).ConfigureAwait(false);
-            var ready = await client.ReadResponseAsync(deadline.Token).ConfigureAwait(false);
+            var ready = await client.ReadResponseAsync(deadline.Token, allowProcessBinding: true).ConfigureAwait(false);
             if (ready.Status != GpuBenchmarkControlResponseStatus.Ready || ready.RunNumber != 0)
             {
                 throw new InvalidDataException(
@@ -137,7 +137,9 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
                 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 await StopAsync(deadline.Token).ConfigureAwait(false);
             }
-            catch (Exception) when (!System.Diagnostics.Debugger.IsAttached)
+            catch (Exception exception) when (
+                !System.Diagnostics.Debugger.IsAttached &&
+                exception is IOException or InvalidDataException or OperationCanceledException or ObjectDisposedException)
             {
                 // Closing the authenticated control pipe is the final fallback;
                 // the benchmark treats disconnect-before-Stop as a failed session.
@@ -158,18 +160,29 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<GpuBenchmarkControlResponse> ReadResponseAsync(CancellationToken cancellationToken)
+    private async Task<GpuBenchmarkControlResponse> ReadResponseAsync(
+        CancellationToken cancellationToken,
+        bool allowProcessBinding = false)
     {
         var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)
             ?? throw new EndOfStreamException("Benchmark control pipe closed unexpectedly.");
         var response = JsonSerializer.Deserialize<GpuBenchmarkControlResponse>(line, JsonOptions)
             ?? throw new InvalidDataException("Benchmark control response is empty.");
         if (!string.Equals(response.Schema, GpuBenchmarkControlResponse.SchemaId, StringComparison.Ordinal) ||
-            response.SessionId != sessionId ||
-            response.ProcessId != expectedProcessId)
+            response.SessionId != sessionId || response.ProcessId == 0)
         {
             throw new InvalidDataException(
                 "Benchmark control response failed schema/session/process identity validation.");
+        }
+
+        if (processId == 0 && allowProcessBinding)
+        {
+            processId = response.ProcessId;
+        }
+        else if (response.ProcessId != processId)
+        {
+            throw new InvalidDataException(
+                "Benchmark control response process identity changed after the authenticated handshake.");
         }
 
         if (response.Status is GpuBenchmarkControlResponseStatus.Rejected or
