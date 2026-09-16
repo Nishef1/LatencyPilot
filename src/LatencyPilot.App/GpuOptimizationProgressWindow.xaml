@@ -1,0 +1,115 @@
+<Window
+    x:Class="LatencyPilot.App.GpuOptimizationProgressWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Window.SystemBackdrop>
+        <DesktopAcrylicBackdrop />
+    </Window.SystemBackdrop>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <Grid x:Name="RootGrid"
+              Padding="24"
+              Background="{ThemeResource CanvasBrush}">
+            <StackPanel Spacing="16">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="GPU Auto Affinity"
+                               Style="{StaticResource SectionTitleTextStyle}" />
+                    <TextBlock Text="Development Gate A · benchmark-backed candidate search"
+                               Style="{StaticResource CaptionTextStyle}" />
+                </StackPanel>
+
+                <Border Style="{StaticResource DashboardCardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock x:Name="CandidateText"
+                                   Text="Preparing candidates…"
+                                   Style="{StaticResource SubsectionTitleTextStyle}"
+                                   AutomationProperties.Name="GPU affinity candidate" />
+                        <TextBlock x:Name="PhaseText"
+                                   Text="Initializing benchmark"
+                                   Style="{StaticResource MutedBodyTextStyle}"
+                                   AutomationProperties.Name="GPU optimizer phase" />
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ProgressBar x:Name="OptimizationProgressBar"
+                                         Minimum="0"
+                                         Maximum="100"
+                                         Value="0"
+                                         Height="8"
+                                         VerticalAlignment="Center"
+                                         AutomationProperties.Name="GPU optimizer progress" />
+                            <TextBlock x:Name="ProgressPercentText"
+                                       Grid.Column="1"
+                                       Text="0%"
+                                       Style="{StaticResource MetricLabelTextStyle}"
+                                       VerticalAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource MetricTileStyle}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Frame p99" Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock x:Name="FrameP99Text"
+                                       Text="—"
+                                       Style="{StaticResource MetricLabelTextStyle}" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="1% low" Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock x:Name="OnePercentLowText"
+                                       Text="—"
+                                       Style="{StaticResource MetricLabelTextStyle}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <Border Style="{StaticResource MetricTileStyle}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="GPU ISR placement" Style="{StaticResource CaptionTextStyle}" />
+                        <TextBlock x:Name="IsrPlacementText"
+                                   Text="Not measured"
+                                   Style="{StaticResource MetricLabelTextStyle}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource SubtleCardStyle}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Last completed candidate"
+                                   Style="{StaticResource CaptionTextStyle}" />
+                        <TextBlock x:Name="LastCandidateText"
+                                   Text="None yet"
+                                   Style="{StaticResource BodyTextStyle}" />
+                        <TextBlock x:Name="TimingText"
+                                   Text="Elapsed 00:00 · estimating remaining time"
+                                   Style="{StaticResource CaptionTextStyle}" />
+                    </StackPanel>
+                </Border>
+
+                <TextBlock x:Name="StatusText"
+                           Text="Starting the normal-user benchmark process."
+                           Style="{StaticResource MutedBodyTextStyle}"
+                           AutomationProperties.Name="GPU optimizer status" />
+
+                <Button x:Name="StopButton"
+                        Content="Stop safely"
+                        Click="StopButton_Click"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        HorizontalAlignment="Stretch"
+                        AutomationProperties.Name="Stop GPU optimization safely"
+                        AutomationProperties.HelpText="Stops future benchmark trials and keeps this window open while LatencyPilot restores or verifies the safe final GPU affinity state." />
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</Window>
