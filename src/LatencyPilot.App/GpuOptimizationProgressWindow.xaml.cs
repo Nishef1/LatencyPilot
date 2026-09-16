@@ -13,8 +13,8 @@ public sealed partial class GpuOptimizationProgressWindow : Window
     private readonly Guid sessionId;
     private readonly string progressPath;
     private readonly string cancelPath;
-    private readonly CancellationTokenSource monitorStop = new();
     private Task? monitorTask;
+    private bool monitoring;
     private bool stopRequested;
     private bool terminal;
 
@@ -49,24 +49,21 @@ public sealed partial class GpuOptimizationProgressWindow : Window
 
     internal void StartMonitoring()
     {
-        monitorTask ??= MonitorAsync(monitorStop.Token);
-    }
-
-    internal async Task StopMonitoringAsync()
-    {
-        monitorStop.Cancel();
-        if (monitorTask is null)
+        if (monitorTask is not null)
         {
             return;
         }
 
-        try
+        monitoring = true;
+        monitorTask = MonitorAsync();
+    }
+
+    internal async Task StopMonitoringAsync()
+    {
+        monitoring = false;
+        if (monitorTask is not null)
         {
             await monitorTask;
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected when the owner flow terminalizes without a final progress write.
         }
     }
 
@@ -96,15 +93,15 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         StopButton.IsEnabled = true;
     }
 
-    private async Task MonitorAsync(CancellationToken cancellationToken)
+    private async Task MonitorAsync()
     {
-        while (!cancellationToken.IsCancellationRequested && !terminal)
+        while (monitoring && !terminal)
         {
             try
             {
                 if (File.Exists(progressPath))
                 {
-                    var json = await File.ReadAllTextAsync(progressPath, cancellationToken);
+                    var json = await File.ReadAllTextAsync(progressPath);
                     var snapshot = JsonSerializer.Deserialize<GpuOptimizationProgressSnapshot>(json, JsonOptions);
                     if (snapshot is not null &&
                         string.Equals(snapshot.Schema, GpuOptimizationProgressSnapshot.SchemaId, StringComparison.Ordinal) &&
@@ -130,7 +127,10 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 // Ignore a transient unreadable snapshot; the next atomic write supersedes it.
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+            if (monitoring && !terminal)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250));
+            }
         }
     }
 
