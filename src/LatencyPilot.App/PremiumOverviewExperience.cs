@@ -805,8 +805,12 @@ public sealed partial class MainWindow
             ? new GridLength(0.8, GridUnitType.Star)
             : new GridLength(0);
 
-        var copy = _premiumEmptyStateGrid.Children[0];
-        var preview = _premiumEmptyStateGrid.Children[1];
+        if (_premiumEmptyStateGrid.Children[0] is not FrameworkElement copy ||
+            _premiumEmptyStateGrid.Children[1] is not FrameworkElement preview)
+        {
+            return;
+        }
+
         Grid.SetColumn(copy, 0);
         Grid.SetRow(copy, 0);
         Grid.SetColumn(preview, split ? 1 : 0);
