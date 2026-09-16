@@ -23,7 +23,7 @@ public sealed record GpuAutoAffinityReportProvenance(
     string FrozenWorkloadIdentity,
     GpuBenchmarkArtifactWorkload FrozenWorkload,
     string? PresentMonBinaryVersion,
-    PresentMonApiVersionSnapshot PresentMonApiVersion,
+    PresentMonApiVersionSnapshot? PresentMonApiVersion,
     ulong D3D12TimestampFrequency)
 {
     public static GpuAutoAffinityReportProvenance FromEvidence(GpuBenchmarkEvidence evidence)
