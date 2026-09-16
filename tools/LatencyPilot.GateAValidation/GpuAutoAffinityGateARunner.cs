@@ -8,6 +8,7 @@ using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
+using LatencyPilot.Core.System;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
