@@ -1,6 +1,6 @@
-using System.Runtime.InteropServices;
 using LatencyPilot.Core.Devices;
-using LatencyPilot.Platform.Windows.Interop;
+using Vortice.DXGI;
+using static Vortice.DXGI.DXGI;
 
 namespace LatencyPilot.Platform.Windows.Devices;
 
@@ -10,78 +10,47 @@ public static class GraphicsAdapterReader
 
     public static GraphicsAdapterInventory Capture()
     {
-        var factoryInterfaceId = Dxgi.Factory1InterfaceId;
-        var result = Dxgi.CreateDXGIFactory1(ref factoryInterfaceId, out var factory);
-        if (result < 0)
+        using var factory = CreateDXGIFactory1<IDXGIFactory1>();
+        var adapters = new List<GraphicsAdapterSnapshot>();
+        for (uint index = 0; index < MaximumAdapters; index++)
         {
-            Marshal.ThrowExceptionForHR(result);
-        }
-
-        try
-        {
-            var adapters = new List<GraphicsAdapterSnapshot>();
-            for (uint index = 0; index < MaximumAdapters; index++)
+            if (!factory.EnumAdapters1(index, out IDXGIAdapter1? adapter).Success)
             {
-                IDXGIAdapter1? adapter = null;
-                try
-                {
-                    result = factory.EnumAdapters1(index, out adapter);
-                    if (result == Dxgi.ErrorNotFound)
-                    {
-                        break;
-                    }
-
-                    if (result < 0)
-                    {
-                        Marshal.ThrowExceptionForHR(result);
-                    }
-
-                    result = adapter.GetDesc1(out var description);
-                    if (result < 0)
-                    {
-                        Marshal.ThrowExceptionForHR(result);
-                    }
-
-                    adapters.Add(new GraphicsAdapterSnapshot(
-                        checked((int)index),
-                        description.Description?.TrimEnd('\0') ?? string.Empty,
-                        description.VendorId,
-                        description.DeviceId,
-                        description.SubSysId,
-                        description.Revision,
-                        checked((ulong)description.DedicatedVideoMemory),
-                        checked((ulong)description.DedicatedSystemMemory),
-                        checked((ulong)description.SharedSystemMemory),
-                        new GraphicsAdapterLuid(
-                            description.AdapterLuid.LowPart,
-                            description.AdapterLuid.HighPart),
-                        description.Flags));
-                }
-                finally
-                {
-                    ReleaseComObject(adapter);
-                }
+                break;
             }
 
-            if (adapters.Count == MaximumAdapters)
+            using (adapter)
             {
-                throw new InvalidDataException(
-                    $"DXGI adapter enumeration hit the safety limit of {MaximumAdapters} adapters.");
+                if (adapter is null)
+                {
+                    throw new InvalidDataException(
+                        $"DXGI returned a successful adapter enumeration result without an adapter at index {index}.");
+                }
+
+                var description = adapter.Description1;
+                adapters.Add(new GraphicsAdapterSnapshot(
+                    checked((int)index),
+                    description.Description.TrimEnd('\0'),
+                    description.VendorId,
+                    description.DeviceId,
+                    description.SubsystemId,
+                    description.Revision,
+                    checked((ulong)description.DedicatedVideoMemory),
+                    checked((ulong)description.DedicatedSystemMemory),
+                    checked((ulong)description.SharedSystemMemory),
+                    new GraphicsAdapterLuid(
+                        description.Luid.LowPart,
+                        description.Luid.HighPart),
+                    (uint)description.Flags));
             }
+        }
 
-            return new GraphicsAdapterInventory(adapters.ToArray(), DateTimeOffset.UtcNow);
-        }
-        finally
+        if (adapters.Count == MaximumAdapters)
         {
-            ReleaseComObject(factory);
+            throw new InvalidDataException(
+                $"DXGI adapter enumeration hit the safety limit of {MaximumAdapters} adapters.");
         }
-    }
 
-    private static void ReleaseComObject(object? value)
-    {
-        if (value is not null && Marshal.IsComObject(value))
-        {
-            _ = Marshal.FinalReleaseComObject(value);
-        }
+        return new GraphicsAdapterInventory(adapters.ToArray(), DateTimeOffset.UtcNow);
     }
 }
