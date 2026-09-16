@@ -61,12 +61,14 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
             pipeName,
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
-        var client = new GpuBenchmarkControlClient(sessionId, token, pipe);
+        GpuBenchmarkControlClient? client = null;
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(TimeSpan.FromSeconds(45));
             await pipe.ConnectAsync(deadline.Token).ConfigureAwait(false);
+
+            client = new GpuBenchmarkControlClient(sessionId, token, pipe);
             var ready = await client.ReadResponseAsync(deadline.Token, allowProcessBinding: true).ConfigureAwait(false);
             if (ready.Status != GpuBenchmarkControlResponseStatus.Ready || ready.RunNumber != 0)
             {
@@ -78,7 +80,15 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
         }
         catch
         {
-            await client.DisposeAsync().ConfigureAwait(false);
+            if (client is not null)
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                pipe.Dispose();
+            }
+
             throw;
         }
     }
