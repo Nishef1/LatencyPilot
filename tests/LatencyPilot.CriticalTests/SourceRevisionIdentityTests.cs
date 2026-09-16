@@ -102,6 +102,16 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(gateAProgressSource, "\"failed-safely\"");
         StringAssert.Contains(gateAProgressSource, "\"stopped-safely\"");
 
+        var placementVerifierSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.Platform.Windows",
+            "Devices",
+            "GpuInterruptRuntimePlacementVerifier.cs"));
+        StringAssert.Contains(placementVerifierSource, "WddmGraphicsKernelModule");
+        StringAssert.Contains(placementVerifierSource, "wddm-graphics-kernel-dispatch");
+        StringAssert.Contains(placementVerifierSource, "exactly one present display adapter");
+
         var benchmarkControlClientSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "tools",

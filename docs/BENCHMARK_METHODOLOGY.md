@@ -208,6 +208,12 @@ Candidate evidence additionally requires the same ETW capture to show:
 - zero attributed GPU ISR on off-target processors;
 - unresolved ISR attribution remains unresolved rather than counting as success.
 
+For a single-adapter WDDM system, the verifier first uses resolved ISR addresses in the
+display KMD module (for example, `nvlddmkm.sys`). If that stream is absent, it may use
+resolved `dxgkrnl.sys` ISR dispatch evidence as an explicitly labelled WDDM fallback;
+the fallback is refused when more than one display adapter is present because the
+shared graphics-kernel stream cannot then be attributed to one GPU without guessing.
+
 This is a validity contract. Physical Gate A must still prove it on supported hardware.
 
 ## 10. `gpu-affinity-confirmation-v1`

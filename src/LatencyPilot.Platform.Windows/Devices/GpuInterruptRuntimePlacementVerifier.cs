@@ -16,6 +16,10 @@ public sealed record GpuInterruptRuntimePlacementEvidence(
     int UnresolvedIsrEventCount,
     IReadOnlyList<ProcessorObservedInterruptCount> ObservedProcessors)
 {
+    public string AttributionModuleName { get; init; } = DriverServiceName;
+
+    public string AttributionMode { get; init; } = "display-driver-kmd";
+
     public bool HasRuntimeEvidence => MatchingResolvedIsrEventCount > 0;
 
     public bool? ObservedOnlyOnTarget =>
@@ -32,6 +36,7 @@ public sealed record GpuInterruptRuntimePlacementEvidence(
 public static class GpuInterruptRuntimePlacementVerifier
 {
     private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
+    private const string WddmGraphicsKernelModule = "dxgkrnl";
 
     public static bool ConfirmsGateAPlacement(
         bool storedCandidateBefore,
@@ -62,13 +67,21 @@ public static class GpuInterruptRuntimePlacementVerifier
                 "GPU runtime placement verification v1 supports only a group-0 x64 affinity candidate.");
         }
 
-        var target = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(device =>
-            device.ClassGuid == DisplayDeviceClass &&
+        var displayAdapters = DeviceInventoryReader.CapturePresentDevices().Devices
+            .Where(device => device.ClassGuid == DisplayDeviceClass)
+            .ToArray();
+        var target = displayAdapters.FirstOrDefault(device =>
             string.Equals(device.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase));
         if (target is null)
         {
             throw new InvalidOperationException(
                 "The requested GPU runtime-verification target is not a present display adapter.");
+        }
+
+        if (displayAdapters.Length != 1)
+        {
+            throw new NotSupportedException(
+                "WDDM graphics-kernel ISR fallback requires exactly one present display adapter so the shared dxgkrnl ISR stream cannot be attributed to the wrong GPU.");
         }
 
         if (string.IsNullOrWhiteSpace(target.ServiceName))
@@ -78,10 +91,23 @@ public static class GpuInterruptRuntimePlacementVerifier
         }
 
         var serviceName = NormalizeModuleStem(target.ServiceName);
-        var matching = capture.Events
+        var driverMatching = capture.Events
             .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
             .Where(item => ModuleMatchesService(item.ModulePath, serviceName))
             .ToArray();
+        var useWddmFallback = driverMatching.Length == 0;
+        var attributionModuleName = useWddmFallback
+            ? WddmGraphicsKernelModule
+            : serviceName;
+        var attributionMode = useWddmFallback
+            ? "wddm-graphics-kernel-dispatch"
+            : "display-driver-kmd";
+        var matching = useWddmFallback
+            ? capture.Events
+                .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
+                .Where(item => ModuleMatchesService(item.ModulePath, WddmGraphicsKernelModule))
+                .ToArray()
+            : driverMatching;
 
         var observedProcessors = matching
             .GroupBy(static item => item.ProcessorNumber)
@@ -102,7 +128,11 @@ public static class GpuInterruptRuntimePlacementVerifier
             targetCount,
             matching.Length - targetCount,
             unresolvedIsrCount,
-            observedProcessors);
+            observedProcessors)
+        {
+            AttributionModuleName = attributionModuleName,
+            AttributionMode = attributionMode,
+        };
     }
 
     private static bool ModuleMatchesService(string? modulePath, string serviceName)

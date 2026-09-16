@@ -294,6 +294,8 @@ internal static class PhysicalValidationProgram
                 original.DeviceInstanceId,
                 candidate);
             Console.WriteLine($"service-module={placement.DriverServiceName}");
+            Console.WriteLine($"runtime-attribution-module={placement.AttributionModuleName}");
+            Console.WriteLine($"runtime-attribution-mode={placement.AttributionMode}");
             Console.WriteLine($"service-module-isr-events={placement.MatchingResolvedIsrEventCount.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"service-module-target-isr-events={placement.TargetProcessorIsrEventCount.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"service-module-off-target-isr-events={placement.OffTargetIsrEventCount.ToString(CultureInfo.InvariantCulture)}");
