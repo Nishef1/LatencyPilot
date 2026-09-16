@@ -38,6 +38,40 @@ public sealed class SourceRevisionIdentityTests
             typeof(ProtocolVersion).GetField(nameof(ProtocolVersion.Current))?.GetRawConstantValue());
 
         var repositoryRoot = FindRepositoryRoot();
+
+        var premiumOverviewPath = Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "PremiumOverviewExperience.cs");
+        Assert.IsTrue(
+            File.Exists(premiumOverviewPath),
+            "The approved premium Overview must be implemented as a maintained experience instead of a one-off mockup.");
+        var premiumOverviewSource = File.ReadAllText(premiumOverviewPath);
+        StringAssert.Contains(premiumOverviewSource, "LatencyProfileChart");
+        StringAssert.Contains(premiumOverviewSource, "CpuDistributionChart");
+        StringAssert.Contains(premiumOverviewSource, "ModuleContributionChart");
+        StringAssert.Contains(premiumOverviewSource, "CpuInterruptMap");
+        StringAssert.Contains(premiumOverviewSource, "SemanticGoodBrush");
+        StringAssert.Contains(premiumOverviewSource, "SemanticAttentionBrush");
+        StringAssert.Contains(premiumOverviewSource, "SemanticFailureBrush");
+        StringAssert.Contains(premiumOverviewSource, "BrandActionBrush");
+
+        var premiumTokensPath = Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "Design",
+            "PremiumOverviewTokens.xaml");
+        Assert.IsTrue(File.Exists(premiumTokensPath), "Premium Overview semantic color resources must be centralized.");
+        var premiumTokensSource = File.ReadAllText(premiumTokensPath);
+        StringAssert.Contains(premiumTokensSource, "BrandActionBrush");
+        StringAssert.Contains(premiumTokensSource, "SemanticGoodBrush");
+        StringAssert.Contains(premiumTokensSource, "SemanticAttentionBrush");
+        StringAssert.Contains(premiumTokensSource, "SemanticFailureBrush");
+        StringAssert.Contains(premiumTokensSource, "DpcCategoryBrush");
+        StringAssert.Contains(premiumTokensSource, "IsrCategoryBrush");
+
         var gateASource = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "src",
