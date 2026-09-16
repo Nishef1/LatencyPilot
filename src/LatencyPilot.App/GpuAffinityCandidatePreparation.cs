@@ -283,7 +283,7 @@ public sealed partial class MainWindow
         var optimizerStatus = state.IsEligible ? "Optimizer ready" : "Optimizer not ready";
 
         BaselineSummaryText.Text = baselineStatus;
-        BaselineSummaryIcon.Glyph = "\uE73E";
+        BaselineSummaryIcon.Symbol = Symbol.Accept;
         BaselineSummaryText.Foreground = ThemeBrush("SuccessBrush");
         BaselineSummaryDetailText.Foreground = ThemeBrush(state.IsEligible ? "SuccessBrush" : "WarningBrush");
         BaselineSummaryDetailText.TextWrapping = TextWrapping.Wrap;
