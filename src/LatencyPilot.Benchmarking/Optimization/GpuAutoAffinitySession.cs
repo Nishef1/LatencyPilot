@@ -61,6 +61,11 @@ public interface IGpuAutoAffinitySessionBackend
         CancellationToken cancellationToken);
 }
 
+public interface IGpuAutoAffinitySessionObserver
+{
+    Task CandidateEvaluatedAsync(GpuAutoAffinityCandidateReport report);
+}
+
 public sealed record GpuAutoAffinitySessionResult(
     GpuOptimizationRecommendation Recommendation,
     GpuAffinityCandidate? Finalist,
@@ -72,10 +77,14 @@ public sealed class GpuAutoAffinitySession
     private const string DpcGuardrailMetric = "GPU-driver DPC duration (us)";
     private const string IsrGuardrailMetric = "GPU-driver ISR duration (us)";
     private readonly IGpuAutoAffinitySessionBackend backend;
+    private readonly IGpuAutoAffinitySessionObserver? observer;
 
-    public GpuAutoAffinitySession(IGpuAutoAffinitySessionBackend backend)
+    public GpuAutoAffinitySession(
+        IGpuAutoAffinitySessionBackend backend,
+        IGpuAutoAffinitySessionObserver? observer = null)
     {
         this.backend = backend ?? throw new ArgumentNullException(nameof(backend));
+        this.observer = observer;
     }
 
     public async Task<GpuAutoAffinitySessionResult> RunAsync(
@@ -146,7 +155,10 @@ public sealed class GpuAutoAffinitySession
                     trialReports,
                     cancellationToken).ConfigureAwait(false);
                 var comparison = Compare(controls, observations, request.Policy);
-                candidateReports.Add(ToReport("screening", candidate, observations.Length, comparison));
+                var report = ToReport("screening", candidate, observations.Length, comparison);
+                candidateReports.Add(report);
+                await PublishCandidateReportAsync(report).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 physicalEvaluations.Add(new CandidateEvaluation(candidate, comparison));
             }
 
@@ -186,7 +198,10 @@ public sealed class GpuAutoAffinitySession
                     trialReports,
                     cancellationToken).ConfigureAwait(false);
                 var comparison = Compare(controls, observations, request.Policy);
-                candidateReports.Add(ToReport("smt-refinement", sibling, observations.Length, comparison));
+                var report = ToReport("smt-refinement", sibling, observations.Length, comparison);
+                candidateReports.Add(report);
+                await PublishCandidateReportAsync(report).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 refinementEvaluations.Add(new CandidateEvaluation(sibling, comparison));
             }
 
@@ -309,7 +324,10 @@ public sealed class GpuAutoAffinitySession
             }
 
             var comparison = Compare(originalRuns, candidateRuns, request.Policy);
-            candidateReports.Add(ToReport("confirmation", finalist, candidateRuns.Count, comparison));
+            var report = ToReport("confirmation", finalist, candidateRuns.Count, comparison);
+            candidateReports.Add(report);
+            await PublishCandidateReportAsync(report).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             if (comparison.Verdict == ExperimentVerdict.Improved)
             {
                 await backend.KeepAsync(activeExperiment.Value, CancellationToken.None).ConfigureAwait(false);
@@ -484,6 +502,11 @@ public sealed class GpuAutoAffinitySession
 
         throw new InvalidOperationException("GPU benchmark retry loop exited without a terminal result.");
     }
+
+    private Task PublishCandidateReportAsync(GpuAutoAffinityCandidateReport report) =>
+        observer is null
+            ? Task.CompletedTask
+            : observer.CandidateEvaluatedAsync(report);
 
     private static GpuBenchmarkReadinessResult EvaluateObservation(
         GpuBenchmarkEvidence? reference,
