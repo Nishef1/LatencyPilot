@@ -20,6 +20,7 @@ internal sealed class GpuGateAProgressFile
     private readonly Dictionary<string, int> refinementCandidates = new(StringComparer.Ordinal);
     private int completedUnits;
     private string lastCompletedCandidateVerdict = "None yet";
+    private GpuOptimizationProgressSnapshot? latestSnapshot;
 
     internal GpuGateAProgressFile(Guid sessionId, string path, int physicalCandidateCount)
     {
@@ -78,7 +79,7 @@ internal sealed class GpuGateAProgressFile
             : observation.Placement is { ConfirmsRequestedPlacement: true }
                 ? "Confirmed on requested CPU"
                 : "Placement not confirmed";
-        lastCompletedCandidateVerdict = request.Candidate is null
+        var trialState = request.Candidate is null
             ? "Control complete"
             : interpretation.IsValid && observation.Placement is { ConfirmsRequestedPlacement: true }
                 ? "Trial valid · decision pending"
@@ -90,13 +91,39 @@ internal sealed class GpuGateAProgressFile
             candidateIndex,
             candidateCount,
             request.RunNumber,
-            lastCompletedCandidateVerdict,
+            trialState,
             interpretation.IsValid ? interpretation.FrameP99Milliseconds : null,
             interpretation.IsValid ? interpretation.OnePercentLowFps : null,
             placementState,
             isRestoring: false,
             isTerminal: false));
     }
+
+    internal Task ReportCandidateEvaluatedAsync(GpuAutoAffinityCandidateReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        lastCompletedCandidateVerdict =
+            $"CPU {report.Processor.Number} — {FormatVerdict(report.Verdict)}";
+        return latestSnapshot is null
+            ? Task.CompletedTask
+            : WriteAsync(latestSnapshot with
+            {
+                LastCompletedCandidateVerdict = lastCompletedCandidateVerdict,
+                Message = lastCompletedCandidateVerdict,
+            });
+    }
+
+    internal Task ReportStopRequestedAsync() =>
+        latestSnapshot is null
+            ? ReportInitializingAsync("Stop requested. Waiting for the safe rollback boundary.")
+            : WriteAsync(latestSnapshot with
+            {
+                Phase = "stopping-safely",
+                Message = "Stop requested. Finishing the current safe boundary and restoring the original state.",
+                IsrPlacementState = "Rollback/recovery pending",
+                IsRestoring = true,
+                IsTerminal = false,
+            });
 
     internal Task ReportRestoringAsync(GpuAffinityCandidate? candidate, string message) =>
         WriteAsync(Create(
@@ -212,6 +239,7 @@ internal sealed class GpuGateAProgressFile
 
     private async Task WriteAsync(GpuOptimizationProgressSnapshot snapshot)
     {
+        latestSnapshot = snapshot;
         var directory = Path.GetDirectoryName(path)
             ?? throw new InvalidOperationException("GPU Gate A progress path has no parent directory.");
         Directory.CreateDirectory(directory);
@@ -221,4 +249,12 @@ internal sealed class GpuGateAProgressFile
             JsonSerializer.Serialize(snapshot, JsonOptions)).ConfigureAwait(false);
         File.Move(temporary, path, overwrite: true);
     }
+
+    private static string FormatVerdict(string verdict) => verdict switch
+    {
+        "Improved" => "measurable improvement",
+        "NoMeasurableDifference" => "no measurable improvement",
+        "Regressed" => "regressed",
+        _ => verdict,
+    };
 }
