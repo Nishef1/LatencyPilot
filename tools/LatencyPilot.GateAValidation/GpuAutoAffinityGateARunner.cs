@@ -30,6 +30,7 @@ internal static class GpuAutoAffinityGateARunner
         AutoOptions? options = null;
         GpuBenchmarkControlClient? benchmark = null;
         GpuAutoAffinityGateABackend? rawBackend = null;
+        GpuInterruptAffinitySnapshot? preMutationOriginalState = null;
         GpuGateAProgressFile? progress = null;
         CancellationTokenSource? sessionCancellation = null;
         CancellationTokenSource? watcherShutdown = null;
@@ -58,6 +59,8 @@ internal static class GpuAutoAffinityGateARunner
                 throw new InvalidOperationException(
                     $"GPU auto-affinity Gate A requires exactly one present display adapter; found {target.Length}.");
             }
+
+            preMutationOriginalState = GpuInterruptAffinityPolicyStore.Capture(target[0].InstanceId);
 
             var topology = ProcessorTopologyReader.Capture();
             if (topology.ProcessorGroupCount != 1)
@@ -118,6 +121,12 @@ internal static class GpuAutoAffinityGateARunner
                 benchmark.ProcessId,
                 topology,
                 benchmark);
+            if (!MatchesExactOriginalState(preMutationOriginalState))
+            {
+                throw new InvalidOperationException(
+                    "GPU affinity state changed during Gate A startup before any owned mutation began.");
+            }
+
             var reportingBackend = new ProgressReportingGpuAutoAffinityBackend(rawBackend, progress);
             var shuffleSeed = RandomNumberGenerator.GetInt32(int.MaxValue);
             var request = new GpuAutoAffinitySessionRequest(
@@ -141,7 +150,7 @@ internal static class GpuAutoAffinityGateARunner
 
             var session = new GpuAutoAffinitySession(reportingBackend, reportingBackend);
             var result = await session.RunAsync(request, sessionCancellation.Token).ConfigureAwait(false);
-            await benchmark.StopAsync().ConfigureAwait(false);
+            await TryStopBenchmarkAsync(benchmark).ConfigureAwait(false);
 
             var unresolvedAfter = MutationJournalReadOnlyInspector.GetUnresolved(
                 MutationJournal.GetDefaultDatabasePath());
@@ -178,7 +187,8 @@ internal static class GpuAutoAffinityGateARunner
         }
         catch (OperationCanceledException)
         {
-            var safe = await VerifyStoppedStateAsync(rawBackend).ConfigureAwait(false);
+            await TryStopBenchmarkAsync(benchmark).ConfigureAwait(false);
+            var safe = await VerifyStoppedStateAsync(rawBackend, preMutationOriginalState).ConfigureAwait(false);
             if (progress is not null)
             {
                 await progress.ReportTerminalAsync(
@@ -218,7 +228,8 @@ internal static class GpuAutoAffinityGateARunner
         catch (Exception exception)
         {
             Console.Error.WriteLine($"{exception.GetType().Name}: {exception.Message}");
-            var safe = await VerifyStoppedStateAsync(rawBackend).ConfigureAwait(false);
+            await TryStopBenchmarkAsync(benchmark).ConfigureAwait(false);
+            var safe = await VerifyStoppedStateAsync(rawBackend, preMutationOriginalState).ConfigureAwait(false);
             if (options is not null)
             {
                 var fallback = new GpuAutoAffinityReport(
@@ -283,7 +294,19 @@ internal static class GpuAutoAffinityGateARunner
 
             if (benchmark is not null)
             {
-                await benchmark.DisposeAsync().ConfigureAwait(false);
+                try
+                {
+                    await benchmark.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is
+                    IOException or
+                    InvalidDataException or
+                    InvalidOperationException or
+                    OperationCanceledException or
+                    ObjectDisposedException)
+                {
+                    Console.Error.WriteLine($"Unable to dispose the Gate A benchmark control channel cleanly: {exception.Message}");
+                }
             }
         }
     }
@@ -336,19 +359,50 @@ internal static class GpuAutoAffinityGateARunner
         }
     }
 
-    private static async Task<bool> VerifyStoppedStateAsync(GpuAutoAffinityGateABackend? backend)
+    private static async Task TryStopBenchmarkAsync(GpuBenchmarkControlClient? benchmark)
+    {
+        if (benchmark is null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await benchmark.StopAsync(deadline.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            InvalidDataException or
+            InvalidOperationException or
+            OperationCanceledException or
+            ObjectDisposedException)
+        {
+            Console.Error.WriteLine(
+                $"Benchmark control Stop did not complete cleanly; closing the authenticated pipe instead: {exception.Message}");
+        }
+    }
+
+    private static async Task<bool> VerifyStoppedStateAsync(
+        GpuAutoAffinityGateABackend? backend,
+        GpuInterruptAffinitySnapshot? preMutationOriginalState)
     {
         try
         {
             var unresolved = MutationJournalReadOnlyInspector.GetUnresolved(
                 MutationJournal.GetDefaultDatabasePath());
-            if (unresolved.Count != 0)
+            if (unresolved.Count != 0 || preMutationOriginalState is null)
             {
                 return false;
             }
 
-            return backend is null ||
-                await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+            if (backend is not null &&
+                !await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            return MatchesExactOriginalState(preMutationOriginalState);
         }
         catch (Exception exception) when (exception is
             IOException or
@@ -360,6 +414,16 @@ internal static class GpuAutoAffinityGateARunner
             Console.Error.WriteLine($"Final safe-state verification failed: {exception.Message}");
             return false;
         }
+    }
+
+    private static bool MatchesExactOriginalState(GpuInterruptAffinitySnapshot original)
+    {
+        var current = GpuInterruptAffinityPolicyStore.Capture(original.DeviceInstanceId);
+        return string.Equals(
+                   current.DriverVersion,
+                   original.DriverVersion,
+                   StringComparison.OrdinalIgnoreCase) &&
+               GpuInterruptAffinityStateComparer.MatchesOriginal(current, original);
     }
 
     private static async Task VerifyCleanExactSourceAsync(AutoOptions options)
