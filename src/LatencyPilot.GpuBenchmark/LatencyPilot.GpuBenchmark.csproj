@@ -6,9 +6,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Vortice.Direct3D12" />
     <PackageReference Include="Vortice.DXGI" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../LatencyPilot.Core/LatencyPilot.Core.csproj" />
+    <ProjectReference Include="../LatencyPilot.Platform.Windows/LatencyPilot.Platform.Windows.csproj" />
   </ItemGroup>
 </Project>
