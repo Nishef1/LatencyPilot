@@ -11,6 +11,18 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class GpuAutoAffinitySessionTests
 {
+    private static readonly string[] ExpectedConfirmationRoles =
+    [
+        "Original",
+        "Candidate",
+        "Candidate",
+        "Original",
+        "Candidate",
+        "Original",
+        "Original",
+        "Candidate",
+    ];
+
     [TestMethod]
     public async Task SessionOwnsCandidateRollbackRefinementConfirmationAndCancellation()
     {
@@ -58,9 +70,7 @@ public sealed class GpuAutoAffinitySessionTests
             .Where(static trial => trial.Phase == "confirmation")
             .Select(static trial => trial.Role)
             .ToArray();
-        CollectionAssert.AreEqual(
-            new[] { "Original", "Candidate", "Candidate", "Original", "Candidate", "Original", "Original", "Candidate" },
-            confirmationRoles);
+        CollectionAssert.AreEqual(ExpectedConfirmationRoles, confirmationRoles);
 
         var cancellingBackend = new RecordingBackend(cancelAfterFirstCandidateCapture: true);
         var cancellingSession = new GpuAutoAffinitySession(cancellingBackend);
