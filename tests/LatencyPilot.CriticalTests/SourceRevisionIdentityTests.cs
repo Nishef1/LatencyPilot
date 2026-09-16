@@ -99,6 +99,8 @@ public sealed class SourceRevisionIdentityTests
             "Gate A must capture exact original GPU affinity before benchmark-control startup can fail.");
         StringAssert.Contains(gateARunnerSource, "TryStopBenchmarkAsync");
         StringAssert.Contains(gateARunnerSource, "benchmark.StopAsync(deadline.Token)");
+        StringAssert.Contains(gateARunnerSource, "safe = IsVerifiedOriginalTerminalState(stoppedReport);");
+        StringAssert.Contains(gateARunnerSource, "safe = IsVerifiedOriginalTerminalState(fallback);");
 
         var gateABackendSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
