@@ -380,6 +380,7 @@ public sealed class GpuAutoAffinitySession
             throw new SessionAbortException($"{phase}: candidate {candidate.Processor} returned an empty experiment identity.");
         }
 
+        GpuAutoAffinityTrialObservation[] observations;
         try
         {
             if (!await backend.VerifyCandidateStateAsync(experimentId, candidate, cancellationToken).ConfigureAwait(false))
@@ -388,7 +389,7 @@ public sealed class GpuAutoAffinitySession
                     $"{phase}: candidate {candidate.Processor} was not verified before measurement.");
             }
 
-            var observations = new GpuAutoAffinityTrialObservation[repetitions];
+            observations = new GpuAutoAffinityTrialObservation[repetitions];
             for (var pass = 0; pass < repetitions; pass++)
             {
                 observations[pass] = await CaptureAcceptedAsync(
@@ -402,17 +403,38 @@ public sealed class GpuAutoAffinitySession
                     trialReports,
                     cancellationToken).ConfigureAwait(false);
             }
-
-            return observations;
         }
-        finally
+        catch (Exception failure)
         {
-            await backend.RollbackAsync(experimentId, CancellationToken.None).ConfigureAwait(false);
-            if (!await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false))
+            try
             {
-                throw new InvalidOperationException(
-                    $"{phase}: exact original GPU affinity state was not verified after rolling back {candidate.Processor}.");
+                await RollbackAndVerifyOriginalAsync(experimentId, phase, candidate).ConfigureAwait(false);
             }
+            catch (Exception rollbackFailure)
+            {
+                throw new AggregateException(
+                    $"{phase}: candidate {candidate.Processor} failed and exact rollback also failed.",
+                    failure,
+                    rollbackFailure);
+            }
+
+            throw;
+        }
+
+        await RollbackAndVerifyOriginalAsync(experimentId, phase, candidate).ConfigureAwait(false);
+        return observations;
+    }
+
+    private async Task RollbackAndVerifyOriginalAsync(
+        Guid experimentId,
+        string phase,
+        GpuAffinityCandidate candidate)
+    {
+        await backend.RollbackAsync(experimentId, CancellationToken.None).ConfigureAwait(false);
+        if (!await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                $"{phase}: exact original GPU affinity state was not verified after rolling back {candidate.Processor}.");
         }
     }
 
@@ -460,7 +482,7 @@ public sealed class GpuAutoAffinitySession
                 $"{phase} run {trialRequest.RunNumber} is not decision-grade: {string.Join(" ", readiness.Reasons)}");
         }
 
-        throw new UnreachableException();
+        throw new InvalidOperationException("GPU benchmark retry loop exited without a terminal result.");
     }
 
     private static GpuBenchmarkReadinessResult EvaluateObservation(
