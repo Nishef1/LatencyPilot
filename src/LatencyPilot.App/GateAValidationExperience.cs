@@ -16,28 +16,31 @@ public sealed partial class MainWindow
     internal void InitializeGateAValidationExperience()
     {
         _gateARepositoryRoot = TryFindRepositoryRoot();
-        if (_gateARepositoryRoot is null)
+        if (!IsDevelopmentGateAAvailable(_gateARepositoryRoot))
         {
             return;
         }
 
         _gateAValidationButton = new Button
         {
-            Content = "Validate GPU · one click",
+            Content = "Run GPU Gate A",
             MinHeight = 40,
             Padding = new Thickness(16, 8, 16, 8),
             Style = (Style)Application.Current.Resources["SecondaryButtonStyle"],
         };
-        AutomationProperties.SetName(_gateAValidationButton, "Validate GPU with one click");
+        AutomationProperties.SetName(_gateAValidationButton, "Run GPU Gate A development validation");
         AutomationProperties.SetHelpText(
             _gateAValidationButton,
-            "Captures a fresh steady real-world baseline, requests administrator consent once, tests one bounded reversible GPU interrupt-affinity candidate, verifies runtime placement, restores the original state, exercises recovery, and saves a JSON report. Keep the warmed workload running while validation executes.");
+            "Development-only owner validation. Captures a fresh steady real-world baseline, requests administrator consent once, tests one bounded reversible GPU interrupt-affinity candidate, verifies runtime placement, restores the original state, exercises recovery, and saves a JSON report. This is a Gate A substrate check, not a product optimizer.");
         ToolTipService.SetToolTip(
             _gateAValidationButton,
-            "One-click owner validation: fresh baseline → candidate → apply → runtime proof → automatic restore/recovery → JSON report. Keep the same warmed game/workload active; UAC appears once.");
+            "Development Gate A: fresh baseline → candidate → apply → runtime proof → automatic restore/recovery → JSON report. Keep the same warmed game/workload active; UAC appears once.");
         _gateAValidationButton.Click += GateAValidationButton_Click;
         HeaderActions.Children.Add(_gateAValidationButton);
     }
+
+    internal static bool IsDevelopmentGateAAvailable(string? repositoryRoot) =>
+        !string.IsNullOrWhiteSpace(repositoryRoot);
 
     private async void GateAValidationButton_Click(object sender, RoutedEventArgs e)
     {
@@ -57,7 +60,7 @@ public sealed partial class MainWindow
 
             var dotnetExecutable = ResolveDotnetExecutable();
             EvidenceExportStatusText.Text =
-                "One-click GPU validation started. LatencyPilot will hide itself so the same warmed game/scene stays foreground, capture the baseline, request UAC once, test one candidate, restore the original state, and write a report.";
+                "GPU Gate A development validation started. LatencyPilot will hide itself so the same warmed game/scene stays foreground, capture the baseline, request UAC once, test one candidate, restore the original state, and write a report.";
 
             AppWindow.Hide();
             windowHiddenForWorkload = true;
@@ -84,7 +87,7 @@ public sealed partial class MainWindow
                 "LatencyPilot.GateAValidation.csproj");
             if (!File.Exists(helperProject))
             {
-                throw new FileNotFoundException("The one-click Gate A validation helper project was not found.", helperProject);
+                throw new FileNotFoundException("The development Gate A validation helper project was not found.", helperProject);
             }
 
             var dotnetDirectory = Path.GetDirectoryName(dotnetExecutable)
@@ -129,14 +132,14 @@ public sealed partial class MainWindow
                 : "Unknown";
             var passed = reportRoot.TryGetProperty("passed", out var passedElement) && passedElement.GetBoolean();
             EvidenceExportStatusText.Text = passed
-                ? $"GPU validation passed and the original state was restored. Report: {reportPath}"
-                : $"GPU validation finished safely with status {status}. The report contains the exact blocker and recovery evidence: {reportPath}";
+                ? $"GPU Gate A development validation passed and the original state was restored. Report: {reportPath}"
+                : $"GPU Gate A development validation finished safely with status {status}. The report contains the exact blocker and recovery evidence: {reportPath}";
 
             TryRevealReport(reportPath);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
-            EvidenceExportStatusText.Text = "GPU validation was cancelled at the UAC prompt. No Gate A mutation was started.";
+            EvidenceExportStatusText.Text = "GPU Gate A development validation was cancelled at the UAC prompt. No Gate A mutation was started.";
         }
         catch (Exception exception) when (exception is
             IOException or
@@ -146,8 +149,8 @@ public sealed partial class MainWindow
             JsonException or
             Win32Exception)
         {
-            Logger.Error(exception, "One-click Gate A validation failed before a complete report could be presented.");
-            EvidenceExportStatusText.Text = $"GPU validation could not complete: {exception.Message}";
+            Logger.Error(exception, "Development Gate A validation failed before a complete report could be presented.");
+            EvidenceExportStatusText.Text = $"GPU Gate A development validation could not complete: {exception.Message}";
         }
         finally
         {
@@ -172,7 +175,7 @@ public sealed partial class MainWindow
         if (revision is not { Length: 40 } || !revision.All(Uri.IsHexDigit))
         {
             throw new InvalidDataException(
-                "One-click Gate A requires a fresh baseline from an exact clean 40-character source revision. Pull/build the current main and capture again.");
+                "Gate A development validation requires a fresh baseline from an exact clean 40-character source revision. Pull/build the current main and capture again.");
         }
 
         return revision.ToLowerInvariant();
