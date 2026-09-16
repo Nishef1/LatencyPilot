@@ -12,6 +12,7 @@ public sealed partial class MainWindow
         }
 
         ApplyBuildProvenanceUi();
+        InitializeGateAValidationExperience();
         InitializeMeasurementReadinessExperience();
         InitializeBaselineProgressExperience();
         InitializePremiumOverviewExperience();
