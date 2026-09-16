@@ -8,7 +8,7 @@ public sealed partial class MainWindow
         // Keep this seam for source-level evidence UX that must be initialized after XAML fields exist.
         if (_measurementScenarioComboBox is not null)
         {
-            _measurementScenarioComboBox.IsEnabled = !_measurementBusy;
+            _measurementScenarioComboBox.IsEnabled = !_measurementBusy && !_gateAValidationRunning;
         }
 
         ApplyBuildProvenanceUi();

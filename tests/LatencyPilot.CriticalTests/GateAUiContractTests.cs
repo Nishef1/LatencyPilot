@@ -44,9 +44,40 @@ public sealed class GateAUiContractTests
             "src",
             "LatencyPilot.App",
             "GateAValidationExperience.cs"));
+        StringAssert.Contains(gateASource, "private bool _gateAValidationRunning;");
+        StringAssert.Contains(gateASource, "SetGateAValidationBusy(true);");
+        StringAssert.Contains(gateASource, "SetGateAValidationBusy(false);");
+        StringAssert.Contains(gateASource, "_measurementBusy || _gateAValidationRunning");
         StringAssert.Contains(gateASource, "Content = \"Run GPU Gate A\"");
         StringAssert.Contains(gateASource, "DeveloperValidationCard.Visibility = Visibility.Visible;");
         StringAssert.Contains(gateASource, "DeveloperValidationHost.Children.Add(_gateAValidationButton);");
+
+        var measurementSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "MeasurementExperience.cs"));
+        Assert.IsTrue(
+            CountOccurrences(measurementSource, "if (_measurementBusy || _gateAValidationRunning)") >= 2,
+            "Quick observation and repeated baseline must both reject entry while Gate A is running.");
+        StringAssert.Contains(measurementSource, "IsEnabled = !_measurementBusy && !_gateAValidationRunning");
+
+        var readinessSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "MeasurementReadinessExperience.cs"));
+        StringAssert.Contains(readinessSource, "!_measurementBusy && !_gateAValidationRunning");
+
+        var mainWindowSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "MainWindow.xaml.cs"));
+        StringAssert.Contains(mainWindowSource, "var controlsBusy = busy || _gateAValidationRunning;");
+        StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(true);");
+        StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(false);");
+        StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(_measurementBusy);");
     }
 
     private static string FindRepositoryRoot()

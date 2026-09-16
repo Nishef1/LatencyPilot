@@ -18,6 +18,7 @@ public sealed partial class MainWindow
     private static readonly JsonSerializerOptions GateAJsonOptions = new(JsonSerializerDefaults.Web);
     private Button? _gateAValidationButton;
     private string? _gateARepositoryRoot;
+    private bool _gateAValidationRunning;
 
     internal void InitializeGateAValidationExperience()
     {
@@ -56,7 +57,7 @@ public sealed partial class MainWindow
 
     private async void GateAValidationButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_gateAValidationButton is null || _gateARepositoryRoot is null || _measurementBusy)
+        if (_gateAValidationButton is null || _gateARepositoryRoot is null || _measurementBusy || _gateAValidationRunning)
         {
             return;
         }
@@ -66,6 +67,7 @@ public sealed partial class MainWindow
         Task<string>? benchmarkStderrTask = null;
         GpuOptimizationProgressWindow? progressWindow = null;
         var mainMinimized = false;
+        SetGateAValidationBusy(true);
         _gateAValidationButton.IsEnabled = false;
 
         try
@@ -287,8 +289,21 @@ public sealed partial class MainWindow
                 presenter.Restore(activateWindow: false);
             }
 
+            SetGateAValidationBusy(false);
             _gateAValidationButton.IsEnabled = true;
         }
+    }
+
+    private void SetGateAValidationBusy(bool busy)
+    {
+        _gateAValidationRunning = busy;
+        SetObservationControlsBusy(_measurementBusy);
+        if (_measurementScenarioComboBox is not null)
+        {
+            _measurementScenarioComboBox.IsEnabled = !busy && !_measurementBusy;
+        }
+
+        UpdateMeasurementReadinessState();
     }
 
     private static async Task<string> ReadCleanSourceRevisionAsync(string repositoryRoot)

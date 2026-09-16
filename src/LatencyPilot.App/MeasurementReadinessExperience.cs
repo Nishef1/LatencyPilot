@@ -64,7 +64,7 @@ public sealed partial class MainWindow
         _measurementContextReadyCheckBox = new CheckBox
         {
             IsChecked = _measurementContextAcknowledged,
-            IsEnabled = !_measurementBusy,
+            IsEnabled = !_measurementBusy && !_gateAValidationRunning,
         };
         _measurementContextReadyCheckBox.Checked += MeasurementReadinessCheckBox_Changed;
         _measurementContextReadyCheckBox.Unchecked += MeasurementReadinessCheckBox_Changed;
@@ -74,7 +74,7 @@ public sealed partial class MainWindow
         _measurementConsistencyReadyCheckBox = new CheckBox
         {
             IsChecked = _measurementConsistencyAcknowledged,
-            IsEnabled = !_measurementBusy,
+            IsEnabled = !_measurementBusy && !_gateAValidationRunning,
         };
         _measurementConsistencyReadyCheckBox.Checked += MeasurementReadinessCheckBox_Changed;
         _measurementConsistencyReadyCheckBox.Unchecked += MeasurementReadinessCheckBox_Changed;
@@ -185,18 +185,18 @@ public sealed partial class MainWindow
             var prepared = IsRepeatedBaselinePrepared;
             var serviceConnected = _observationServiceReady &&
                 string.Equals(ServiceStatusBadgeText.Text, "Service connected", StringComparison.OrdinalIgnoreCase);
-            var baselineAvailable = prepared && serviceConnected && !_measurementBusy;
+            var baselineAvailable = prepared && serviceConnected && !_measurementBusy && !_gateAValidationRunning;
 
             CaptureBaselineButton.IsEnabled = baselineAvailable;
 
             if (_measurementContextReadyCheckBox is not null)
             {
-                _measurementContextReadyCheckBox.IsEnabled = !_measurementBusy;
+                _measurementContextReadyCheckBox.IsEnabled = !_measurementBusy && !_gateAValidationRunning;
             }
 
             if (_measurementConsistencyReadyCheckBox is not null)
             {
-                _measurementConsistencyReadyCheckBox.IsEnabled = !_measurementBusy;
+                _measurementConsistencyReadyCheckBox.IsEnabled = !_measurementBusy && !_gateAValidationRunning;
             }
 
             if (_measurementReadinessStatusText is null)
@@ -204,9 +204,11 @@ public sealed partial class MainWindow
                 return;
             }
 
-            if (_measurementBusy)
+            if (_measurementBusy || _gateAValidationRunning)
             {
-                _measurementReadinessStatusText.Text = "Capture in progress · preparation locked.";
+                _measurementReadinessStatusText.Text = _gateAValidationRunning
+                    ? "GPU Gate A in progress · measurement preparation locked."
+                    : "Capture in progress · preparation locked.";
                 _measurementReadinessStatusText.Foreground = ThemeBrush("AccentBrush");
             }
             else if (!prepared)

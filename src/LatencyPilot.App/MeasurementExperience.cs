@@ -98,7 +98,7 @@ public sealed partial class MainWindow
             MinWidth = 230,
             MaxWidth = 360,
             HorizontalAlignment = HorizontalAlignment.Left,
-            IsEnabled = !_measurementBusy,
+            IsEnabled = !_measurementBusy && !_gateAValidationRunning,
         };
         _measurementScenarioComboBox.Items.Add(EvidenceExportService.GetMeasurementDisplayName(MeasurementScenario.RealWorld));
         _measurementScenarioComboBox.Items.Add(EvidenceExportService.GetMeasurementDisplayName(MeasurementScenario.IdleBaseline));
@@ -181,14 +181,20 @@ public sealed partial class MainWindow
 
     private async Task CaptureObservationAsync()
     {
+        if (_measurementBusy || _gateAValidationRunning)
+        {
+            return;
+        }
+
+        SetMeasurementBusy(true);
         if (!await EnsureObservationServiceReadyAsync())
         {
+            SetMeasurementBusy(false);
             return;
         }
 
         var scenario = SelectedMeasurementScenario;
         ClearExportEvidence("Quick snapshot in progress. Evidence export becomes available after completion.");
-        SetMeasurementBusy(true);
         KernelCaptureStatusText.Text = "Capturing a five-second DPC/ISR diagnostic snapshot…";
         ObservationQualityText.Text =
             $"{EvidenceExportService.GetMeasurementDisplayName(scenario)}: {EvidenceExportService.GetMeasurementGuidance(scenario)} This quick snapshot is for integrity, attribution and concentration context; it is not a benchmark verdict.";
@@ -220,8 +226,15 @@ public sealed partial class MainWindow
 
     private async Task CaptureBaselineAsync()
     {
+        if (_measurementBusy || _gateAValidationRunning)
+        {
+            return;
+        }
+
+        SetMeasurementBusy(true);
         if (!await EnsureObservationServiceReadyAsync())
         {
+            SetMeasurementBusy(false);
             return;
         }
 
@@ -231,7 +244,6 @@ public sealed partial class MainWindow
             : "repeatable";
         ClearExportEvidence("Baseline capture in progress. Export is prepared only after the capture sequence stops or completes.");
         ClearCaptureMetrics();
-        SetMeasurementBusy(true);
         BaselineProgressBar.Value = 0;
         BaselineVerdictText.Text = "Capturing";
         BaselineStatusText.Text =
@@ -463,7 +475,7 @@ public sealed partial class MainWindow
         SetObservationControlsBusy(busy);
         if (_measurementScenarioComboBox is not null)
         {
-            _measurementScenarioComboBox.IsEnabled = !busy;
+            _measurementScenarioComboBox.IsEnabled = !busy && !_gateAValidationRunning;
         }
     }
 

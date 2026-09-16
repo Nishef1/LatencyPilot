@@ -61,9 +61,7 @@ public sealed partial class MainWindow : Window
 
     private async Task RefreshObservationServiceStatusAsync()
     {
-        CaptureObservationButton.IsEnabled = false;
-        CaptureBaselineButton.IsEnabled = false;
-        RefreshServiceButton.IsEnabled = false;
+        SetObservationControlsBusy(true);
         ServiceStatusBadgeText.Text = "Checking service";
         ServiceStatusText.Text = "Checking the local observation service…";
 
@@ -94,10 +92,9 @@ public sealed partial class MainWindow : Window
             }
 
             _observationServiceReady = true;
-            CaptureObservationButton.IsEnabled = true;
-            CaptureBaselineButton.IsEnabled = true;
             ServiceStatusBadgeText.Text = "Service connected";
             ServiceStatusText.Text = "Connected to the installed privileged read-only Windows Service. Kernel capture is available; mutation remains disabled.";
+            SetObservationControlsBusy(false);
         }
         catch (TimeoutException exception)
         {
@@ -126,7 +123,7 @@ public sealed partial class MainWindow : Window
         }
         finally
         {
-            RefreshServiceButton.IsEnabled = true;
+            SetObservationControlsBusy(_measurementBusy);
         }
     }
 
@@ -181,10 +178,11 @@ public sealed partial class MainWindow : Window
 
     private void SetObservationControlsBusy(bool busy)
     {
-        CaptureObservationButton.IsEnabled = !busy && _observationServiceReady;
-        CaptureBaselineButton.IsEnabled = !busy && _observationServiceReady;
-        RefreshServiceButton.IsEnabled = !busy;
-        ExportEvidenceButton.IsEnabled = !busy && _latestEvidenceJson is not null;
+        var controlsBusy = busy || _gateAValidationRunning;
+        CaptureObservationButton.IsEnabled = !controlsBusy && _observationServiceReady;
+        CaptureBaselineButton.IsEnabled = !controlsBusy && _observationServiceReady;
+        RefreshServiceButton.IsEnabled = !controlsBusy;
+        ExportEvidenceButton.IsEnabled = !controlsBusy && _latestEvidenceJson is not null;
     }
 
     private void RenderCapture(KernelLatencyCaptureResponse capture)
