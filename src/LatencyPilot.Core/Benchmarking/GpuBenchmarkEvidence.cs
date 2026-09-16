@@ -25,7 +25,8 @@ public sealed record GpuBenchmarkEvidence(
     Guid EtwCaptureId,
     bool EtwIntegrityComplete,
     int EtwLostEventCount,
-    IReadOnlyList<string> ValidityReasons)
+    IReadOnlyList<string> ValidityReasons,
+    GpuBenchmarkArtifactWorkload? FrozenWorkload = null)
 {
     public const string SchemaId = "latencypilot-gpu-benchmark-v1";
     public const string MethodIdValue = "gpu-affinity-benchmark-v1";
