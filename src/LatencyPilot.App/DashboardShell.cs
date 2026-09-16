@@ -1,7 +1,5 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace LatencyPilot.App;
 
@@ -30,22 +28,12 @@ public sealed partial class MainWindow
         UpdateAppearanceMenu();
         RootGrid.SizeChanged += (_, _) => ApplyDashboardLayout();
         RootGrid.Loaded += (_, _) => ApplyDesktopAcrylicBackdrop();
+        ServiceStatusBadgeText.RegisterPropertyChangedCallback(
+            TextBlock.TextProperty,
+            (_, _) => UpdateServiceStatusVisibility());
         AppNavigationView.SelectedItem = OverviewNavItem;
         ShowDashboardView("overview");
-
-        // Use artwork already installed with Windows; never redistribute it or
-        // treat an image as machine evidence. The native PC glyph is the fallback.
-        var artworkPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-            "Web", "Wallpaper", "Windows", "img0.jpg");
-        if (File.Exists(artworkPath))
-        {
-            var artwork = new BitmapImage();
-            artwork.ImageOpened += (_, _) => SystemArtworkFallback.Visibility = Visibility.Collapsed;
-            artwork.UriSource = new Uri(artworkPath);
-            SystemArtwork.Source = artwork;
-        }
-
+        UpdateServiceStatusVisibility();
         ApplyDashboardLayout();
     }
 
@@ -90,6 +78,14 @@ public sealed partial class MainWindow
         }
 
         ApplyDashboardLayout();
+    }
+
+    private void UpdateServiceStatusVisibility()
+    {
+        var status = ServiceStatusBadgeText.Text ?? string.Empty;
+        ServiceStatusCard.Visibility = status.Equals("Service connected", StringComparison.OrdinalIgnoreCase)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
     }
 
     private void ApplyDashboardLayout()
@@ -162,6 +158,7 @@ public sealed partial class MainWindow
 
         RootGrid.RequestedTheme = theme;
         UpdateAppearanceMenu();
+        ApplyDesktopAcrylicBackdrop();
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_appearancePath)!);
