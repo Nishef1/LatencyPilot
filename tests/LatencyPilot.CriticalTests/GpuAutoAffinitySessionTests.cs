@@ -118,8 +118,8 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsTrue(result.Report.FinalStateVerified);
         Assert.IsFalse(result.Report.OriginalStateRestored);
         Assert.IsTrue(backend.Events.Contains("keep:0:3"));
-        Assert.IsTrue(backend.Events.Contains("verify-kept:0:3"));
-        Assert.IsTrue(backend.Events.IndexOf("verify-kept:0:3") > backend.Events.IndexOf("keep:0:3"));
+        Assert.IsFalse(backend.Events.Any(static item =>
+            item.StartsWith("verify-after-keep:", StringComparison.Ordinal)));
         Assert.IsTrue(backend.Events.Any(static item => item.StartsWith("rollback:", StringComparison.Ordinal)));
         Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "screening"));
         Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "smt-refinement"));
@@ -132,11 +132,12 @@ public sealed class GpuAutoAffinitySessionTests
             .ToArray();
         CollectionAssert.AreEqual(ExpectedConfirmationRoles, confirmationRoles);
 
-        var invalidKeepBackend = new RecordingBackend(failKeptVerification: true);
+        var invalidKeepBackend = new RecordingBackend(failKeepPreflight: true);
         var invalidKeepSession = new GpuAutoAffinitySession(invalidKeepBackend);
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => invalidKeepSession.RunAsync(request));
-        Assert.IsTrue(invalidKeepBackend.Events.Contains("keep:0:3"));
-        Assert.IsTrue(invalidKeepBackend.Events.Contains("verify-kept:0:3"));
+        Assert.IsTrue(invalidKeepBackend.Events.Contains("keep-preflight-failed:0:3"));
+        Assert.IsFalse(invalidKeepBackend.Events.Contains("keep:0:3"));
+        Assert.IsTrue(invalidKeepBackend.Events.Contains("rollback:0:3"));
 
         var cancellingBackend = new RecordingBackend(cancelAfterFirstCandidateCapture: true);
         var cancellingSession = new GpuAutoAffinitySession(cancellingBackend);
@@ -177,7 +178,7 @@ public sealed class GpuAutoAffinitySessionTests
 
     private sealed class RecordingBackend(
         bool cancelAfterFirstCandidateCapture = false,
-        bool failKeptVerification = false) : IGpuAutoAffinitySessionBackend
+        bool failKeepPreflight = false) : IGpuAutoAffinitySessionBackend
     {
         private int captureSequence;
         private bool cancelled;
@@ -242,6 +243,12 @@ public sealed class GpuAutoAffinitySessionTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = active[experimentId];
+            if (failKeepPreflight)
+            {
+                Events.Add($"keep-preflight-failed:{candidate.Processor}");
+                throw new InvalidOperationException("synthetic pre-keep verification failure");
+            }
+
             Events.Add($"keep:{candidate.Processor}");
             active.Remove(experimentId);
             keptExperimentId = experimentId;
@@ -270,8 +277,8 @@ public sealed class GpuAutoAffinitySessionTests
 
             if (keptExperimentId == experimentId && keptCandidate == candidate)
             {
-                Events.Add($"verify-kept:{candidate.Processor}");
-                return Task.FromResult(!failKeptVerification);
+                Events.Add($"verify-after-keep:{candidate.Processor}");
+                return Task.FromResult(true);
             }
 
             Events.Add($"verify-candidate:{candidate.Processor}");
