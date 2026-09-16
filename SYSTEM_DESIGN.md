@@ -1,7 +1,7 @@
 # LatencyPilot System Design
 
 Status: **Authoritative architecture baseline**  
-Last updated: 2026-09-15
+Last updated: 2026-09-16
 
 `ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence and execution state. ADRs own accepted architecture decisions.
 
@@ -54,6 +54,7 @@ Current observation authorization is intentionally active-console-session orient
 - typed/versioned local Named Pipes;
 - ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`;
 - PresentMon for graphics/frame telemetry;
+- managed Direct3D 12/DXGI through Vortice for the deterministic GPU benchmark;
 - SetupAPI + Configuration Manager;
 - documented processor-topology / CPU-set APIs;
 - documented USB hub interfaces/IOCTLs;
@@ -64,7 +65,7 @@ Current observation authorization is intentionally active-console-session orient
 - Inno Setup + PowerShell owner-local release tooling;
 - bounded structured local diagnostics with Serilog.
 
-NuGet versions are centrally owned by `Directory.Packages.props`. Native C++ is not a baseline dependency.
+NuGet versions are centrally owned by `Directory.Packages.props`. Native C++ and a Vulkan SDK are not baseline dependencies.
 
 ## 4. High-level architecture
 
@@ -73,13 +74,23 @@ NuGet versions are centrally owned by `Directory.Packages.props`. Native C++ is 
 │ LatencyPilot.App                           │
 │ WinUI 3 / normal user / non-elevated      │
 │ evidence + measurement + read-only inspect│
-└───────────────────┬────────────────────────┘
-                    │ typed/versioned Named Pipe
-                    ▼
+│ dev Gate A progress/orchestration surface │
+└───────────────┬─────────────────┬──────────┘
+                │                 │ launches normal-user workload
+                │                 ▼
+                │   ┌──────────────────────────────┐
+                │   │ LatencyPilot.GpuBenchmark    │
+                │   │ deterministic D3D12 workload│
+                │   │ frozen CPU/GPU work + JSON  │
+                │   │ never mutates device state  │
+                │   └──────────────────────────────┘
+                │
+                │ typed/versioned Named Pipe
+                ▼
 ┌────────────────────────────────────────────┐
 │ LatencyPilot.Service                       │
 │ privileged boundary                       │
-│ public IPC: observation-only v6            │
+│ public IPC: observation-only v6           │
 │ internal experiment/recovery source       │
 │ product mutation remains unarmed          │
 └──────────────┬─────────────────┬───────────┘
@@ -100,6 +111,8 @@ Protocol = standalone typed IPC contract
 Persistence = concrete durable state boundary
 ```
 
+Before Gate B, the development-only Gate A helper may exercise internal mutation/recovery code with explicit UAC. That helper is not product IPC and does not make mutation publicly available.
+
 There is intentionally no generic repository abstraction, generic tweak engine or generic privileged execution API.
 
 ## 5. Project responsibilities
@@ -108,17 +121,19 @@ There is intentionally no generic repository abstraction, generic tweak engine o
 
 Stable domain records/invariants only. No WinUI, ETW implementation, registry paths, P/Invoke, Service hosting or SQLite.
 
-Current domains include topology/device evidence, input route/timing evidence, USB topology, RSS snapshots, metrics/results and system context.
+Current domains include topology/device evidence, input route/timing evidence, USB topology, RSS snapshots, metrics/results, benchmark/report DTOs and system context.
 
 ### `LatencyPilot.Benchmarking`
 
-Hardware-independent deterministic interpretation:
+Hardware-independent deterministic interpretation and orchestration policy:
 
 - canonical percentiles;
 - `baseline-quality-v2`;
-- `workload-stability-v1`;
+- steady-workload `workload-stability-v1`;
+- automatic GPU `gpu-affinity-benchmark-v1` validity/readiness;
 - metric series/comparison/guardrail verdicts;
-- GPU candidate/confirmation policy;
+- bounded physical-core GPU candidate generation and SMT refinement;
+- GPU candidate-search/confirmation orchestration and progress-plan policy;
 - USB/network readiness metric contracts;
 - local-network benchmark interpretation;
 - versioned workload profiles;
@@ -153,6 +168,20 @@ Windows-specific mechanisms:
 
 Missing/ambiguous platform evidence stays explicit rather than being inferred from names or registry hints.
 
+### `LatencyPilot.GpuBenchmark`
+
+Normal-user deterministic workload/telemetry process:
+
+- D3D12 hardware adapter and flip-model swap chain;
+- fixed multi-core worker mapping;
+- deterministic CPU simulation and command recording;
+- D3D12 timestamp calibration;
+- one adaptive warm-up followed by frozen workload parameters;
+- raw benchmark artifact/control protocol for trial execution;
+- no registry/device mutation and no administrator requirement.
+
+Candidate identity must never change the frozen worker map or workload shape.
+
 ### `LatencyPilot.Persistence`
 
 Concrete SQLite journal/recovery boundary:
@@ -183,13 +212,14 @@ Current read-only device inspector surfaces:
 - RSS provider/PnP evidence;
 - explicit on-demand five-second host Raw Input timing capture.
 
-System-changing UI remains absent until Gate D.
+A development checkout may additionally expose **Run GPU Gate A**. That owner-only surface starts the normal-user benchmark, minimizes the main window, shows real candidate/trial progress, obtains one explicit UAC elevation for the validation helper and preserves safe-stop rollback ownership. It is not `Auto-optimize GPU` and must not become a shipped mutation surface before Gate D.
 
 ## 6. Dependency direction
 
 ```text
 Core                 ← no project dependency
 Benchmarking         → Core
+GpuBenchmark         → Core + Platform.Windows (read-only topology/workload support)
 Protocol             ← standalone
 Platform.Windows     → Core
 Persistence          ← no LatencyPilot project dependency
@@ -202,7 +232,7 @@ No cyclic references and no speculative abstraction projects.
 
 ## 7. Privilege and deployment
 
-The App is non-elevated. Installer deployment places App/Service under protected Program Files paths. A portable distribution may keep the App in a user-controlled extraction directory, but Service installation must copy the privileged payload to:
+The App and `LatencyPilot.GpuBenchmark` are non-elevated. Installer deployment places App/Service under protected Program Files paths. A portable distribution may keep the App in a user-controlled extraction directory, but Service installation must copy the privileged payload to:
 
 ```text
 %ProgramFiles%\LatencyPilot\Service
@@ -286,17 +316,28 @@ extreme window relative deviation <= 50%
 
 No inconvenient window is silently dropped.
 
-### Optimizer readiness — `workload-stability-v1`
+### Steady optimizer readiness — `workload-stability-v1`
 
-A valid latency baseline is necessary but not sufficient for optimizer experiments. The same five windows are additionally checked for workload activity consistency using:
+The five-window `RealWorld` path additionally checks DPC event rate, ISR event rate and system CPU busy when complete runtime evidence exists. Changing/spiky activity blocks the steady/manual optimizer-readiness interpretation.
 
-- DPC event rate;
-- ISR event rate;
-- system CPU busy when complete runtime evidence exists;
-- early/late activity drift <= 25%;
-- maximum single-window relative deviation <= 50%.
+This contract remains valid for the steady evidence product. It is **not** the readiness gate for the automatic synthetic GPU candidate search.
 
-Changing or spiky workload activity blocks candidate planning. This protects against a quiet early block, busy late block, or isolated workload spike masquerading as a tuning effect.
+### Automatic GPU candidate search — `gpu-affinity-benchmark-v1`
+
+The built-in D3D12 benchmark is a separate repeated whole-run method:
+
+```text
+one adaptive warm-up/calibration
+→ freeze worker map + CPU simulation + GPU command workload
+→ original control trials
+→ two 15 s trials per eligible physical-core candidate
+→ SMT sibling refinement of the winning physical core
+→ eight-run ABBA + BAAB confirmation, >=30 s each
+```
+
+Validity is owned by exact GPU/driver/benchmark/frozen-workload identity, ETW integrity, stored-state verification, runtime ISR placement and repeated control comparability. System-wide CPU-busy drift is context, not an independent hard rejection.
+
+Original/default Windows affinity remains a real control and wins when no candidate establishes a safe measurable improvement.
 
 ## 10. Canonical statistics
 
@@ -341,15 +382,15 @@ Protocol v6 is local, typed, versioned and observation-only:
 Observation authorization is **not** mutation authorization.
 
 ```text
-Gate A  owner-only physical mutation substrate proof; v6 stays read-only
+Gate A  owner-only physical benchmark + mutation-substrate proof; v6 stays read-only
 Gate B  mutation-specific typed/allowlisted IPC + authorization source
 Gate C  physical proof of real client/App → Service mutation boundary
 Gate D  user-facing product arming
 ```
 
-## 13. Evidence schema
+## 13. Evidence schemas
 
-Current export:
+Steady observation export remains:
 
 ```text
 schema = latencypilot-evidence-v9
@@ -358,31 +399,46 @@ purpose = quick-diagnostic-snapshot | repeated-decision-baseline
 sourceRevisionId = exact clean source when available
 ```
 
-Observation artifacts contain one bounded capture. Baseline artifacts retain aligned captures/windows/runtime context plus `baseline-quality-v2`, the serialized `workload-stability-v1` result, and the explicit `gpu-affinity-v1` optimizer-eligibility result/reason. The schema therefore preserves the distinction between `quality.isValidForComparison` and `optimizerEligibility.isEligible`; one must never be inferred from the other.
+Baseline artifacts retain aligned captures/windows/runtime context plus `baseline-quality-v2`, serialized `workload-stability-v1` and the historical/steady `gpu-affinity-v1` eligibility result/reason. The distinction between `quality.isValidForComparison` and steady optimizer readiness is preserved.
 
-Serialization/file I/O occurs outside authoritative measurement windows. Saved JSON receives SHA-256 verification metadata.
-
-## 14. Internal GPU experiment architecture
+Automatic GPU affinity intentionally uses separate artifacts:
 
 ```text
-valid baseline + stable workload
-→ bounded physical-core candidates from measured pressure
-→ exact original affinity snapshot
-→ journal prepare
-→ candidate apply + stored verify + exact-target activation
-→ Measuring
-→ synchronized ETW + raw PresentMon capture
-→ verify expected stored state before/after
-→ verify Candidate GPU ISR placement
-→ exact rollback before next screening candidate
-→ finalist only
-→ ABBA + BAAB eight-run confirmation
-→ AwaitingDecision only after final Candidate evidence
-→ Keep after final state/driver re-read
-   otherwise RestoreOriginal / RecoveryRequired
+latencypilot-gpu-benchmark-v1
+latencypilot-gpu-auto-affinity-report-v1
+method = gpu-affinity-benchmark-v1
 ```
 
-Screening cannot Keep directly. Missing guardrails, dirty identity, insufficient duration/samples, failed runtime placement or incomparable evidence remain Inconclusive/Restore rather than being promoted.
+The benchmark artifact retains exact source/GPU/driver/topology identity, frozen workload/worker map, seed/trial identity, D3D12 timestamp evidence, raw PresentMon representation/reference and ETW validity context. The report retains every candidate/trial, placement proof, comparison verdict, rollback/recovery outcome and final state.
+
+Serialization/file I/O stays outside authoritative hot measurement paths where possible.
+
+## 14. Internal GPU auto-affinity architecture
+
+```text
+capture exact original/default state
+→ calibrate deterministic D3D12 benchmark once
+→ freeze worker map/workload/seed
+→ capture repeated original controls
+→ generate every eligible physical-core candidate within v1 bound (max 16)
+→ deterministic shuffled screening order
+→ for each candidate:
+     journal/apply/activate
+     verify exact stored candidate
+     benchmark + synchronized ETW/raw PresentMon
+     prove GPU-driver ISR placement on requested logical processor
+     compare named metrics/guardrails
+     exact rollback before next candidate
+→ nominate physical-core finalist only if measurably improved
+→ test finalist physical core's eligible SMT sibling(s)
+→ fixed ABBA + BAAB original/finalist confirmation
+→ Keep only after confirmed safe improvement and a final cancellation boundary
+   otherwise exact RestoreOriginal / RecoveryRequired
+```
+
+Passive interrupt pressure is ordering/context only; it never decides the winner before active measurement. CPU0 is eligible. Screening cannot Keep directly. Missing guardrails, dirty identity, failed placement, contaminated evidence after bounded retry or incomparable control evidence remain Inconclusive/Restore rather than being promoted.
+
+Safe cancellation is rollback-biased. Once a candidate mutation is owned, cancellation prevents future work/Keep but does not abandon rollback/recovery. The development progress window remains in stopping/restoring state until terminal final-state verification.
 
 ## 15. USB/xHCI/input source architecture
 
@@ -473,21 +529,21 @@ Diagnostics export is local/redacted and performs no automatic upload.
 ## 19. Permanent test strategy
 
 - Default/target: **10** permanent tests.
-- Current durable suite: **18**.
-- Owner-authorized maximum: **20** only when needed for `<=1200` lines per test file or materially safer durable failure isolation.
-- Current subsystem-specific USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness, GPU runtime-placement and installed-Service source-provenance contracts intentionally use that separation.
+- Owner-authorized maximum: **20** permanent test methods, only when needed for `<=1200` lines per test file or materially safer durable failure isolation.
+- Subsystem-specific USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness, GPU runtime-placement and installed-Service source-provenance contracts remain independently diagnosable.
 - Temporary/obsolete tests must be removed rather than accumulated.
+- The exact current method count is owned by the latest successful hosted **Tests** run and must not be inferred from stale documentation.
 
 Hardware validation is separate from this budget.
 
 ## 20. Completion discipline
 
-Hosted Tests prove deterministic/source contracts only. They do not prove App compilation/runtime, LocalSystem Service behavior, hardware placement, device restart, installer behavior, signing or accessibility.
+Hosted Tests prove deterministic/source contracts and compile-check referenced source projects. They do not prove actual App rendering/runtime, LocalSystem Service behavior, hardware placement, device restart, installer behavior, signing or accessibility.
 
 Physical sequence remains:
 
 1. close Phase 2 read-only physical checks;
-2. Gate A internal GPU substrate proof;
+2. Gate A benchmark-backed GPU search + mutation/recovery proof on supported hardware;
 3. Gate B typed mutation IPC;
 4. Gate C physical IPC proof;
 5. Gate D user-facing GPU arming;
