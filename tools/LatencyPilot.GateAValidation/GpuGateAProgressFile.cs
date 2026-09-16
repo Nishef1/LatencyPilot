@@ -18,6 +18,7 @@ internal sealed class GpuGateAProgressFile
     private readonly int totalUnits;
     private readonly Dictionary<int, int> screeningCandidates = [];
     private readonly Dictionary<string, int> refinementCandidates = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim writeGate = new(1, 1);
     private int completedUnits;
     private string lastCompletedCandidateVerdict = "None yet";
     private GpuOptimizationProgressSnapshot? latestSnapshot;
@@ -239,15 +240,23 @@ internal sealed class GpuGateAProgressFile
 
     private async Task WriteAsync(GpuOptimizationProgressSnapshot snapshot)
     {
-        latestSnapshot = snapshot;
-        var directory = Path.GetDirectoryName(path)
-            ?? throw new InvalidOperationException("GPU Gate A progress path has no parent directory.");
-        Directory.CreateDirectory(directory);
-        var temporary = path + ".tmp";
-        await File.WriteAllTextAsync(
-            temporary,
-            JsonSerializer.Serialize(snapshot, JsonOptions)).ConfigureAwait(false);
-        File.Move(temporary, path, overwrite: true);
+        await writeGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            latestSnapshot = snapshot;
+            var directory = Path.GetDirectoryName(path)
+                ?? throw new InvalidOperationException("GPU Gate A progress path has no parent directory.");
+            Directory.CreateDirectory(directory);
+            var temporary = path + ".tmp";
+            await File.WriteAllTextAsync(
+                temporary,
+                JsonSerializer.Serialize(snapshot, JsonOptions)).ConfigureAwait(false);
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            writeGate.Release();
+        }
     }
 
     private static string FormatVerdict(string verdict) => verdict switch
