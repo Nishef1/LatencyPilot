@@ -1,4 +1,5 @@
 using System.Globalization;
+using LatencyPilot.Core.Benchmarking;
 
 namespace LatencyPilot.GpuBenchmark;
 
@@ -9,7 +10,10 @@ internal sealed record BenchmarkOptions(
     TimeSpan Duration,
     int WorkerCount,
     int Seed,
-    string OutputPath)
+    string? OutputPath,
+    string? ControlPipeName,
+    string? ControlToken,
+    string? OutputDirectory)
 {
     private const int MinimumWidth = 320;
     private const int MaximumWidth = 7680;
@@ -19,21 +23,62 @@ internal sealed record BenchmarkOptions(
     private const double MaximumDurationSeconds = 300;
     private const int MaximumWorkers = 64;
 
+    internal bool IsControlledSession => !string.IsNullOrWhiteSpace(ControlPipeName);
+
     internal static BenchmarkOptions Parse(IReadOnlyList<string> args)
     {
         var values = ParseNamedArguments(args);
         var sessionId = ParseRequiredGuid(values, "session-id");
         var width = ParseRequiredInt(values, "width", MinimumWidth, MaximumWidth);
         var height = ParseRequiredInt(values, "height", MinimumHeight, MaximumHeight);
+        var workerCount = ParseRequiredInt(values, "worker-count", 1, MaximumWorkers);
+        var seed = ParseRequiredInt(values, "seed", 0, int.MaxValue);
+
+        var hasControlPipe = values.TryGetValue("control-pipe", out var pipeName) &&
+            !string.IsNullOrWhiteSpace(pipeName);
+        if (hasControlPipe)
+        {
+            var controlPipeName = pipeName!.Trim();
+            ValidatePipeName(controlPipeName);
+            var controlToken = ParseRequiredString(values, "control-token");
+            if (!GpuBenchmarkControlProtocol.IsValidToken(controlToken))
+            {
+                throw new ArgumentException(
+                    $"Option '--control-token' must be exactly {GpuBenchmarkControlProtocol.TokenHexLength} hexadecimal characters.");
+            }
+
+            var outputDirectory = Path.GetFullPath(ParseRequiredString(values, "output-directory"));
+            if (values.ContainsKey("duration-seconds") || values.ContainsKey("output"))
+            {
+                throw new ArgumentException(
+                    "Controlled benchmark sessions use per-command trial duration and output files; do not supply --duration-seconds or --output.");
+            }
+
+            return new BenchmarkOptions(
+                sessionId,
+                width,
+                height,
+                TimeSpan.Zero,
+                workerCount,
+                seed,
+                null,
+                controlPipeName,
+                controlToken,
+                outputDirectory);
+        }
+
+        if (values.ContainsKey("control-token") || values.ContainsKey("output-directory"))
+        {
+            throw new ArgumentException(
+                "--control-token and --output-directory require --control-pipe.");
+        }
+
         var durationSeconds = ParseRequiredDouble(
             values,
             "duration-seconds",
             MinimumDurationSeconds,
             MaximumDurationSeconds);
-        var workerCount = ParseRequiredInt(values, "worker-count", 1, MaximumWorkers);
-        var seed = ParseRequiredInt(values, "seed", 0, int.MaxValue);
         var outputPath = ParseRequiredString(values, "output");
-
         return new BenchmarkOptions(
             sessionId,
             width,
@@ -41,7 +86,10 @@ internal sealed record BenchmarkOptions(
             TimeSpan.FromSeconds(durationSeconds),
             workerCount,
             seed,
-            Path.GetFullPath(outputPath));
+            Path.GetFullPath(outputPath),
+            null,
+            null,
+            null);
     }
 
     private static Dictionary<string, string> ParseNamedArguments(IReadOnlyList<string> args)
@@ -132,5 +180,16 @@ internal sealed record BenchmarkOptions(
         }
 
         return value.Trim();
+    }
+
+    private static void ValidatePipeName(string pipeName)
+    {
+        if (pipeName.Length > 128 ||
+            pipeName.Equals("anonymous", StringComparison.OrdinalIgnoreCase) ||
+            pipeName.IndexOfAny(['\\', '/']) >= 0)
+        {
+            throw new ArgumentException(
+                "Option '--control-pipe' must be a short local named-pipe basename without path separators.");
+        }
     }
 }
