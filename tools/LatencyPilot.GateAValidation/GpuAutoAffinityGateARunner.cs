@@ -84,8 +84,8 @@ internal static class GpuAutoAffinityGateARunner
                 .SelectMany(static core => core.LogicalProcessors)
                 .Select(static processor => new ProcessorPressureEvidence(processor, 0d))
                 .ToArray();
-            var physicalCandidates = GpuAffinityCandidatePlanner.Create(topology, pressure, cpuSets);
-            if (physicalCandidates.Count == 0)
+            var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets);
+            if (progressPlan.PhysicalCandidateCount == 0)
             {
                 throw new InvalidOperationException(
                     "GPU auto-affinity Gate A has no eligible physical-core candidates after topology/CPU-set exclusions.");
@@ -94,7 +94,7 @@ internal static class GpuAutoAffinityGateARunner
             progress = new GpuGateAProgressFile(
                 options.SessionId,
                 options.ProgressPath,
-                physicalCandidates.Count);
+                progressPlan);
             await progress.ReportInitializingAsync(
                 "Preparing the benchmark-backed GPU affinity session.").ConfigureAwait(false);
 
@@ -135,7 +135,7 @@ internal static class GpuAutoAffinityGateARunner
             Console.WriteLine($"benchmark-pid={benchmark.ProcessId.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"device={target[0].InstanceId}");
             Console.WriteLine($"physical-cores={topology.PhysicalCoreCount.ToString(CultureInfo.InvariantCulture)}");
-            Console.WriteLine($"candidate-count={physicalCandidates.Count.ToString(CultureInfo.InvariantCulture)}");
+            Console.WriteLine($"candidate-count={progressPlan.PhysicalCandidateCount.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"shuffle-seed={shuffleSeed.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine("gpu-auto-affinity=running");
 
