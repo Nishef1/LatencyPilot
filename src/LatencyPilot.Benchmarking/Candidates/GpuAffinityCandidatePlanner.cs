@@ -29,7 +29,7 @@ public sealed record GpuAffinityCandidate(
 
 public static class GpuAffinityCandidatePlanner
 {
-    public const int DefaultMaximumCandidates = 4;
+    public const int DefaultMaximumCandidates = 16;
     public const int MaximumCandidates = 16;
 
     public static IReadOnlyList<GpuAffinityCandidate> Create(
@@ -60,35 +60,104 @@ public static class GpuAffinityCandidatePlanner
                 "Automatic GPU interrupt-affinity candidates currently require exactly one processor group.");
         }
 
-        var pressureByProcessor = pressureEvidence
+        var pressureByProcessor = BuildPressureMap(pressureEvidence);
+        var rankedCandidates = CreateRankedPhysicalCoreCandidates(topology, pressureByProcessor, cpuSets);
+        var ordered = rankedCandidates
+            .OrderBy(static ranked => ranked.AvailabilityRank)
+            .ThenBy(static ranked => ranked.Candidate.ObservedPressureScore)
+            .ThenByDescending(static ranked => ranked.Candidate.EfficiencyClass)
+            .ThenBy(static ranked => ranked.Candidate.PhysicalCoreIndex)
+            .ToArray();
+
+        if (ordered.Length <= maximumCandidates)
+        {
+            return ordered.Select(static ranked => ranked.Candidate).ToArray();
+        }
+
+        return SelectStratified(ordered, cpuSets, maximumCandidates);
+    }
+
+    public static IReadOnlyList<GpuAffinityCandidate> CreateSiblingRefinement(
+        ProcessorTopologySnapshot topology,
+        IEnumerable<ProcessorPressureEvidence> pressureEvidence,
+        GpuAffinityCandidate winningPhysicalCore,
+        ProcessorCpuSetSnapshot? cpuSets = null)
+    {
+        ArgumentNullException.ThrowIfNull(topology);
+        ArgumentNullException.ThrowIfNull(pressureEvidence);
+        ArgumentNullException.ThrowIfNull(winningPhysicalCore);
+
+        if (topology.ProcessorGroupCount != 1)
+        {
+            throw new NotSupportedException(
+                "Automatic GPU interrupt-affinity candidates currently require exactly one processor group.");
+        }
+
+        var core = topology.Cores.SingleOrDefault(candidate =>
+            candidate.Index == winningPhysicalCore.PhysicalCoreIndex)
+            ?? throw new ArgumentException(
+                "The winning GPU affinity candidate does not map to the supplied processor topology.",
+                nameof(winningPhysicalCore));
+        if (!core.IsSmt)
+        {
+            return [winningPhysicalCore];
+        }
+
+        var pressureByProcessor = BuildPressureMap(pressureEvidence);
+        return core.LogicalProcessors
+            .Where(processor => IsEligible(cpuSets, processor))
+            .Select(processor => new RankedGpuAffinityCandidate(
+                new GpuAffinityCandidate(
+                    core.Index,
+                    processor,
+                    core.EfficiencyClass,
+                    true,
+                    pressureByProcessor.TryGetValue(processor, out var score)
+                        ? score
+                        : double.PositiveInfinity),
+                GetAvailabilityRank(cpuSets, processor)))
+            .OrderBy(static ranked => ranked.AvailabilityRank)
+            .ThenBy(static ranked => ranked.Candidate.ObservedPressureScore)
+            .ThenBy(static ranked => ranked.Candidate.Processor.Number)
+            .Select(static ranked => ranked.Candidate)
+            .ToArray();
+    }
+
+    private static Dictionary<LogicalProcessorId, double> BuildPressureMap(
+        IEnumerable<ProcessorPressureEvidence> pressureEvidence) =>
+        pressureEvidence
             .GroupBy(static item => item.Processor)
             .ToDictionary(
                 static group => group.Key,
                 static group => group.Average(static item => item.PressureScore));
 
+    private static List<RankedGpuAffinityCandidate> CreateRankedPhysicalCoreCandidates(
+        ProcessorTopologySnapshot topology,
+        IReadOnlyDictionary<LogicalProcessorId, double> pressureByProcessor,
+        ProcessorCpuSetSnapshot? cpuSets)
+    {
         var rankedCandidates = new List<RankedGpuAffinityCandidate>(topology.PhysicalCoreCount);
         foreach (var core in topology.Cores)
         {
-            if (core.LogicalProcessors.Count == 0)
-            {
-                continue;
-            }
-
-            var bestLogical = core.LogicalProcessors
-                .Select(processor => new
-                {
-                    Processor = processor,
-                    AvailabilityRank = GetAvailabilityRank(cpuSets, processor),
-                    Pressure = pressureByProcessor.TryGetValue(processor, out var score)
+            var eligible = core.LogicalProcessors
+                .Where(processor => IsEligible(cpuSets, processor))
+                .Select(processor => new RankedLogicalProcessor(
+                    processor,
+                    GetAvailabilityRank(cpuSets, processor),
+                    pressureByProcessor.TryGetValue(processor, out var score)
                         ? score
-                        : double.PositiveInfinity,
-                })
+                        : double.PositiveInfinity))
                 .OrderBy(static item => item.AvailabilityRank)
                 .ThenBy(static item => item.Pressure)
                 .ThenBy(static item => item.Processor.Group)
                 .ThenBy(static item => item.Processor.Number)
-                .First();
+                .ToArray();
+            if (eligible.Length == 0)
+            {
+                continue;
+            }
 
+            var bestLogical = eligible[0];
             rankedCandidates.Add(new RankedGpuAffinityCandidate(
                 new GpuAffinityCandidate(
                     core.Index,
@@ -99,46 +168,39 @@ public static class GpuAffinityCandidatePlanner
                 bestLogical.AvailabilityRank));
         }
 
-        var ordered = rankedCandidates
-            .OrderBy(static ranked => ranked.AvailabilityRank)
-            .ThenBy(static ranked => ranked.Candidate.ObservedPressureScore)
-            .ThenByDescending(static ranked => ranked.Candidate.EfficiencyClass)
-            .ThenBy(static ranked => ranked.Candidate.PhysicalCoreIndex)
-            .Select(static ranked => ranked.Candidate)
-            .ToArray();
+        return rankedCandidates;
+    }
 
-        if (!topology.HasHeterogeneousCores)
-        {
-            return ordered.Take(maximumCandidates).ToArray();
-        }
-
-        // On hybrid CPUs, do not silently assume either the fastest class or the
-        // most-efficient class is always best for interrupt work. Ensure that the
-        // bounded screening set represents distinct efficiency classes first, then
-        // fill the remaining slots from the globally safest/lowest-pressure cores.
+    private static IReadOnlyList<GpuAffinityCandidate> SelectStratified(
+        IReadOnlyList<RankedGpuAffinityCandidate> ordered,
+        ProcessorCpuSetSnapshot? cpuSets,
+        int maximumCandidates)
+    {
         var selected = new List<GpuAffinityCandidate>(maximumCandidates);
-        foreach (var efficiencyClass in topology.EfficiencyClasses.OrderDescending())
+        var strata = ordered
+            .GroupBy(ranked => CreateStratum(ranked.Candidate, cpuSets))
+            .OrderByDescending(static group => group.Key.EfficiencyClass)
+            .ThenBy(static group => group.Key.NumaNodeIndex)
+            .ThenBy(static group => group.Key.LastLevelCacheIndex);
+
+        foreach (var stratum in strata)
         {
-            var representative = ordered.FirstOrDefault(candidate =>
-                candidate.EfficiencyClass == efficiencyClass);
-            if (representative is not null)
+            selected.Add(stratum.First().Candidate);
+            if (selected.Count == maximumCandidates)
             {
-                selected.Add(representative);
-                if (selected.Count == maximumCandidates)
-                {
-                    return selected.ToArray();
-                }
+                return selected.ToArray();
             }
         }
 
-        foreach (var candidate in ordered)
+        foreach (var ranked in ordered)
         {
-            if (selected.Any(existing => existing.PhysicalCoreIndex == candidate.PhysicalCoreIndex))
+            if (selected.Any(existing =>
+                    existing.PhysicalCoreIndex == ranked.Candidate.PhysicalCoreIndex))
             {
                 continue;
             }
 
-            selected.Add(candidate);
+            selected.Add(ranked.Candidate);
             if (selected.Count == maximumCandidates)
             {
                 break;
@@ -146,6 +208,35 @@ public static class GpuAffinityCandidatePlanner
         }
 
         return selected.ToArray();
+    }
+
+    private static CandidateStratum CreateStratum(
+        GpuAffinityCandidate candidate,
+        ProcessorCpuSetSnapshot? cpuSets)
+    {
+        var cpuSet = cpuSets?.TryGet(candidate.Processor);
+        return new CandidateStratum(
+            candidate.EfficiencyClass,
+            cpuSet?.NumaNodeIndex ?? byte.MaxValue,
+            cpuSet?.LastLevelCacheIndex ?? byte.MaxValue);
+    }
+
+    private static bool IsEligible(
+        ProcessorCpuSetSnapshot? cpuSets,
+        LogicalProcessorId processor)
+    {
+        if (cpuSets is null)
+        {
+            return true;
+        }
+
+        var cpuSet = cpuSets.TryGet(processor);
+        if (cpuSet is null || cpuSet.RealTime)
+        {
+            return false;
+        }
+
+        return !cpuSet.Allocated || cpuSet.AllocatedToCurrentProcess;
     }
 
     private static int GetAvailabilityRank(
@@ -158,24 +249,16 @@ public static class GpuAffinityCandidatePlanner
         }
 
         var cpuSet = cpuSets.TryGet(processor);
-        if (cpuSet is null)
+        if (cpuSet is null || cpuSet.RealTime ||
+            (cpuSet.Allocated && !cpuSet.AllocatedToCurrentProcess))
         {
-            return 4;
+            return int.MaxValue;
         }
 
-        // Allocated/real-time CPUs may belong to a workload with stronger ownership
-        // semantics than our experiment. A parked CPU is not forbidden, but an
-        // already-active, unallocated sibling is a safer first candidate.
-        if (cpuSet.RealTime)
-        {
-            return 3;
-        }
-
-        if (cpuSet.Allocated && !cpuSet.AllocatedToCurrentProcess)
-        {
-            return 3;
-        }
-
+        // Parked CPU sets remain legal Windows CPU-set targets; prefer an active
+        // sibling when available, but do not silently ban parked cores from the
+        // bounded active screen. A CPU set already allocated to this process is
+        // likewise usable but ranked behind an unallocated active processor.
         if (cpuSet.Parked)
         {
             return 2;
@@ -184,7 +267,17 @@ public static class GpuAffinityCandidatePlanner
         return cpuSet.Allocated ? 1 : 0;
     }
 
+    private readonly record struct RankedLogicalProcessor(
+        LogicalProcessorId Processor,
+        int AvailabilityRank,
+        double Pressure);
+
     private readonly record struct RankedGpuAffinityCandidate(
         GpuAffinityCandidate Candidate,
         int AvailabilityRank);
+
+    private readonly record struct CandidateStratum(
+        byte EfficiencyClass,
+        byte NumaNodeIndex,
+        byte LastLevelCacheIndex);
 }
