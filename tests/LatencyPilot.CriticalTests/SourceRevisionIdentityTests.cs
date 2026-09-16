@@ -102,6 +102,24 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(gateARunnerSource, "safe = IsVerifiedOriginalTerminalState(stoppedReport);");
         StringAssert.Contains(gateARunnerSource, "safe = IsVerifiedOriginalTerminalState(fallback);");
 
+        var cancellationCatchStart = gateARunnerSource.IndexOf(
+            "catch (OperationCanceledException)",
+            StringComparison.Ordinal);
+        var failureCatchStart = gateARunnerSource.IndexOf(
+            "catch (Exception exception)",
+            cancellationCatchStart,
+            StringComparison.Ordinal);
+        Assert.IsTrue(
+            cancellationCatchStart >= 0 && failureCatchStart > cancellationCatchStart,
+            "Gate A cancellation terminal path could not be located.");
+        var cancellationCatchSource = gateARunnerSource[cancellationCatchStart..failureCatchStart];
+        StringAssert.Contains(
+            cancellationCatchSource,
+            "await TryWriteTerminalReportAsync(options.OutputPath, stoppedReport)");
+        StringAssert.Contains(
+            cancellationCatchSource,
+            "await TryReportTerminalAsync(progress,");
+
         var gateABackendSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "tools",
