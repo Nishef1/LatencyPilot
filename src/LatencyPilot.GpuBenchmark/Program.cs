@@ -16,7 +16,6 @@ catch (Exception exception) when (exception is ArgumentException or NotSupported
 
 try
 {
-    Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath)!);
     var topology = ProcessorTopologyReader.Capture();
     if (topology.ProcessorGroupCount != 1)
     {
@@ -52,10 +51,32 @@ try
         0d,
         $"Frozen workload: {frozen.CommandBatchesPerWorker} command batches and {frozen.SimulationIterationsPerWorker} simulation iterations per worker.");
 
+    if (options.IsControlledSession)
+    {
+        BenchmarkProtocol.WriteProgress(
+            Console.Out,
+            options.SessionId,
+            "waiting-control",
+            0d,
+            "Frozen benchmark session is waiting for the authenticated Gate A controller.");
+        var server = new BenchmarkControlServer(options, benchmark, renderer, frozen);
+        await server.RunAsync();
+        BenchmarkProtocol.WriteProgress(
+            Console.Out,
+            options.SessionId,
+            "complete",
+            1d,
+            "Controlled benchmark session completed without recalibrating the workload.");
+        return 0;
+    }
+
+    var outputPath = options.OutputPath
+        ?? throw new InvalidOperationException("Single-trial benchmark output path is missing.");
+    Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
     var artifact = await benchmark.RunTrialAsync(renderer, frozen);
     var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
-    File.WriteAllText(options.OutputPath, JsonSerializer.Serialize(artifact, jsonOptions), new UTF8Encoding(false));
-    BenchmarkProtocol.WriteProgress(Console.Out, options.SessionId, "complete", 1d, $"Benchmark artifact written to {options.OutputPath}.");
+    File.WriteAllText(outputPath, JsonSerializer.Serialize(artifact, jsonOptions), new UTF8Encoding(false));
+    BenchmarkProtocol.WriteProgress(Console.Out, options.SessionId, "complete", 1d, $"Benchmark artifact written to {outputPath}.");
     return 0;
 }
 catch (OperationCanceledException exception)
