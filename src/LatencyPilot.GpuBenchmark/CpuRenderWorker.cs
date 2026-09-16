@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using LatencyPilot.Core.System;
+using Vortice;
 using Vortice.Direct3D12;
 using Vortice.Mathematics;
 
@@ -41,7 +42,12 @@ internal sealed class CpuRenderWorker : IDisposable
             new Color4((float)random.NextDouble(), (float)random.NextDouble(), (float)random.NextDouble(), 1f),
         ];
 
-        thread = new Thread(Run) { IsBackground = true, Name = $"LatencyPilot.GpuBenchmark CPU {processor}", Priority = ThreadPriority.AboveNormal };
+        thread = new Thread(Run)
+        {
+            IsBackground = true,
+            Name = $"LatencyPilot.GpuBenchmark CPU {processor}",
+            Priority = ThreadPriority.AboveNormal,
+        };
         thread.Start();
     }
 
@@ -108,21 +114,38 @@ internal sealed class CpuRenderWorker : IDisposable
         allocator.Reset();
         commandList.Reset(allocator, null);
         for (var batch = 0; batch < frame.CommandBatches; batch++)
+        {
             commandList.ClearRenderTargetView(frame.RenderTargetView, colors[batch & 3], region);
+        }
         commandList.Close();
     }
 
     private static void PinCurrentThread(LogicalProcessorId processor)
     {
-        if (processor.Number >= 64) throw new NotSupportedException("gpu-affinity-benchmark-v1 supports processor numbers below 64 in each group.");
+        if (processor.Number >= 64)
+        {
+            throw new NotSupportedException("gpu-affinity-benchmark-v1 supports processor numbers below 64 in each group.");
+        }
+
         var affinity = new GroupAffinity { Mask = 1UL << processor.Number, Group = processor.Group };
         if (!SetThreadGroupAffinity(GetCurrentThread(), in affinity, out _))
+        {
             throw new Win32Exception(Marshal.GetLastPInvokeError(), $"Unable to pin benchmark worker to processor {processor}.");
+        }
     }
 
     private readonly record struct FrameRequest(CpuDescriptorHandle RenderTargetView, int SimulationIterations, int CommandBatches);
+
     [StructLayout(LayoutKind.Sequential)]
-    private struct GroupAffinity { internal ulong Mask; internal ushort Group; internal ushort Reserved0; internal ushort Reserved1; internal ushort Reserved2; }
+    private struct GroupAffinity
+    {
+        internal ulong Mask;
+        internal ushort Group;
+        internal ushort Reserved0;
+        internal ushort Reserved1;
+        internal ushort Reserved2;
+    }
+
     [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentThread();
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetThreadGroupAffinity(IntPtr thread, in GroupAffinity groupAffinity, out GroupAffinity previousGroupAffinity);

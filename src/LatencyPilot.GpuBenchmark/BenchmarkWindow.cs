@@ -40,8 +40,19 @@ internal sealed class BenchmarkWindow : IDisposable
             throw new Win32Exception(Marshal.GetLastPInvokeError(), "Unable to register benchmark window class.");
         }
 
-        Handle = CreateWindowExW(0, className, "LatencyPilot GPU Benchmark", OverlappedWindow | Visible,
-            UseDefault, UseDefault, width, height, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
+        Handle = CreateWindowExW(
+            0,
+            className,
+            "LatencyPilot GPU Benchmark",
+            OverlappedWindow | Visible,
+            UseDefault,
+            UseDefault,
+            width,
+            height,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            instance,
+            IntPtr.Zero);
 
         if (Handle == IntPtr.Zero)
         {
@@ -62,7 +73,7 @@ internal sealed class BenchmarkWindow : IDisposable
     {
         while (PeekMessageW(out var message, IntPtr.Zero, 0, 0, PmRemove))
         {
-            if (message.Message == WmQuit) return false;
+            if (message.MessageId == WmQuit) return false;
             TranslateMessage(in message);
             DispatchMessageW(in message);
         }
@@ -108,12 +119,18 @@ internal sealed class BenchmarkWindow : IDisposable
         internal IntPtr SmallIcon;
     }
 
-    [StructLayout(LayoutKind.Sequential)] private struct Point { internal int X; internal int Y; }
     [StructLayout(LayoutKind.Sequential)]
-    private struct Message
+    private struct Point
+    {
+        internal int X;
+        internal int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowMessage
     {
         internal IntPtr Window;
-        internal uint Message;
+        internal uint MessageId;
         internal nuint WParam;
         internal nint LParam;
         internal uint Time;
@@ -132,7 +149,7 @@ internal sealed class BenchmarkWindow : IDisposable
     [DllImport("user32.dll")] private static extern bool UpdateWindow(IntPtr window);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr DefWindowProcW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern void PostQuitMessage(int exitCode);
-    [DllImport("user32.dll")] private static extern bool PeekMessageW(out Message message, IntPtr window, uint minimum, uint maximum, uint remove);
-    [DllImport("user32.dll")] private static extern bool TranslateMessage(in Message message);
-    [DllImport("user32.dll")] private static extern IntPtr DispatchMessageW(in Message message);
+    [DllImport("user32.dll")] private static extern bool PeekMessageW(out WindowMessage message, IntPtr window, uint minimum, uint maximum, uint remove);
+    [DllImport("user32.dll")] private static extern bool TranslateMessage(in WindowMessage message);
+    [DllImport("user32.dll")] private static extern IntPtr DispatchMessageW(in WindowMessage message);
 }

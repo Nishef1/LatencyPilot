@@ -8,6 +8,7 @@ internal sealed record BenchmarkTrialArtifact(string Schema, Guid SessionId, Dat
 
 internal sealed class BenchmarkWorkload
 {
+    private const string ArtifactSchema = "latencypilot-gpu-benchmark-v1";
     private const int MinimumCommandBatches = 1;
     private const int MaximumCommandBatches = 4096;
     private const int MinimumSimulationIterations = 1_000;
@@ -15,11 +16,15 @@ internal sealed class BenchmarkWorkload
     private static readonly TimeSpan WarmupDuration = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(250);
     private readonly BenchmarkOptions options;
-    private readonly BenchmarkProtocolWriter protocol;
+    private readonly TextWriter output;
     private readonly IReadOnlyList<LogicalProcessorId> workerMap;
 
-    internal BenchmarkWorkload(BenchmarkOptions options, BenchmarkProtocolWriter protocol, IReadOnlyList<LogicalProcessorId> workerMap)
-    { this.options = options; this.protocol = protocol; this.workerMap = workerMap; }
+    internal BenchmarkWorkload(BenchmarkOptions options, TextWriter output, IReadOnlyList<LogicalProcessorId> workerMap)
+    {
+        this.options = options;
+        this.output = output;
+        this.workerMap = workerMap;
+    }
 
     internal Task<FrozenBenchmarkWorkload> CalibrateAsync(D3D12BenchmarkRenderer renderer, CancellationToken cancellationToken = default)
     {
@@ -27,29 +32,53 @@ internal sealed class BenchmarkWorkload
         var simulationIterations = 20_000;
         var started = Stopwatch.StartNew();
         var intervalStarted = Stopwatch.StartNew();
-        var cpuSum = 0d; var gpuSum = 0d; var intervalFrames = 0; var lastProgress = TimeSpan.Zero;
+        var cpuSum = 0d;
+        var gpuSum = 0d;
+        var intervalFrames = 0;
+        var lastProgress = TimeSpan.Zero;
+
         while (started.Elapsed < WarmupDuration)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var frame = renderer.RenderFrame(simulationIterations, commandBatches);
-            if (!double.IsFinite(frame.CpuRecordingMilliseconds) || frame.CpuRecordingMilliseconds <= 0 || !double.IsFinite(frame.GpuWorkMilliseconds) || frame.GpuWorkMilliseconds < 0)
+            if (!double.IsFinite(frame.CpuRecordingMilliseconds) || frame.CpuRecordingMilliseconds <= 0 ||
+                !double.IsFinite(frame.GpuWorkMilliseconds) || frame.GpuWorkMilliseconds < 0)
+            {
                 throw new InvalidDataException("Benchmark calibration produced invalid frame timing.");
-            cpuSum += frame.CpuRecordingMilliseconds; gpuSum += frame.GpuWorkMilliseconds; intervalFrames++;
+            }
+
+            cpuSum += frame.CpuRecordingMilliseconds;
+            gpuSum += frame.GpuWorkMilliseconds;
+            intervalFrames++;
             if (intervalStarted.Elapsed >= TimeSpan.FromSeconds(1) && intervalFrames > 0)
             {
                 simulationIterations = TuneSimulationIterations(simulationIterations, cpuSum / intervalFrames);
                 commandBatches = TuneCommandBatches(commandBatches, gpuSum / intervalFrames);
-                cpuSum = 0; gpuSum = 0; intervalFrames = 0; intervalStarted.Restart();
+                cpuSum = 0;
+                gpuSum = 0;
+                intervalFrames = 0;
+                intervalStarted.Restart();
             }
+
             if (started.Elapsed - lastProgress >= ProgressInterval)
             {
                 lastProgress = started.Elapsed;
-                protocol.WriteProgress(new BenchmarkProgress(BenchmarkProtocolWriter.ProgressSchema, options.SessionId, "calibrating",
+                BenchmarkProtocol.WriteProgress(
+                    output,
+                    options.SessionId,
+                    "calibrating",
                     Math.Clamp(started.Elapsed.TotalMilliseconds / WarmupDuration.TotalMilliseconds, 0d, 1d),
-                    $"Calibrating fixed workload: {commandBatches} command batches, {simulationIterations} simulation iterations."));
+                    $"Calibrating fixed workload: {commandBatches} command batches, {simulationIterations} simulation iterations.");
             }
         }
-        return Task.FromResult(new FrozenBenchmarkWorkload(commandBatches, simulationIterations, workerMap.ToArray(), options.Seed, options.Width, options.Height));
+
+        return Task.FromResult(new FrozenBenchmarkWorkload(
+            commandBatches,
+            simulationIterations,
+            workerMap.ToArray(),
+            options.Seed,
+            options.Width,
+            options.Height));
     }
 
     internal Task<BenchmarkTrialArtifact> RunTrialAsync(D3D12BenchmarkRenderer renderer, FrozenBenchmarkWorkload workload, CancellationToken cancellationToken = default)
@@ -60,24 +89,46 @@ internal sealed class BenchmarkWorkload
         var startedAtUtc = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
         var lastProgress = TimeSpan.Zero;
+
         while (stopwatch.Elapsed < options.Duration)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var frame = renderer.RenderFrame(workload.SimulationIterationsPerWorker, workload.CommandBatchesPerWorker);
-            if (!double.IsFinite(frame.CpuRecordingMilliseconds) || frame.CpuRecordingMilliseconds <= 0 || !double.IsFinite(frame.GpuWorkMilliseconds) || frame.GpuWorkMilliseconds < 0)
+            if (!double.IsFinite(frame.CpuRecordingMilliseconds) || frame.CpuRecordingMilliseconds <= 0 ||
+                !double.IsFinite(frame.GpuWorkMilliseconds) || frame.GpuWorkMilliseconds < 0)
+            {
                 throw new InvalidDataException("Benchmark trial produced invalid frame timing.");
+            }
+
             frames.Add(frame);
             if (stopwatch.Elapsed - lastProgress >= ProgressInterval)
             {
                 lastProgress = stopwatch.Elapsed;
-                protocol.WriteProgress(new BenchmarkProgress(BenchmarkProtocolWriter.ProgressSchema, options.SessionId, "measuring",
+                BenchmarkProtocol.WriteProgress(
+                    output,
+                    options.SessionId,
+                    "measuring",
                     Math.Clamp(stopwatch.Elapsed.TotalMilliseconds / options.Duration.TotalMilliseconds, 0d, 1d),
-                    $"Measured {frames.Count} frames with frozen workload."));
+                    $"Measured {frames.Count} frames with frozen workload.");
             }
         }
-        if (frames.Count == 0) throw new InvalidDataException("Benchmark trial completed without any frame evidence.");
-        return Task.FromResult(new BenchmarkTrialArtifact(BenchmarkProtocolWriter.ArtifactSchema, options.SessionId, startedAtUtc, DateTimeOffset.UtcNow,
-            renderer.AdapterName, renderer.PresentMode, renderer.TimestampFrequency, workload, frames, renderer.CaptureWorkerChecksums()));
+
+        if (frames.Count == 0)
+        {
+            throw new InvalidDataException("Benchmark trial completed without any frame evidence.");
+        }
+
+        return Task.FromResult(new BenchmarkTrialArtifact(
+            ArtifactSchema,
+            options.SessionId,
+            startedAtUtc,
+            DateTimeOffset.UtcNow,
+            renderer.AdapterName,
+            renderer.PresentMode,
+            renderer.TimestampFrequency,
+            workload,
+            frames,
+            renderer.CaptureWorkerChecksums()));
     }
 
     private static int TuneSimulationIterations(int current, double averageCpuMilliseconds)
@@ -86,6 +137,7 @@ internal sealed class BenchmarkWorkload
         if (averageCpuMilliseconds > 12d) return Math.Max(MinimumSimulationIterations, current / 2);
         return current;
     }
+
     private static int TuneCommandBatches(int current, double averageGpuMilliseconds)
     {
         if (averageGpuMilliseconds < 2d) return Math.Min(MaximumCommandBatches, checked(current * 2));
