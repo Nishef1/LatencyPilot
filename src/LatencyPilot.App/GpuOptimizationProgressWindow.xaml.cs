@@ -137,7 +137,15 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 return false;
             }
 
-            var json = await File.ReadAllTextAsync(progressPath);
+            await using var stream = new FileStream(
+                progressPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                bufferSize: 4096,
+                useAsync: true);
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
             var snapshot = JsonSerializer.Deserialize<GpuOptimizationProgressSnapshot>(json, JsonOptions);
             if (snapshot is null ||
                 !string.Equals(snapshot.Schema, GpuOptimizationProgressSnapshot.SchemaId, StringComparison.Ordinal) ||
@@ -160,6 +168,11 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         catch (IOException)
         {
             // Atomic replacement can briefly move the file between directory entries.
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A file watcher or security scanner can briefly deny the shared progress read.
             return false;
         }
         catch (JsonException)

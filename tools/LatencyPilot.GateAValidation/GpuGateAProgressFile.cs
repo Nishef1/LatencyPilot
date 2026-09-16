@@ -8,6 +8,8 @@ namespace LatencyPilot.GateAValidation;
 
 internal sealed class GpuGateAProgressFile
 {
+    private const int MaximumWriteAttempts = 8;
+    private static readonly TimeSpan WriteRetryDelay = TimeSpan.FromMilliseconds(25);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -348,8 +350,36 @@ internal sealed class GpuGateAProgressFile
                 ?? throw new InvalidOperationException("GPU Gate A progress path has no parent directory.");
             Directory.CreateDirectory(directory);
             var temporary = path + ".tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(snapshot, JsonOptions));
-            File.Move(temporary, path, overwrite: true);
+            try
+            {
+                for (var attempt = 1; attempt <= MaximumWriteAttempts; attempt++)
+                {
+                    try
+                    {
+                        File.WriteAllText(temporary, JsonSerializer.Serialize(snapshot, JsonOptions));
+                        File.Move(temporary, path, overwrite: true);
+                        break;
+                    }
+                    catch (IOException) when (attempt < MaximumWriteAttempts)
+                    {
+                        Thread.Sleep(WriteRetryDelay);
+                    }
+                    catch (UnauthorizedAccessException) when (attempt < MaximumWriteAttempts)
+                    {
+                        // The WinUI progress reader or an antivirus scanner can briefly hold
+                        // the destination while it is being replaced. Keep the last valid
+                        // snapshot and retry the atomic publish instead of aborting the gate.
+                        Thread.Sleep(WriteRetryDelay);
+                    }
+                }
+            }
+            finally
+            {
+                if (File.Exists(temporary))
+                {
+                    File.Delete(temporary);
+                }
+            }
         }
 
         return Task.CompletedTask;
