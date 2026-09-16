@@ -187,7 +187,13 @@ Public protocol v6 exposes no mutation command.
 
 The automatic benchmark combines a deterministic D3D12 workload with kernel ETW and raw PresentMon evidence. D3D12 timestamp queries provide direct GPU-work timing and are the calibration source rather than relying on HWS-sensitive PresentMon GPU-active metrics alone. PresentMon raw frame intervals remain useful for frame p99/1% low and guardrails; LatencyPilot derives authoritative percentiles with its canonical estimator instead of trusting external precomputed percentile ordering.
 
+The authoritative PresentMon compatibility boundary for this method is **PresentMon 2.5.1 or later plus API 3.4+**. The installed binary/product version and API version are evidence. PresentMon 2.5.1 is the first accepted 2.5 release because upstream withdrew the 2.5.0 binary after a shared-service compatibility conflict and 2.5.1 fixed both percentile ordering and an API backwards-compatibility regression (upstream release: https://github.com/GameTechDev/PresentMon/releases/tag/v2.5.1). A missing/unparseable binary version or older API is non-authoritative rather than silently accepted.
+
+PresentMon's own current documentation warns that `msGPUActive`/related GPU execution metrics may read late or high when Hardware-Accelerated GPU Scheduling is enabled, and that some CPU-frame-derived metrics are less accurate for OpenGL/Vulkan. Therefore PresentMon GPU-busy evidence is **context only** for `gpu-affinity-benchmark-v1`; it cannot independently validate, invalidate, or select a candidate. Direct D3D12 timestamp evidence remains the GPU-work timing source for the built-in DX12 benchmark.
+
 A benchmark trial requires stable source/GPU/driver/topology/benchmark-process/frozen-workload identity, clean ETW capture, valid D3D12 timestamp evidence, expected stored state before/after a Candidate trial, and comparable repeated control behavior. Missing optional PresentMon fields stay missing. Background applications are context unless they actually break GPU/benchmark comparability.
+
+`latencypilot-gpu-benchmark-v1` is repeated **whole-run** evidence. It is not `baseline-quality-v2` five-window RealWorld evidence and must never be converted into that schema merely to reuse an eligibility gate.
 
 ## 9. GPU effective ISR-placement validity
 
@@ -253,17 +259,7 @@ Avoid unnecessary per-event heap allocation, high-volume logging, synchronous fi
 ## 19. Permanent-test policy
 
 - Default/target permanent suite: **10** tests.
-- Current durable suite: **18** tests.
+- Current durable suite: **19** tests.
 - Every test source file: **<=1200 lines**.
 - Owner-authorized maximum: **20**, only for the file-size limit or materially safer durable subsystem separation.
 - Temporary/obsolete tests are removed rather than accumulated.
-
-Hardware validation is separate from automated-test count.
-
-## 20. Evidence and phase boundary
-
-Hosted test-only CI can prove deterministic/source contracts. It does **not** prove physical GPU/USB/NIC behavior, WinUI/Service runtime, installer/package correctness, signing or accessibility.
-
-Phase 2 still requires owner-local read-only closure. Product mutation still follows Gate A → Gate B → Gate C → Gate D in `PROJECT_STATUS.md`. `Run GPU Gate A` remains an owner/development surface and the product-facing `Auto-optimize GPU` action remains blocked until Gate D. USB/NIC mutation source remains deferred until the shared Gate A substrate is physically credible.
-
-The governing rule remains: **measure the machine; never assume the tweak.**
