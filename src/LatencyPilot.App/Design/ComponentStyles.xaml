@@ -88,8 +88,8 @@
     </Style>
 
     <Style x:Key="EmptyStateStyle" TargetType="Border">
-        <Setter Property="Padding" Value="24" />
-        <Setter Property="CornerRadius" Value="{StaticResource RadiusXLarge}" />
+        <Setter Property="Padding" Value="18" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
         <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -121,16 +121,16 @@
     </Style>
 
     <Style x:Key="IconTileStyle" TargetType="Border">
-        <Setter Property="Width" Value="34" />
-        <Setter Property="Height" Value="34" />
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
-        <Setter Property="Background" Value="{ThemeResource AccentSoftBrush}" />
+        <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
     </Style>
 
     <Style x:Key="PillBorderStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource PillPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}" />
-        <Setter Property="Background" Value="{ThemeResource SurfaceStrongBrush}" />
+        <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
     </Style>
 
     <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
@@ -159,7 +159,7 @@
         <Setter Property="MinHeight" Value="34" />
         <Setter Property="Padding" Value="10,6" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontWeight" Value="Normal" />
     </Style>
 
     <Style x:Key="EvidenceListStyle" TargetType="ListView">
