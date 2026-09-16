@@ -133,7 +133,7 @@ public static class GpuAffinityCandidatePlanner
 
     private static List<RankedGpuAffinityCandidate> CreateRankedPhysicalCoreCandidates(
         ProcessorTopologySnapshot topology,
-        IReadOnlyDictionary<LogicalProcessorId, double> pressureByProcessor,
+        Dictionary<LogicalProcessorId, double> pressureByProcessor,
         ProcessorCpuSetSnapshot? cpuSets)
     {
         var rankedCandidates = new List<RankedGpuAffinityCandidate>(topology.PhysicalCoreCount);
@@ -171,7 +171,7 @@ public static class GpuAffinityCandidatePlanner
         return rankedCandidates;
     }
 
-    private static IReadOnlyList<GpuAffinityCandidate> SelectStratified(
+    private static GpuAffinityCandidate[] SelectStratified(
         IReadOnlyList<RankedGpuAffinityCandidate> ordered,
         ProcessorCpuSetSnapshot? cpuSets,
         int maximumCandidates)
