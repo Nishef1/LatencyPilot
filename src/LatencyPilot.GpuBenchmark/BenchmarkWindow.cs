@@ -9,7 +9,6 @@ internal sealed class BenchmarkWindow : IDisposable
     private const uint OverlappedWindow = 0x00CF0000;
     private const uint Visible = 0x10000000;
     private const uint ClassOwnDc = 0x0020;
-    private const uint WmDestroy = 0x0002;
     private const uint WmClose = 0x0010;
     private const uint WmQuit = 0x0012;
     private const uint PmRemove = 0x0001;
@@ -77,7 +76,7 @@ internal sealed class BenchmarkWindow : IDisposable
             TranslateMessage(in message);
             DispatchMessageW(in message);
         }
-        return !disposed;
+        return !disposed && IsWindow(Handle);
     }
 
     public void Dispose()
@@ -91,9 +90,9 @@ internal sealed class BenchmarkWindow : IDisposable
 
     private static IntPtr WindowProcedure(IntPtr window, uint message, IntPtr wParam, IntPtr lParam)
     {
-        if (message is WmClose or WmDestroy)
+        if (message == WmClose)
         {
-            PostQuitMessage(0);
+            DestroyWindow(window);
             return IntPtr.Zero;
         }
         return DefWindowProcW(window, message, wParam, lParam);
@@ -145,10 +144,10 @@ internal sealed class BenchmarkWindow : IDisposable
     private static extern IntPtr CreateWindowExW(uint extendedStyle, string className, string windowName, uint style,
         int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")] private static extern bool UpdateWindow(IntPtr window);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr DefWindowProcW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")] private static extern void PostQuitMessage(int exitCode);
     [DllImport("user32.dll")] private static extern bool PeekMessageW(out WindowMessage message, IntPtr window, uint minimum, uint maximum, uint remove);
     [DllImport("user32.dll")] private static extern bool TranslateMessage(in WindowMessage message);
     [DllImport("user32.dll")] private static extern IntPtr DispatchMessageW(in WindowMessage message);
