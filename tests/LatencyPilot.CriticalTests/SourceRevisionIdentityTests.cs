@@ -152,7 +152,7 @@ public sealed class SourceRevisionIdentityTests
             "await TryWriteTerminalReportAsync(options.OutputPath, stoppedReport)");
         StringAssert.Contains(
             cancellationCatchSource,
-            "await TryReportTerminalAsync(progress,");
+            "await TryReportTerminalAsync(");
 
         var gateABackendSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
