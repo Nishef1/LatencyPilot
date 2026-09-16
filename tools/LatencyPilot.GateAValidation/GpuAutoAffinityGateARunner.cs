@@ -82,13 +82,12 @@ internal static class GpuAutoAffinityGateARunner
             benchmark = await GpuBenchmarkControlClient.ConnectAsync(
                 options.BenchmarkPipeName,
                 options.SessionId,
-                options.BenchmarkToken,
-                options.BenchmarkProcessId).ConfigureAwait(false);
+                options.BenchmarkToken).ConfigureAwait(false);
             var backend = new GpuAutoAffinityGateABackend(
                 target[0].InstanceId,
                 options.ExpectedCommit,
                 options.SessionId,
-                options.BenchmarkProcessId,
+                benchmark.ProcessId,
                 topology,
                 benchmark);
             var shuffleSeed = RandomNumberGenerator.GetInt32(int.MaxValue);
@@ -104,7 +103,7 @@ internal static class GpuAutoAffinityGateARunner
 
             Console.WriteLine($"session={options.SessionId:D}");
             Console.WriteLine($"source-revision={options.ExpectedCommit}");
-            Console.WriteLine($"benchmark-pid={options.BenchmarkProcessId.ToString(CultureInfo.InvariantCulture)}");
+            Console.WriteLine($"benchmark-pid={benchmark.ProcessId.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"device={target[0].InstanceId}");
             Console.WriteLine($"physical-cores={topology.PhysicalCoreCount.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"shuffle-seed={shuffleSeed.ToString(CultureInfo.InvariantCulture)}");
@@ -258,8 +257,7 @@ internal static class GpuAutoAffinityGateARunner
         string OutputPath,
         Guid SessionId,
         string BenchmarkPipeName,
-        string BenchmarkToken,
-        uint BenchmarkProcessId)
+        string BenchmarkToken)
     {
         internal static AutoOptions Parse(string[] args)
         {
@@ -282,7 +280,7 @@ internal static class GpuAutoAffinityGateARunner
                 }
 
                 if (token is not ("--repo-root" or "--expected-commit" or "--output" or
-                    "--session-id" or "--benchmark-pipe" or "--benchmark-token" or "--benchmark-pid"))
+                    "--session-id" or "--benchmark-pipe" or "--benchmark-token"))
                 {
                     throw new ArgumentException($"Unknown GPU auto-affinity Gate A option '{token}'.");
                 }
@@ -318,14 +316,6 @@ internal static class GpuAutoAffinityGateARunner
             {
                 throw new ArgumentException("--benchmark-token is not a valid 256-bit hexadecimal control token.");
             }
-            if (!uint.TryParse(
-                    Required("--benchmark-pid"),
-                    NumberStyles.None,
-                    CultureInfo.InvariantCulture,
-                    out var benchmarkPid) || benchmarkPid == 0)
-            {
-                throw new ArgumentException("--benchmark-pid must be a positive process ID.");
-            }
 
             var repoRoot = Path.GetFullPath(Required("--repo-root"));
             if (!Directory.Exists(repoRoot) || !File.Exists(Path.Combine(repoRoot, "LatencyPilot.slnx")))
@@ -339,8 +329,7 @@ internal static class GpuAutoAffinityGateARunner
                 Path.GetFullPath(Required("--output")),
                 sessionId,
                 Required("--benchmark-pipe"),
-                benchmarkToken,
-                benchmarkPid);
+                benchmarkToken);
         }
     }
 }
