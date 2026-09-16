@@ -73,7 +73,6 @@ public sealed partial class MainWindow
                 }
                 UpdateDashboardBaselineVisuals();
             }));
-
     }
 
     private void DashboardScenarioComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -161,7 +160,6 @@ public sealed partial class MainWindow
         {
             _snapshotEvidenceCard.Visibility = Visibility.Collapsed;
         }
-
     }
 
     private void RenderDashboardDeviceContext(LatencyPilot.Core.Devices.DeviceInventorySnapshot inventory)
@@ -179,6 +177,7 @@ public sealed partial class MainWindow
 
     private void RenderDashboardCapture(KernelLatencyCaptureResponse capture)
     {
+        UpdateOverviewEvidenceVisibility(hasSnapshot: true);
         DpcP99SummaryText.Text = FormatMicroseconds(capture.Dpc.P99Microseconds);
         IsrP99SummaryText.Text = FormatMicroseconds(capture.Isr.P99Microseconds);
         DpcP99SummaryDetailText.Text = capture.Dpc.P999Microseconds is null
@@ -286,14 +285,15 @@ public sealed partial class MainWindow
         IsrP99SummaryDetailText.Text = "Latest capture";
         CpuConcentrationSummaryText.Text = "—";
         CpuConcentrationSummaryDetailText.Text = "Busiest observed CPU";
-        RecentSnapshotStatusText.Text = "No snapshot captured yet";
+        RecentSnapshotStatusText.Text = "No snapshot yet";
         RecentSnapshotStatusText.Foreground = ThemeBrush("TextBrush");
-        RecentSnapshotSummaryText.Text = "Take a quick snapshot to reveal the current tail, CPU concentration, and dominant modules.";
+        RecentSnapshotSummaryText.Text = "Take a quick snapshot to reveal the current tail and interrupt concentration.";
         LatencyProfileChart.Clear("Capture evidence to reveal the latency profile.");
         CpuDistributionChart.Clear("Capture evidence to see where interrupt work concentrates.");
         ModuleContributionChart.Clear("Capture evidence to rank kernel modules by observed time.");
         CpuInterruptMap.Clear("Capture evidence to compare DPC and ISR intensity by processor.");
         LatencyChartSubtitleText.Text = "Latest DPC / ISR percentile shape";
+        UpdateOverviewEvidenceVisibility(hasSnapshot: false);
     }
 
     private void UpdateDashboardBaselineVisuals()
@@ -301,11 +301,11 @@ public sealed partial class MainWindow
         var verdict = BaselineVerdictText.Text ?? "Not captured";
         BaselineSummaryText.Text = verdict;
         BaselineStatusText.Visibility = verdict == "Not captured" ? Visibility.Collapsed : Visibility.Visible;
-        BaselineSummaryIcon.Glyph = verdict switch
+        BaselineSummaryIcon.Symbol = verdict switch
         {
-            "Valid" => "\uE73E",
-            "Inconclusive" => "\uE7BA",
-            _ => "\uE823",
+            "Valid" => Symbol.Accept,
+            "Inconclusive" => Symbol.Important,
+            _ => Symbol.Clock,
         };
         BaselineSummaryText.Foreground = ThemeBrush(verdict.Equals("Valid", StringComparison.OrdinalIgnoreCase)
             ? "SuccessBrush"
@@ -324,15 +324,18 @@ public sealed partial class MainWindow
 
         if (BaselineWindowsList.ItemsSource is not IEnumerable<BaselineWindowRow> rows)
         {
+            UpdateOverviewEvidenceVisibility(_lastPremiumCapture is not null);
             return;
         }
 
         var materialized = rows.ToArray();
         if (materialized.Length == 0)
         {
+            UpdateOverviewEvidenceVisibility(_lastPremiumCapture is not null);
             return;
         }
 
+        UpdateOverviewEvidenceVisibility(hasSnapshot: true);
         var labels = materialized.Select(static (row, index) => $"W{index + 1}").ToArray();
         var dpc = materialized
             .Select(static (row, index) => new ChartPoint($"Window {index + 1} DPC p99", ParseP99(row.DpcSummary)))
@@ -349,6 +352,14 @@ public sealed partial class MainWindow
                 $"Baseline stability across {materialized.Length} captured window(s), plotted from each real DPC p99 and ISR p99 value.");
             LatencyChartSubtitleText.Text = "Baseline stability · p99 across real windows";
         }
+    }
+
+    private void UpdateOverviewEvidenceVisibility(bool hasSnapshot)
+    {
+        var hasBaseline = BaselineWindowsList.ItemsSource is IEnumerable<BaselineWindowRow> rows && rows.Any();
+        var showEvidence = hasSnapshot || hasBaseline;
+        OverviewEmptyState.Visibility = showEvidence ? Visibility.Collapsed : Visibility.Visible;
+        OverviewDataContent.Visibility = showEvidence ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static double? ParseP99(string summary)
@@ -375,5 +386,4 @@ public sealed partial class MainWindow
             ? value
             : null;
     }
-
 }
