@@ -37,23 +37,23 @@
             <SolidColorBrush x:Key="ChartAccentTertiaryBrush" Color="#FF8CC7F5" />
             <SolidColorBrush x:Key="ChartWarmBrush" Color="#FFD97706" />
             <SolidColorBrush x:Key="ChartCellBrush" Color="#FF2B88D8" />
-            <SolidColorBrush x:Key="ChartPrimarySoftBrush" Color="#FF7656E8" Opacity="0.12" />
-            <SolidColorBrush x:Key="ChartWarmSoftBrush" Color="#FFD97706" Opacity="0.12" />
+            <SolidColorBrush x:Key="ChartPrimarySoftBrush" Color="#FF7656E8" Opacity="0.10" />
+            <SolidColorBrush x:Key="ChartWarmSoftBrush" Color="#FFD97706" Opacity="0.10" />
 
             <SolidColorBrush x:Key="AccentBrush" Color="{ThemeResource SystemAccentColor}" />
             <SolidColorBrush x:Key="AccentHoverBrush" Color="{ThemeResource SystemAccentColor}" />
             <SolidColorBrush x:Key="AccentSoftBrush"
                              Color="{ThemeResource SystemAccentColor}"
-                             Opacity="0.12" />
+                             Opacity="0.10" />
             <SolidColorBrush x:Key="AccentSofterBrush"
                              Color="{ThemeResource SystemAccentColor}"
-                             Opacity="0.07" />
+                             Opacity="0.06" />
             <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFFFF" />
 
             <SolidColorBrush x:Key="SuccessBrush" Color="#FF0F7B0F" />
             <SolidColorBrush x:Key="SuccessSoftBrush" Color="#FF0F7B0F" Opacity="0.10" />
             <StaticResource x:Key="WarningBrush" ResourceKey="SystemFillColorCautionBrush" />
-            <SolidColorBrush x:Key="WarningSoftBrush" Color="#FFF9A825" Opacity="0.12" />
+            <SolidColorBrush x:Key="WarningSoftBrush" Color="#FFF9A825" Opacity="0.10" />
             <SolidColorBrush x:Key="ImpactBrush" Color="#FFC65D00" />
             <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FFC65D00" Opacity="0.10" />
             <SolidColorBrush x:Key="DangerBrush" Color="#FFC42B1C" />
@@ -73,7 +73,7 @@
             <SolidColorBrush x:Key="NavigationBrush" Color="#00000000" />
             <SolidColorBrush x:Key="NavigationSelectedBrush"
                              Color="{ThemeResource SystemAccentColor}"
-                             Opacity="0.16" />
+                             Opacity="0.14" />
             <StaticResource x:Key="NavigationIconBrush" ResourceKey="TextFillColorSecondaryBrush" />
             <StaticResource x:Key="TextBrush" ResourceKey="TextFillColorPrimaryBrush" />
             <StaticResource x:Key="MutedTextBrush" ResourceKey="TextFillColorSecondaryBrush" />
@@ -88,27 +88,27 @@
             <SolidColorBrush x:Key="ChartAccentTertiaryBrush" Color="#FF75B6E7" />
             <SolidColorBrush x:Key="ChartWarmBrush" Color="#FFF2C94C" />
             <SolidColorBrush x:Key="ChartCellBrush" Color="#FF60CDFF" />
-            <SolidColorBrush x:Key="ChartPrimarySoftBrush" Color="#FFA78BFA" Opacity="0.16" />
-            <SolidColorBrush x:Key="ChartWarmSoftBrush" Color="#FFF2C94C" Opacity="0.14" />
+            <SolidColorBrush x:Key="ChartPrimarySoftBrush" Color="#FFA78BFA" Opacity="0.14" />
+            <SolidColorBrush x:Key="ChartWarmSoftBrush" Color="#FFF2C94C" Opacity="0.12" />
 
             <SolidColorBrush x:Key="AccentBrush" Color="{ThemeResource SystemAccentColor}" />
             <SolidColorBrush x:Key="AccentHoverBrush" Color="{ThemeResource SystemAccentColor}" />
             <SolidColorBrush x:Key="AccentSoftBrush"
                              Color="{ThemeResource SystemAccentColor}"
-                             Opacity="0.18" />
+                             Opacity="0.15" />
             <SolidColorBrush x:Key="AccentSofterBrush"
                              Color="{ThemeResource SystemAccentColor}"
-                             Opacity="0.10" />
+                             Opacity="0.08" />
             <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFFFF" />
 
             <SolidColorBrush x:Key="SuccessBrush" Color="#FF6CCB5F" />
             <SolidColorBrush x:Key="SuccessSoftBrush" Color="#FF6CCB5F" Opacity="0.12" />
             <StaticResource x:Key="WarningBrush" ResourceKey="SystemFillColorCautionBrush" />
-            <SolidColorBrush x:Key="WarningSoftBrush" Color="#FFFCE100" Opacity="0.12" />
+            <SolidColorBrush x:Key="WarningSoftBrush" Color="#FFFCE100" Opacity="0.10" />
             <SolidColorBrush x:Key="ImpactBrush" Color="#FFFFA54F" />
-            <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FFFFA54F" Opacity="0.12" />
+            <SolidColorBrush x:Key="ImpactSoftBrush" Color="#FFFFA54F" Opacity="0.10" />
             <SolidColorBrush x:Key="DangerBrush" Color="#FFFF99A4" />
-            <SolidColorBrush x:Key="DangerSoftBrush" Color="#FFFF99A4" Opacity="0.12" />
+            <SolidColorBrush x:Key="DangerSoftBrush" Color="#FFFF99A4" Opacity="0.10" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="HighContrast">
@@ -168,36 +168,29 @@
     <x:Double x:Key="FontBody">14</x:Double>
     <x:Double x:Key="FontSection">16</x:Double>
     <x:Double x:Key="FontHeading">20</x:Double>
-    <x:Double x:Key="FontMetric">28</x:Double>
-    <x:Double x:Key="FontHero">28</x:Double>
+    <x:Double x:Key="FontMetric">26</x:Double>
+    <x:Double x:Key="FontHero">26</x:Double>
 
     <x:Double x:Key="ControlHeight">36</x:Double>
-    <x:Double x:Key="TitleBarHeight">52</x:Double>
+    <x:Double x:Key="TitleBarHeight">48</x:Double>
     <x:Double x:Key="InitialWindowWidth">1664</x:Double>
     <x:Double x:Key="InitialWindowHeight">936</x:Double>
     <x:Double x:Key="ContentMaxWidth">1600</x:Double>
-    <GridLength x:Key="NavigationRailWidth">176</GridLength>
-    <GridLength x:Key="ContextPanelWidth">244</GridLength>
-    <x:Double x:Key="ChartMinHeight">204</x:Double>
-    <x:Double x:Key="DashboardGap">16</x:Double>
+    <x:Double x:Key="ChartMinHeight">196</x:Double>
+    <x:Double x:Key="DashboardGap">14</x:Double>
 
     <!-- Layout thresholds are effective content widths, independent of display scaling. -->
-    <GridLength x:Key="NavigationCompactWidth">64</GridLength>
-    <x:Double x:Key="NavigationExpandedThreshold">1460</x:Double>
-    <x:Double x:Key="ContextVisibleThreshold">1220</x:Double>
     <x:Double x:Key="HeaderInlineThreshold">980</x:Double>
     <x:Double x:Key="MetricsFourColumnThreshold">900</x:Double>
     <x:Double x:Key="ChartsTwoColumnThreshold">760</x:Double>
     <x:Double x:Key="PreparationTwoColumnThreshold">1040</x:Double>
-    <x:Double x:Key="SystemArtworkHeight">132</x:Double>
-    <x:Double x:Key="ChartPlotHeight">168</x:Double>
-    <x:Double x:Key="ChartCompactPlotHeight">144</x:Double>
+    <x:Double x:Key="ChartPlotHeight">164</x:Double>
+    <x:Double x:Key="ChartCompactPlotHeight">140</x:Double>
     <x:Double x:Key="ChartPlotMinHeight">120</x:Double>
-    <x:Double x:Key="MetricCardMinHeight">112</x:Double>
-    <x:Double x:Key="MetricIconSize">36</x:Double>
+    <x:Double x:Key="MetricCardMinHeight">104</x:Double>
+    <x:Double x:Key="MetricIconSize">34</x:Double>
     <Thickness x:Key="WorkspaceMargin">0,8,16,8</Thickness>
-    <Thickness x:Key="ChartCardPadding">16,14</Thickness>
-    <Thickness x:Key="NavigationItemPadding">12,8</Thickness>
+    <Thickness x:Key="ChartCardPadding">14,13</Thickness>
 
     <CornerRadius x:Key="RadiusSmall">4</CornerRadius>
     <CornerRadius x:Key="RadiusMedium">8</CornerRadius>
@@ -205,10 +198,10 @@
     <CornerRadius x:Key="RadiusXLarge">12</CornerRadius>
     <CornerRadius x:Key="RadiusPill">999</CornerRadius>
 
-    <Thickness x:Key="PagePadding">20,18,24,24</Thickness>
-    <Thickness x:Key="CardPadding">16</Thickness>
-    <Thickness x:Key="CompactCardPadding">12</Thickness>
-    <Thickness x:Key="MetricTilePadding">14,12</Thickness>
+    <Thickness x:Key="PagePadding">20,16,24,24</Thickness>
+    <Thickness x:Key="CardPadding">14</Thickness>
+    <Thickness x:Key="CompactCardPadding">10</Thickness>
+    <Thickness x:Key="MetricTilePadding">12,10</Thickness>
     <Thickness x:Key="ButtonPadding">14,7</Thickness>
-    <Thickness x:Key="PillPadding">9,4</Thickness>
+    <Thickness x:Key="PillPadding">8,3</Thickness>
 </ResourceDictionary>
