@@ -14,5 +14,6 @@ public sealed partial class MainWindow
         ApplyBuildProvenanceUi();
         InitializeMeasurementReadinessExperience();
         InitializeBaselineProgressExperience();
+        InitializePremiumOverviewExperience();
     }
 }
