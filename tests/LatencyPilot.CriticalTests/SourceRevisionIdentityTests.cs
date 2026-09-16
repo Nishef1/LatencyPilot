@@ -154,6 +154,18 @@ public sealed class SourceRevisionIdentityTests
             cancellationCatchSource,
             "await TryReportTerminalAsync(");
 
+        var finallyStart = gateARunnerSource.IndexOf("finally", failureCatchStart, StringComparison.Ordinal);
+        Assert.IsTrue(
+            finallyStart > failureCatchStart,
+            "Gate A failure terminal path could not be located.");
+        var failureCatchSource = gateARunnerSource[failureCatchStart..finallyStart];
+        StringAssert.Contains(
+            failureCatchSource,
+            "await TryWriteTerminalReportAsync(options.OutputPath, fallback)");
+        StringAssert.Contains(
+            failureCatchSource,
+            "await TryReportTerminalAsync(");
+
         var gateABackendSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "tools",
