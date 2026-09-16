@@ -21,6 +21,11 @@ public sealed partial class MainWindow
 
     internal void InitializeGateAValidationExperience()
     {
+        if (_gateAValidationButton is not null)
+        {
+            return;
+        }
+
         _gateARepositoryRoot = TryFindRepositoryRoot();
         if (!IsDevelopmentGateAAvailable(_gateARepositoryRoot))
         {

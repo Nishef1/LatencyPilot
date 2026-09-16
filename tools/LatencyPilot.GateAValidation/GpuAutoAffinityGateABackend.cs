@@ -538,7 +538,39 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                    stream,
                    JsonOptions,
                    cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidDataException("GPU benchmark trial artifact is empty.");
+            is { } artifact
+            ? EnsureArtifactShape(artifact)
+            : throw new InvalidDataException("GPU benchmark trial artifact is empty.");
+    }
+
+    private static GpuBenchmarkTrialArtifact EnsureArtifactShape(GpuBenchmarkTrialArtifact artifact)
+    {
+        if (artifact.FrozenWorkload is null)
+        {
+            throw new InvalidDataException(
+                "GPU benchmark trial artifact is missing its frozen workload identity.");
+        }
+
+        if (artifact.FrozenWorkload.WorkerMap is null || artifact.FrozenWorkload.WorkerMap.Count == 0)
+        {
+            throw new InvalidDataException(
+                "GPU benchmark trial artifact is missing its frozen worker map.");
+        }
+
+        if (artifact.Frames is null || artifact.Frames.Count == 0)
+        {
+            throw new InvalidDataException(
+                "GPU benchmark trial artifact is missing frame evidence.");
+        }
+
+        if (artifact.WorkerChecksums is null ||
+            artifact.WorkerChecksums.Count != artifact.FrozenWorkload.WorkerMap.Count)
+        {
+            throw new InvalidDataException(
+                "GPU benchmark trial artifact has incomplete worker checksum evidence.");
+        }
+
+        return artifact;
     }
 
     private List<string> ValidateTrial(

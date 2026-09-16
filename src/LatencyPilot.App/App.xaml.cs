@@ -43,7 +43,6 @@ public partial class App : Application
             mainWindow.InitializeWindowChrome();
             mainWindow.InitializeDashboardVisuals();
             mainWindow.InitializeDashboardCaptureSync();
-            mainWindow.InitializeGateAValidationExperience();
             _window = mainWindow;
             _window.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
             mainWindow.SetInitialWindowSize();

@@ -19,6 +19,25 @@ public sealed class GateAUiContractTests
             startupHardeningSource,
             "InitializeGateAValidationExperience();",
             "The development Gate A surface must be initialized from the post-XAML startup seam or its card remains collapsed and its button is never created.");
+        StringAssert.Contains(
+            File.ReadAllText(Path.Combine(
+                repositoryRoot,
+                "src",
+                "LatencyPilot.App",
+                "GateAValidationExperience.cs")),
+            "if (_gateAValidationButton is not null)",
+            "Gate A startup must be idempotent so a future startup call cannot create duplicate controls or handlers.");
+
+        var appSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "App.xaml.cs"));
+        Assert.AreEqual(
+            1,
+            CountOccurrences(startupHardeningSource, "InitializeGateAValidationExperience();") +
+                CountOccurrences(appSource, "InitializeGateAValidationExperience();"),
+            "The Gate A surface must be initialized exactly once; duplicate startup initialization creates duplicate controls and handlers.");
 
         var gateASource = File.ReadAllText(Path.Combine(
             repositoryRoot,
@@ -41,5 +60,16 @@ public sealed class GateAUiContractTests
         }
 
         throw new DirectoryNotFoundException("LatencyPilot repository root could not be resolved from the test output directory.");
+    }
+
+    private static int CountOccurrences(string source, string value)
+    {
+        var count = 0;
+        for (var index = 0; (index = source.IndexOf(value, index, StringComparison.Ordinal)) >= 0; index += value.Length)
+        {
+            count++;
+        }
+
+        return count;
     }
 }

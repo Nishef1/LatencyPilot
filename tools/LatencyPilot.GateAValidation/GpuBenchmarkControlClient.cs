@@ -80,13 +80,25 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
         }
         catch
         {
-            if (client is not null)
+            try
             {
-                await client.DisposeAsync().ConfigureAwait(false);
+                if (client is not null)
+                {
+                    await client.DisposeAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    pipe.Dispose();
+                }
             }
-            else
+            catch (Exception cleanupException) when (
+                cleanupException is IOException or
+                InvalidOperationException or
+                OperationCanceledException or
+                ObjectDisposedException)
             {
-                pipe.Dispose();
+                // Preserve the handshake/connection failure. A disconnected or
+                // half-open pipe must never replace it with a cleanup exception.
             }
 
             throw;
@@ -156,9 +168,24 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
             }
         }
 
-        await writer.DisposeAsync().ConfigureAwait(false);
-        reader.Dispose();
-        pipe.Dispose();
+        try
+        {
+            await writer.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            InvalidOperationException or
+            OperationCanceledException or
+            ObjectDisposedException)
+        {
+            // The benchmark may already have closed the pipe after reporting a
+            // failure. Disposal is best effort and must not mask the session result.
+        }
+        finally
+        {
+            reader.Dispose();
+            pipe.Dispose();
+        }
     }
 
     private async Task WriteCommandAsync(

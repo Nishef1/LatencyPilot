@@ -135,6 +135,15 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(gateARunnerSource, "benchmark.StopAsync(deadline.Token)");
         StringAssert.Contains(gateARunnerSource, "safe = IsVerifiedOriginalTerminalState(stoppedReport);");
         StringAssert.Contains(gateARunnerSource, "safe = IsVerifiedOriginalTerminalState(fallback);");
+        StringAssert.Contains(gateARunnerSource, "var stage = \"argument parsing\";");
+        StringAssert.Contains(
+            gateARunnerSource,
+            "Gate A failed during {stage}: {exception}",
+            "Gate A failure reports must preserve the execution stage and full exception details for native/runtime diagnosis.");
+        StringAssert.Contains(
+            benchmarkControlClientSource,
+            "Preserve the handshake/connection failure.",
+            "Benchmark pipe cleanup must not replace the original connection or handshake failure.");
 
         var cancellationCatchStart = gateARunnerSource.IndexOf(
             "catch (OperationCanceledException)",

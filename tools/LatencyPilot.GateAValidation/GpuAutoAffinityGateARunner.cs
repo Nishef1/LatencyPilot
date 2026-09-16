@@ -35,12 +35,15 @@ internal static class GpuAutoAffinityGateARunner
         CancellationTokenSource? sessionCancellation = null;
         CancellationTokenSource? watcherShutdown = null;
         Task? cancelWatcher = null;
+        var stage = "argument parsing";
         try
         {
             options = AutoOptions.Parse(args);
+            stage = "administrator and exact-source preflight";
             EnsureAdministrator();
             await VerifyCleanExactSourceAsync(options).ConfigureAwait(false);
 
+            stage = "mutation-journal and GPU-target preflight";
             var journal = new MutationJournal(MutationJournal.GetDefaultDatabasePath());
             journal.Initialize();
             var unresolvedBefore = MutationJournalReadOnlyInspector.GetUnresolved(
@@ -98,11 +101,13 @@ internal static class GpuAutoAffinityGateARunner
                 options.SessionId,
                 options.ProgressPath,
                 progressPlan);
+            stage = "Gate A progress initialization";
             await progress.ReportInitializingAsync(
                 "Preparing the benchmark-backed GPU affinity session.").ConfigureAwait(false);
 
             sessionCancellation = new CancellationTokenSource();
             watcherShutdown = new CancellationTokenSource();
+            stage = "benchmark control handshake";
             cancelWatcher = WatchCancellationAsync(
                 options.CancelPath,
                 progress,
@@ -114,6 +119,7 @@ internal static class GpuAutoAffinityGateARunner
                 options.SessionId,
                 options.BenchmarkToken,
                 sessionCancellation.Token).ConfigureAwait(false);
+            stage = "Gate A backend initialization";
             rawBackend = new GpuAutoAffinityGateABackend(
                 target[0].InstanceId,
                 options.ExpectedCommit,
@@ -127,6 +133,7 @@ internal static class GpuAutoAffinityGateARunner
                     "GPU affinity state changed during Gate A startup before any owned mutation began.");
             }
 
+            stage = "GPU candidate search and confirmation";
             var reportingBackend = new ProgressReportingGpuAutoAffinityBackend(rawBackend, progress);
             var shuffleSeed = RandomNumberGenerator.GetInt32(int.MaxValue);
             var request = new GpuAutoAffinitySessionRequest(
@@ -150,6 +157,7 @@ internal static class GpuAutoAffinityGateARunner
 
             var session = new GpuAutoAffinitySession(reportingBackend, reportingBackend);
             var result = await session.RunAsync(request, sessionCancellation.Token).ConfigureAwait(false);
+            stage = "final stop and report verification";
             await TryStopBenchmarkAsync(benchmark).ConfigureAwait(false);
 
             var unresolvedAfter = MutationJournalReadOnlyInspector.GetUnresolved(
@@ -230,7 +238,7 @@ internal static class GpuAutoAffinityGateARunner
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"{exception.GetType().Name}: {exception.Message}");
+            Console.Error.WriteLine($"Gate A failed during {stage}: {exception}");
             await TryStopBenchmarkAsync(benchmark).ConfigureAwait(false);
             var safe = await VerifyStoppedStateAsync(rawBackend, preMutationOriginalState).ConfigureAwait(false);
             if (options is not null)
@@ -247,7 +255,7 @@ internal static class GpuAutoAffinityGateARunner
                     null,
                     FinalStateVerified: safe,
                     OriginalStateRestored: safe,
-                    [$"{exception.GetType().Name}: {exception.Message}"],
+                    [$"Gate A failed during {stage}: {exception}"],
                     Provenance: rawBackend?.ReportProvenance);
                 fallback = TryCompleteReport(rawBackend, fallback);
                 safe = IsVerifiedOriginalTerminalState(fallback);
