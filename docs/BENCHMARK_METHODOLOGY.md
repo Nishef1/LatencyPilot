@@ -195,6 +195,8 @@ A benchmark trial requires stable source/GPU/driver/topology/benchmark-process/f
 
 Because applying a GPU interrupt-affinity candidate restarts the display adapter, the controlled benchmark recreates its D3D12 renderer before every trial while preserving the same process, frozen workload, worker map and seed. This prevents a stale `DXGI_ERROR_DEVICE_REMOVED` renderer from being mistaken for benchmark evidence failure.
 
+PresentMon's numeric graphics-device identifier is query-local and may be reassigned when the display adapter is restarted. It is retained for the per-capture PresentMon correlation, but it is not part of the durable GPU identity or cross-trial continuity key. Cross-trial identity uses the exact PnP device instance together with the DXGI LUID; a change in either remains a hard invalidation.
+
 `latencypilot-gpu-benchmark-v1` is repeated **whole-run** evidence. It is not `baseline-quality-v2` five-window RealWorld evidence and must never be converted into that schema merely to reuse an eligibility gate.
 
 ## 9. GPU effective ISR-placement validity

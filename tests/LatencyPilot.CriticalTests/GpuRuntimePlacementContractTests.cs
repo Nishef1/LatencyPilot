@@ -223,11 +223,21 @@ public sealed class GpuRuntimePlacementContractTests
             {
                 AwakeTime = new SystemAwakeTimeSnapshot(36_000, 310_000_000),
             }).IsStable);
-        Assert.IsFalse(GpuOptimizationCaptureContinuity.Evaluate(
+        Assert.IsTrue(GpuOptimizationCaptureContinuity.Evaluate(
             stableContext,
             laterContext with
             {
                 GraphicsTarget = laterContext.GraphicsTarget with { PresentMonDeviceId = 8 },
+            }).IsStable);
+
+        Assert.IsFalse(GpuOptimizationCaptureContinuity.Evaluate(
+            stableContext,
+            laterContext with
+            {
+                GraphicsTarget = laterContext.GraphicsTarget with
+                {
+                    Luid = new GraphicsAdapterLuid(0xDEADBEEF, 0x10203040),
+                },
             }).IsStable);
 
         var backend = new RejectingGraphicsPreflightBackend();

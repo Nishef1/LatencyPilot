@@ -151,10 +151,9 @@ internal static class GpuOptimizationCaptureContinuity
                 before.GraphicsTarget.DeviceInstanceId,
                 after.GraphicsTarget.DeviceInstanceId,
                 StringComparison.OrdinalIgnoreCase) ||
-            before.GraphicsTarget.Luid != after.GraphicsTarget.Luid ||
-            before.GraphicsTarget.PresentMonDeviceId != after.GraphicsTarget.PresentMonDeviceId)
+            before.GraphicsTarget.Luid != after.GraphicsTarget.Luid)
         {
-            reasons.Add("The target GPU identity or PresentMon/DXGI correlation changed during capture.");
+            reasons.Add("The target GPU PnP or DXGI identity changed during capture.");
         }
 
         return new GpuOptimizationCaptureContinuityResult(

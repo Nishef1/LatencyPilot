@@ -456,7 +456,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             artifact.FrozenWorkload.Seed);
         var gpuIdentity = string.Create(
             CultureInfo.InvariantCulture,
-            $"{continuityBefore.GraphicsTarget.DeviceInstanceId}|{continuityBefore.GraphicsTarget.Luid}|pm:{continuityBefore.GraphicsTarget.PresentMonDeviceId}");
+            $"{continuityBefore.GraphicsTarget.DeviceInstanceId}|{continuityBefore.GraphicsTarget.Luid}");
         var evidence = new GpuBenchmarkEvidence(
             GpuBenchmarkEvidence.SchemaId,
             sourceRevisionId,
