@@ -5,7 +5,8 @@ namespace LatencyPilot.Benchmarking.Optimization;
 
 public sealed class GpuAutoAffinityProgressPlan
 {
-    private const int ControlTrialCount = 2;
+    private const int ControlWarmupCount = 1;
+    private const int DecisionControlTrialCount = 2;
     private const int TrialsPerCandidate = 2;
     private const int ConfirmationTrialCount = 8;
     private readonly IReadOnlyDictionary<int, int> refinementCandidateCounts;
@@ -68,7 +69,8 @@ public sealed class GpuAutoAffinityProgressPlan
     }
 
     private int GetBaseTotalUnits() =>
-        ControlTrialCount +
+        ControlWarmupCount +
+        DecisionControlTrialCount +
         (PhysicalCandidateCount * TrialsPerCandidate) +
         ConfirmationTrialCount;
 }

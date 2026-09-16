@@ -44,9 +44,9 @@ public sealed class GpuAutoAffinitySessionTests
         var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets: null);
         Assert.AreEqual(2, progressPlan.PhysicalCandidateCount);
         Assert.AreEqual(2, progressPlan.MaximumRefinementCandidateCount);
-        Assert.AreEqual(18, progressPlan.InitialTotalUnits);
+        Assert.AreEqual(19, progressPlan.InitialTotalUnits);
         Assert.AreEqual(2, progressPlan.GetRefinementCandidateCount(0));
-        Assert.AreEqual(18, progressPlan.GetTotalUnitsForFinalist(1));
+        Assert.AreEqual(19, progressPlan.GetTotalUnitsForFinalist(1));
 
         var nonSmtTopology = new ProcessorTopologySnapshot(
             [new ProcessorPackageSnapshot(0, [new LogicalProcessorId(0, 0)])],
@@ -57,8 +57,8 @@ public sealed class GpuAutoAffinitySessionTests
             [new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0d)],
             cpuSets: null);
         Assert.AreEqual(1, nonSmtProgressPlan.MaximumRefinementCandidateCount);
-        Assert.AreEqual(14, nonSmtProgressPlan.InitialTotalUnits);
-        Assert.AreEqual(14, nonSmtProgressPlan.GetTotalUnitsForFinalist(0));
+        Assert.AreEqual(15, nonSmtProgressPlan.InitialTotalUnits);
+        Assert.AreEqual(15, nonSmtProgressPlan.GetTotalUnitsForFinalist(0));
 
         var boundedCores = Enumerable.Range(0, 8)
             .Select(index => new ProcessorCoreSnapshot(
@@ -114,7 +114,7 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.AreEqual(new LogicalProcessorId(0, 3), result.Finalist.Processor);
         Assert.AreEqual(GpuAutoAffinityReport.SchemaId, result.Report.Schema);
         Assert.AreEqual(request.ShuffleSeed, result.Report.ShuffleSeed);
-        Assert.IsTrue(result.Report.Trials.Count >= 2 + 4 + 4 + 8);
+        Assert.IsTrue(result.Report.Trials.Count >= 3 + 4 + 4 + 8);
         Assert.IsTrue(result.Report.FinalStateVerified);
         Assert.IsFalse(result.Report.OriginalStateRestored);
         Assert.IsTrue(backend.Events.Contains("keep:0:3"));
@@ -181,6 +181,7 @@ public sealed class GpuAutoAffinitySessionTests
         bool failKeepPreflight = false) : IGpuAutoAffinitySessionBackend
     {
         private int captureSequence;
+        private int originalControlSequence;
         private bool cancelled;
         private readonly Dictionary<Guid, GpuAffinityCandidate> active = [];
         private Guid? keptExperimentId;
@@ -194,7 +195,9 @@ public sealed class GpuAutoAffinitySessionTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Events.Add($"control:{request.Phase}:{request.RunNumber}");
-            return Task.FromResult(CreateObservation(request, null, 10d));
+            var controlSequence = Interlocked.Increment(ref originalControlSequence);
+            var frameTime = controlSequence == 1 ? 13d : 10d;
+            return Task.FromResult(CreateObservation(request, null, frameTime));
         }
 
         public Task<Guid> ApplyCandidateAsync(

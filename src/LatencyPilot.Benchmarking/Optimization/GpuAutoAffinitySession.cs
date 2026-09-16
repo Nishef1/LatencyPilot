@@ -124,6 +124,23 @@ public sealed class GpuAutoAffinitySession
         try
         {
             var controls = new List<GpuAutoAffinityTrialObservation>(2);
+
+            // Let the freshly started benchmark settle before selecting the
+            // decision-grade control reference. Startup/render-pipeline work
+            // can make the first whole-run capture a legitimate but
+            // non-representative outlier; using it as the reference would
+            // make the bounded control-drift retry unable to recover.
+            await CaptureAcceptedAsync(
+                () => ++nextRunNumber,
+                "screening-control",
+                GpuConfirmationOrder.Original,
+                null,
+                request.ScreeningDuration,
+                null,
+                null,
+                trialReports,
+                cancellationToken).ConfigureAwait(false);
+
             GpuBenchmarkEvidence? reference = null;
             for (var pass = 0; pass < 2; pass++)
             {

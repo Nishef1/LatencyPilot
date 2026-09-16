@@ -238,7 +238,9 @@ internal sealed class GpuGateAProgressFile
         if (string.Equals(request.Phase, "screening-control", StringComparison.Ordinal))
         {
             screeningControlPassesStarted++;
-            return $"Original control pass {screeningControlPassesStarted} / 2.";
+            return screeningControlPassesStarted == 1
+                ? "Original warm-up control; not used as the decision reference."
+                : $"Original decision control {screeningControlPassesStarted - 1} / 2.";
         }
 
         if (string.Equals(request.Phase, "confirmation", StringComparison.Ordinal))
