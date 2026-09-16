@@ -5,11 +5,9 @@ using LatencyPilot.Core.System;
 namespace LatencyPilot.GpuBenchmark;
 
 internal sealed record FrozenBenchmarkWorkload(int CommandBatchesPerWorker, int SimulationIterationsPerWorker, IReadOnlyList<LogicalProcessorId> WorkerMap, int Seed, int Width, int Height);
-internal sealed record BenchmarkTrialArtifact(string Schema, Guid SessionId, DateTimeOffset StartedAtUtc, DateTimeOffset EndedAtUtc, string Adapter, string PresentMode, ulong GpuTimestampFrequency, FrozenBenchmarkWorkload FrozenWorkload, IReadOnlyList<BenchmarkFrameTelemetry> Frames, IReadOnlyList<ulong> WorkerChecksums);
 
 internal sealed class BenchmarkWorkload
 {
-    private const string ArtifactSchema = "latencypilot-gpu-benchmark-v1";
     private const int MinimumCommandBatches = 1;
     private const int MaximumCommandBatches = 4096;
     private const int MinimumSimulationIterations = 1_000;
@@ -82,13 +80,13 @@ internal sealed class BenchmarkWorkload
             options.Height));
     }
 
-    internal Task<BenchmarkTrialArtifact> RunTrialAsync(
+    internal Task<GpuBenchmarkTrialArtifact> RunTrialAsync(
         D3D12BenchmarkRenderer renderer,
         FrozenBenchmarkWorkload workload,
         CancellationToken cancellationToken = default) =>
         RunTrialAsync(renderer, workload, options.Duration, cancellationToken);
 
-    internal Task<BenchmarkTrialArtifact> RunTrialAsync(
+    internal Task<GpuBenchmarkTrialArtifact> RunTrialAsync(
         D3D12BenchmarkRenderer renderer,
         FrozenBenchmarkWorkload workload,
         TimeSpan duration,
@@ -135,16 +133,25 @@ internal sealed class BenchmarkWorkload
             throw new InvalidDataException("Benchmark trial completed without any frame evidence.");
         }
 
-        return Task.FromResult(new BenchmarkTrialArtifact(
-            ArtifactSchema,
+        return Task.FromResult(new GpuBenchmarkTrialArtifact(
+            GpuBenchmarkTrialArtifact.SchemaId,
             options.SessionId,
             startedAtUtc,
             DateTimeOffset.UtcNow,
             renderer.AdapterName,
             renderer.PresentMode,
             renderer.TimestampFrequency,
-            workload,
-            frames,
+            new GpuBenchmarkArtifactWorkload(
+                workload.CommandBatchesPerWorker,
+                workload.SimulationIterationsPerWorker,
+                workload.WorkerMap.ToArray(),
+                workload.Seed,
+                workload.Width,
+                workload.Height),
+            frames.Select(static frame => new GpuBenchmarkArtifactFrame(
+                frame.FrameIndex,
+                frame.CpuRecordingMilliseconds,
+                frame.GpuWorkMilliseconds)).ToArray(),
             renderer.CaptureWorkerChecksums()));
     }
 
