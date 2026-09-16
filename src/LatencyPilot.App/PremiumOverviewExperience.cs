@@ -426,8 +426,8 @@ public sealed partial class MainWindow
         if (_premiumSystemSummaryCard is not null)
         {
             _premiumSystemSummaryCard.Padding = new Thickness(14, 11, 14, 11);
-            _premiumSystemSummaryCard.CornerRadius = new CornerRadius(16);
-            _premiumSystemSummaryCard.Background = ThemeBrush("PremiumOverviewQuietBrush");
+            _premiumSystemSummaryCard.CornerRadius = new CornerRadius(20);
+            _premiumSystemSummaryCard.Background = ThemeBrush("GlassRaisedBrush");
             _premiumSystemSummaryCard.BorderBrush = ThemeBrush("PremiumOverviewDividerBrush");
             _premiumSystemSummaryCard.BorderThickness = new Thickness(1);
         }
@@ -443,6 +443,7 @@ public sealed partial class MainWindow
         StyleChartCard(_premiumInterruptMapCard, primary: false);
         StyleContextCard(_premiumRecentCard);
         StyleContextCard(_premiumDeviceCard);
+        ApplyCardElevation();
 
         LatencyProfileChart.Height = 188;
         CpuDistributionChart.Height = 188;
@@ -451,7 +452,7 @@ public sealed partial class MainWindow
 
         OverviewEmptyState.Padding = new Thickness(26);
         OverviewEmptyState.CornerRadius = new CornerRadius(20);
-        OverviewEmptyState.Background = ThemeBrush("PremiumOverviewRaisedBrush");
+        OverviewEmptyState.Background = ThemeBrush("GlassRaisedBrush");
         OverviewEmptyState.BorderBrush = ThemeBrush("PremiumOverviewDividerBrush");
         OverviewEmptyState.BorderThickness = new Thickness(1);
 
@@ -466,8 +467,8 @@ public sealed partial class MainWindow
         }
 
         card.Padding = new Thickness(16, 14, 16, 15);
-        card.CornerRadius = new CornerRadius(18);
-        card.Background = ThemeBrush("PremiumOverviewCardBrush");
+        card.CornerRadius = new CornerRadius(20);
+        card.Background = ThemeBrush("GlassCardBrush");
         card.BorderBrush = ThemeBrush("PremiumOverviewDividerBrush");
         card.BorderThickness = new Thickness(1);
         card.MinHeight = 112;
@@ -485,8 +486,8 @@ public sealed partial class MainWindow
         }
 
         card.Padding = new Thickness(18, 16, 18, 18);
-        card.CornerRadius = new CornerRadius(18);
-        card.Background = ThemeBrush(primary ? "PremiumOverviewRaisedBrush" : "PremiumOverviewCardBrush");
+        card.CornerRadius = new CornerRadius(20);
+        card.Background = ThemeBrush(primary ? "GlassRaisedBrush" : "GlassCardBrush");
         card.BorderBrush = ThemeBrush("PremiumOverviewDividerBrush");
         card.BorderThickness = new Thickness(1);
         card.MinHeight = primary ? 252 : 226;
@@ -500,10 +501,25 @@ public sealed partial class MainWindow
         }
 
         card.Padding = new Thickness(17);
-        card.CornerRadius = new CornerRadius(16);
-        card.Background = ThemeBrush("PremiumOverviewCardBrush");
+        card.CornerRadius = new CornerRadius(20);
+        card.Background = ThemeBrush("GlassCardBrush");
         card.BorderBrush = ThemeBrush("PremiumOverviewDividerBrush");
         card.BorderThickness = new Thickness(1);
+    }
+
+    private void ApplyCardElevation()
+    {
+        CardElevation.Apply(_premiumSystemSummaryCard);
+        CardElevation.Apply(_premiumDpcCard);
+        CardElevation.Apply(_premiumIsrCard);
+        CardElevation.Apply(_premiumCpuCard);
+        CardElevation.Apply(_premiumBaselineCard);
+        CardElevation.Apply(_premiumLatencyCard);
+        CardElevation.Apply(_premiumDistributionCard);
+        CardElevation.Apply(_premiumModuleCard);
+        CardElevation.Apply(_premiumInterruptMapCard);
+        CardElevation.Apply(_premiumRecentCard);
+        CardElevation.Apply(_premiumDeviceCard);
     }
 
     private Border BuildPremiumRecentSnapshotCard()
@@ -624,8 +640,8 @@ public sealed partial class MainWindow
     private Border CreatePremiumCard() => new()
     {
         Padding = new Thickness(17),
-        CornerRadius = new CornerRadius(16),
-        Background = ThemeBrush("PremiumOverviewCardBrush"),
+        CornerRadius = new CornerRadius(20),
+        Background = ThemeBrush("GlassCardBrush"),
         BorderBrush = ThemeBrush("PremiumOverviewDividerBrush"),
         BorderThickness = new Thickness(1),
     };
@@ -717,7 +733,7 @@ public sealed partial class MainWindow
         var foreground = failure ? SemanticFailureBrush : attention ? SemanticAttentionBrush : good ? SemanticGoodBrush : "MutedTextBrush";
         var soft = failure ? "SemanticFailureSoftBrush" : attention ? "SemanticAttentionSoftBrush" : good ? "SemanticGoodSoftBrush" : "PremiumOverviewQuietBrush";
 
-        _premiumBaselineCard.Background = ThemeBrush("PremiumOverviewCardBrush");
+        _premiumBaselineCard.Background = ThemeBrush("GlassCardBrush");
         _premiumBaselineCard.BorderBrush = ThemeBrush("PremiumOverviewDividerBrush");
         _premiumBaselineCard.BorderThickness = new Thickness(1);
         if (_premiumBaselineAccent is not null)

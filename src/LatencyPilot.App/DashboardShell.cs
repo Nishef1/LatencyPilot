@@ -34,6 +34,23 @@ public sealed partial class MainWindow
         ShowDashboardView("overview");
         UpdateServiceStatusVisibility();
         ApplyDashboardLayout();
+        ApplyStaticCardElevation();
+    }
+
+    /// <summary>
+    /// Soft elevation for XAML-declared glass cards. Overview cards are owned by
+    /// the premium overview experience; everything else is elevated here once.
+    /// High Contrast stays flat inside <see cref="CardElevation"/>.
+    /// </summary>
+    private void ApplyStaticCardElevation()
+    {
+        CardElevation.Apply(ServiceStatusCard);
+        CardElevation.Apply(ObservationCard);
+        CardElevation.Apply(DeveloperValidationCard);
+        CardElevation.Apply(SystemInventoryCard);
+        CardElevation.ApplyToChildren(BaselineAnchor);
+        CardElevation.ApplyToChildren(DevicesSummaryGrid);
+        CardElevation.ApplyToChildren(EvidenceMetricGrid);
     }
 
     private void AppNavigationView_SelectionChanged(

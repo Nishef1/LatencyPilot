@@ -68,7 +68,7 @@ public sealed class CpuDistributionChart : UserControl
             : Math.Max(1d, peak * 1.12d);
         var gridBrush = DashboardThemeResources.Brush(this, "ChartGridBrush");
         var mutedBrush = DashboardThemeResources.Brush(this, "MutedTextBrush");
-        var primaryBrush = DashboardThemeResources.Brush(this, "ChartAccentSecondaryBrush");
+        var primaryBrush = DashboardThemeResources.Brush(this, "AccentGradientBrush");
         var tertiaryBrush = DashboardThemeResources.Brush(this, "ChartAccentTertiaryBrush");
 
         for (var index = 0; index < 4; index++)
@@ -125,8 +125,8 @@ public sealed class CpuDistributionChart : UserControl
             {
                 Width = barWidth,
                 Height = barHeight,
-                RadiusX = Math.Min(3d, barWidth / 2d),
-                RadiusY = Math.Min(3d, barWidth / 2d),
+                RadiusX = Math.Min(4d, barWidth / 2d),
+                RadiusY = Math.Min(4d, barWidth / 2d),
                 Fill = Math.Abs(item.Value - peak) < 0.0001d ? primaryBrush : tertiaryBrush,
                 Opacity = Math.Abs(item.Value - peak) < 0.0001d ? 1d : 0.72d,
             };

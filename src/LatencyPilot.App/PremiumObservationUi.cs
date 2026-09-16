@@ -122,7 +122,7 @@ public sealed partial class MainWindow
         var card = new Border
         {
             Padding = new Thickness(16),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(16),
             Background = ThemeBrush("PremiumSurfaceBrush"),
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(1),
@@ -191,7 +191,7 @@ public sealed partial class MainWindow
         var chartCard = new Border
         {
             Padding = new Thickness(14),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(12),
             Background = ThemeBrush("SurfaceAltBrush"),
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(1),

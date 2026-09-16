@@ -114,10 +114,10 @@ public sealed class CpuInterruptMap : UserControl
     {
         var intensity = Math.Clamp(normalized, 0d, 1d);
         var hasActivity = intensity > 0d;
-        var cell = new Grid { MinHeight = 14 };
+        var cell = new Grid { MinHeight = 16 };
         cell.Children.Add(new Border
         {
-            CornerRadius = new CornerRadius(3),
+            CornerRadius = new CornerRadius(6),
             Background = hasActivity
                 ? brush
                 : DashboardThemeResources.Brush(this, "ChartTrackBrush"),

@@ -88,7 +88,7 @@
         <Setter Property="Background" Value="{ThemeResource BrandActionBrush}" />
         <Setter Property="Foreground" Value="{ThemeResource OnAccentBrush}" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="CornerRadius" Value="12" />
         <Setter Property="Padding" Value="17,9" />
         <Setter Property="MinHeight" Value="40" />
         <Setter Property="FontWeight" Value="SemiBold" />

@@ -69,7 +69,7 @@ public sealed partial class MainWindow
         var card = new Border
         {
             Padding = new Thickness(15),
-            CornerRadius = new CornerRadius(14),
+            CornerRadius = new CornerRadius(16),
             Background = ThemeBrush("AccentSoftBrush"),
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(1),

@@ -56,6 +56,29 @@
         <Setter Property="Foreground" Value="{ThemeResource TextBrush}" />
     </Style>
 
+    <!-- Small-caps eyebrow above hero titles + short gradient rule beneath. -->
+    <Style x:Key="HeroEyebrowTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{ThemeResource MutedTextBrush}" />
+        <Setter Property="CharacterSpacing" Value="60" />
+    </Style>
+
+    <Style x:Key="HeroAccentBarStyle" TargetType="Border">
+        <Setter Property="Width" Value="44" />
+        <Setter Property="Height" Value="4" />
+        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="Background" Value="{ThemeResource AccentGradientBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <!-- Rounded glass navigation items. Applied via NavigationView.MenuItemContainerStyle. -->
+    <Style x:Key="GlassNavItemStyle" TargetType="NavigationViewItem">
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
+        <Setter Property="Margin" Value="4,2,4,2" />
+        <Setter Property="MinHeight" Value="40" />
+    </Style>
+
     <Style x:Key="CardStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource CardPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}" />
@@ -67,7 +90,7 @@
     <Style x:Key="DashboardCardStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource CardPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusXLarge}" />
-        <Setter Property="Background" Value="{ThemeResource PremiumSurfaceBrush}" />
+        <Setter Property="Background" Value="{ThemeResource GlassCardBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
@@ -75,7 +98,7 @@
     <Style x:Key="ChartCardStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource ChartCardPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusXLarge}" />
-        <Setter Property="Background" Value="{ThemeResource PremiumSurfaceBrush}" />
+        <Setter Property="Background" Value="{ThemeResource GlassCardBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="MinHeight" Value="{StaticResource ChartMinHeight}" />
@@ -84,7 +107,7 @@
     <Style x:Key="SubtleCardStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource CompactCardPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}" />
-        <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
+        <Setter Property="Background" Value="{ThemeResource GlassRaisedBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
@@ -92,7 +115,7 @@
     <Style x:Key="EmptyStateStyle" TargetType="Border">
         <Setter Property="Padding" Value="24" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusXLarge}" />
-        <Setter Property="Background" Value="{ThemeResource SurfaceRaisedBrush}" />
+        <Setter Property="Background" Value="{ThemeResource GlassRaisedBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
@@ -100,15 +123,15 @@
     <Style x:Key="MetricTileStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource MetricTilePadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}" />
-        <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
-        <Setter Property="BorderBrush" Value="{ThemeResource DividerBrush}" />
+        <Setter Property="Background" Value="{ThemeResource GlassRaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
 
     <Style x:Key="DashboardMetricStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource MetricTilePadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusXLarge}" />
-        <Setter Property="Background" Value="{ThemeResource PremiumSurfaceBrush}" />
+        <Setter Property="Background" Value="{ThemeResource GlassCardBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="MinHeight" Value="{StaticResource MetricCardMinHeight}" />
@@ -117,7 +140,7 @@
     <Style x:Key="MetricIconStyle" TargetType="Border">
         <Setter Property="Width" Value="{StaticResource MetricIconSize}" />
         <Setter Property="Height" Value="{StaticResource MetricIconSize}" />
-        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="CornerRadius" Value="12" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
@@ -125,14 +148,16 @@
     <Style x:Key="IconTileStyle" TargetType="Border">
         <Setter Property="Width" Value="34" />
         <Setter Property="Height" Value="34" />
-        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="CornerRadius" Value="12" />
         <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
     </Style>
 
     <Style x:Key="PillBorderStyle" TargetType="Border">
         <Setter Property="Padding" Value="{StaticResource PillPadding}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}" />
-        <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
+        <Setter Property="Background" Value="{ThemeResource GlassRaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
     </Style>
 
     <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
@@ -143,7 +168,7 @@
     </Style>
 
     <Style x:Key="SecondaryButtonStyle" TargetType="Button">
-        <Setter Property="Background" Value="{ThemeResource SurfaceAltBrush}" />
+        <Setter Property="Background" Value="{ThemeResource GlassRaisedBrush}" />
         <Setter Property="Foreground" Value="{ThemeResource TextBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />

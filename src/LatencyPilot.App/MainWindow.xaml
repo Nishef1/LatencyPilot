@@ -17,6 +17,11 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!-- Soft ambient wash over Mica. Transparent in High Contrast. -->
+        <Border Grid.RowSpan="2"
+                Background="{ThemeResource AmbientWashBrush}"
+                IsHitTestVisible="False" />
+
         <Grid x:Name="AppTitleBarDragRegion"
               Height="{StaticResource TitleBarHeight}"
               Background="Transparent">
@@ -29,14 +34,14 @@
                 <StackPanel Orientation="Horizontal"
                             VerticalAlignment="Center"
                             Spacing="9">
-                    <Border Width="32"
-                            Height="32"
-                            CornerRadius="8"
-                            Background="{ThemeResource AccentSoftBrush}">
+                    <Border Width="34"
+                            Height="34"
+                            CornerRadius="10"
+                            Background="{ThemeResource AccentGradientBrush}">
                         <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}"
                                   Glyph="&#xE9D2;"
-                                  FontSize="17"
-                                  Foreground="{ThemeResource AccentBrush}"
+                                  FontSize="18"
+                                  Foreground="{ThemeResource OnAccentBrush}"
                                   HorizontalAlignment="Center"
                                   VerticalAlignment="Center" />
                     </Border>
@@ -54,9 +59,13 @@
 
                 <Border Grid.Column="1"
                         Style="{StaticResource PillBorderStyle}"
-                        Background="{ThemeResource SurfaceAltBrush}"
                         VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Border Width="7"
+                                Height="7"
+                                CornerRadius="4"
+                                VerticalAlignment="Center"
+                                Background="{ThemeResource SuccessBrush}" />
                         <SymbolIcon Symbol="ProtectedDocument"
                                     Width="14"
                                     Height="14"
@@ -77,8 +86,9 @@
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="False"
                         IsPaneToggleButtonVisible="True"
-                        OpenPaneLength="196"
-                        CompactPaneLength="48"
+                        OpenPaneLength="200"
+                        CompactPaneLength="52"
+                        MenuItemContainerStyle="{StaticResource GlassNavItemStyle}"
                         SelectionChanged="AppNavigationView_SelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="OverviewNavItem"
@@ -140,9 +150,9 @@
 
                 <Border x:Name="ServiceStatusCard"
                         Margin="{StaticResource WorkspaceMargin}"
-                        Padding="10,7"
-                        CornerRadius="{StaticResource RadiusMedium}"
-                        Background="{ThemeResource SurfaceAltBrush}"
+                        Padding="12,8"
+                        CornerRadius="{StaticResource RadiusLarge}"
+                        Background="{ThemeResource GlassRaisedBrush}"
                         BorderBrush="{ThemeResource BorderBrush}"
                         BorderThickness="1">
                     <Grid ColumnSpacing="10">
@@ -201,6 +211,11 @@
                               Padding="{StaticResource PagePadding}"
                               HorizontalAlignment="Stretch">
                             <StackPanel Spacing="{StaticResource DashboardGap}">
+                                <StackPanel.ChildrenTransitions>
+                                    <TransitionCollection>
+                                        <EntranceThemeTransition IsStaggeringEnabled="True" />
+                                    </TransitionCollection>
+                                </StackPanel.ChildrenTransitions>
                                 <Grid x:Name="OverviewAnchor" ColumnSpacing="16" RowSpacing="10" MinHeight="56">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -210,8 +225,10 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition x:Name="HeaderActionsColumn" Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <StackPanel Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="READ-ONLY &#x2022; REAL MEASUREMENTS" Style="{StaticResource HeroEyebrowTextStyle}" />
                                         <TextBlock Text="Overview" Style="{StaticResource HeroTitleTextStyle}" />
+                                        <Border Style="{StaticResource HeroAccentBarStyle}" />
                                         <TextBlock Text="Current interrupt latency and baseline quality."
                                                    Style="{StaticResource MutedBodyTextStyle}" />
                                     </StackPanel>
@@ -381,9 +398,14 @@
                                                         <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <StackPanel Spacing="2">
-                                                        <TextBlock Text="Latency profile" Style="{StaticResource SubsectionTitleTextStyle}" />
-                                                        <TextBlock x:Name="LatencyChartSubtitleText" Text="Latest DPC / ISR percentile shape" Style="{StaticResource CaptionTextStyle}" />
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <Border Width="32" Height="32" CornerRadius="10" Background="{ThemeResource ChartPrimarySoftBrush}" VerticalAlignment="Center">
+                                                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE9D2;" FontSize="16" Foreground="{ThemeResource ChartAccentPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Border>
+                                                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                                                            <TextBlock Text="Latency profile" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                            <TextBlock x:Name="LatencyChartSubtitleText" Text="Latest DPC / ISR percentile shape" Style="{StaticResource CaptionTextStyle}" />
+                                                        </StackPanel>
                                                     </StackPanel>
                                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                                         <StackPanel Orientation="Horizontal" Spacing="5">
@@ -402,9 +424,14 @@
 
                                         <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource ChartCardStyle}">
                                             <StackPanel Spacing="10">
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Text="CPU interrupt distribution" Style="{StaticResource SubsectionTitleTextStyle}" />
-                                                    <TextBlock Text="Observed DPC + ISR share" Style="{StaticResource CaptionTextStyle}" />
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Border Width="32" Height="32" CornerRadius="10" Background="{ThemeResource AccentSoftBrush}" VerticalAlignment="Center">
+                                                        <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE950;" FontSize="16" Foreground="{ThemeResource ChartAccentSecondaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                                                        <TextBlock Text="CPU interrupt distribution" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                        <TextBlock Text="Observed DPC + ISR share" Style="{StaticResource CaptionTextStyle}" />
+                                                    </StackPanel>
                                                 </StackPanel>
                                                 <controls:CpuDistributionChart x:Name="CpuDistributionChart" Height="{StaticResource ChartPlotHeight}" />
                                             </StackPanel>
@@ -412,9 +439,14 @@
 
                                         <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource ChartCardStyle}">
                                             <StackPanel Spacing="10">
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Text="Top kernel modules" Style="{StaticResource SubsectionTitleTextStyle}" />
-                                                    <TextBlock Text="Share of attributed DPC / ISR time" Style="{StaticResource CaptionTextStyle}" />
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Border Width="32" Height="32" CornerRadius="10" Background="{ThemeResource ChartPrimarySoftBrush}" VerticalAlignment="Center">
+                                                        <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE8A5;" FontSize="16" Foreground="{ThemeResource ChartAccentPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                                                        <TextBlock Text="Top kernel modules" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                        <TextBlock Text="Share of attributed DPC / ISR time" Style="{StaticResource CaptionTextStyle}" />
+                                                    </StackPanel>
                                                 </StackPanel>
                                                 <controls:ModuleContributionChart x:Name="ModuleContributionChart" Height="{StaticResource ChartCompactPlotHeight}" />
                                             </StackPanel>
@@ -422,9 +454,14 @@
 
                                         <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource ChartCardStyle}">
                                             <StackPanel Spacing="10">
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Text="CPU interrupt map" Style="{StaticResource SubsectionTitleTextStyle}" />
-                                                    <TextBlock Text="DPC and ISR share by busiest processor" Style="{StaticResource CaptionTextStyle}" />
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Border Width="32" Height="32" CornerRadius="10" Background="{ThemeResource ChartWarmSoftBrush}" VerticalAlignment="Center">
+                                                        <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE81E;" FontSize="16" Foreground="{ThemeResource ChartWarmBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                                                        <TextBlock Text="CPU interrupt map" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                        <TextBlock Text="DPC and ISR share by busiest processor" Style="{StaticResource CaptionTextStyle}" />
+                                                    </StackPanel>
                                                 </StackPanel>
                                                 <controls:CpuInterruptMap x:Name="CpuInterruptMap" Height="{StaticResource ChartCompactPlotHeight}" />
                                             </StackPanel>
@@ -482,6 +519,11 @@
                               Padding="{StaticResource PagePadding}"
                               HorizontalAlignment="Stretch">
                             <StackPanel Spacing="{StaticResource DashboardGap}">
+                                <StackPanel.ChildrenTransitions>
+                                    <TransitionCollection>
+                                        <EntranceThemeTransition IsStaggeringEnabled="True" />
+                                    </TransitionCollection>
+                                </StackPanel.ChildrenTransitions>
                                 <Grid x:Name="MeasureHeader" ColumnSpacing="16" RowSpacing="8">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -491,8 +533,10 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition x:Name="MeasureHeaderActionsColumn" Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="2">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="SNAPSHOT OR REPEATABLE BASELINE" Style="{StaticResource HeroEyebrowTextStyle}" />
                                         <TextBlock Text="Measure" Style="{StaticResource HeroTitleTextStyle}" />
+                                        <Border Style="{StaticResource HeroAccentBarStyle}" />
                                         <TextBlock Text="Capture a snapshot or build a repeatable baseline."
                                                    Style="{StaticResource MutedBodyTextStyle}" />
                                     </StackPanel>
@@ -632,8 +676,15 @@
                               Padding="{StaticResource PagePadding}"
                               HorizontalAlignment="Stretch">
                             <StackPanel Spacing="{StaticResource DashboardGap}">
-                                <StackPanel Spacing="2">
+                                <StackPanel.ChildrenTransitions>
+                                    <TransitionCollection>
+                                        <EntranceThemeTransition IsStaggeringEnabled="True" />
+                                    </TransitionCollection>
+                                </StackPanel.ChildrenTransitions>
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="HARDWARE PATHS &#x2022; READ-ONLY" Style="{StaticResource HeroEyebrowTextStyle}" />
                                     <TextBlock Text="Devices" Style="{StaticResource HeroTitleTextStyle}" />
+                                    <Border Style="{StaticResource HeroAccentBarStyle}" />
                                     <TextBlock Text="Hardware paths behind interrupt activity."
                                                Style="{StaticResource MutedBodyTextStyle}" />
                                 </StackPanel>
@@ -679,7 +730,7 @@
                                     </Border>
                                 </Grid>
 
-                                <Border Style="{StaticResource DashboardCardStyle}">
+                                <Border x:Name="SystemInventoryCard" Style="{StaticResource DashboardCardStyle}">
                                     <Grid x:Name="SystemInventoryCardGrid" ColumnSpacing="18" RowSpacing="10">
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto" />
@@ -749,6 +800,11 @@
                               Padding="{StaticResource PagePadding}"
                               HorizontalAlignment="Stretch">
                             <StackPanel Spacing="{StaticResource DashboardGap}">
+                                <StackPanel.ChildrenTransitions>
+                                    <TransitionCollection>
+                                        <EntranceThemeTransition IsStaggeringEnabled="True" />
+                                    </TransitionCollection>
+                                </StackPanel.ChildrenTransitions>
                                 <Grid x:Name="EvidenceHeader" ColumnSpacing="16" RowSpacing="8">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -758,8 +814,10 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition x:Name="EvidenceHeaderActionsColumn" Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="2">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="RAW DATA &#x2022; PROVENANCE" Style="{StaticResource HeroEyebrowTextStyle}" />
                                         <TextBlock Text="Evidence" Style="{StaticResource HeroTitleTextStyle}" />
+                                        <Border Style="{StaticResource HeroAccentBarStyle}" />
                                         <TextBlock Text="Raw measurements, attribution, and provenance."
                                                    Style="{StaticResource MutedBodyTextStyle}" />
                                     </StackPanel>

@@ -140,8 +140,14 @@ public sealed class LatencyProfileChart : UserControl
             }
         }
 
-        RenderSeries(_primary, DashboardThemeResources.Brush(this, "ChartAccentPrimaryBrush"), maximum, left, top, plotWidth, plotHeight);
-        RenderSeries(_secondary, DashboardThemeResources.Brush(this, "ChartAccentSecondaryBrush"), maximum, left, top, plotWidth, plotHeight);
+        RenderSeries(
+            _primary,
+            DashboardThemeResources.Brush(this, "ChartAccentPrimaryBrush"),
+            maximum, left, top, plotWidth, plotHeight);
+        RenderSeries(
+            _secondary,
+            DashboardThemeResources.Brush(this, "ChartAccentSecondaryBrush"),
+            maximum, left, top, plotWidth, plotHeight);
     }
 
     private void RenderSeries(
@@ -158,13 +164,7 @@ public sealed class LatencyProfileChart : UserControl
             return;
         }
 
-        var line = new Polyline
-        {
-            Stroke = brush,
-            StrokeThickness = 2.25,
-            StrokeLineJoin = PenLineJoin.Round,
-        };
-
+        var coordinates = new List<(Point Position, string Label, double Value)>();
         for (var index = 0; index < series.Count; index++)
         {
             var value = series[index].Value;
@@ -177,23 +177,65 @@ public sealed class LatencyProfileChart : UserControl
                 ? left + plotWidth / 2d
                 : left + plotWidth * index / (series.Count - 1d);
             var y = top + plotHeight - Math.Clamp(value.Value / maximum, 0d, 1d) * plotHeight;
-            line.Points.Add(new Point(x, y));
+            coordinates.Add((new Point(x, y), series[index].Label, value.Value));
+        }
 
-            var dot = new Ellipse
+        if (coordinates.Count == 0)
+        {
+            return;
+        }
+
+        // Soft area wash under the line. Skipped in High Contrast to keep the
+        // plot strictly foreground-on-background.
+        if (!DashboardThemeResources.IsHighContrastMode() && coordinates.Count > 1)
+        {
+            var area = new Polygon
             {
-                Width = 7,
-                Height = 7,
                 Fill = brush,
+                Opacity = 0.10,
             };
-            ToolTipService.SetToolTip(dot, $"{series[index].Label}: {value.Value:0.0} µs");
-            Canvas.SetLeft(dot, x - 3.5);
-            Canvas.SetTop(dot, y - 3.5);
-            _canvas.Children.Add(dot);
+            foreach (var coordinate in coordinates)
+            {
+                area.Points.Add(coordinate.Position);
+            }
+
+            area.Points.Add(new Point(coordinates[^1].Position.X, top + plotHeight));
+            area.Points.Add(new Point(coordinates[0].Position.X, top + plotHeight));
+            _canvas.Children.Add(area);
+        }
+
+        var ring = DashboardThemeResources.Brush(this, "GlassRaisedBrush");
+        var line = new Polyline
+        {
+            Stroke = brush,
+            StrokeThickness = 2.5,
+            StrokeLineJoin = PenLineJoin.Round,
+        };
+
+        foreach (var coordinate in coordinates)
+        {
+            line.Points.Add(coordinate.Position);
         }
 
         if (line.Points.Count > 1)
         {
             _canvas.Children.Add(line);
+        }
+
+        foreach (var coordinate in coordinates)
+        {
+            var dot = new Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                Fill = brush,
+                Stroke = ring,
+                StrokeThickness = 1.5,
+            };
+            ToolTipService.SetToolTip(dot, $"{coordinate.Label}: {coordinate.Value:0.0} µs");
+            Canvas.SetLeft(dot, coordinate.Position.X - 4);
+            Canvas.SetTop(dot, coordinate.Position.Y - 4);
+            _canvas.Children.Add(dot);
         }
     }
 

@@ -52,7 +52,7 @@ public sealed class ModuleContributionChart : UserControl
 
         _emptyState.Visibility = Visibility.Collapsed;
         var maximum = Math.Max(1d, visible.Max(item => item.Value));
-        var primary = DashboardThemeResources.Brush(this, "ChartAccentPrimaryBrush");
+        var primary = DashboardThemeResources.Brush(this, "AccentGradientBrush");
         var secondary = DashboardThemeResources.Brush(this, "ChartAccentSecondaryBrush");
         var track = DashboardThemeResources.Brush(this, "ChartTrackBrush");
         var text = DashboardThemeResources.Brush(this, "TextBrush");
@@ -81,20 +81,20 @@ public sealed class ModuleContributionChart : UserControl
             var remainder = Math.Max(0d, maximum - fill);
             var barHost = new Grid
             {
-                Height = 12,
+                Height = 14,
                 VerticalAlignment = VerticalAlignment.Center,
             };
             barHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(fill, GridUnitType.Star) });
             barHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(remainder, GridUnitType.Star) });
             barHost.Children.Add(new Border
             {
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = new CornerRadius(7),
                 Background = index == 0 ? primary : secondary,
                 Opacity = index == 0 ? 1d : Math.Max(0.38d, 0.84d - index * 0.08d),
             });
             var trackBorder = new Border
             {
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = new CornerRadius(7),
                 Background = track,
                 Child = barHost,
             };
