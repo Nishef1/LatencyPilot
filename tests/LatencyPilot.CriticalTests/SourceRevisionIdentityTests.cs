@@ -48,6 +48,23 @@ public sealed class SourceRevisionIdentityTests
         Assert.IsFalse(gateASource.Contains("Validate GPU · one click", StringComparison.Ordinal));
         Assert.IsFalse(gateASource.Contains("Auto-optimize GPU", StringComparison.Ordinal));
 
+        var progressWindowSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "GpuOptimizationProgressWindow.xaml.cs"));
+        StringAssert.Contains(progressWindowSource, "terminalSnapshotReceived");
+        StringAssert.Contains(progressWindowSource, "Failed safely · original state verified");
+        StringAssert.Contains(progressWindowSource, "Stopped safely · original state verified");
+
+        var gateAProgressSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "LatencyPilot.GateAValidation",
+            "GpuGateAProgressFile.cs"));
+        StringAssert.Contains(gateAProgressSource, "\"failed-safely\"");
+        StringAssert.Contains(gateAProgressSource, "\"stopped-safely\"");
+
         var complete = new GateAValidationFacts(
             ExactRevision: true,
             BaselineEligible: true,
