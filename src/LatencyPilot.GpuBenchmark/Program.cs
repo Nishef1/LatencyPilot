@@ -3,14 +3,17 @@ using System.Text.Json;
 using LatencyPilot.GpuBenchmark;
 using LatencyPilot.Platform.Windows.System;
 
-var parsed = BenchmarkOptionsParser.Parse(args);
-if (!parsed.Success)
+BenchmarkOptions options;
+try
 {
-    Console.Error.WriteLine(parsed.Error);
+    options = BenchmarkOptions.Parse(args);
+}
+catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+{
+    Console.Error.WriteLine(exception.Message);
     return 2;
 }
 
-var options = parsed.Options!;
 try
 {
     Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath)!);
@@ -21,7 +24,8 @@ try
     }
     if (options.WorkerCount > topology.PhysicalCoreCount)
     {
-        throw new ArgumentOutOfRangeException(nameof(options.WorkerCount), $"Requested {options.WorkerCount} workers but Windows reports only {topology.PhysicalCoreCount} physical cores.");
+        throw new InvalidOperationException(
+            $"Requested {options.WorkerCount} workers but Windows reports only {topology.PhysicalCoreCount} physical cores.");
     }
 
     var workerMap = topology.Cores.Take(options.WorkerCount)
@@ -49,7 +53,8 @@ try
         $"Frozen workload: {frozen.CommandBatchesPerWorker} command batches and {frozen.SimulationIterationsPerWorker} simulation iterations per worker.");
 
     var artifact = await benchmark.RunTrialAsync(renderer, frozen);
-    File.WriteAllText(options.OutputPath, JsonSerializer.Serialize(artifact, BenchmarkJson.Options), new UTF8Encoding(false));
+    var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
+    File.WriteAllText(options.OutputPath, JsonSerializer.Serialize(artifact, jsonOptions), new UTF8Encoding(false));
     BenchmarkProtocol.WriteProgress(Console.Out, options.SessionId, "complete", 1d, $"Benchmark artifact written to {options.OutputPath}.");
     return 0;
 }
