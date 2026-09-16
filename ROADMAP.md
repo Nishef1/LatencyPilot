@@ -1,7 +1,7 @@
 # LatencyPilot Product Roadmap
 
 Status: **Authoritative completion plan**  
-Last updated: 2026-09-15
+Last updated: 2026-09-16
 
 LatencyPilot is complete only when it can safely measure a supported Windows 11 system, identify latency pressure, run narrowly scoped experiments, quantify target and collateral effects, and keep or restore supported changes with trustworthy recovery.
 
@@ -16,7 +16,7 @@ LatencyPilot 1.0 must provide:
 - repeatable decision baselines with integrity, duration, sample, noise, drift and workload-stability gates;
 - before/after comparison with raw metrics, tail percentiles and explicit uncertainty;
 - narrowly supported, reversible interrupt experiments rather than generic tweaking;
-- GPU experiment execution with PresentMon and runtime-placement guardrails;
+- GPU experiment execution with deterministic benchmark evidence, raw PresentMon and runtime-placement guardrails;
 - USB/xHCI route and high-polling input analysis;
 - NIC/RSS inventory, attribution and local-network experiment evidence;
 - transparent workload profiles and cross-subsystem guardrails without hidden weighted scores;
@@ -89,20 +89,22 @@ Deterministic comparison and lifecycle core exists. **Satisfied.**
 
 **State: SOURCE COMPLETE; PHYSICAL CLOSURE OPEN**
 
-Current contract:
+Current steady-evidence contract:
 
 ```text
-Protocol:             v6 (observation-only)
-Evidence:             latencypilot-evidence-v9
-Decision baseline:    baseline-quality-v2
-Workload readiness:   workload-stability-v1
-Optimizer eligibility: gpu-affinity-v1 (explicit serialized result)
-Quick snapshot:       1 × 5 s diagnostic only
-Decision sequence:    5 × 20 s + 5 s pre-settle + 750 ms inter-window settle
-Per-window adequacy:  >=95% duration, >=1,000 DPC, >=1,000 ISR, clean integrity
-p99.9:                >=10,000 samples/distribution
-Mutation:             unavailable / unarmed
+Protocol:              v6 (observation-only)
+Evidence:              latencypilot-evidence-v9
+Decision baseline:     baseline-quality-v2
+Workload readiness:    workload-stability-v1
+Steady GPU eligibility: gpu-affinity-v1 (explicit serialized result)
+Quick snapshot:        1 × 5 s diagnostic only
+Decision sequence:     5 × 20 s + 5 s pre-settle + 750 ms inter-window settle
+Per-window adequacy:   >=95% duration, >=1,000 DPC, >=1,000 ISR, clean integrity
+p99.9:                 >=10,000 samples/distribution
+Mutation:              unavailable / unarmed
 ```
+
+The automatic GPU benchmark in Phase 3 is intentionally a different whole-run method and does not reinterpret its phases as `baseline-quality-v2` windows.
 
 ### Inventory, observation and evidence source
 
@@ -123,8 +125,8 @@ Mutation:             unavailable / unarmed
 - [x] p50/p95/p99/max and p99.9 adequacy rule;
 - [x] quick diagnostic and repeated baseline are separate measurement products;
 - [x] baseline-quality-v2 five-window quality analysis;
-- [x] workload-stability-v1 activity drift analysis for optimizer eligibility, including complete per-window system CPU-busy evidence when available;
-- [x] evidence-v9 provenance, RequestId, runtime context, serialized workload stability, explicit GPU optimizer eligibility/reason and SHA-256 export verification;
+- [x] workload-stability-v1 activity drift analysis for steady optimizer eligibility, including complete per-window system CPU-busy evidence when available;
+- [x] evidence-v9 provenance, RequestId, runtime context, serialized workload stability, explicit steady GPU optimizer eligibility/reason and SHA-256 export verification;
 - [x] App baseline summary separates comparison validity from optimizer readiness in visible/accessibility text rather than color alone;
 - [x] adaptive/accessibility source and keyboard accelerators;
 - [x] read-only device inspector source;
@@ -156,24 +158,30 @@ Phase 2 closes only when the remaining owner-local read-only checks above are re
 
 ---
 
-## Phase 3 — Safe mutation platform + GPU experiment
+## Phase 3 — Safe mutation platform + benchmark-backed GPU experiment
 
-**State: INTERNAL SOURCE IMPLEMENTED; PHYSICAL ARMING OPEN; PUBLIC MUTATION OFF**
+**State: AUTOMATIC GPU SOURCE IMPLEMENTED; PHYSICAL ARMING OPEN; PUBLIC MUTATION OFF**
 
-Internal workflow:
+Automatic internal workflow:
 
 ```text
-authoritative stable baseline
-→ bounded measured candidates
-→ exact original snapshot + journal
-→ apply / verify / activate
-→ synchronized ETW + raw PresentMon measurement
-→ exact rollback between candidates
-→ finalist only from screening
-→ fixed ABBA + BAAB confirmation
-→ Keep only after verified final state
-   otherwise RestoreOriginal / RecoveryRequired
+exact original/default affinity
+→ normal-user deterministic D3D12 benchmark calibration
+→ freeze worker map/workload/seed
+→ repeated original controls
+→ screen every eligible physical core within v1 bound (max 16)
+→ journaled apply / stored verify / exact-target activation
+→ synchronized benchmark + ETW + raw PresentMon evidence
+→ direct target-only GPU ISR placement proof
+→ exact rollback before next screening candidate
+→ SMT sibling refinement of winning physical core
+→ fixed ABBA + BAAB finalist confirmation
+→ final cancellation boundary
+→ Keep only after confirmed safe improvement
+   otherwise exact RestoreOriginal / RecoveryRequired
 ```
+
+Original/default Windows affinity is a real control and wins when no candidate establishes a safe measurable improvement. Passive processor pressure is ordering/context only; CPU0 remains eligible.
 
 ### Safety and execution source
 
@@ -185,30 +193,40 @@ authoritative stable baseline
 - [x] interruption-safe logical two-value GPU affinity write with compensation/recovery ownership;
 - [x] exact-target device restart source and reboot-required detection;
 - [x] owner-only validation harness;
-- [x] topology/pressure-aware bounded GPU candidates;
-- [x] synchronized ETW + raw PresentMon evidence under one interval;
-- [x] raw DPC target metric and graphics guardrails;
-- [x] attributed GPU ISR runtime-placement verification;
-- [x] Gate A placement command fails closed unless the exact stored candidate remains verified before/after a clean capture and direct resolved GPU-driver ISR evidence is confined to the requested processor; ConfigMgr allocated resources remain independent provenance;
+- [x] managed normal-user `LatencyPilot.GpuBenchmark` D3D12 host;
+- [x] deterministic multicore worker mapping and one-time adaptive calibration followed by frozen workload;
+- [x] D3D12 timestamp query evidence independent of PresentMon GPU-active telemetry;
+- [x] raw PresentMon compatibility boundary and canonical raw-frame percentile interpretation;
+- [x] dedicated `latencypilot-gpu-benchmark-v1` evidence and `latencypilot-gpu-auto-affinity-report-v1` report contracts;
+- [x] `gpu-affinity-benchmark-v1` readiness/contamination policy with one bounded retry and CPU-busy drift kept as context;
+- [x] every eligible physical core screened within v1 bound; >16 systems remain topology-stratified and bounded;
+- [x] CPU0 remains eligible and passive pressure cannot pre-select the winner;
+- [x] winning physical core receives eligible SMT sibling refinement;
+- [x] synchronized ETW + raw PresentMon + benchmark evidence per trial;
+- [x] exact stored-state verification around candidate measurement;
+- [x] direct resolved GPU-driver ISR runtime-placement verification with zero resolved off-target ISR;
 - [x] screening cannot Keep directly;
 - [x] fixed eight-run ABBA+BAAB confirmation;
-- [x] explicit five-way decision interpretation;
-- [x] Keep/Restore journal transitions and verified rollback;
-- [x] workload-stability-v1 required by shared optimizer readiness;
-- [x] App candidate preparation uses actual per-window runtime CPU activity when available, refuses changing/inconclusive/misaligned workload evidence and reports Ready only after bounded candidates actually exist;
+- [x] explicit named metric/guardrail interpretation without hidden weighted score;
+- [x] exact rollback between screening candidates and final RestoreOriginal/RecoveryRequired path;
+- [x] late cancellation after final comparison still prevents Keep while candidate state is owned;
+- [x] development-only **Run GPU Gate A** App flow starts benchmark non-elevated, minimizes main window, shows real candidate/pass/progress/metric state and requests UAC only for the owner helper;
+- [x] **Stop safely** source preserves rollback/recovery ownership until terminal verification;
+- [x] progress/accessibility source exposes live candidate/phase/status semantics through visible text and UI Automation;
+- [ ] owner-local render/taskbar/keyboard/screen-reader inspection of the progress experience — **physical evidence required**;
 - [ ] mutation-specific typed product IPC — **blocked by Gate A**;
-- [ ] user-facing one-click GPU mutation — **blocked by Gate C/D**.
+- [ ] normal-user `Auto-optimize GPU` product arming — **blocked by Gate C/D**.
 
 ### Arming gates
 
-- [ ] **Gate A — internal physical substrate proof:** current exact App/Service build/install/launch; clean journal; controlled unresolved restart/reclassification; exact-target restart/reboot behavior; one candidate apply → stored verification → runtime ISR placement → exact rollback; deliberate supported failure → verified recovery; final exact original + zero unresolved.
-- [ ] **Gate B — typed mutation IPC:** after Gate A only; mutation-specific typed/allowlisted commands and authorization. `MutationAvailable` remains false.
+- [ ] **Gate A — internal physical benchmark + mutation proof:** exact-green clean revision; normal App/Service path; non-mutating D3D12 benchmark smoke; full bounded candidate search; current progress/taskbar/accessibility behavior; candidate stored-state + direct runtime ISR placement; exact rollback between candidates; balanced finalist Keep/Restore; Stop safely proof; repeated-search reproducibility/equivalence or explicit inconclusive result; one supported failure/recovery exercise; final known state + zero unresolved.
+- [ ] **Gate B — typed mutation IPC:** after Gate A only; mutation-specific typed/allowlisted commands and authorization. `MutationAvailable` remains false during source implementation.
 - [ ] **Gate C — physical IPC proof:** real App/client → Service mutation authorization, target identity, journal/recovery and exact rollback.
-- [ ] **Gate D — product arming:** expose supported one-click mutation only after Gate C and credible target/guardrail UX.
+- [ ] **Gate D — product arming:** expose normal-user `Auto-optimize GPU` only after Gate C and credible target/guardrail UX.
 
 ### Exit gate
 
-A supported physical GPU can be tuned through the product path and fully restored including forced-failure recovery. **OPEN.**
+A supported physical GPU can be tuned through the product path and fully restored, including safe cancellation and supported forced-failure recovery. **OPEN.**
 
 ---
 
@@ -267,7 +285,7 @@ The physical workflow must distinguish local adapter improvement from path noise
 - [x] Pareto Dominates/Dominated/Equivalent/Tradeoff/Inconclusive relation;
 - [x] per-subsystem opt-out without deleting evidence;
 - [x] bounded candidate policy inherited from subsystem engines;
-- [x] workload-stability-v1 gates optimizer eligibility;
+- [x] steady workload-stability contract remains available for steady/manual evidence;
 - [x] retained `Kept` changes discoverable newest-first;
 - [x] global Restore Baseline planner is fail-closed on unresolved/unknown mutation kinds;
 - [x] GPU retained changes reuse the existing verified subsystem rollback path;
@@ -313,12 +331,12 @@ Auto mode completes a bounded supported multi-subsystem session and every retain
 
 ## Permanent-test policy
 
-- Default/target permanent suite size: **10**.
-- Current durable suite: **18 tests**.
-- Owner-authorized maximum: **20**, only when needed to keep test files `<=1200` lines or when separate subsystem contracts materially improve durable failure isolation.
-- Current USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness, GPU runtime-placement and installed-Service source-provenance contracts are intentionally separate under that authorization; do not merge them merely to hit the target number.
-- Temporary/obsolete tests must be removed rather than accumulated.
-- Hardware validation, exploratory benchmark runs and release checklists are not automated tests.
+- Default/target permanent suite size: **10** methods.
+- Owner-authorized maximum: **20** methods, only when needed for file-size/maintainability or materially safer durable failure isolation.
+- USB, input, NIC/RSS, profile/Pareto, restore, workload-readiness, GPU runtime-placement and installed-Service source-provenance contracts remain independently diagnosable where that separation is useful.
+- Temporary/obsolete tests must be removed rather than accumulated; temporary bounded-all-core coverage has been folded into the canonical GPU session contract rather than left as a separate test.
+- The exact current method count is established by the latest exact-head successful hosted **Tests** run, not by stale prose.
+- Hardware validation, exploratory benchmark repetitions and release checklists are not automated tests.
 
 ## Definition of 100%
 
