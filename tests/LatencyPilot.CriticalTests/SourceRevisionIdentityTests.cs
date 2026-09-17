@@ -39,6 +39,27 @@ public sealed class SourceRevisionIdentityTests
 
         var repositoryRoot = FindRepositoryRoot();
 
+        var startupHardeningSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "ObservationExperienceHardening.cs"));
+        StringAssert.Contains(
+            startupHardeningSource,
+            "InitializeGateAValidationExperience();",
+            "The development Gate A surface must be initialized from the post-XAML startup seam or its card remains collapsed and its button is never created.");
+
+        var appSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "App.xaml.cs"));
+        Assert.AreEqual(
+            1,
+            CountOccurrences(startupHardeningSource, "InitializeGateAValidationExperience();") +
+                CountOccurrences(appSource, "InitializeGateAValidationExperience();"),
+            "The Gate A surface must be initialized exactly once; duplicate startup initialization creates duplicate controls and handlers.");
+
         var premiumOverviewPath = Path.Combine(
             repositoryRoot,
             "src",
@@ -84,8 +105,43 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(gateASource, "GPU Gate A stopped safely");
         StringAssert.Contains(gateASource, "Directory.Exists(Path.Combine(directory.FullName, \".git\"))");
         StringAssert.Contains(gateASource, "File.Exists(Path.Combine(directory.FullName, \".git\"))");
+        StringAssert.Contains(gateASource, "if (_gateAValidationButton is not null)");
+        StringAssert.Contains(gateASource, "private bool _gateAValidationRunning;");
+        StringAssert.Contains(gateASource, "SetGateAValidationBusy(true);");
+        StringAssert.Contains(gateASource, "SetGateAValidationBusy(false);");
+        StringAssert.Contains(gateASource, "_measurementBusy || _gateAValidationRunning");
+        StringAssert.Contains(gateASource, "Content = \"Run GPU Gate A\"");
+        StringAssert.Contains(gateASource, "DeveloperValidationCard.Visibility = Visibility.Visible;");
+        StringAssert.Contains(gateASource, "DeveloperValidationHost.Children.Add(_gateAValidationButton);");
         Assert.IsFalse(gateASource.Contains("Validate GPU · one click", StringComparison.Ordinal));
         Assert.IsFalse(gateASource.Contains("Auto-optimize GPU", StringComparison.Ordinal));
+
+        var measurementSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "MeasurementExperience.cs"));
+        Assert.IsTrue(
+            CountOccurrences(measurementSource, "if (_measurementBusy || _gateAValidationRunning)") >= 2,
+            "Quick observation and repeated baseline must both reject entry while Gate A is running.");
+        StringAssert.Contains(measurementSource, "IsEnabled = !_measurementBusy && !_gateAValidationRunning");
+
+        var readinessSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "MeasurementReadinessExperience.cs"));
+        StringAssert.Contains(readinessSource, "!_measurementBusy && !_gateAValidationRunning");
+
+        var mainWindowSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "MainWindow.xaml.cs"));
+        StringAssert.Contains(mainWindowSource, "var controlsBusy = busy || _gateAValidationRunning;");
+        StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(true);");
+        StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(false);");
+        StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(_measurementBusy);");
 
         var progressWindowSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
@@ -103,6 +159,22 @@ public sealed class SourceRevisionIdentityTests
             "GpuGateAProgressFile.cs"));
         StringAssert.Contains(gateAProgressSource, "\"failed-safely\"");
         StringAssert.Contains(gateAProgressSource, "\"stopped-safely\"");
+        StringAssert.Contains(gateAProgressSource, "\"screening-warmup\"");
+
+        var autoAffinitySessionSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.Benchmarking",
+            "Optimization",
+            "GpuAutoAffinitySession.cs"));
+        StringAssert.Contains(
+            autoAffinitySessionSource,
+            "\"screening-warmup\"",
+            "The startup warm-up must have a distinct phase so it cannot silently become a decision control.");
+        StringAssert.Contains(
+            autoAffinitySessionSource,
+            "resolved single-adapter ISR placement",
+            "Gate A diagnostics must not call WDDM dxgkrnl fallback evidence direct GPU-driver ISR evidence.");
 
         var placementVerifierSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
@@ -192,6 +264,10 @@ public sealed class SourceRevisionIdentityTests
             "tools",
             "LatencyPilot.GateAValidation",
             "GpuAutoAffinityGateABackend.cs"));
+        StringAssert.Contains(
+            gateABackendSource,
+            "string.Equals(request.Phase, \"screening-control\", StringComparison.Ordinal)",
+            "Only decision controls may establish/check the control-drift reference; the startup warm-up must be excluded.");
         var keepStartIndex = gateABackendSource.IndexOf(
             "public Task KeepAsync",
             StringComparison.Ordinal);
@@ -228,6 +304,28 @@ public sealed class SourceRevisionIdentityTests
             applyCandidateIndex >= 0 && postApplyRollbackIndex > applyCandidateIndex,
             "Gate A must retain rollback ownership when post-apply verification fails before the session receives the experiment id.");
         StringAssert.Contains(gateABackendSource, "post-apply verification failed");
+
+        var gateAHarnessSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "LatencyPilot.GateAValidation",
+            "Program.cs"));
+        var restartStartIndex = gateAHarnessSource.IndexOf(
+            "private static async Task RestartServiceAsync",
+            StringComparison.Ordinal);
+        var restartEndIndex = gateAHarnessSource.IndexOf(
+            "private static async Task<GateAStepReport> RunStepAsync",
+            restartStartIndex,
+            StringComparison.Ordinal);
+        Assert.IsTrue(restartStartIndex >= 0 && restartEndIndex > restartStartIndex);
+        var restartSource = gateAHarnessSource[restartStartIndex..restartEndIndex];
+        StringAssert.Contains(restartSource, "ServiceControllerStatus.StartPending");
+        StringAssert.Contains(restartSource, "ServiceControllerStatus.StopPending");
+        StringAssert.Contains(restartSource, "ServiceControllerStatus.PausePending");
+        StringAssert.Contains(restartSource, "ServiceControllerStatus.ContinuePending");
+        Assert.IsFalse(
+            restartSource.Contains("string workingDirectory", StringComparison.Ordinal),
+            "ServiceController restart no longer launches a child process and must not retain a dead working-directory parameter.");
 
         var complete = new GateAValidationFacts(
             ExactRevision: true,
@@ -276,5 +374,16 @@ public sealed class SourceRevisionIdentityTests
         }
 
         throw new DirectoryNotFoundException("LatencyPilot repository root could not be resolved from the test output directory.");
+    }
+
+    private static int CountOccurrences(string source, string value)
+    {
+        var count = 0;
+        for (var index = 0; (index = source.IndexOf(value, index, StringComparison.Ordinal)) >= 0; index += value.Length)
+        {
+            count++;
+        }
+
+        return count;
     }
 }
