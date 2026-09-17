@@ -183,9 +183,7 @@
                                   HorizontalScrollBarVisibility="Disabled"
                                   HorizontalContentAlignment="Left">
                         <Grid x:Name="OverviewContent"
-                              MaxWidth="{StaticResource ContentMaxWidth}"
-                              Padding="{StaticResource PagePadding}"
-                              HorizontalAlignment="Stretch">
+                              Style="{StaticResource DashboardPageContentStyle}">
                             <StackPanel Spacing="{StaticResource DashboardGap}">
                                 <StackPanel.ChildrenTransitions>
                                     <TransitionCollection>
@@ -492,9 +490,7 @@
                                   HorizontalScrollBarVisibility="Disabled"
                                   HorizontalContentAlignment="Left">
                         <Grid x:Name="MeasureContent"
-                              MaxWidth="{StaticResource ContentMaxWidth}"
-                              Padding="{StaticResource PagePadding}"
-                              HorizontalAlignment="Stretch">
+                              Style="{StaticResource DashboardPageContentStyle}">
                             <StackPanel Spacing="{StaticResource DashboardGap}">
                                 <StackPanel.ChildrenTransitions>
                                     <TransitionCollection>
@@ -650,9 +646,8 @@
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
                                   HorizontalContentAlignment="Left">
-                        <Grid MaxWidth="{StaticResource ContentMaxWidth}"
-                              Padding="{StaticResource PagePadding}"
-                              HorizontalAlignment="Stretch">
+                        <Grid x:Name="DevicesContent"
+                              Style="{StaticResource DashboardPageContentStyle}">
                             <StackPanel Spacing="{StaticResource DashboardGap}">
                                 <StackPanel.ChildrenTransitions>
                                     <TransitionCollection>
@@ -775,9 +770,8 @@
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
                                   HorizontalContentAlignment="Left">
-                        <Grid MaxWidth="{StaticResource ContentMaxWidth}"
-                              Padding="{StaticResource PagePadding}"
-                              HorizontalAlignment="Stretch">
+                        <Grid x:Name="EvidenceContent"
+                              Style="{StaticResource DashboardPageContentStyle}">
                             <StackPanel Spacing="{StaticResource DashboardGap}">
                                 <StackPanel.ChildrenTransitions>
                                     <TransitionCollection>

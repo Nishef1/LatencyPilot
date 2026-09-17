@@ -241,6 +241,8 @@ public sealed partial class MainWindow
             FontSize = 14,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            MaxLines = 2,
         });
         var waiting = new Border
         {

@@ -102,6 +102,14 @@ public sealed partial class MainWindow
             return;
         }
 
+        var pageWidth = Math.Min(
+            contentWidth + 64d,
+            DesignValue<double>("ContentMaxWidth"));
+        OverviewContent.Width = pageWidth;
+        MeasureContent.Width = pageWidth;
+        DevicesContent.Width = pageWidth;
+        EvidenceContent.Width = pageWidth;
+
         var inlineActions = contentWidth >= DesignValue<double>("HeaderInlineThreshold");
         PlaceHeaderAction(HeaderActions, HeaderActionsColumn, inlineActions);
         HeaderActions.Orientation = contentWidth < 620d ? Orientation.Vertical : Orientation.Horizontal;

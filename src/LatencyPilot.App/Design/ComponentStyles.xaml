@@ -72,6 +72,13 @@
         <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
 
+    <!-- Every dashboard page shares one measured, left-aligned content host. -->
+    <Style x:Key="DashboardPageContentStyle" TargetType="Grid">
+        <Setter Property="MaxWidth" Value="{StaticResource ContentMaxWidth}" />
+        <Setter Property="Padding" Value="{StaticResource PagePadding}" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
     <!-- Rounded glass navigation items. Applied via NavigationView.MenuItemContainerStyle. -->
     <Style x:Key="GlassNavItemStyle" TargetType="NavigationViewItem">
         <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
