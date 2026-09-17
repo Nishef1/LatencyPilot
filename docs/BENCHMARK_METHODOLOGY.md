@@ -1,13 +1,11 @@
 # Benchmark Methodology
 
 Status: **V0.9 benchmark contract**  
-Last updated: 2026-09-17
+Last updated: 2026-09-18
 
-> **GPU auto-affinity authority amendment (2026-09-17).** The automatic GPU candidate-search method is `gpu-affinity-benchmark-v1`. The existing `baseline-quality-v2` + `workload-stability-v1` contract remains authoritative for steady `RealWorld` five-window evidence, but is **not** the readiness gate for deterministic synthetic GPU candidate search. For automatic GPU affinity, system-wide CPU-busy drift is context rather than a standalone rejection; benchmark/GPU identity, frozen-workload identity, ETW integrity, repeated-side frame-p99 repeatability, ISR attribution/placement and device/sleep/reset events own validity. Passive processor pressure is ordering/context only, every eligible physical core is actively screened within the v1 bound, CPU0 remains eligible, and the winning physical core receives SMT-sibling refinement. The Windows original/default affinity is a **reference and exact recovery state, not a minimum-improvement winner gate**: among decision-grade repeatable forced-CPU candidates, the product selects the best observed CPU by transparent frame-tail ranking, then confirms that finalist. If no candidate remains decision-grade/repeatable, exact original state is restored rather than guessing. PresentMon evidence is collected through LatencyPilot's pinned standalone PresentMon 2.5.1 console collector; no separately installed PresentMon Service/API is required for this method. The benchmark uses a separate `latencypilot-gpu-benchmark-v1` evidence family and does not pollute `latencypilot-evidence-v9`. `Run GPU Gate A` is development-only; `Auto-optimize GPU` remains blocked until Gate D. Where older GPU-specific text conflicts with this amendment, this amendment and the reconciled GPU auto-affinity spec take precedence.
+LatencyPilot exists to distinguish measurable effects from placebo, ordinary run-to-run variation, workload drift and unsafe/unverified state. It is not a generic Windows tweak collection.
 
-LatencyPilot exists to distinguish measurable improvement from placebo, ordinary run-to-run variation, workload drift, isolated workload spikes, or a trade-off hidden by one headline number. It is an experimental optimization platform, not a collection of assumed Windows tweaks.
-
-Where implementation and this contract disagree, reconcile the discrepancy explicitly. Never lower the evidence bar merely to make an experiment pass.
+Current GPU auto-affinity authority: **ADR 0006**. The steady RealWorld evidence product and the deterministic GPU candidate-search method are intentionally different measurement shapes.
 
 ## 1. Evidence hierarchy
 
@@ -17,291 +15,237 @@ Where implementation and this contract disagree, reconcile the discrepancy expli
 1 × 5-second DPC/ISR capture
 ```
 
-Purpose: ETW integrity, module/routine attribution, per-CPU concentration, obvious tail events and hypothesis generation. It is **not** a benchmark verdict, stability proof, health score or optimization recommendation.
+Purpose: ETW integrity, attribution, per-CPU concentration, obvious tail events and hypothesis generation. It is not a benchmark verdict or health score.
 
-### 1.2 Repeated decision baseline — `baseline-quality-v2`
+### 1.2 Repeated steady baseline — `baseline-quality-v2`
 
 ```text
-LatencyPilot/service settle: 5 seconds
-5 authoritative windows × 20 seconds
+5 s settle
+5 authoritative windows × 20 s
 750 ms inter-window settle
 ```
 
-The workload must already be warmed/repeatable unless startup/loading behavior is intentionally under test. For `RealWorld`, this means one **steady** scene, action loop or workload pattern that is intended to remain comparable across all five windows.
+This remains the authoritative steady/manual RealWorld contract. Each window requires clean capture integrity, >=95% requested duration, >=1,000 DPC, >=1,000 ISR and finite positive distribution statistics. Existing noise/drift/workload-stability rules remain valid for this product.
 
-A built-in benchmark that intentionally moves through different scenes/phases is a different experiment shape. Its internal phases must **not** be treated as five equivalent `RealWorld` windows merely to obtain optimizer eligibility. Such a benchmark may still be useful diagnostic evidence, but decision-grade use requires repeated **whole-run** benchmark executions (or matched phase-to-phase runs) under fixed settings. The automatic GPU-affinity workflow satisfies that requirement through the separate `gpu-affinity-benchmark-v1` whole-run method; it does not reinterpret scripted phases as `RealWorld` windows.
+The automatic GPU-affinity workflow does **not** reinterpret its synthetic benchmark trials as these five equivalent RealWorld windows.
 
-Each window requires:
+### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v1`
 
-```text
-requested duration >= 20,000 ms
-actual duration >= 95%
-clean capture integrity
-DPC count >= 1,000
-ISR count >= 1,000
-finite positive DPC p99
-finite positive ISR p99
-```
+The product question is:
 
-Across window-level DPC/ISR p99 values:
+> Among the tested valid physical-core interrupt targets, which CPU gives the strongest repeatable controlled benchmark result?
 
-```text
-relative noise = (P90 - P10) / |median| <= 30%
-first-half/second-half relative drift <= 20%
-extreme-window deviation <= 50%
-```
-
-No inconvenient window is deleted. `Valid` means repeatable enough for this latency-quality method, not that the machine is globally healthy or optimizer-ready.
-
-### 1.3 Optimizer workload readiness — `workload-stability-v1`
-
-For the steady `RealWorld` evidence product, a valid `baseline-quality-v2` result is necessary but **not sufficient** for optimizer-readiness interpretation. The same five windows additionally analyze activity using DPC event rate, ISR event rate and system CPU busy when complete evidence exists. This contract remains unchanged for steady/manual evidence and historical `gpu-affinity-v1` eligibility.
-
-The automatic synthetic GPU-affinity benchmark does **not** weaken or reuse this CPU-busy hard gate. It uses `gpu-affinity-benchmark-v1` readiness instead, because the benchmark intentionally creates deterministic multicore CPU/GPU activity and must judge comparability from its own frozen workload, target GPU/process identity, ETW integrity and repeated control behavior.
-
-`latencypilot-evidence-v9` continues to serialize steady-workload quality/readiness. Automatic benchmark evidence uses its own schema and method identity.
-
-### 1.4 Controlled A/B experiment
-
-A mutation is never accepted because one post-change number looks better.
-
-```text
-Environment/provenance snapshot
-→ authoritative reference evidence
-→ candidate apply
-→ actual-state verification
-→ candidate evidence
-→ fresh candidate rechecks
-→ balanced reference/candidate confirmation
-→ Keep or exact Revert
-→ final-state verification
-```
-
-Use balanced/interleaved ordering where practical. GPU confirmation v1 uses fixed eight-run `ABBA + BAAB` ordering.
-
-Reboot-requiring experiments must persist exact experiment/rollback state across boots instead of pretending both sides were contiguous.
+Windows default is exact reference/recovery state. It is not an opponent that every forced CPU must beat by a fixed percentage.
 
 ## 2. Source hierarchy
 
-- Microsoft documentation is authoritative for Windows API/resource/ETW semantics and supported behavior.
-- Measured local evidence is authoritative for whether a candidate helps a particular machine/workload.
-- Maintained tools such as PresentMon are telemetry/prior-art sources, not automatic product truth.
-- Community reports are hypotheses/anecdotes until reproduced.
+- Microsoft documentation owns Windows API/resource/ETW semantics and supported behavior.
+- Measured local evidence owns what happens on the tested machine/workload.
+- Maintained tools such as PresentMon are telemetry/cross-check sources, not automatic truth.
+- Community reports and tuning videos are hypotheses/workflow references until reproduced.
 
-A documented Windows policy says what LatencyPilot may set. Measurement decides which candidate is best for the defined experiment and whether the evidence is safe enough to keep.
-
-## 3. Provenance
+## 3. Provenance and integrity
 
 Authoritative evidence records where applicable:
 
-- exact LatencyPilot version and clean source revision;
-- protocol/evidence/method versions;
-- Windows build and CPU topology;
-- target device/driver identity;
-- power/environment context;
-- workload/scene identity;
-- requested/actual interval;
-- exact requested mutation and verified actual state;
-- unique capture identity.
+- exact clean source revision;
+- schema/method version;
+- Windows build and processor topology;
+- target device and driver identity;
+- benchmark process/frozen workload/seed/worker map;
+- requested and actual interval;
+- requested mutation and verified stored state;
+- capture identity and integrity state.
 
-Do not collect unrelated personal data. Dirty/unverifiable source must not claim a clean exact revision.
+Dirty or unverifiable source must not claim clean provenance. Missing evidence remains missing rather than being reconstructed from registry folklore.
 
-## 4. Capture integrity and percentiles
+## 4. DPC/ISR semantics
 
-Decision-grade ETW is not clean when loss is unavailable/non-zero, invalid latency/image evidence exists, or the bounded event limit is reached.
+DPC/ISR counts are useful context but do not represent CPU cost by themselves. LatencyPilot also tracks execution duration and tail behavior. CPU0 concentration is evidence, not a universal CPU0-avoidance rule.
 
-The canonical percentile estimator is `linear-n-minus-one-v1`:
-
-```text
-position = (n - 1) * p
-value = lower + interpolation * (upper - lower)
-```
-
-A subsystem must not introduce another estimator under the same metric identity.
-
-Protocol v6 exposes p99.9 only with >=10,000 samples for that individual distribution. This is an adequacy floor, not a confidence guarantee.
-
-## 5. DPC/ISR reference semantics
+Stored interrupt configuration, allocated resources and runtime DPC/ISR behavior are separate evidence layers:
 
 ```text
-DPC >100 µs   Microsoft driver-duration reference
-ISR >25 µs    Microsoft driver-duration reference
->1 ms         LatencyPilot diagnostic bucket
->3 ms         LatencyPilot diagnostic bucket
+stored policy ≠ allocated assignment ≠ runtime placement
 ```
 
-These are context lines, not an optimizer objective or health score. CPU0 concentration is evidence, not a universal CPU0-avoidance rule.
+## 5. GPU controlled benchmark
 
-## 6. Metrics and verdicts
+The built-in D3D12 benchmark performs one adaptive calibration and then freezes:
 
-Every supported optimization domain defines:
+- worker mapping;
+- command workload;
+- simulation workload;
+- seed;
+- resolution;
+- benchmark process identity.
 
-- **primary metrics** — target effect;
-- **guardrails** — collateral behavior that can block an automatic win;
-- **context** — explanatory state that cannot independently make a candidate win.
+Applying GPU interrupt affinity may restart the display adapter. The benchmark recreates its D3D12 renderer after the restart but preserves the frozen workload/process identity.
 
-The authoritative verdict set is exactly:
+### 5.1 Controlled frame period
 
-- `Improved`
-- `Regressed`
-- `Tradeoff`
-- `NoMeasurableDifference`
-- `Inconclusive`
+Each benchmark loop records its own wall-clock period. Because the loop includes the benchmark's synchronization policy, this is a **controlled comparison signal**. It is not claimed to be identical to an arbitrary game's end-to-end frame time.
 
-Primary improvement plus material guardrail regression is `Tradeoff`. Missing, dirty, undersampled or unverified evidence is `Inconclusive`.
+For every scored run LatencyPilot derives:
 
-Do not replace the metric vector with an opaque composite score.
+- AVG FPS = inverse of mean valid frame period;
+- 1% low FPS from the worst 1% of controlled frame periods;
+- 0.1% low FPS from the worst 0.1%;
+- frame-p99 as diagnostic/tie context.
 
-## 7. GPU candidate and execution contract
+This is LatencyPilot's documented methodology. It is intentionally understandable and is not described as bit-for-bit identical to AutoGpuAffinity's historical low calculation.
 
-There are two intentionally separate GPU evidence paths:
+## 6. GPU candidate search
+
+Candidate generation uses actual Windows processor topology. One eligible logical representative is selected for each physical core; no even/odd numbering assumption is made and CPU0 is not banned.
+
+Current v1 sequence:
 
 ```text
-steady RealWorld five-window evidence
-= comparison/readiness product using baseline-quality-v2 + workload-stability-v1
-
-gpu-affinity-benchmark-v1
-= deterministic automatic synthetic candidate-search method
+exact original/default state
+→ 5 s non-scored original warm-up/reference
+→ each eligible physical core:
+     journaled apply/restart + stored-state verify
+     5 s non-scored warm-up
+     1 scored screening run
+     exact rollback
+→ rank valid screening candidates
+→ best up to three:
+     fresh apply/restart + stored-state verify
+     5 s non-scored warm-up
+     2 additional scored runs
+     exact rollback
+→ rank finalists from all three scored observations
+→ apply winner once
+→ final ETW placement-verification capture
+→ Keep only when final runtime ISR placement is proved
+   otherwise exact RestoreOriginal
 ```
 
-Automatic candidate search actively screens every eligible physical core when the machine is within the v1 bounded set (maximum 16), never hard-bans CPU0, treats passive DPC+ISR pressure only as deterministic ordering/context, and retains original/default Windows affinity as reference/recovery state. Candidate changes must not alter calibrated worker mapping, draw count, simulation work, seed, resolution or other frozen workload parameters.
+There is no active SMT sibling-refinement phase in v1 and no ABBA/BAAB finalist loop.
 
-Each candidate transition is journal-owned and may restart the display adapter. Therefore every state transition is followed by a **5-second non-scored warm-up** before decision-grade capture. Candidate screening uses two scored whole-run captures after that warm-up. A candidate is rankable only when its evidence is decision-grade, ISR attribution/placement is valid and repeated frame-p99 spread stays within the 20% repeatability bound.
+### 6.1 Ranking order
 
-The ranking rule is deliberately transparent: lower **median run-level frame-p99** wins, with passive pressure/topology identifiers used only as deterministic tie-breaks. There is no hidden weighted score. `Inconclusive` candidates are excluded from ranking. The best up-to-three physical-core candidates are then measured again from a fresh apply/restart + warm-up and ranked again. The winner of that fresh finalist re-screen receives SMT-sibling refinement when applicable.
+Ranking is transparent and lexicographic; there is no hidden weighted score:
 
-Screening/finalist/refinement may nominate a finalist; none can directly Keep a candidate. The final decision remains balanced confirmation against exact original state. Original comparison is retained as context and safety evidence; it is **not** a fixed minimum-improvement threshold that can prevent selection of the best valid forced-CPU candidate.
+1. higher **median 1% low**;
+2. higher median **0.1% low**;
+3. higher median **AVG FPS**;
+4. lower median **frame-p99** only as final deterministic diagnostic/tie context;
+5. passive pressure/core/processor identity only as deterministic fallback.
 
-Internal execution owns:
+An initial screening candidate has one scored observation. A finalist has three scored observations: its initial screen plus two fresh re-tests.
+
+### 6.2 Repeatability
+
+For finalists with repeated observations, 1% low is the primary stability signal. Current v1 bound:
 
 ```text
-Prepare journal
-→ Apply + activate/restart
-→ BeginMeasurement
-→ 5 s non-scored transition warm-up
-→ synchronized benchmark + ETW + raw PresentMon evidence
-→ runtime ISR-placement proof
-→ exact rollback
+relative 1%-low spread = (max - min) / min <= 20%
 ```
 
-If setup/capture/interpretation fails after mutation ownership is acquired, rollback remains in the same owned failure scope. If exact restoration cannot be proven, recovery remains unresolved. A confirmation failure must not discard a failed exact-original verification after rollback; the original failure and restoration-verification failure are both retained as recovery evidence.
+Non-finite/non-positive ranking metrics or spread above the bound makes that finalist unrankable. If no finalist remains valid/repeatable, exact Original is retained rather than inventing a winner.
 
-Public protocol v6 exposes no mutation command.
+## 7. Screening evidence and external collectors
 
-## 8. GPU synchronized evidence
+Screening must remain robust enough to complete the bounded CPU search.
 
-The automatic benchmark combines a deterministic D3D12 workload with kernel ETW and raw PresentMon evidence. D3D12 timestamp queries provide direct GPU-work timing and are the calibration source rather than relying on HWS-sensitive PresentMon GPU-active metrics alone. Per ADR 0005, the primary ranking signal is the benchmark's own wall-clock frame periods (AVG FPS, frame-p99, 1% low, 0.1% low) — the automated equivalent of a manual per-core decision table. PresentMon raw frame intervals remain useful as an independent cross-check and for guardrails when available; LatencyPilot derives authoritative percentiles with its canonical estimator instead of trusting an external precomputed percentile ordering.
+### Controlled benchmark evidence — required
 
-For Gate A automatic affinity, the authoritative collector is the pinned **standalone PresentMon 2.5.1 console executable**, not a separately installed PresentMon shared Service/API. LatencyPilot accepts only its controlled packaged/cache path and verifies the official release SHA-256 before use. It invokes the upstream-supported process-targeted V2 CSV surface and records the executable version/path as provenance. A missing or hash-invalid collector is non-authoritative and fails closed. The older service/API readers may continue to exist for other observation paths, but Gate A must not depend on `Program Files\Intel\PresentMon*` or `PresentMonAPI2.dll` being installed.
+- valid artifact/session identity;
+- frozen-workload continuity;
+- valid D3D12 timestamp evidence;
+- valid controlled frame periods;
+- exact stored affinity verified around candidate capture.
 
-PresentMon's own current documentation warns that `msGPUActive`/related GPU execution metrics may read late or high when Hardware-Accelerated GPU Scheduling is enabled, and that some CPU-frame-derived metrics are less accurate for OpenGL/Vulkan. Therefore PresentMon GPU-busy evidence is **context only** for `gpu-affinity-benchmark-v1`; it cannot independently validate, invalidate, or select a candidate. Direct D3D12 timestamp evidence remains the GPU-work timing source for the built-in DX12 benchmark.
+### PresentMon — independent best-effort cross-check
 
-A benchmark trial requires stable source/GPU/driver/topology/benchmark-process/frozen-workload identity, valid benchmark frame-period evidence with D3D12 timestamp evidence, expected stored state before/after a Candidate trial, and continuity. Standalone-PresentMon raw frames and clean ETW capture are best-effort guardrails per ADR 0005: their absence is recorded as explicit context and never as a silent pass, and never blocks video-primary ranking. The session records one original-state warm-up, then two decision-grade original reference controls. Every candidate apply/restart, finalist re-screen, SMT refinement and confirmation state transition also receives its own 5-second non-scored warm-up before scored evidence. Missing optional PresentMon fields stay missing. Background applications are context unless they actually break GPU/benchmark comparability.
+LatencyPilot uses the pinned standalone PresentMon 2.5.1 console collector; a separately installed PresentMon Service/API is not a Gate A prerequisite.
 
-Because applying a GPU interrupt-affinity candidate restarts the display adapter, the controlled benchmark recreates its D3D12 renderer before every trial while preserving the same process, frozen workload, worker map and seed. This prevents a stale `DXGI_ERROR_DEVICE_REMOVED` renderer from being mistaken for benchmark evidence failure.
+PresentMon's documented timing fields are not interchangeable:
 
-Durable cross-trial GPU identity uses the exact PnP display-device identity plus the matching single DXGI hardware adapter/name. Gate A does not require a PresentMon graphics-device ID for identity continuity. Multi/hybrid-GPU routing remains fail-closed until the workload-to-adapter route can be proven directly without guessing.
+- `MsBetweenPresents` = time between Present() calls;
+- `MsBetweenAppStart` = start of the current frame until CPU work begins for the next frame.
 
-`latencypilot-gpu-benchmark-v1` is repeated **whole-run** evidence. It is not `baseline-quality-v2` five-window RealWorld evidence and must never be converted into that schema merely to reuse an eligibility gate.
+Therefore the console CSV parser accepts the current `FrameTime` field or legacy `MsBetweenPresents` for present cadence; it does **not** substitute `MsBetweenAppStart` as the same metric. Failed raw CSV may be retained for owner diagnosis, but retention is bounded.
 
-## 9. GPU effective ISR-placement validity
+PresentMon GPU-active/busy metrics remain context; D3D12 timestamps are the direct GPU-work timing source for the built-in DX12 workload.
 
-Stored affinity policy is not proof of effective placement.
+### Kernel ETW during screening — best-effort unless it proves failure
 
-When kernel ETW is healthy, candidate evidence additionally requires the same ETW capture to show:
+If kernel ETW is unavailable/dirty during a screening block, the absence is explicit context and benchmark-period ranking may continue under verified stored state.
 
-- exact display-driver/module attribution;
-- at least one attributed GPU ISR on the candidate logical processor;
-- zero attributed GPU ISR on off-target processors;
-- unresolved ISR attribution remains unresolved rather than counting as success.
+If ETW is healthy and attribution proves the requested candidate is not the effective target, that candidate is invalid and cannot be ranked.
 
-Per ADR 0005, when kernel ETW is unavailable there is no placement proof
-either way: the trial stays rankable on benchmark frame periods under
-verified stored state but is explicitly flagged placement-unverified.
+## 8. Final GPU Keep validity
 
-For a single-adapter WDDM system, the verifier first uses resolved ISR addresses in the
-display KMD module (for example, `nvlddmkm.sys`). If that stream is absent, it may use
-resolved `dxgkrnl.sys` ISR dispatch evidence as an explicitly labelled WDDM fallback;
-the fallback is refused when more than one display adapter is present because the
-shared graphics-kernel stream cannot then be attributed to one GPU without guessing.
+Final Keep is intentionally stricter than screening.
 
-The automatic Gate A backend uses this same resolved ISR event set for both
-placement and ISR-duration comparisons, including original/control trials. It
-must not verify placement with `dxgkrnl` and then measure an empty KMD ISR stream.
-The ISR module/mode must remain consistent across compared trials; a source
-change invalidates comparison. DPC duration remains explicitly KMD-attributed.
-Each trial report retains the ISR module/mode, DPC/ISR sample counts and unresolved
-ISR count. Each candidate retains the exact comparison reason. Insufficient
-samples remain `Inconclusive` and restore original; they do not establish that
-the original state is faster. These are additive report fields; historical
-reports without them remain historical evidence and are not rewritten.
+After selecting the ranked winner, LatencyPilot applies it one final time and runs a fresh verification capture. Keep requires all of:
 
-The WDDM dispatch/KMD distinction follows Microsoft's description of the
-[DirectX graphics kernel subsystem](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/directx-graphics-kernel-subsystem)
-and [display interrupt callback](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/dispmprt/nc-dispmprt-dxgkddi_interrupt_routine).
-The single-adapter ETW attribution restriction is LatencyPilot's conservative
-measurement rule, not a claim that module names identify a GPU on multi-adapter systems.
+- exact stored candidate state verified before/after the capture;
+- kernel ETW integrity complete;
+- zero reported ETW event loss;
+- attributable GPU ISR samples exist;
+- target processor matches the selected finalist;
+- target ISR count > 0;
+- resolved off-target ISR count = 0.
 
-This is a validity contract. Physical Gate A must still prove it on supported hardware.
+Missing ETW is **not** sufficient for Keep. If final placement cannot be proved, LatencyPilot restores and verifies exact Original.
 
-## 10. `gpu-affinity-confirmation-v1`
+For a single-adapter WDDM system, display-KMD attribution is preferred; a labelled `dxgkrnl` dispatch fallback is accepted only where the existing conservative attribution method can identify the single display target without guessing.
 
-Confirmation requires exactly:
+## 9. Failure, cancellation and rollback
+
+Mutation ownership starts before state is changed and remains owned until exact Keep or Revert terminalization.
+
+- Candidate failure after apply → exact rollback + original verification.
+- Cancellation before Keep → exact rollback + original verification.
+- Final placement failure → exact rollback + original verification.
+- Keep failure → rollback is attempted and both failures are preserved if rollback also fails.
+- Unknown/diverged state stays recovery-owned; the journal is never edited away to make validation pass.
+
+## 10. Input/USB measurement contract
+
+Raw Input characterizes **host-observable** report timing and does not establish physical click-to-photon latency.
+
+Device routing must use authoritative topology:
 
 ```text
-A B B A B A A B
+Raw Input device → PnP ancestry → USB hub/port → exact xHCI controller
 ```
 
-`A` is exact captured original state; `B` is the ranked finalist candidate. Each scheduled role is preceded by a fresh 5-second non-scored warm-up after the required state transition; only the eight role captures are scored.
+Names, VID/PID or loose registry hints are not sufficient route proof.
 
-Every scored run shares benchmark/session/environment/source/frozen-workload identity, has a unique capture identity and satisfies the method's duration/sample/integrity rules. Before pooled interpretation, each side with two or more accepted trials must satisfy:
+After the GPU winner is fixed, v1 CPU selection for input/xHCI uses available interrupt headroom. The decision should prioritize DPC duration, ISR duration and tail spikes; DPC/ISR count is visible context/tie information rather than the sole optimizer truth. The GPU winner CPU is excluded by default.
 
-```text
-run-level frame-p99 spread = (max p99 - min p99) / min p99 <= 20%
-```
+System-changing xHCI affinity is part of the v1 workflow but remains unarmed until GPU Gate A physically proves the shared mutation/recovery substrate.
 
-A non-finite/non-positive run-level p99 or spread above 20% makes the confirmation `Inconclusive`. Missing/inconsistent ISR attribution, invalid placement/state, dirty ETW, identity drift or other decision-grade failure also makes it `Inconclusive`; exact original state is restored rather than guessing.
+## 11. Before/after evidence
 
-A finalist that remains decision-grade and repeatable through balanced confirmation may be kept even when its delta versus the Windows default is inside the generic ±3% comparison threshold or the default reference happens to measure faster. That comparison remains visible context. This is intentional: the product question for Auto GPU Affinity is **which tested CPU is the best valid forced interrupt target**, not whether forced affinity beats Windows' default scheduling policy by a fixed margin. If no valid/repeatable finalist exists, restore exact original state.
+The automatic v1 workflow should compare like-for-like baseline/final conditions where feasible and show raw named metrics rather than a synthetic overall score.
 
-## 11. Input/USB measurement contract
+Expected final user-facing evidence includes:
 
-Raw Input characterizes **host-observable** report dispatch behavior and does **not** establish physical switch-to-photon latency. Exact USB route evidence uses documented USB hub interfaces/IOCTLs; names, VID/PID or registry hints alone are not port proof. A future system-changing xHCI experiment must reuse the journal/recovery discipline and remains physically gated.
+- GPU selected CPU;
+- AVG / 1% low / 0.1% low and p99 context;
+- input/xHCI selected CPU;
+- per-CPU/controller DPC/ISR count, total duration and tail behavior;
+- host Raw Input timing where captured;
+- verification/recovery state.
 
-## 12. Network/RSS measurement contract
+Do not label a proxy as network latency, click-to-photon latency or another quantity that was not measured.
 
-Authoritative RSS state comes from supported Windows networking surfaces, currently `Root\StandardCimv2` `MSFT_NetAdapterRssSettingData`. Missing provider fields remain unavailable; they are not reconstructed from registry folklore. Internet path latency is uncontrolled and supplemental only. A future RSS mutation must snapshot exact authoritative original state and reuse the durable journal/recovery path after the shared physical safety prerequisite is proven.
+## 12. Future/non-v1 methods
 
-## 13. Workload profiles and Pareto policy
+NIC/RSS automatic mutation, audio affinity and cross-subsystem/Pareto automatic optimization are future work and do not gate v1. Existing read-only or policy source may remain but cannot silently enter the v1 decision path.
 
-Profiles are versioned, transparent definitions. Cross-subsystem relations are exactly `Dominates`, `Dominated`, `Equivalent`, `Tradeoff`, or `Inconclusive`. Unlike metrics are never collapsed into a weighted score.
+## 13. Auditability and observer effect
 
-## 14. Global Restore Baseline
+Authoritative experiments retain enough data to audit the decision later. Historical evidence is not rewritten to fit new interpretation logic.
 
-A `Kept` experiment is terminal for one experiment decision but still represents an active managed machine change. Global restore discovers retained changes newest-first, fails closed on unresolved/unknown mutation kinds, delegates to narrow supported recovery executors and verifies exact restoration.
+During authoritative capture avoid unnecessary per-event allocation, synchronous high-volume file I/O, frequent UI redraw and avoidable GC pressure. Benchmark progress reporting remains low frequency after calibration.
 
-## 15. Drift and invalid experiments
+## 14. Permanent-test policy
 
-For steady `RealWorld`, workload/system activity drift remains part of the existing method. For `gpu-affinity-benchmark-v1`, broad CPU-busy movement alone is not a terminal invalidation because the benchmark itself creates controlled multicore load. Benchmark contamination follows identity/integrity/control-drift rules with one bounded retry; accepted repeated candidate blocks additionally must pass the 20% run-level frame-p99 repeatability bound before ranking. A second retryable contamination failure, invalid attribution/placement or a repeatability failure becomes `Inconclusive` and is not rankable.
-
-Do not manufacture a favorable verdict around invalid evidence.
-
-## 16. Statistical significance and practical significance
-
-Latency distributions can be skewed, multimodal and heavy-tailed. Do not assume normality without evidence. A statistically detectable delta may still be practically irrelevant. Metric-family thresholds stay explicit and auditable. For GPU auto-affinity candidate ranking, practical transparency comes from raw run-level p99 values, median ranking, bounded fresh finalist re-screen and balanced confirmation rather than a hidden composite score.
-
-## 17. Persistence and auditability
-
-An authoritative experiment retains enough evidence to audit later: experiment/run role, schema/method identities, workload identity/version, requested/actual interval, raw-sample reference or auditable representation, sample counts/statistics, environment context, validity reasons, requested mutation/verified actual state and source/product version. Historical records are not rewritten to fit newer interpretation logic.
-
-## 18. Observer effect
-
-Avoid unnecessary per-event heap allocation, high-volume logging, synchronous file I/O, frequent UI redraw and avoidable GC pressure during authoritative measurement. After synthetic benchmark warm-up/calibration, measured trials freeze workload parameters and keep progress emission low-frequency.
-
-## 19. Permanent-test policy
-
-- Default/target permanent suite: **10** tests.
-- Current durable suite: **20** tests.
-- Every test source file: **<=1200 lines**.
-- Owner-authorized maximum: **20**, only for the file-size limit or materially safer durable subsystem separation.
-- Temporary/obsolete tests are removed rather than accumulated.
+The permanent suite is behavior-focused and must not grow one test per implementation detail. Temporary TDD characterization tests are removed after the behavior is represented in canonical tests. Physical benchmark repetitions and Gate A runs are evidence, not unit tests.
