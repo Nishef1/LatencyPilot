@@ -142,7 +142,7 @@ internal static class GpuAutoAffinityGateARunner
                 pressure,
                 cpuSets,
                 shuffleSeed,
-                TimeSpan.FromSeconds(15),
+                TimeSpan.FromSeconds(20),
                 TimeSpan.FromSeconds(30),
                 new ComparisonPolicy());
 

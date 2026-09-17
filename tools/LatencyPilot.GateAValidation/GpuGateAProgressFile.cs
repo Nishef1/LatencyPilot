@@ -19,6 +19,7 @@ internal sealed class GpuGateAProgressFile
     private readonly Stopwatch stopwatch = Stopwatch.StartNew();
     private readonly GpuAutoAffinityProgressPlan progressPlan;
     private readonly Dictionary<int, int> screeningCandidates = [];
+    private readonly Dictionary<int, int> tieBreakCandidates = [];
     private readonly Dictionary<string, int> refinementCandidates = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> candidatePassesStarted = new(StringComparer.Ordinal);
     private readonly object writeLock = new();
@@ -256,6 +257,7 @@ internal sealed class GpuGateAProgressFile
 
         if (request.Candidate is not null &&
             (string.Equals(request.Phase, "screening", StringComparison.Ordinal) ||
+             string.Equals(request.Phase, "screening-tiebreak", StringComparison.Ordinal) ||
              string.Equals(request.Phase, "smt-refinement", StringComparison.Ordinal)))
         {
             var key = $"{request.Phase}|{request.Candidate.Processor}";
@@ -325,6 +327,19 @@ internal sealed class GpuGateAProgressFile
             }
 
             return (index, progressPlan.PhysicalCandidateCount);
+        }
+
+        if (string.Equals(phase, "screening-tiebreak", StringComparison.Ordinal))
+        {
+            if (!tieBreakCandidates.TryGetValue(candidate.PhysicalCoreIndex, out var tieBreakIndex))
+            {
+                tieBreakIndex = tieBreakCandidates.Count + 1;
+                tieBreakCandidates.Add(candidate.PhysicalCoreIndex, tieBreakIndex);
+            }
+
+            // The bounded tie-break population is only known once screening has
+            // finished, so the ordinal is reported without a planned total.
+            return (tieBreakIndex, null);
         }
 
         if (string.Equals(phase, "smt-refinement", StringComparison.Ordinal))

@@ -78,6 +78,8 @@ public sealed class GpuAutoAffinitySession
     private const string DpcGuardrailMetric = "GPU-driver DPC duration (us)";
     private const string IsrGuardrailMetric = "GPU ISR duration (us)";
     private const double MaximumRunToRunFrameP99Drift = 0.20;
+    private const int MaximumTieBreakCandidates = 4;
+    private const string TieBreakPhaseName = "screening-tiebreak";
     private readonly IGpuAutoAffinitySessionBackend backend;
     private readonly IGpuAutoAffinitySessionObserver? observer;
 
@@ -181,7 +183,15 @@ public sealed class GpuAutoAffinitySession
                 physicalEvaluations.Add(new CandidateEvaluation(candidate, comparison));
             }
 
-            var physicalFinalist = SelectFinalist(physicalEvaluations);
+            var physicalFinalist = await SelectFinalistWithTieBreakAsync(
+                request,
+                physicalEvaluations,
+                controls,
+                reference!,
+                candidateReports,
+                trialReports,
+                () => ++nextRunNumber,
+                cancellationToken).ConfigureAwait(false);
             if (physicalFinalist is null)
             {
                 var inconclusive = candidateReports.Count(static item => item.Verdict == "Inconclusive");
@@ -261,6 +271,59 @@ public sealed class GpuAutoAffinitySession
                 trialReports,
                 reasons);
         }
+    }
+
+    private async Task<CandidateEvaluation?> SelectFinalistWithTieBreakAsync(
+        GpuAutoAffinitySessionRequest request,
+        List<CandidateEvaluation> physicalEvaluations,
+        List<GpuAutoAffinityTrialObservation> controls,
+        GpuBenchmarkEvidence reference,
+        List<GpuAutoAffinityCandidateReport> candidateReports,
+        List<GpuAutoAffinityTrialReport> trialReports,
+        Func<int> nextRunNumber,
+        CancellationToken cancellationToken)
+    {
+        var directFinalist = SelectFinalist(physicalEvaluations);
+        if (directFinalist is not null)
+        {
+            return directFinalist;
+        }
+
+        var tiedEvaluations = physicalEvaluations
+            .Where(static evaluation =>
+                evaluation.Comparison.Verdict == ExperimentVerdict.Improved ||
+                evaluation.Comparison.Verdict == ExperimentVerdict.NoMeasurableDifference)
+            .ToArray();
+        if (tiedEvaluations.Length < 2 ||
+            tiedEvaluations.Length > MaximumTieBreakCandidates)
+        {
+            return null;
+        }
+
+        // Every tie-break candidate is re-measured, including already-Improved
+        // cores: both statistics must come from the same re-screened evidence.
+        var tieBreakEvaluations = new List<CandidateEvaluation>(tiedEvaluations.Length);
+        foreach (var tied in tiedEvaluations)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var observations = await MeasureCandidateAsync(
+                tied.Candidate,
+                TieBreakPhaseName,
+                repetitions: 2,
+                request.ScreeningDuration,
+                reference,
+                nextRunNumber,
+                trialReports,
+                cancellationToken).ConfigureAwait(false);
+            var comparison = Compare(controls, observations, request.Policy);
+            var report = ToReport(TieBreakPhaseName, tied.Candidate, observations.Length, comparison);
+            candidateReports.Add(report);
+            await PublishCandidateReportAsync(report).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            tieBreakEvaluations.Add(new CandidateEvaluation(tied.Candidate, comparison));
+        }
+
+        return SelectFinalist(tieBreakEvaluations);
     }
 
     private async Task<GpuAutoAffinitySessionResult> ConfirmFinalistAsync(

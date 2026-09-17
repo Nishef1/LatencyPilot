@@ -153,6 +153,8 @@ Do not interpret the smoke trial as a candidate winner. It only proves the deter
 
 ## 5. Run the complete benchmark-backed Gate A search
 
+Prerequisite: the PresentMon 2.5.1 shared-service API (`PresentMonAPI2.dll`, API 3.3+) must be discoverable by `PresentMonApiLocator` — typically installed under `Program Files\Intel\PresentMon*`. Without it every Gate A trial fails closed before the first control trial with `PresentMon graphics-device evidence is unavailable`, because continuity requires a PresentMon-verified GPU identity. Recent owner runs (2026-09-16/17) show exactly that failure; reinstall the PresentMon shared service before re-running the gate.
+
 In the development App click:
 
 ```text
@@ -168,6 +170,7 @@ normal-user App
 → exact original-state capture
 → original control trials
 → every eligible physical core screened within v1 bound (max 16)
+→ bounded screening-tiebreak re-screen when short-window screening ties
 → winning physical core SMT-sibling refinement when applicable
 → fixed ABBA + BAAB finalist confirmation
 → verified KeepCandidate OR exact RestoreOriginal
@@ -177,6 +180,10 @@ normal-user App
 On the Ryzen 7 5700X system, expect eight physical-core screening candidates before refinement, subject only to explicit CPU-set eligibility exclusions. CPU0 is eligible and must not be hard-banned.
 
 Passive processor pressure is ordering/context only. It does not pre-select the winner.
+
+### Screening tie-break
+
+The 15–60 s screening windows can leave several cores inside the ±3 % decision threshold. When the bounded screening population ties (2–4 candidates all `Improved` or all `NoMeasurableDifference`), the session re-screens exactly those candidates once more (`screening-tiebreak` phase, two fresh trials per candidate against the same controls) and selects the finalist from that re-screen only. If the re-screen still cannot separate them, the session reports `RestoreOriginal` with the tie-break evidence retained — it never guesses. Noisy candidates that abort as `Inconclusive` remain excluded: the tie-break is a stability resolution, not a retry.
 
 ## 6. Inspect live progress behavior
 
@@ -295,7 +302,7 @@ Gate A passes only when physical evidence on one exact clean revision proves all
 1. normal App + protected Service build/install/launch works;
 2. journal starts clean with zero unresolved experiments;
 3. the built-in D3D12 benchmark runs without mutation, uses multiple physical cores and freezes one workload for comparison;
-4. the full automatic search screens the bounded eligible physical-core set rather than a passive rank-1/four-core shortcut;
+4. the full automatic search screens the bounded eligible physical-core set rather than a passive rank-1/four-core shortcut, and a screening tie resolves through one bounded `screening-tiebreak` re-screen (or terminates explicitly inconclusive without guessing);
 5. SMT sibling refinement behaves as planned when applicable;
 6. exact-target apply reaches verified stored state and direct runtime GPU ISR placement under the requested processor rules;
 7. screening candidates rollback exactly before the next candidate;

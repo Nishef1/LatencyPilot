@@ -210,6 +210,87 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsFalse(finalStopBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
     }
 
+    [TestMethod]
+    public async Task SessionBreaksScreeningTiesWithOneBoundedReScreen()
+    {
+        var topology = new ProcessorTopologySnapshot(
+            [new ProcessorPackageSnapshot(0,
+                [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 2)])],
+            [
+                new ProcessorCoreSnapshot(0, 0, [new LogicalProcessorId(0, 0)]),
+                new ProcessorCoreSnapshot(1, 0, [new LogicalProcessorId(0, 2)]),
+            ],
+            DateTimeOffset.UnixEpoch);
+        var pressure = new[]
+        {
+            new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0.1),
+            new ProcessorPressureEvidence(new LogicalProcessorId(0, 2), 0.2),
+        };
+        var request = new GpuAutoAffinitySessionRequest(
+            Guid.NewGuid(),
+            topology,
+            pressure,
+            null,
+            0x51A7,
+            TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(30),
+            new ComparisonPolicy(20, 0.03, 0.05, 0.99));
+        var backend = new RecordingBackend(noisyScreening: true);
+        var observer = new RecordingObserver();
+
+        var result = await new GpuAutoAffinitySession(backend, observer).RunAsync(request);
+
+        Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, result.Recommendation);
+        Assert.IsNotNull(result.Finalist);
+        Assert.AreEqual(new LogicalProcessorId(0, 2), result.Finalist.Processor);
+        var tieBreakReports = observer.Reports.Where(static report =>
+            report.Phase == "screening-tiebreak").ToArray();
+        Assert.AreEqual(2, tieBreakReports.Length);
+        Assert.IsTrue(tieBreakReports.All(static report => report.TrialCount == 2));
+        Assert.AreEqual(
+            "Improved",
+            tieBreakReports.Single(static report => report.Processor == new LogicalProcessorId(0, 2)).Verdict);
+        Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "screening-tiebreak"));
+        Assert.IsTrue(backend.Events.Contains("keep:0:2"));
+        Assert.IsTrue(backend.Events.Count(static item => item.StartsWith("apply:", StringComparison.Ordinal)) >= 4);
+    }
+
+    [TestMethod]
+    public async Task SessionKeepsOriginalWhenEveryScreenedCandidateStaysNoisy()
+    {
+        var topology = new ProcessorTopologySnapshot(
+            [new ProcessorPackageSnapshot(0,
+                [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 2)])],
+            [
+                new ProcessorCoreSnapshot(0, 0, [new LogicalProcessorId(0, 0)]),
+                new ProcessorCoreSnapshot(1, 0, [new LogicalProcessorId(0, 2)]),
+            ],
+            DateTimeOffset.UnixEpoch);
+        var pressure = new[]
+        {
+            new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0.1),
+            new ProcessorPressureEvidence(new LogicalProcessorId(0, 2), 0.2),
+        };
+        var request = new GpuAutoAffinitySessionRequest(
+            Guid.NewGuid(),
+            topology,
+            pressure,
+            null,
+            0x51A7,
+            TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(30),
+            new ComparisonPolicy(20, 0.03, 0.05, 0.99));
+        var backend = new RecordingBackend(noisyScreening: true, noisyTieBreak: true);
+
+        var result = await new GpuAutoAffinitySession(backend).RunAsync(request);
+
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, result.Recommendation);
+        Assert.IsNull(result.Finalist);
+        Assert.IsTrue(result.Report.FinalStateVerified);
+        Assert.IsFalse(backend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
+        Assert.IsFalse(result.Report.Trials.Any(static trial => trial.Phase == "confirmation"));
+    }
+
     private sealed class RecordingObserver(Action<GpuAutoAffinityCandidateReport>? onReport = null)
         : IGpuAutoAffinitySessionObserver
     {
@@ -229,7 +310,9 @@ public sealed class GpuAutoAffinitySessionTests
         bool missingIsrSamples = false,
         bool changedIsrSource = false,
         bool noisyConfirmation = false,
-        bool failRecoveryVerificationAfterKeepFailure = false) : IGpuAutoAffinitySessionBackend
+        bool failRecoveryVerificationAfterKeepFailure = false,
+        bool noisyScreening = false,
+        bool noisyTieBreak = false) : IGpuAutoAffinitySessionBackend
     {
         private int captureSequence;
         private int originalControlSequence;
@@ -289,6 +372,19 @@ public sealed class GpuAutoAffinitySessionTests
             {
                 var sequence = Interlocked.Increment(ref confirmationCandidateSequence);
                 frameTime = sequence % 2 == 0 ? 4d : 9d;
+            }
+
+            if (noisyScreening &&
+                (string.Equals(request.Phase, "screening", StringComparison.Ordinal) ||
+                 string.Equals(request.Phase, "screening-tiebreak", StringComparison.Ordinal)))
+            {
+                // The first screening pins CPU 2 exactly on the control value so the
+                // comparison is a stable tie; the bounded re-screen either resolves
+                // the tie (4d) or stays pinned (10d) when the noise persists.
+                var isTieBreak = string.Equals(request.Phase, "screening-tiebreak", StringComparison.Ordinal);
+                frameTime = candidate.Processor.Number == 2 && !(isTieBreak && noisyTieBreak)
+                    ? isTieBreak ? 4d : 10d
+                    : 10.2d;
             }
             return Task.FromResult(CreateObservation(request, candidate, frameTime));
         }
