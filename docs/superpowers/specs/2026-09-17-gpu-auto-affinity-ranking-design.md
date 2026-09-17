@@ -1,234 +1,47 @@
-# GPU Auto-Affinity Ranked Search Design
+# GPU Auto-Affinity Ranked Search Design — Historical
 
-Status: **Current canonical design**  
-Date: 2026-09-17
+Status: **Superseded by ADR 0006 (`docs/adr/0006-simple-auto-interrupt-affinity-v1.md`)**  
+Original date: 2026-09-17  
+Superseded: 2026-09-18
 
-This specification supersedes `2026-09-16-gpu-auto-affinity-benchmark-design.md` where the older design treated the Windows/original affinity as a winner that every forced-CPU candidate had to measurably beat.
+This specification records the intermediate ranked-search design that corrected the earlier “every candidate must measurably beat Windows default” mistake. It is no longer the canonical v1 behavior.
 
-## Product question
+## Durable lessons retained
 
-LatencyPilot Auto GPU Affinity answers:
+- Windows/original GPU affinity is exact rollback/reference state, not a fixed minimum-improvement winner gate.
+- Candidate generation must use real Windows processor topology; CPU0 is eligible and even/odd numbering is not a portable rule.
+- Every GPU affinity transition gets a non-scored stabilization/warm-up before scored evidence.
+- One frozen D3D12 workload/worker map/seed must be preserved across candidate measurements.
+- PresentMon is reused rather than replaced, but its standalone console is an independent cross-check rather than a separately installed Service prerequisite.
+- Existing ETW, mutation journal, exact-state comparison, GPU restart and recovery infrastructure are reused rather than replaced.
+- No liblava/Vulkan/OCAT/second benchmark stack is required for v1.
 
-> Among the eligible logical processors that can validly host the target GPU's interrupts, which processor produces the best repeatable frame-tail behavior under the fixed built-in graphics workload?
+## Superseded search details
 
-The Windows/original affinity remains:
+The 2026-09-17 design used two scored runs for every physical core, active SMT sibling refinement, p99-centric ranking and balanced ABBA/BAAB finalist confirmation. ADR 0006 deliberately simplifies that flow.
 
-- exact rollback/recovery state;
-- a reference side in reports and balanced confirmation;
-- evidence for contamination/continuity;
-
-but it is **not** a fixed minimum-improvement gate for the forced-CPU ranking problem.
-
-If no candidate remains decision-grade and repeatable, restore exact original state. Never manufacture a winner from invalid evidence.
-
-## Reused components; no wheel reinvention
-
-- **PresentMon 2.5.1 standalone console** supplies raw presentation/frame CSV. LatencyPilot pins the official executable and SHA-256. A separate PresentMon Service/API installation is not a Gate A prerequisite.
-- **Sylvan.Data.Csv 1.4.4** parses PresentMon CSV rather than maintaining a custom CSV parser.
-- **Vortice.Direct3D12 / Vortice.DXGI 3.8.3** remain the .NET bindings for the built-in deterministic D3D12 workload and adapter identity.
-- **Microsoft TraceEvent + existing LatencyPilot ETW code** provide ISR/DPC evidence and placement proof.
-- Existing mutation journal, exact-state comparer, GPU restart coordinator, safe cancellation and recovery paths remain authoritative.
-
-Do not add liblava, Vulkan SDK, OCAT, a second benchmark stack or a custom PresentMon replacement for this feature.
-
-## Candidate population
-
-- screen one representative logical processor for every eligible physical core when physical-core count is within the v1 bound (maximum 16);
-- CPU0 is eligible;
-- passive DPC/ISR pressure is ordering/context only;
-- preserve one frozen worker map, seed, calibrated workload, resolution and command/simulation load across the whole session;
-- after the winning physical core is established, measure both SMT siblings when present.
-
-## Measurement lifecycle
-
-The physical report from 2026-09-17 demonstrated a systematic first-pass transient after GPU affinity apply/restart. Therefore every state transition that can restart/reinitialize the display path has a non-scored stabilization interval before decision evidence.
-
-### Original reference
+Current v1 behavior is:
 
 ```text
-original state
-→ 5 s workload warm-up (not scored)
-→ reference control #1
-→ reference control #2
+5 s original non-scored warm-up/reference
+→ every eligible physical core:
+     apply/restart/verify
+     5 s non-scored warm-up
+     1 scored screen
+     exact rollback
+→ rank by median 1% low → 0.1% low → AVG FPS, p99 as diagnostic/tie context
+→ best up to three:
+     fresh apply/restart/warm-up
+     2 additional scored runs
+     exact rollback
+→ reject materially unstable repeated 1% lows
+→ apply ranked winner once
+→ final ETW target-only GPU ISR placement verification
+→ Keep only if final placement is proved; otherwise exact RestoreOriginal
 ```
 
-### Candidate screen
+Screening can continue when PresentMon or ETW is unavailable if the controlled benchmark artifact and stored-state continuity are valid. Healthy ETW proving wrong/off-target placement invalidates the candidate. Final Keep is stricter: missing runtime ISR-placement proof is not accepted.
 
-For each physical-core candidate:
+USB/xHCI automatic selection/mutation is also part of the v1 product direction after the shared GPU mutation/recovery substrate passes physical Gate A; it is no longer permanently manual/deferred.
 
-```text
-journal-owned ApplyCandidate
-→ GPU activation/restart
-→ verify stored candidate
-→ 5 s post-transition warm-up (not scored)
-→ scored whole-run #1
-→ scored whole-run #2
-→ verify placement/evidence
-→ exact rollback to original
-```
-
-A warm-up is retained in the report but is never used in ranking statistics.
-
-## Validity and rankability
-
-A scored candidate block is rankable only when all of the following hold:
-
-- exact source/method/workload/process identities are valid;
-- target PnP + single DXGI hardware adapter identity is stable;
-- stored candidate is verified before/after capture;
-- kernel ETW integrity is clean;
-- GPU ISR attribution source is present and consistent;
-- at least one attributed ISR executes on the requested logical processor;
-- zero attributed ISR events execute off target;
-- raw PresentMon frame evidence is available for the benchmark process/window;
-- D3D12 timestamp evidence is valid;
-- two run-level frame-p99 values are finite/positive;
-- `(max p99 - min p99) / min p99 <= 20%`.
-
-`Inconclusive` blocks are not rankable. A generic Original-vs-candidate `Regressed`, `Tradeoff`, `NoMeasurableDifference` or `Improved` label is report context and does not by itself disqualify a valid forced-CPU candidate.
-
-## Ranking
-
-No weighted composite score.
-
-For each rankable candidate:
-
-```text
-ranking value = median(run-level frame-p99)
-lower is better
-```
-
-Deterministic tie-breaks:
-
-1. lower observed passive pressure;
-2. lower physical-core index;
-3. lower logical processor number.
-
-These tie-breaks provide deterministic output only; they do not override a lower measured frame-tail value.
-
-## Fresh finalist re-screen
-
-Take the best up-to-three rankable physical-core candidates and re-measure every one from a **fresh apply/restart**:
-
-```text
-apply/restart
-→ 5 s non-scored warm-up
-→ two fresh scored whole runs
-→ repeatability/validity gate
-→ rank again by median frame-p99
-→ rollback
-```
-
-Only fresh re-screen evidence chooses the physical-core finalist. If none survives, restore original.
-
-## SMT refinement
-
-Measure the logical siblings of the winning physical core using the same transition warm-up, two scored runs, validity gate and median-p99 ranking. The best rankable sibling becomes the finalist.
-
-## Balanced confirmation
-
-Keep the existing fixed confirmation schedule:
-
-```text
-A B B A B A A B
-```
-
-`A` = exact original state.  
-`B` = ranked finalist.
-
-Each role receives a fresh 5-second non-scored warm-up after its state is established, followed by the scored confirmation run.
-
-The finalist may be kept when:
-
-- all candidate confirmation evidence is decision-grade;
-- ISR attribution remains comparable;
-- candidate-side repeated p99 spread remains <=20%;
-- final stored candidate is verified;
-- the owned experiment can be terminalized safely.
-
-It does **not** need to exceed a generic 3% improvement threshold versus Windows default. Original comparison remains visible context. If confirmation is `Inconclusive` or candidate repeatability fails, rollback to exact original.
-
-## PresentMon integration
-
-Use the official standalone console surface supported upstream:
-
-```text
---process_id
---output_file
---v2_metrics
---date_time
---timed
---terminate_after_timed
-```
-
-LatencyPilot starts PresentMon before the scored workload window, starts ETW, starts the controlled benchmark, then crops parsed CSV rows to the benchmark artifact's exact start/end timestamps. This avoids treating collector startup or shutdown as benchmark frames.
-
-Collector resolution order:
-
-1. explicitly supplied trusted path, if any;
-2. LatencyPilot packaged `ThirdParty/PresentMon` path;
-3. LatencyPilot-controlled versioned cache;
-4. provision exact official v2.5.1 release asset into the cache.
-
-Every candidate executable must match the pinned SHA-256 before execution. A failed download/hash/version/capture is a failed evidence path, not permission to use an arbitrary installed binary.
-
-Gate A GPU identity continuity uses PnP + DXGI and does not depend on a PresentMon Service graphics-device ID. Multi/hybrid-GPU routing remains fail-closed until direct workload-to-adapter proof exists.
-
-## Metrics
-
-Primary ranking metric:
-
-- run-level raw PresentMon CPU frame-time p99, median across repeated runs.
-
-Evidence/guardrails/context retained:
-
-- 1% low derived from p99;
-- D3D12 GPU work timestamps;
-- GPU-driver DPC duration;
-- attributed GPU ISR duration;
-- PresentMon CPU busy/wait, GPU time/latency/display latency when present;
-- system CPU/background activity as context;
-- exact state/driver/power/awake-time continuity.
-
-Do not collapse these into an opaque score.
-
-## User environment
-
-The automatic benchmark should not require the user to manually close every ordinary application. Background activity is recorded/contextualized. Genuine contamination, identity drift or unstable repeated evidence fails/retries through the bounded validity rules.
-
-For the cleanest physical Gate A evidence, the owner may still minimize unnecessary background load; this is validation hygiene, not a product prerequisite.
-
-## Safety invariants
-
-Unchanged:
-
-- one owned mutation at a time;
-- journal before mutation;
-- exact stored-state verification;
-- explicit GPU activation/restart result;
-- runtime target/off-target ISR placement proof;
-- exact rollback between candidates;
-- safe cancellation owns rollback before terminal state;
-- unresolved/diverged state never auto-overwritten;
-- public mutation remains blocked until Gate B/C/D.
-
-## Physical closure
-
-Source/CI completion is not physical success. Gate A still requires an owner-local run on the exact green revision proving:
-
-- standalone PresentMon collection works without separate service installation;
-- every eligible physical core gets apply → warm-up → scored runs → rollback;
-- first/second scored runs no longer show the systematic post-restart transient seen in the prior report;
-- a fresh finalist re-screen produces at least one rankable candidate;
-- final `finalProcessor` is non-null on a successful Keep;
-- final candidate state and target-only ISR placement are verified;
-- `recoveryStatus=clean-zero-unresolved`;
-- a repeated whole search selects an equivalent finalist or gives an explicit evidence-based failure rather than arbitrary winner changes.
-
-## External basis rechecked 2026-09-17
-
-- GameTechDev PresentMon: current standalone console documentation and CLI source (`--process_id`, CSV output, V2 metrics, timed capture).
-- GameTechDev PresentMon v2.5.1 release asset and digest.
-- Sylvan.Data.Csv current documentation/release notes for header/quoted/async CSV parsing.
-- AutoGpuAffinity prior art for active per-core benchmarking, repeated runs and post-change workload settling.
-- Microsoft D3D12 timestamp/multithreading and Windows interrupt-affinity semantics already cited by the broader project documentation.
+For current requirements use ADR 0006, `ROADMAP.md`, `PROJECT_STATUS.md`, `SYSTEM_DESIGN.md`, `docs/BENCHMARK_METHODOLOGY.md`, and `docs/PHASE3_PHYSICAL_VALIDATION.md`.
