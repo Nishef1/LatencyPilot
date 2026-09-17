@@ -2,7 +2,7 @@
 
 This is the live execution ledger for `ROADMAP.md`. Current source/runtime evidence owns actual state; plans and historical chat do not.
 
-Last updated: 2026-09-16
+Last updated: 2026-09-17
 
 ## Overall
 
@@ -65,17 +65,18 @@ Steady optimizer readiness — workload-stability-v1
 Automatic GPU affinity — gpu-affinity-benchmark-v1
   deterministic D3D12 benchmark
   one adaptive calibration, then frozen workload/worker mapping
-  repeated original controls
+  one non-reference original warm-up, then repeated original controls
   every eligible physical core actively screened within v1 bound (max 16)
   CPU0 remains eligible
   passive processor pressure = ordering/context only
   winning physical core receives sibling refinement when applicable
   final ABBA + BAAB confirmation against exact original state
+  repeated-side frame-p99 spread must remain <=20% before pooled comparison
   original/default wins when no candidate establishes safe measurable improvement
   one bounded retry for retryable contamination; otherwise Inconclusive
 ```
 
-Automatic GPU benchmark validity is owned by exact source/GPU/driver/benchmark/frozen-workload identity, ETW integrity, stored-state verification, runtime GPU ISR placement and control comparability. System-wide CPU-busy drift alone is not a hard failure for this synthetic method.
+Automatic GPU benchmark validity is owned by exact source/GPU/driver/benchmark/frozen-workload identity, ETW integrity, stored-state verification, runtime GPU ISR placement, per-side repeatability and control comparability. System-wide CPU-busy drift alone is not a hard failure for this synthetic method.
 
 `Valid` never means globally healthy or optimal.
 
@@ -115,11 +116,14 @@ capture exact original/default GPU affinity
 → launch normal-user LatencyPilot.GpuBenchmark
 → deterministic D3D12 warm-up/adaptive calibration
 → freeze worker map + workload + seed
-→ two original control trials
+→ one non-reference original warm-up trial
+→ two original decision-control trials
 → generate every eligible physical-core candidate within v1 bound (max 16)
 → deterministic shuffled screening, 2 × 15 s per candidate
 → verify stored candidate + synchronized benchmark/ETW/raw PresentMon evidence
-→ require direct GPU-driver ISR placement on requested logical processor
+→ require resolved single-adapter target-only ISR placement
+   (display KMD preferred; labelled dxgkrnl fallback only when unambiguous)
+→ require repeated-side frame-p99 spread <=20% before pooled comparison
 → exact rollback before next screening candidate
 → nominate physical-core finalist only from measurable improvement
 → test eligible sibling(s) of finalist physical core
@@ -138,7 +142,8 @@ Dedicated source contracts now include:
 - bounded all-core candidate planner + sibling refinement;
 - `GpuAutoAffinitySession` orchestration/report;
 - topology-aware progress plan and real candidate verdict observer;
-- late-safe-stop contract: cancellation after final comparison still prevents Keep and forces rollback if candidate state remains owned.
+- late-safe-stop contract: cancellation after final comparison still prevents Keep and forces rollback if candidate state remains owned;
+- confirmation/recovery failure handling that preserves the original failure and escalates an unverified exact-original rollback instead of silently discarding it.
 
 ### Development App experience — source complete, physical UI inspection pending
 
@@ -173,7 +178,7 @@ affinity=0x0
 flags=0x0002
 ```
 
-That tuple remains provenance only and is not accepted as effective placement. Current source requires direct runtime GPU-driver ISR evidence.
+That tuple remains provenance only and is not accepted as effective placement. Current source requires resolved single-adapter runtime ISR evidence: display-KMD attribution is preferred; an explicitly labelled `dxgkrnl.sys` WDDM fallback is accepted only when a single display adapter makes attribution unambiguous under the conservative method.
 
 Current Gate A runbook: `docs/PHASE3_PHYSICAL_VALIDATION.md`.
 
@@ -183,7 +188,7 @@ Gate A now requires physical evidence on one exact clean revision for:
 2. D3D12 benchmark smoke without mutation, including multicore activity and finite/stable timestamp evidence;
 3. full bounded candidate search (expected eight physical cores on the owner Ryzen 7 5700X absent explicit CPU-set exclusions);
 4. real progress/taskbar/keyboard/accessibility behavior;
-5. exact candidate stored state + direct target-only GPU ISR placement;
+5. exact candidate stored state + resolved target-only single-adapter ISR placement;
 6. exact rollback between screening candidates;
 7. balanced finalist decision with verified Keep or RestoreOriginal;
 8. **Stop safely** restoring/verifying original with zero unresolved state;
@@ -199,7 +204,7 @@ revision `245ea18c893996451f1fec3e4005e24eba3c4d3b`:
 - the run screened all 8 eligible physical-core candidates with 2 × 15 s per
   candidate, producing 19 capture-ready trials and 19 raw benchmark artifacts
   (capture readiness alone does not establish a valid candidate comparison);
-- all 16 candidate trials produced direct WDDM placement proof on the requested
+- all 16 candidate trials produced resolved WDDM placement proof on the requested
   processor with 192,030 target ISR events and 0 off-target ISR events;
 - the saved recommendation was `RestoreOriginal`; this must not be interpreted
   as proof that original/default affinity is the fastest setting (see the
@@ -215,18 +220,26 @@ the complete physical exit gate: the separate Stop-safely interaction,
 rendered keyboard/accessibility/taskbar inspection, and an independent
 reproducibility/failure-recovery exercise remain owner-local closure items.
 
-### Gate A ISR comparison correction — source fixed, physical rerun pending
+### Gate A comparison/safety correction — source fixed, physical rerun pending
 
 - **Completed now:** placement and ISR-duration collection share the same
   single-adapter KMD/WDDM attribution on original and candidate trials. Changed
   ISR sources fail closed. Reports retain module/mode/sample counts and each
   comparison's actual reason; progress and terminal UI distinguish inconclusive
   comparisons from measured non-improvement.
-- **Evidence:** the missing-ISR regression failed before the repair; focused
-  attribution/session tests and the 21 existing critical tests passed locally.
-  No permanent test method was added. The existing 21-method count exceeds the
-  documented 20-method cap and remains a separate pre-existing consolidation item.
-  A fresh physical run of this correction is still required.
+- **Control/repeatability correction:** startup warm-up is now a distinct
+  `screening-warmup` phase and cannot seed the decision control-drift reference.
+  Repeated original/candidate sides with frame-p99 spread above 20% become
+  `Inconclusive` before pooled comparison, preventing an unstable finalist from
+  reaching automatic Keep.
+- **Recovery correction:** if confirmation fails while a candidate is owned,
+  rollback is followed by exact-original verification. A false verification is
+  retained together with the original failure as a recovery failure rather than
+  being ignored.
+- **Evidence discipline:** the regressions are folded into the canonical GPU
+  session test rather than creating more permanent test methods. The durable
+  suite remains at the owner-authorized **20-method maximum**; the exact final
+  source claim still requires a green hosted Tests run on the exact final HEAD.
 - **Still open:** the report at source `8324fac0750b195a305422e13f64383329ec1a3f`
   (session `464e8268-422b-42f6-924b-789e71c3d1e3`) contains eight `Inconclusive`
   comparisons with null improvement values. It proves verified restoration,
