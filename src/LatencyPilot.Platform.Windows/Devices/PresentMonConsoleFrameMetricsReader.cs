@@ -7,8 +7,10 @@ namespace LatencyPilot.Platform.Windows.Devices;
 
 public static class PresentMonConsoleFrameMetricsReader
 {
+    private const int MaximumRetainedFailureCaptures = 5;
     private static readonly TimeSpan StartupProbeDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan CompletionSlack = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ActiveCaptureGrace = TimeSpan.FromMinutes(5);
 
     public static async Task<PresentMonConsoleCaptureSession> StartAsync(
         uint processId,
@@ -26,16 +28,11 @@ public static class PresentMonConsoleFrameMetricsReader
             executablePath,
             cancellationToken).ConfigureAwait(false);
         var captureId = Guid.NewGuid().ToString("N");
-        var tempDirectory = Path.Combine(
-            Path.GetTempPath(),
-            "LatencyPilot",
-            "PresentMon",
-            captureId);
+        var tempRoot = Path.Combine(Path.GetTempPath(), "LatencyPilot", "PresentMon");
+        var tempDirectory = Path.Combine(tempRoot, captureId);
         Directory.CreateDirectory(tempDirectory);
         var csvPath = Path.Combine(tempDirectory, "frames.csv");
 
-        // PresentMon's --timed value is parsed as an unsigned integer. Gate A
-        // windows are whole seconds, so round up after adding bounded drain slack.
         var captureSeconds = checked((uint)Math.Ceiling(requestedWindow.TotalSeconds + 3d));
         var startInfo = new ProcessStartInfo
         {
@@ -78,6 +75,7 @@ public static class PresentMonConsoleFrameMetricsReader
                 processId,
                 requestedWindow,
                 presentMonPath,
+                tempRoot,
                 tempDirectory,
                 csvPath,
                 process,
@@ -125,12 +123,10 @@ public static class PresentMonConsoleFrameMetricsReader
             var processIdOrdinal = RequireColumn(csv, "ProcessID");
             var swapChainOrdinal = RequireColumn(csv, "SwapChainAddress");
             var startTimeOrdinal = RequireAnyColumn(csv, "CPUStartDateTime", "CPUStartTime", "CPUStartQPC", "CPUStartQPCTime");
-            // PresentMon console headers differ by metric set: legacy names
-            // (FrameTime/CPUBusy/CPUWait/GPULatency/...) vs --v2_metrics
-            // names (MsBetweenAppStart/MsCPUBusy/MsCPUWait/MsGPULatency/...).
-            // Accept either so a pinned-collector upgrade cannot silently
-            // zero out every Gate A trial.
-            var frameTimeOrdinal = RequireAnyColumn(csv, "FrameTime", "MsBetweenAppStart", "MsBetweenPresents");
+            // PresentMon documents MsBetweenPresents as the interval between
+            // Present() calls. MsBetweenAppStart measures a different CPU-frame
+            // boundary and must not be substituted as the same frame interval.
+            var frameTimeOrdinal = RequireAnyColumn(csv, "FrameTime", "MsBetweenPresents");
             var cpuBusyOrdinal = RequireAnyColumn(csv, "CPUBusy", "MsCPUBusy");
             var cpuWaitOrdinal = RequireAnyColumn(csv, "CPUWait", "MsCPUWait");
             var gpuLatencyOrdinal = OptionalAnyColumn(csv, "GPULatency", "MsGPULatency");
@@ -172,15 +168,8 @@ public static class PresentMonConsoleFrameMetricsReader
                     }
 
                     rowsInWindow++;
-                    if (rowStartedAtUtc < minRowUtc)
-                    {
-                        minRowUtc = rowStartedAtUtc;
-                    }
-
-                    if (rowStartedAtUtc > maxRowUtc)
-                    {
-                        maxRowUtc = rowStartedAtUtc;
-                    }
+                    if (rowStartedAtUtc < minRowUtc) minRowUtc = rowStartedAtUtc;
+                    if (rowStartedAtUtc > maxRowUtc) maxRowUtc = rowStartedAtUtc;
                 }
                 else
                 {
@@ -220,9 +209,6 @@ public static class PresentMonConsoleFrameMetricsReader
                     benchmarkEndedAtUtc);
             }
 
-            // Report the honest CSV-observed window instead of echoing the
-            // benchmark artifact interval, so the Gate A overlap gate measures
-            // real collector coverage rather than a vacuous self-comparison.
             var observedStart = useDateCrop && maxRowUtc >= minRowUtc ? minRowUtc : benchmarkStartedAtUtc;
             var observedEnd = useDateCrop && maxRowUtc >= minRowUtc ? maxRowUtc : benchmarkEndedAtUtc;
             var actualWindowMs = Math.Max(1d, (observedEnd - observedStart).TotalMilliseconds);
@@ -297,10 +283,7 @@ public static class PresentMonConsoleFrameMetricsReader
         foreach (var name in names)
         {
             var ordinal = OptionalColumn(csv, name);
-            if (ordinal >= 0)
-            {
-                return ordinal;
-            }
+            if (ordinal >= 0) return ordinal;
         }
 
         throw new InvalidDataException(
@@ -312,12 +295,8 @@ public static class PresentMonConsoleFrameMetricsReader
         foreach (var name in names)
         {
             var ordinal = OptionalColumn(csv, name);
-            if (ordinal >= 0)
-            {
-                return ordinal;
-            }
+            if (ordinal >= 0) return ordinal;
         }
-
         return -1;
     }
 
@@ -325,53 +304,36 @@ public static class PresentMonConsoleFrameMetricsReader
     {
         for (var ordinal = 0; ordinal < csv.FieldCount; ordinal++)
         {
-            if (string.Equals(csv.GetName(ordinal), name, StringComparison.OrdinalIgnoreCase))
-            {
-                return ordinal;
-            }
+            if (string.Equals(csv.GetName(ordinal), name, StringComparison.OrdinalIgnoreCase)) return ordinal;
         }
         return -1;
     }
 
     private static string Truncate(string? value, int maximumLength = 500)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
         var trimmed = value.Trim();
         return trimmed.Length <= maximumLength ? trimmed : trimmed[..maximumLength];
     }
 
-    private static void AddUnavailable(List<string> unavailable, int ordinal, string name)    {
-        if (ordinal < 0)
-        {
-            unavailable.Add(name);
-        }
+    private static void AddUnavailable(List<string> unavailable, int ordinal, string name)
+    {
+        if (ordinal < 0) unavailable.Add(name);
     }
 
     private static bool TryParseSwapChain(string value, out ulong swapChain)
     {
         var text = value.Trim();
-        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text[2..];
-        }
+        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) text = text[2..];
         return ulong.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out swapChain);
     }
 
     private static bool TryParseRequiredDouble(string value, out double result) =>
-        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result) &&
-        double.IsFinite(result);
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result) && double.IsFinite(result);
 
     private static double? ParseOptionalDouble(CsvDataReader csv, int ordinal)
     {
-        if (ordinal < 0)
-        {
-            return null;
-        }
-
+        if (ordinal < 0) return null;
         var value = csv.GetString(ordinal).Trim();
         return value.Length == 0 || string.Equals(value, "NA", StringComparison.OrdinalIgnoreCase)
             ? null
@@ -389,10 +351,7 @@ public static class PresentMonConsoleFrameMetricsReader
         if (dot >= 0)
         {
             var fractionLength = text.Length - dot - 1;
-            if (fractionLength > 7)
-            {
-                text = text[..(dot + 1 + 7)];
-            }
+            if (fractionLength > 7) text = text[..(dot + 1 + 7)];
         }
 
         if (!DateTime.TryParseExact(
@@ -414,10 +373,7 @@ public static class PresentMonConsoleFrameMetricsReader
     {
         try
         {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
         }
         catch (InvalidOperationException)
         {
@@ -428,9 +384,33 @@ public static class PresentMonConsoleFrameMetricsReader
     {
         try
         {
-            if (Directory.Exists(path))
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static void PruneRetainedFailures(string rootDirectory, string currentDirectory)
+    {
+        try
+        {
+            if (!Directory.Exists(rootDirectory)) return;
+            var cutoff = DateTime.UtcNow - ActiveCaptureGrace;
+            var oldFailures = new DirectoryInfo(rootDirectory)
+                .EnumerateDirectories()
+                .Where(directory =>
+                    !string.Equals(directory.FullName, currentDirectory, StringComparison.OrdinalIgnoreCase) &&
+                    directory.LastWriteTimeUtc < cutoff)
+                .OrderByDescending(static directory => directory.LastWriteTimeUtc)
+                .Skip(Math.Max(0, MaximumRetainedFailureCaptures - 1))
+                .ToArray();
+            foreach (var directory in oldFailures)
             {
-                Directory.Delete(path, recursive: true);
+                TryDeleteDirectory(directory.FullName);
             }
         }
         catch (IOException)
@@ -446,6 +426,7 @@ public static class PresentMonConsoleFrameMetricsReader
         private readonly uint processId;
         private readonly TimeSpan requestedWindow;
         private readonly string presentMonPath;
+        private readonly string tempRoot;
         private readonly string tempDirectory;
         private readonly string csvPath;
         private readonly Process process;
@@ -457,6 +438,7 @@ public static class PresentMonConsoleFrameMetricsReader
             uint processId,
             TimeSpan requestedWindow,
             string presentMonPath,
+            string tempRoot,
             string tempDirectory,
             string csvPath,
             Process process,
@@ -466,6 +448,7 @@ public static class PresentMonConsoleFrameMetricsReader
             this.processId = processId;
             this.requestedWindow = requestedWindow;
             this.presentMonPath = presentMonPath;
+            this.tempRoot = tempRoot;
             this.tempDirectory = tempDirectory;
             this.csvPath = csvPath;
             this.process = process;
@@ -478,10 +461,7 @@ public static class PresentMonConsoleFrameMetricsReader
             DateTimeOffset benchmarkEndedAtUtc,
             CancellationToken cancellationToken = default)
         {
-            if (completed)
-            {
-                throw new InvalidOperationException("PresentMon capture was already completed.");
-            }
+            if (completed) throw new InvalidOperationException("PresentMon capture was already completed.");
             completed = true;
 
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -527,12 +507,11 @@ public static class PresentMonConsoleFrameMetricsReader
             }
             else if (!string.IsNullOrWhiteSpace(snapshot.Error))
             {
-                // Keep the raw CSV next to the error for owner-local diagnosis.
-                // Failed-trial directories accumulate only on failures.
                 snapshot = snapshot with
                 {
                     Error = $"{snapshot.Error} Raw CSV retained at: {csvPath}",
                 };
+                PruneRetainedFailures(tempRoot, tempDirectory);
             }
 
             return snapshot;
