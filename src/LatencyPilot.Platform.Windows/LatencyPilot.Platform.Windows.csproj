@@ -8,6 +8,7 @@
   <ItemGroup>
     <PackageReference Include="ManagedNativeWifi" />
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" />
+    <PackageReference Include="Sylvan.Data.Csv" />
     <PackageReference Include="System.Management" />
     <PackageReference Include="Vortice.DXGI" />
   </ItemGroup>
