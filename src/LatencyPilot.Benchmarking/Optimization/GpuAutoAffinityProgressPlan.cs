@@ -6,48 +6,39 @@ namespace LatencyPilot.Benchmarking.Optimization;
 public sealed class GpuAutoAffinityProgressPlan
 {
     private const int ControlWarmupCount = 1;
-    private const int DecisionControlTrialCount = 2;
-    private const int TrialsPerCandidate = 3; // one non-scored warmup + two scored runs
+    private const int ScreeningUnitsPerCandidate = 2; // transition warm-up + one scored run
+    private const int FinalistUnitsPerCandidate = 3; // transition warm-up + two scored re-tests
     private const int MaximumFinalistCandidates = 3;
-    private const int ConfirmationTrialCount = 16; // eight balanced roles, each warmup + scored run
-    private readonly IReadOnlyDictionary<int, int> refinementCandidateCounts;
+    private const int FinalVerificationCount = 1;
+    private readonly HashSet<int> physicalCoreIndexes;
 
-    private GpuAutoAffinityProgressPlan(
-        int physicalCandidateCount,
-        IReadOnlyDictionary<int, int> refinementCandidateCounts)
+    private GpuAutoAffinityProgressPlan(IReadOnlyList<GpuAffinityCandidate> physicalCandidates)
     {
-        PhysicalCandidateCount = physicalCandidateCount;
-        this.refinementCandidateCounts = refinementCandidateCounts;
-        MaximumRefinementCandidateCount = refinementCandidateCounts.Count == 0
-            ? 0
-            : refinementCandidateCounts.Values.Max();
+        PhysicalCandidateCount = physicalCandidates.Count;
+        physicalCoreIndexes = physicalCandidates.Select(static candidate => candidate.PhysicalCoreIndex).ToHashSet();
     }
 
     public int PhysicalCandidateCount { get; }
 
-    public int MaximumRefinementCandidateCount { get; }
+    // Kept for compatibility with the development progress surface. The v1
+    // search no longer performs a separate SMT sibling-refinement phase.
+    public int MaximumRefinementCandidateCount => 0;
 
     public int FinalistCandidateCount => Math.Min(MaximumFinalistCandidates, PhysicalCandidateCount);
 
-    public int InitialTotalUnits =>
-        GetBaseTotalUnits() +
-        (MaximumRefinementCandidateCount * TrialsPerCandidate);
+    public int InitialTotalUnits => GetBaseTotalUnits();
 
     public int GetRefinementCandidateCount(int physicalCoreIndex)
     {
-        if (!refinementCandidateCounts.TryGetValue(physicalCoreIndex, out var count))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(physicalCoreIndex),
-                "Physical core is not part of the planned GPU affinity screen.");
-        }
-
-        return count;
+        ValidatePhysicalCore(physicalCoreIndex);
+        return 0;
     }
 
-    public int GetTotalUnitsForFinalist(int physicalCoreIndex) =>
-        GetBaseTotalUnits() +
-        (GetRefinementCandidateCount(physicalCoreIndex) * TrialsPerCandidate);
+    public int GetTotalUnitsForFinalist(int physicalCoreIndex)
+    {
+        ValidatePhysicalCore(physicalCoreIndex);
+        return GetBaseTotalUnits();
+    }
 
     public static GpuAutoAffinityProgressPlan Create(
         ProcessorTopologySnapshot topology,
@@ -59,23 +50,22 @@ public sealed class GpuAutoAffinityProgressPlan
 
         var pressure = pressureEvidence.ToArray();
         var physicalCandidates = GpuAffinityCandidatePlanner.Create(topology, pressure, cpuSets);
-        var refinementCounts = physicalCandidates.ToDictionary(
-            static candidate => candidate.PhysicalCoreIndex,
-            candidate => GpuAffinityCandidatePlanner.CreateSiblingRefinement(
-                topology,
-                pressure,
-                candidate,
-                cpuSets).Count);
-
-        return new GpuAutoAffinityProgressPlan(
-            physicalCandidates.Count,
-            refinementCounts);
+        return new GpuAutoAffinityProgressPlan(physicalCandidates);
     }
 
     private int GetBaseTotalUnits() =>
         ControlWarmupCount +
-        DecisionControlTrialCount +
-        (PhysicalCandidateCount * TrialsPerCandidate) +
-        (FinalistCandidateCount * TrialsPerCandidate) +
-        ConfirmationTrialCount;
+        (PhysicalCandidateCount * ScreeningUnitsPerCandidate) +
+        (FinalistCandidateCount * FinalistUnitsPerCandidate) +
+        FinalVerificationCount;
+
+    private void ValidatePhysicalCore(int physicalCoreIndex)
+    {
+        if (!physicalCoreIndexes.Contains(physicalCoreIndex))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(physicalCoreIndex),
+                "Physical core is not part of the planned GPU affinity screen.");
+        }
+    }
 }
