@@ -160,6 +160,16 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsTrue(changedSourceResult.Report.Candidates.All(static item =>
             item.Verdict == "Inconclusive" && item.Reason!.Contains("attribution", StringComparison.Ordinal)));
 
+        var noisyConfirmationBackend = new RecordingBackend(noisyConfirmation: true);
+        var noisyConfirmationResult = await new GpuAutoAffinitySession(noisyConfirmationBackend).RunAsync(request);
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, noisyConfirmationResult.Recommendation);
+        Assert.IsTrue(noisyConfirmationResult.Report.Candidates.Any(static item =>
+            item.Phase == "confirmation" &&
+            item.Verdict == "Inconclusive" &&
+            item.Reason?.Contains("drift", StringComparison.OrdinalIgnoreCase) == true));
+        Assert.IsTrue(noisyConfirmationResult.Report.OriginalStateRestored);
+        Assert.IsFalse(noisyConfirmationBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
+
         var invalidKeepBackend = new RecordingBackend(failKeepPreflight: true);
         var invalidKeepSession = new GpuAutoAffinitySession(invalidKeepBackend);
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => invalidKeepSession.RunAsync(request));
@@ -208,10 +218,12 @@ public sealed class GpuAutoAffinitySessionTests
         bool cancelAfterFirstCandidateCapture = false,
         bool failKeepPreflight = false,
         bool missingIsrSamples = false,
-        bool changedIsrSource = false) : IGpuAutoAffinitySessionBackend
+        bool changedIsrSource = false,
+        bool noisyConfirmation = false) : IGpuAutoAffinitySessionBackend
     {
         private int captureSequence;
         private int originalControlSequence;
+        private int confirmationCandidateSequence;
         private bool cancelled;
         private readonly Dictionary<Guid, GpuAffinityCandidate> active = [];
         private Guid? keptExperimentId;
@@ -261,6 +273,11 @@ public sealed class GpuAutoAffinitySessionTests
                 3 => 8d,
                 _ => 10.2d,
             };
+            if (noisyConfirmation && string.Equals(request.Phase, "confirmation", StringComparison.Ordinal))
+            {
+                var sequence = Interlocked.Increment(ref confirmationCandidateSequence);
+                frameTime = sequence % 2 == 0 ? 4d : 9d;
+            }
             return Task.FromResult(CreateObservation(request, candidate, frameTime));
         }
 
