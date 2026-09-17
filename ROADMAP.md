@@ -160,7 +160,7 @@ Phase 2 closes only when the remaining owner-local read-only checks above are re
 
 ## Phase 3 — Safe mutation platform + benchmark-backed GPU experiment
 
-**State: AUTOMATIC GPU SOURCE IMPLEMENTED; PHYSICAL ARMING OPEN; PUBLIC MUTATION OFF**
+**State: RANKED AUTOMATIC GPU SOURCE IMPLEMENTED; EXACT-HEAD CI + PHYSICAL ARMING OPEN; PUBLIC MUTATION OFF**
 
 Automatic internal workflow:
 
@@ -168,22 +168,25 @@ Automatic internal workflow:
 exact original/default affinity
 → normal-user deterministic D3D12 benchmark calibration
 → freeze worker map/workload/seed
-→ one non-reference original warm-up + two decision controls
+→ 5 s non-scored original warm-up + two decision controls
 → screen every eligible physical core within v1 bound (max 16)
-→ journaled apply / stored verify / exact-target activation
-→ synchronized benchmark + ETW + raw PresentMon evidence
+→ for each candidate: journaled apply / exact-target activation / stored verify
+→ 5 s non-scored post-transition warm-up
+→ two synchronized scored benchmark + ETW + raw PresentMon runs
 → resolved single-adapter target-only ISR placement proof
    (display KMD preferred; labelled dxgkrnl fallback only when unambiguous)
-→ repeated-side frame-p99 spread <=20% before pooled comparison
-→ exact rollback before next screening candidate
-→ SMT sibling refinement of winning physical core
-→ fixed ABBA + BAAB finalist confirmation
+→ candidate run-level frame-p99 spread <=20% for rankability
+→ exact rollback before the next candidate
+→ rank decision-grade candidates by median run-level frame-p99
+→ fresh re-screen of the best up-to-three physical-core candidates
+→ SMT sibling refinement of the fresh physical-core winner
+→ fixed ABBA + BAAB finalist confirmation, with 5 s non-scored warm-up after each state transition
 → final cancellation boundary
-→ Keep only after confirmed safe improvement
+→ Keep the ranked finalist only when confirmation remains decision-grade/repeatable
    otherwise exact RestoreOriginal / RecoveryRequired
 ```
 
-Original/default Windows affinity is a real control and wins when no candidate establishes a safe measurable improvement. Passive processor pressure is ordering/context only; CPU0 remains eligible.
+Original/default Windows affinity is the exact reference/recovery state, **not a minimum-improvement winner gate** for forced-CPU auto-affinity. A valid forced-CPU finalist does not have to beat Windows default by the generic 3% threshold; the default comparison remains visible context. `Inconclusive`/invalid/unstable candidates are never ranked. Passive processor pressure is ordering/context only; CPU0 remains eligible.
 
 ### Safety and execution source
 
@@ -198,32 +201,39 @@ Original/default Windows affinity is a real control and wins when no candidate e
 - [x] managed normal-user `LatencyPilot.GpuBenchmark` D3D12 host;
 - [x] deterministic multicore worker mapping and one-time adaptive calibration followed by frozen workload;
 - [x] D3D12 timestamp query evidence independent of PresentMon GPU-active telemetry;
-- [x] raw PresentMon compatibility boundary and canonical raw-frame percentile interpretation;
+- [x] pinned standalone PresentMon 2.5.1 console collector with official SHA-256 verification; Gate A does not require a separately installed PresentMon Service/API;
+- [x] `Sylvan.Data.Csv` parsing of PresentMon CSV instead of a custom CSV parser;
+- [x] raw PresentMon console-frame compatibility boundary and canonical raw-frame percentile interpretation;
 - [x] dedicated `latencypilot-gpu-benchmark-v1` evidence and `latencypilot-gpu-auto-affinity-report-v1` report contracts;
 - [x] `gpu-affinity-benchmark-v1` readiness/contamination policy with one bounded retry and CPU-busy drift kept as context;
 - [x] every eligible physical core screened within v1 bound; >16 systems remain topology-stratified and bounded;
 - [x] CPU0 remains eligible and passive pressure cannot pre-select the winner;
+- [x] non-scored 5 s post-transition warm-up before candidate/finalist/refinement/confirmation evidence;
+- [x] transparent median run-level frame-p99 ranking with no hidden weighted score;
+- [x] best up-to-three rankable physical cores receive a fresh apply/warm-up/re-screen before finalist selection;
 - [x] winning physical core receives eligible SMT sibling refinement;
-- [x] synchronized ETW + raw PresentMon + benchmark evidence per trial;
+- [x] synchronized ETW + standalone raw PresentMon + benchmark evidence per scored trial;
 - [x] exact stored-state verification around candidate measurement;
 - [x] resolved single-adapter target-only ISR runtime-placement verification with zero resolved off-target ISR; display KMD is preferred and `dxgkrnl` fallback is accepted only when conservatively attributable on a single-adapter system;
-- [x] screening cannot Keep directly;
+- [x] `Inconclusive` evidence cannot enter candidate ranking;
+- [x] screening/finalist/refinement phases cannot Keep directly;
 - [x] fixed eight-run ABBA+BAAB confirmation;
-- [x] repeated-side frame-p99 spread above 20% fails closed as `Inconclusive` before pooled comparison;
+- [x] repeated-side frame-p99 spread above 20% fails closed as `Inconclusive`;
 - [x] explicit named metric/guardrail interpretation without hidden weighted score;
-- [x] exact rollback between screening candidates and final RestoreOriginal/RecoveryRequired path;
+- [x] exact rollback between screening/finalist/refinement candidates and final RestoreOriginal/RecoveryRequired path;
 - [x] confirmation failure rollback must prove exact original state; failed verification is preserved with the original failure rather than discarded;
 - [x] late cancellation after final comparison still prevents Keep while candidate state is owned;
 - [x] development-only **Run GPU Gate A** App flow starts benchmark non-elevated, minimizes main window, shows real candidate/pass/progress/metric state and requests UAC only for the owner helper;
 - [x] **Stop safely** source preserves rollback/recovery ownership until terminal verification;
 - [x] progress/accessibility source exposes live candidate/phase/status semantics through visible text and UI Automation;
+- [ ] exact-final-HEAD hosted **Tests** success for the ranked/standalone-collector revision — **CI evidence required**;
 - [ ] owner-local render/taskbar/keyboard/screen-reader inspection of the progress experience — **physical evidence required**;
 - [ ] mutation-specific typed product IPC — **blocked by Gate A**;
 - [ ] normal-user `Auto-optimize GPU` product arming — **blocked by Gate C/D**.
 
 ### Arming gates
 
-- [ ] **Gate A — internal physical benchmark + mutation proof:** exact-green clean revision; normal App/Service path; non-mutating D3D12 benchmark smoke; full bounded candidate search; current progress/taskbar/accessibility behavior; candidate stored-state + resolved single-adapter target-only ISR placement; exact rollback between candidates; balanced finalist Keep/Restore with repeatability gate; Stop safely proof; repeated-search reproducibility/equivalence or explicit inconclusive result; one supported failure/recovery exercise; final known state + zero unresolved.
+- [ ] **Gate A — internal physical benchmark + mutation proof:** exact-green clean revision; normal App/Service path; non-mutating D3D12 benchmark smoke; full bounded ranked candidate search with post-transition warm-ups; standalone pinned PresentMon capture without separate service install; fresh top-candidate re-screen; current progress/taskbar/accessibility behavior; candidate stored-state + resolved single-adapter target-only ISR placement; exact rollback between candidates; balanced finalist Keep/Restore with repeatability/integrity gate; Stop safely proof; repeated-search reproducibility/equivalence or explicit inconclusive result; one supported failure/recovery exercise; final known state + zero unresolved.
 - [ ] **Gate B — typed mutation IPC:** after Gate A only; mutation-specific typed/allowlisted commands and authorization. `MutationAvailable` remains false during source implementation.
 - [ ] **Gate C — physical IPC proof:** real App/client → Service mutation authorization, target identity, journal/recovery and exact rollback.
 - [ ] **Gate D — product arming:** expose normal-user `Auto-optimize GPU` only after Gate C and credible target/guardrail UX.
