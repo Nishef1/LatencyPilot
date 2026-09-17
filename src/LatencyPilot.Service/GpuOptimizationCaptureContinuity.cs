@@ -34,6 +34,8 @@ internal static class GpuOptimizationCaptureContinuity
     {
         snapshot = null;
         reason = null;
+        _ = presentMonApiPath;
+        _ = presentMonControlPipeName;
 
         if (processId == 0 || processId > int.MaxValue)
         {
@@ -67,10 +69,10 @@ internal static class GpuOptimizationCaptureContinuity
                 return false;
             }
 
-            var graphicsTarget = GpuGraphicsTargetIdentityResolver.Capture(
-                targetDeviceInstanceId,
-                presentMonApiPath,
-                presentMonControlPipeName);
+            // Gate A only needs a stable, authoritative Windows graphics identity.
+            // PnP + DXGI provide that without requiring the separately installed
+            // PresentMon service; frame collection is handled by the pinned console.
+            var graphicsTarget = GpuGraphicsTargetIdentityResolver.CaptureDxgiOnly(targetDeviceInstanceId);
             if (!graphicsTarget.IsUsable || graphicsTarget.Identity is null)
             {
                 reason = graphicsTarget.Reason ?? "The GPU target identity could not be established.";
@@ -151,12 +153,13 @@ internal static class GpuOptimizationCaptureContinuity
                 before.GraphicsTarget.DeviceInstanceId,
                 after.GraphicsTarget.DeviceInstanceId,
                 StringComparison.OrdinalIgnoreCase) ||
+            before.GraphicsTarget.Luid != after.GraphicsTarget.Luid ||
             !string.Equals(
                 before.GraphicsTarget.AdapterName,
                 after.GraphicsTarget.AdapterName,
                 StringComparison.OrdinalIgnoreCase))
         {
-            reasons.Add("The target GPU PnP or adapter identity changed during capture.");
+            reasons.Add("The target GPU PnP, DXGI LUID, or adapter identity changed during capture.");
         }
 
         return new GpuOptimizationCaptureContinuityResult(
