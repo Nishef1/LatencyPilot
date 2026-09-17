@@ -8,7 +8,7 @@ Gate A now has two intentionally separate owner surfaces:
 Run GPU Gate A
 = primary end-to-end development validation path
 = normal-user D3D12 benchmark + elevated owner helper
-= active all-core candidate screening + SMT refinement + balanced confirmation
+= active all-core candidate screening + ranked finalist re-screen + SMT refinement + balanced confirmation
 
 LatencyPilot.PhysicalValidation
 = lower-level substrate/preflight/recovery diagnostics
@@ -47,9 +47,11 @@ Record for the final Gate A evidence set:
 - CPU topology and CPU-set availability evidence;
 - benchmark method/schema/version, deterministic seed and frozen worker/workload mapping;
 - all physical-core screening candidates and deterministic order;
+- ranked finalist re-screen candidates;
 - SMT sibling-refinement candidates when present;
 - original/control and candidate trial identities;
 - D3D12 timestamp evidence and raw PresentMon evidence identity;
+- exact pinned PresentMon console version/hash/path used for collection;
 - ETW capture integrity, GPU-driver identity and target/off-target/unresolved ISR counts;
 - every experiment ID and journal transition;
 - exact-target restart/reboot-required result;
@@ -153,7 +155,7 @@ Do not interpret the smoke trial as a candidate winner. It only proves the deter
 
 ## 5. Run the complete benchmark-backed Gate A search
 
-Prerequisite: the PresentMon 2.5.1 shared-service API (`PresentMonAPI2.dll`, API 3.3+) must be discoverable by `PresentMonApiLocator` — typically installed under `Program Files\Intel\PresentMon*`. Without it every Gate A trial fails closed before the first control trial with `PresentMon graphics-device evidence is unavailable`, because continuity requires a PresentMon-verified GPU identity. Recent owner runs (2026-09-16/17) show exactly that failure; reinstall the PresentMon shared service before re-running the gate.
+There is **no separate PresentMon Service/API installation prerequisite** for Gate A. LatencyPilot uses the pinned standalone `PresentMon-2.5.1-x64.exe` collector. It first accepts a packaged copy at `ThirdParty\PresentMon`, otherwise it resolves a LatencyPilot-controlled per-user cache and may provision the exact official release asset. The executable must match the pinned SHA-256 before it is used. A missing download path, failed integrity check or unusable collector fails closed; it is never replaced by an arbitrary installed PresentMon DLL/service.
 
 In the development App click:
 
@@ -168,22 +170,28 @@ normal-user App
 → normal-user LatencyPilot.GpuBenchmark
 → one explicit UAC consent for the owner Gate A helper
 → exact original-state capture
-→ original control trials
-→ every eligible physical core screened within v1 bound (max 16)
-→ bounded screening-tiebreak re-screen when short-window screening ties
+→ 5 s original warm-up (not scored)
+→ two original reference controls
+→ for every eligible physical core: apply/restart → 5 s warm-up → two scored runs → exact rollback
+→ rank valid/repeatable cores by median frame-p99
+→ re-screen the best up-to-three cores with fresh warm-up + scored runs
 → winning physical core SMT-sibling refinement when applicable
-→ fixed ABBA + BAAB finalist confirmation
+→ fixed ABBA + BAAB finalist confirmation, with a fresh 5 s warm-up after every state transition
 → verified KeepCandidate OR exact RestoreOriginal
 → report + terminal progress state
 ```
 
-On the Ryzen 7 5700X system, expect eight physical-core screening candidates before refinement, subject only to explicit CPU-set eligibility exclusions. CPU0 is eligible and must not be hard-banned.
+On the Ryzen 7 5700X system, expect eight physical-core screening candidates before finalist re-screen/refinement, subject only to explicit CPU-set eligibility exclusions. CPU0 is eligible and must not be hard-banned.
 
 Passive processor pressure is ordering/context only. It does not pre-select the winner.
 
-### Screening tie-break
+### Ranking semantics
 
-The 15–60 s screening windows can leave several cores inside the ±3 % decision threshold. When the bounded screening population ties (2–4 candidates all `Improved` or all `NoMeasurableDifference`), the session re-screens exactly those candidates once more (`screening-tiebreak` phase, two fresh trials per candidate against the same controls) and selects the finalist from that re-screen only. If the re-screen still cannot separate them, the session reports `RestoreOriginal` with the tie-break evidence retained — it never guesses. Noisy candidates that abort as `Inconclusive` remain excluded: the tie-break is a stability resolution, not a retry.
+The product question is **which valid CPU is the best GPU interrupt target**, not whether every candidate individually clears a fixed improvement threshold against the Windows default. The original/default state remains an important reference and confirmation side, but it is not the winner gate for a forced-CPU auto-affinity search.
+
+A candidate is rankable only when its evidence is decision-grade, ISR attribution/placement is valid and its repeated frame-p99 measurements remain within the repeatability bound. Rankable candidates are ordered by lower median run-level frame-p99 with deterministic tie-breaks. The best up-to-three candidates are then re-measured from fresh post-restart warm-ups before one physical-core finalist is chosen. `Inconclusive` evidence is never ranked.
+
+If no candidate survives validity/repeatability, restore exact original state rather than guessing. Near-equal but valid candidates may still produce a deterministic best observed CPU; the report retains the Original comparison and raw deltas so the result is auditable.
 
 ## 6. Inspect live progress behavior
 
@@ -192,7 +200,7 @@ The main App must **minimize**, not disappear. It must remain recoverable throug
 ```text
 current CPU / physical core
 candidate X / Y
-phase and pass/run
+phase and scored/warm-up pass
 real completed/planned percentage
 frame p99 and 1% low when available
 GPU ISR placement state
@@ -200,6 +208,8 @@ last completed candidate verdict
 elapsed and estimated remaining
 Stop safely
 ```
+
+Warm-up trials must be visibly marked as **not scored**.
 
 For accessibility, verify visible phase/status meaning is also exposed through UI Automation and is not communicated by color alone. Check keyboard reachability and focus behavior at the actual rendered size.
 
@@ -212,7 +222,8 @@ exact original snapshot retained
 → candidate apply is journal-owned
 → exact stored candidate verified
 → exact-target activation/restart result recorded
-→ benchmark + ETW + raw PresentMon trial captured
+→ post-restart non-scored warm-up
+→ benchmark + ETW + raw standalone-PresentMon trial captured
 → exact stored candidate verified after capture
 → >=1 attributed GPU ISR on requested logical processor
 → 0 attributed GPU ISR on off-target logical processors
@@ -248,13 +259,13 @@ Run the full automatic Gate A search at least twice on the same exact revision u
 
 Acceptable outcome:
 
-- same/equivalent finalist within method thresholds; or
-- explicit `NoMeasurableDifference` / restored original; or
-- explicit `Inconclusive` when control/validity evidence does not support a winner.
+- same/equivalent finalist after the fresh top-candidate re-screen and confirmation; or
+- explicit restored original when no candidate remains decision-grade/repeatable; or
+- explicit `Inconclusive` when identity/integrity/placement evidence cannot support ranking.
 
 Unacceptable outcome: arbitrary different winners with no uncertainty/validity explanation.
 
-The original Windows state is a real control and is the preferred outcome when no candidate establishes a safe measurable improvement.
+The original Windows state is the recovery/reference state. It is restored when the experiment cannot establish a valid and repeatable ranked finalist; it is not used as a fixed minimum-improvement threshold that prevents choosing the best tested CPU.
 
 ## 10. Supported failure/recovery exercise
 
@@ -284,16 +295,18 @@ Record:
 
 ```text
 final recommendation
+final selected processor
 final stored GPU affinity state
 final runtime/device identity
 final unresolved journal count
+PresentMon console version/path/hash provenance
 report path(s)
 benchmark artifact path(s)
 exact source SHA
 exact green Tests run
 ```
 
-Inspect the saved auto-affinity report and require `finalStateVerified=true`, `recoveryStatus=clean-zero-unresolved`, populated `originalStoredState` / `finalStoredState`, benchmark `provenance`, and mutation-audit entries consistent with the run. `unresolved=0` from the journal inspector is still mandatory; the JSON report cannot override a conflicting live/journal state.
+Inspect the saved auto-affinity report and require `finalStateVerified=true`, `recoveryStatus=clean-zero-unresolved`, populated `originalStoredState` / `finalStoredState`, benchmark `provenance`, and mutation-audit entries consistent with the run. A successful Keep must have non-null `finalProcessor`, exact candidate state in `finalStoredState`, consistent ISR attribution and confirmed target-only placement in the decision-grade candidate evidence. `unresolved=0` from the journal inspector is still mandatory; the JSON report cannot override a conflicting live/journal state.
 
 ## 12. Gate A closure criteria
 
@@ -302,16 +315,17 @@ Gate A passes only when physical evidence on one exact clean revision proves all
 1. normal App + protected Service build/install/launch works;
 2. journal starts clean with zero unresolved experiments;
 3. the built-in D3D12 benchmark runs without mutation, uses multiple physical cores and freezes one workload for comparison;
-4. the full automatic search screens the bounded eligible physical-core set rather than a passive rank-1/four-core shortcut, and a screening tie resolves through one bounded `screening-tiebreak` re-screen (or terminates explicitly inconclusive without guessing);
+4. the full automatic search screens the bounded eligible physical-core set, performs a non-scored post-transition warm-up, ranks all valid/repeatable candidates, and freshly re-screens the best up-to-three candidates before selecting a physical-core finalist;
 5. SMT sibling refinement behaves as planned when applicable;
 6. exact-target apply reaches verified stored state and direct runtime GPU ISR placement under the requested processor rules;
-7. screening candidates rollback exactly before the next candidate;
-8. balanced finalist confirmation either justifies a verified Keep or restores original;
-9. **Stop safely** restores/verifies original and terminalizes with no unresolved mutation;
-10. one supported failure/recovery path is physically proven;
-11. repeated whole searches are reproducible/equivalent or explicitly inconclusive;
-12. progress window, taskbar recovery, narrow render, keyboard and accessibility behavior are physically sane;
-13. final journal reports zero unresolved experiments and final machine state is understood/verified.
+7. screening/finalist/refinement candidates rollback exactly before the next candidate;
+8. balanced finalist confirmation remains decision-grade/repeatable and either verifies the ranked candidate Keep or restores exact original state;
+9. the standalone pinned PresentMon collector produces synchronized raw-frame evidence without requiring an installed PresentMon Service/API;
+10. **Stop safely** restores/verifies original and terminalizes with no unresolved mutation;
+11. one supported failure/recovery path is physically proven;
+12. repeated whole searches are reproducible/equivalent or explicitly inconclusive;
+13. progress window, taskbar recovery, narrow render, keyboard and accessibility behavior are physically sane;
+14. final journal reports zero unresolved experiments and final machine state is understood/verified.
 
 Passing Gate A authorizes **Gate B source development only**. It does not arm public mutation.
 
