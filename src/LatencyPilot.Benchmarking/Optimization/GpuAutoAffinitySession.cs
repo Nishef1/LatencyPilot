@@ -133,7 +133,7 @@ public sealed class GpuAutoAffinitySession
             // make the bounded control-drift retry unable to recover.
             await CaptureAcceptedAsync(
                 () => ++nextRunNumber,
-                "screening-control",
+                "screening-warmup",
                 GpuConfirmationOrder.Original,
                 null,
                 request.ScreeningDuration,
@@ -551,7 +551,7 @@ public sealed class GpuAutoAffinitySession
              observation.Placement.TargetProcessor != candidate.Processor ||
              !observation.Placement.ConfirmsRequestedPlacement))
         {
-            reasons.Add("Candidate trial lacks GPU-driver ISR placement confined to the requested logical processor.");
+            reasons.Add("Candidate trial lacks resolved single-adapter ISR placement confined to the requested logical processor.");
         }
 
         var interpretation = GpuBenchmarkEvidenceInterpreter.Interpret(observation.Evidence);
