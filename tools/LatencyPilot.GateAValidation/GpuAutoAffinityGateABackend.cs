@@ -444,7 +444,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                         runtimePlacement.OffTargetIsrEventCount);
                     if (!runtimePlacement.ConfirmsRequestedPlacement)
                     {
-                        reasons.Add("Resolved GPU-driver ISR placement was not confined to the requested logical processor.");
+                        reasons.Add("Resolved single-adapter ISR placement was not confined to the requested logical processor.");
                     }
                 }
             }
@@ -496,7 +496,9 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
 
         var interpretation = GpuBenchmarkEvidenceInterpreter.Interpret(evidence);
         var controlDrifted = false;
-        if (candidate is null && interpretation.IsValid &&
+        if (candidate is null &&
+            string.Equals(request.Phase, "screening-control", StringComparison.Ordinal) &&
+            interpretation.IsValid &&
             double.IsFinite(interpretation.FrameP99Milliseconds) &&
             interpretation.FrameP99Milliseconds > 0)
         {
