@@ -20,15 +20,10 @@ internal sealed class GpuGateAProgressFile
     private readonly GpuAutoAffinityProgressPlan progressPlan;
     private readonly Dictionary<int, int> screeningCandidates = [];
     private readonly Dictionary<int, int> finalistCandidates = [];
-    private readonly Dictionary<string, int> refinementCandidates = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> candidatePassesStarted = new(StringComparer.Ordinal);
     private readonly object writeLock = new();
     private int totalUnits;
-    private int retryUnits;
     private int completedUnits;
-    private int screeningControlPassesStarted;
-    private int confirmationRunsStarted;
-    private int? refinementPhysicalCore;
     private string lastCompletedCandidateVerdict = "None yet";
     private GpuOptimizationProgressSnapshot? latestSnapshot;
 
@@ -51,26 +46,15 @@ internal sealed class GpuGateAProgressFile
 
     internal Task ReportInitializingAsync(string message) =>
         WriteAsync(Create(
-            "initializing",
-            null,
-            null,
-            null,
-            null,
-            message,
-            null,
-            null,
-            "Not measured",
-            isRestoring: false,
-            isTerminal: false));
+            "initializing", null, null, null, null, message,
+            null, null, "Not measured", isRestoring: false, isTerminal: false));
 
     internal Task ReportTrialStartingAsync(GpuAutoAffinityTrialRequest request)
     {
         lock (writeLock)
         {
-            AlignRefinementPlan(request);
             if (request.RetryAttempt > 0)
             {
-                retryUnits = checked(retryUnits + 1);
                 totalUnits = checked(totalUnits + 1);
             }
 
@@ -84,7 +68,7 @@ internal sealed class GpuGateAProgressFile
                 DescribeTrialStart(request),
                 null,
                 null,
-                request.Candidate is null ? "Control run" : "Awaiting placement proof",
+                request.Candidate is null ? "Reference/warm-up" : "Awaiting placement evidence",
                 isRestoring: false,
                 isTerminal: false));
         }
@@ -100,18 +84,22 @@ internal sealed class GpuGateAProgressFile
             var (candidateIndex, candidateCount) = GetCandidateOrdinal(request.Phase, request.Candidate);
             var interpretation = GpuBenchmarkEvidenceInterpreter.Interpret(observation.Evidence);
             var placementState = request.Candidate is null
-                ? "Original state"
+                ? "Original/reference state"
                 : observation.Placement is { ConfirmsRequestedPlacement: true }
                     ? "Confirmed on requested CPU"
-                    : "Placement not confirmed";
+                    : observation.Evidence.EtwIntegrityComplete
+                        ? "Requested placement not confirmed"
+                        : "Placement unverified (ETW unavailable)";
             var isWarmup = request.Phase.EndsWith("-warmup", StringComparison.Ordinal);
             var trialState = isWarmup
                 ? "Warm-up complete · not scored"
-                : request.Candidate is null
-                    ? "Control complete"
-                    : interpretation.IsValid && observation.Placement is { ConfirmsRequestedPlacement: true }
-                        ? "Trial valid · decision pending"
-                        : "Trial not decision-grade";
+                : string.Equals(request.Phase, "final-verification", StringComparison.Ordinal)
+                    ? placementState
+                    : request.Candidate is null
+                        ? "Reference capture complete"
+                        : interpretation.IsValid
+                            ? "Scored run complete"
+                            : "Trial not decision-grade";
 
             return WriteAsync(Create(
                 request.Phase,
@@ -133,8 +121,7 @@ internal sealed class GpuGateAProgressFile
         ArgumentNullException.ThrowIfNull(report);
         lock (writeLock)
         {
-            lastCompletedCandidateVerdict =
-                $"CPU {report.Processor.Number} — {FormatVerdict(report.Verdict)}";
+            lastCompletedCandidateVerdict = $"CPU {report.Processor.Number} — {FormatVerdict(report.Verdict)}";
             return latestSnapshot is null
                 ? Task.CompletedTask
                 : WriteAsync(latestSnapshot with
@@ -154,7 +141,7 @@ internal sealed class GpuGateAProgressFile
                 : WriteAsync(latestSnapshot with
                 {
                     Phase = "stopping-safely",
-                    Message = "Stop requested. Finishing the current safe boundary and restoring the original state.",
+                    Message = "Stop requested. Future trials will not start; rollback/recovery remains owned until final-state verification.",
                     IsrPlacementState = "Rollback/recovery pending",
                     IsRestoring = true,
                     IsTerminal = false,
@@ -211,66 +198,35 @@ internal sealed class GpuGateAProgressFile
         }
     }
 
-    private void AlignRefinementPlan(GpuAutoAffinityTrialRequest request)
-    {
-        if ((!string.Equals(request.Phase, "smt-refinement", StringComparison.Ordinal) &&
-             !string.Equals(request.Phase, "smt-refinement-warmup", StringComparison.Ordinal)) ||
-            request.Candidate is null)
-        {
-            return;
-        }
-
-        var physicalCore = request.Candidate.PhysicalCoreIndex;
-        if (refinementPhysicalCore is null)
-        {
-            refinementPhysicalCore = physicalCore;
-            totalUnits = checked(progressPlan.GetTotalUnitsForFinalist(physicalCore) + retryUnits);
-            return;
-        }
-
-        if (refinementPhysicalCore.Value != physicalCore)
-        {
-            throw new InvalidOperationException(
-                "GPU SMT refinement progress switched physical cores within one session.");
-        }
-    }
-
     private string DescribeTrialStart(GpuAutoAffinityTrialRequest request)
     {
         if (request.RetryAttempt > 0)
         {
-            return "Retrying the contaminated trial once.";
+            return "Retrying this benchmark block once after transient contamination.";
         }
 
         if (request.Phase.EndsWith("-warmup", StringComparison.Ordinal))
         {
             return request.Candidate is null
-                ? "Original-state warm-up; not scored."
+                ? "Original-state benchmark warm-up/reference; not scored."
                 : "Post-affinity warm-up on the requested CPU; not scored.";
         }
 
-        if (string.Equals(request.Phase, "screening-control", StringComparison.Ordinal))
+        if (string.Equals(request.Phase, "final-verification", StringComparison.Ordinal))
         {
-            screeningControlPassesStarted++;
-            return $"Original reference control {screeningControlPassesStarted} / 2.";
-        }
-
-        if (string.Equals(request.Phase, "confirmation", StringComparison.Ordinal))
-        {
-            confirmationRunsStarted++;
-            return $"{request.Role} confirmation run {confirmationRunsStarted} / 8.";
+            return "Verifying final stored state and target-only runtime GPU ISR placement before Keep.";
         }
 
         if (request.Candidate is not null &&
             (string.Equals(request.Phase, "screening", StringComparison.Ordinal) ||
-             string.Equals(request.Phase, "screening-finalists", StringComparison.Ordinal) ||
-             string.Equals(request.Phase, "smt-refinement", StringComparison.Ordinal)))
+             string.Equals(request.Phase, "screening-finalists", StringComparison.Ordinal)))
         {
             var key = $"{request.Phase}|{request.Candidate.Processor}";
             candidatePassesStarted.TryGetValue(key, out var pass);
             pass++;
             candidatePassesStarted[key] = pass;
-            return $"Scored pass {pass} / 2.";
+            var total = string.Equals(request.Phase, "screening", StringComparison.Ordinal) ? 1 : 2;
+            return $"Scored pass {pass} / {total}.";
         }
 
         return "Measuring benchmark trial.";
@@ -332,37 +288,21 @@ internal sealed class GpuGateAProgressFile
                 index = screeningCandidates.Count + 1;
                 screeningCandidates.Add(candidate.PhysicalCoreIndex, index);
             }
-
             return (index, progressPlan.PhysicalCandidateCount);
         }
 
         if (string.Equals(phase, "screening-finalists", StringComparison.Ordinal) ||
             string.Equals(phase, "screening-finalists-warmup", StringComparison.Ordinal))
         {
-            if (!finalistCandidates.TryGetValue(candidate.PhysicalCoreIndex, out var finalistIndex))
+            if (!finalistCandidates.TryGetValue(candidate.PhysicalCoreIndex, out var index))
             {
-                finalistIndex = finalistCandidates.Count + 1;
-                finalistCandidates.Add(candidate.PhysicalCoreIndex, finalistIndex);
+                index = finalistCandidates.Count + 1;
+                finalistCandidates.Add(candidate.PhysicalCoreIndex, index);
             }
-
-            return (finalistIndex, progressPlan.FinalistCandidateCount);
+            return (index, progressPlan.FinalistCandidateCount);
         }
 
-        if (string.Equals(phase, "smt-refinement", StringComparison.Ordinal) ||
-            string.Equals(phase, "smt-refinement-warmup", StringComparison.Ordinal))
-        {
-            var key = candidate.Processor.ToString();
-            if (!refinementCandidates.TryGetValue(key, out var index))
-            {
-                index = refinementCandidates.Count + 1;
-                refinementCandidates.Add(key, index);
-            }
-
-            return (index, progressPlan.GetRefinementCandidateCount(candidate.PhysicalCoreIndex));
-        }
-
-        return string.Equals(phase, "confirmation", StringComparison.Ordinal) ||
-               string.Equals(phase, "confirmation-warmup", StringComparison.Ordinal)
+        return string.Equals(phase, "final-verification", StringComparison.Ordinal)
             ? (1, 1)
             : (null, null);
     }
@@ -410,10 +350,8 @@ internal sealed class GpuGateAProgressFile
 
     private static string FormatVerdict(string verdict) => verdict switch
     {
-        "Improved" => "faster than default reference",
-        "NoMeasurableDifference" => "similar to default reference",
-        "Tradeoff" => "faster frame tail with a guardrail tradeoff",
-        "Regressed" => "slower than default reference",
+        "Ranked" => "ranked",
+        "Inconclusive" => "not rankable",
         _ => verdict,
     };
 }
