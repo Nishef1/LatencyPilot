@@ -12,7 +12,11 @@ public sealed record GpuBenchmarkEvidenceInterpretation(
     IReadOnlyDictionary<string, MetricSeries> Guardrails,
     IReadOnlyDictionary<string, MetricSeries> Context,
     double FrameP99Milliseconds,
-    double OnePercentLowFps);
+    double OnePercentLowFps,
+    GpuBenchmarkVideoStats? VideoStats = null)
+{
+    public bool HasVideoPrimary => VideoStats is not null;
+}
 
 public static class GpuBenchmarkEvidenceInterpreter
 {
@@ -48,27 +52,48 @@ public static class GpuBenchmarkEvidenceInterpreter
             d3d12Samples.All(static sample => double.IsFinite(sample) && sample > 0d);
         Require(d3d12SamplesValid, "D3D12 GPU timestamp evidence is missing or invalid.", reasons);
 
+        // Video-primary path: the benchmark's own wall-clock frame periods
+        // carry AVG / 1% low / 0.1% low with no external collector. When they
+        // exist, PresentMon and kernel ETW degrade to best-effort guardrails
+        // instead of hard validity gates. Without them, the legacy
+        // external-evidence contract applies unchanged.
+        var videoStats = evidence.FramePeriodMilliseconds is { } periods
+            ? GpuBenchmarkVideoStats.TryCreate(periods)
+            : null;
+        var hasVideoPrimary = videoStats is not null;
+
         var capture = evidence.PresentMonCapture;
-        Require(capture.IsAvailable && capture.Frames.Count > 0,
-            "Raw PresentMon frame capture is unavailable or empty.", reasons);
-        Require(IsSupportedPresentMonSource(capture),
-            "PresentMon API 3.3+ or the pinned standalone PresentMon console collector is required for authoritative GPU benchmark evidence.", reasons);
-        Require(IsSupportedPresentMonBinary(evidence.PresentMonBinaryVersion),
-            "PresentMon 2.5.1 or later is required for authoritative GPU benchmark evidence.", reasons);
-        Require(capture.ActualWindowMilliseconds > 0 && capture.EndedAtUtc >= capture.StartedAtUtc,
-            "PresentMon capture timing is invalid.", reasons);
-        Require(evidence.EtwCaptureId != Guid.Empty && evidence.EtwIntegrityComplete && evidence.EtwLostEventCount == 0,
-            "Kernel ETW capture is missing, incomplete, or reports event loss.", reasons);
+        if (!hasVideoPrimary)
+        {
+            Require(capture.IsAvailable && capture.Frames.Count > 0,
+                "Raw PresentMon frame capture is unavailable or empty.", reasons);
+            Require(IsSupportedPresentMonSource(capture),
+                "PresentMon API 3.3+ or the pinned standalone PresentMon console collector is required for authoritative GPU benchmark evidence.", reasons);
+            Require(IsSupportedPresentMonBinary(evidence.PresentMonBinaryVersion),
+                "PresentMon 2.5.1 or later is required for authoritative GPU benchmark evidence.", reasons);
+            Require(capture.ActualWindowMilliseconds > 0 && capture.EndedAtUtc >= capture.StartedAtUtc,
+                "PresentMon capture timing is invalid.", reasons);
+            Require(evidence.EtwCaptureId != Guid.Empty && evidence.EtwIntegrityComplete && evidence.EtwLostEventCount == 0,
+                "Kernel ETW capture is missing, incomplete, or reports event loss.", reasons);
+        }
 
         var rawSeries = PresentMonGuardrailSeriesBuilder.Create(capture);
-        var hasFrameTimes = rawSeries.TryGetValue(PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric, out var frameSeries) &&
+        var hasPresentMonFrameTimes = rawSeries.TryGetValue(PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric, out var frameSeries) &&
             frameSeries.Samples.Count > 0 &&
             frameSeries.Samples.All(static value => value > 0d);
-        Require(hasFrameTimes, "Complete positive raw CPU frame intervals are required.", reasons);
+        if (!hasVideoPrimary)
+        {
+            Require(hasPresentMonFrameTimes, "Complete positive raw CPU frame intervals are required.", reasons);
+        }
 
-        var primaryFrameTime = hasFrameTimes
-            ? frameSeries!
-            : new MetricSeries(PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric, MetricDirection.LowerIsBetter, []);
+        var primaryFrameTime = hasVideoPrimary && videoStats is not null
+            ? new MetricSeries(
+                PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric,
+                MetricDirection.LowerIsBetter,
+                evidence.FramePeriodMilliseconds!.Where(static value => double.IsFinite(value) && value > 0d))
+            : hasPresentMonFrameTimes
+                ? frameSeries!
+                : new MetricSeries(PresentMonGuardrailSeriesBuilder.CpuFrameTimeMetric, MetricDirection.LowerIsBetter, []);
         var d3d12GpuWork = new MetricSeries(
             D3D12GpuWorkMetric,
             MetricDirection.LowerIsBetter,
@@ -92,12 +117,16 @@ public static class GpuBenchmarkEvidenceInterpreter
             guardrails[name] = series;
         }
 
-        var frameP99 = hasFrameTimes
-            ? Percentiles.Calculate(primaryFrameTime.Samples, 0.99)
-            : double.NaN;
-        var onePercentLowFps = double.IsFinite(frameP99) && frameP99 > 0d
-            ? 1000d / frameP99
-            : double.NaN;
+        var frameP99 = hasVideoPrimary && videoStats is not null
+            ? videoStats.P99Milliseconds
+            : primaryFrameTime.Samples.Count > 0
+                ? Percentiles.Calculate(primaryFrameTime.Samples, 0.99)
+                : double.NaN;
+        var onePercentLowFps = hasVideoPrimary && videoStats is not null
+            ? videoStats.Low1PctFps
+            : double.IsFinite(frameP99) && frameP99 > 0d
+                ? 1000d / frameP99
+                : double.NaN;
 
         return new GpuBenchmarkEvidenceInterpretation(
             reasons.Count == 0,
@@ -107,7 +136,8 @@ public static class GpuBenchmarkEvidenceInterpreter
             guardrails.AsReadOnly(),
             context.AsReadOnly(),
             frameP99,
-            onePercentLowFps);
+            onePercentLowFps,
+            videoStats);
     }
 
     internal static bool IsStandaloneConsoleCapture(LatencyPilot.Core.Devices.PresentMonFrameCaptureSnapshot capture) =>

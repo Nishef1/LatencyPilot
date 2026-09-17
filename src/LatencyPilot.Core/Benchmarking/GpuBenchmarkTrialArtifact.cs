@@ -13,7 +13,8 @@ public sealed record GpuBenchmarkArtifactWorkload(
 public readonly record struct GpuBenchmarkArtifactFrame(
     long FrameIndex,
     double CpuRecordingMilliseconds,
-    double GpuWorkMilliseconds);
+    double GpuWorkMilliseconds,
+    double FramePeriodMilliseconds);
 
 public sealed record GpuBenchmarkTrialArtifact(
     string Schema,

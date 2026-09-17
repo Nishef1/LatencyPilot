@@ -190,13 +190,13 @@ Public protocol v6 exposes no mutation command.
 
 ## 8. GPU synchronized evidence
 
-The automatic benchmark combines a deterministic D3D12 workload with kernel ETW and raw PresentMon evidence. D3D12 timestamp queries provide direct GPU-work timing and are the calibration source rather than relying on HWS-sensitive PresentMon GPU-active metrics alone. PresentMon raw frame intervals remain useful for frame p99/1% low and guardrails; LatencyPilot derives authoritative percentiles with its canonical estimator instead of trusting an external precomputed percentile ordering.
+The automatic benchmark combines a deterministic D3D12 workload with kernel ETW and raw PresentMon evidence. D3D12 timestamp queries provide direct GPU-work timing and are the calibration source rather than relying on HWS-sensitive PresentMon GPU-active metrics alone. Per ADR 0005, the primary ranking signal is the benchmark's own wall-clock frame periods (AVG FPS, frame-p99, 1% low, 0.1% low) — the automated equivalent of a manual per-core decision table. PresentMon raw frame intervals remain useful as an independent cross-check and for guardrails when available; LatencyPilot derives authoritative percentiles with its canonical estimator instead of trusting an external precomputed percentile ordering.
 
 For Gate A automatic affinity, the authoritative collector is the pinned **standalone PresentMon 2.5.1 console executable**, not a separately installed PresentMon shared Service/API. LatencyPilot accepts only its controlled packaged/cache path and verifies the official release SHA-256 before use. It invokes the upstream-supported process-targeted V2 CSV surface and records the executable version/path as provenance. A missing or hash-invalid collector is non-authoritative and fails closed. The older service/API readers may continue to exist for other observation paths, but Gate A must not depend on `Program Files\Intel\PresentMon*` or `PresentMonAPI2.dll` being installed.
 
 PresentMon's own current documentation warns that `msGPUActive`/related GPU execution metrics may read late or high when Hardware-Accelerated GPU Scheduling is enabled, and that some CPU-frame-derived metrics are less accurate for OpenGL/Vulkan. Therefore PresentMon GPU-busy evidence is **context only** for `gpu-affinity-benchmark-v1`; it cannot independently validate, invalidate, or select a candidate. Direct D3D12 timestamp evidence remains the GPU-work timing source for the built-in DX12 benchmark.
 
-A benchmark trial requires stable source/GPU/driver/topology/benchmark-process/frozen-workload identity, clean ETW capture, valid D3D12 timestamp evidence, expected stored state before/after a Candidate trial, and synchronized standalone-PresentMon raw-frame evidence for the benchmark process. The session records one original-state warm-up, then two decision-grade original reference controls. Every candidate apply/restart, finalist re-screen, SMT refinement and confirmation state transition also receives its own 5-second non-scored warm-up before scored evidence. Missing optional PresentMon fields stay missing. Background applications are context unless they actually break GPU/benchmark comparability.
+A benchmark trial requires stable source/GPU/driver/topology/benchmark-process/frozen-workload identity, valid benchmark frame-period evidence with D3D12 timestamp evidence, expected stored state before/after a Candidate trial, and continuity. Standalone-PresentMon raw frames and clean ETW capture are best-effort guardrails per ADR 0005: their absence is recorded as explicit context and never as a silent pass, and never blocks video-primary ranking. The session records one original-state warm-up, then two decision-grade original reference controls. Every candidate apply/restart, finalist re-screen, SMT refinement and confirmation state transition also receives its own 5-second non-scored warm-up before scored evidence. Missing optional PresentMon fields stay missing. Background applications are context unless they actually break GPU/benchmark comparability.
 
 Because applying a GPU interrupt-affinity candidate restarts the display adapter, the controlled benchmark recreates its D3D12 renderer before every trial while preserving the same process, frozen workload, worker map and seed. This prevents a stale `DXGI_ERROR_DEVICE_REMOVED` renderer from being mistaken for benchmark evidence failure.
 
@@ -208,12 +208,16 @@ Durable cross-trial GPU identity uses the exact PnP display-device identity plus
 
 Stored affinity policy is not proof of effective placement.
 
-Candidate evidence additionally requires the same ETW capture to show:
+When kernel ETW is healthy, candidate evidence additionally requires the same ETW capture to show:
 
 - exact display-driver/module attribution;
 - at least one attributed GPU ISR on the candidate logical processor;
 - zero attributed GPU ISR on off-target processors;
 - unresolved ISR attribution remains unresolved rather than counting as success.
+
+Per ADR 0005, when kernel ETW is unavailable there is no placement proof
+either way: the trial stays rankable on benchmark frame periods under
+verified stored state but is explicitly flagged placement-unverified.
 
 For a single-adapter WDDM system, the verifier first uses resolved ISR addresses in the
 display KMD module (for example, `nvlddmkm.sys`). If that stream is absent, it may use

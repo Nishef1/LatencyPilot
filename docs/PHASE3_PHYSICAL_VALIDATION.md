@@ -32,7 +32,14 @@ stored interrupt-affinity policy
 
 A registry write/restart is not activation proof. ConfigMgr allocated resources are independent provenance only. The previously observed RTX 3070 tuple (`irq=4294967270`, `group=1`, `affinity=0`, `flags=0x0002`) is explicitly **not** accepted as effective placement and must never be coerced into a plausible CPU mask/group/MSI claim.
 
-A candidate trial is decision-grade only when the exact stored candidate is verified around the capture and attributable GPU-driver ISR execution is confined to the requested logical processor. Unresolved attribution is recorded separately and does not count as success.
+A candidate trial is decision-grade when the benchmark artifact (with
+video-style AVG / 1% low / 0.1% low frame periods), the exact stored
+candidate verified around the capture, and continuity are all intact
+(ADR 0005). Standalone PresentMon and kernel ETW are best-effort
+guardrails: their absence is recorded as explicit context and never as a
+silent pass. With healthy ETW, attributable GPU-driver ISR execution
+must still be confined to the requested logical processor; without ETW
+the trial is rankable but explicitly flagged placement-unverified.
 
 Stop on unknown/diverged state, changed driver assumptions, unexpected target identity, failed runtime placement, failed exact rollback or recovery requiring manual intervention. Never edit/delete the SQLite journal to make validation pass.
 

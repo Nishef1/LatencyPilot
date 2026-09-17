@@ -14,7 +14,8 @@ public sealed record GpuBenchmarkContaminationContext(
     bool ControlTrialDrifted,
     bool SleepOrResumeDetected,
     bool DeviceResetDetected,
-    int RetryAttempt)
+    int RetryAttempt,
+    IReadOnlyList<string>? SoftNotes = null)
 {
     public static GpuBenchmarkContaminationContext Clean { get; } = new(
         false,
@@ -52,6 +53,10 @@ public static class GpuBenchmarkReadiness
 
         var reasons = new List<string>();
         var context = new List<string>();
+        if (contamination.SoftNotes is not null)
+        {
+            context.AddRange(contamination.SoftNotes.Where(static note => !string.IsNullOrWhiteSpace(note)));
+        }
 
         AddInterpreterReasons("Reference", reference, reasons);
         AddInterpreterReasons("Trial", trial, reasons);

@@ -104,6 +104,7 @@ internal sealed class BenchmarkWorkload
         var startedAtUtc = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
         var lastProgress = TimeSpan.Zero;
+        var previousFrameStamp = stopwatch.Elapsed;
 
         while (stopwatch.Elapsed < duration)
         {
@@ -115,7 +116,12 @@ internal sealed class BenchmarkWorkload
                 throw new InvalidDataException("Benchmark trial produced invalid frame timing.");
             }
 
-            frames.Add(frame);
+            var now = stopwatch.Elapsed;
+            // Wall-clock frame period: the video-style FPS signal (AVG / 1% low /
+            // 0.1% low) is computed from these periods, independent of any
+            // external frame collector.
+            frames.Add(frame with { FramePeriodMilliseconds = (now - previousFrameStamp).TotalMilliseconds });
+            previousFrameStamp = now;
             if (stopwatch.Elapsed - lastProgress >= ProgressInterval)
             {
                 lastProgress = stopwatch.Elapsed;
@@ -151,7 +157,8 @@ internal sealed class BenchmarkWorkload
             frames.Select(static frame => new GpuBenchmarkArtifactFrame(
                 frame.FrameIndex,
                 frame.CpuRecordingMilliseconds,
-                frame.GpuWorkMilliseconds)).ToArray(),
+                frame.GpuWorkMilliseconds,
+                frame.FramePeriodMilliseconds)).ToArray(),
             renderer.CaptureWorkerChecksums()));
     }
 

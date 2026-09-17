@@ -10,7 +10,7 @@ using static Vortice.DXGI.DXGI;
 
 namespace LatencyPilot.GpuBenchmark;
 
-internal readonly record struct BenchmarkFrameTelemetry(long FrameIndex, double CpuRecordingMilliseconds, double GpuWorkMilliseconds);
+internal readonly record struct BenchmarkFrameTelemetry(long FrameIndex, double CpuRecordingMilliseconds, double GpuWorkMilliseconds, double FramePeriodMilliseconds = 0d);
 
 internal sealed class D3D12BenchmarkRenderer : IDisposable
 {

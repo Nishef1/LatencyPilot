@@ -129,6 +129,11 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 var median = ordered.Length % 2 == 0
                     ? (ordered[(ordered.Length / 2) - 1] + ordered[ordered.Length / 2]) / 2d
                     : ordered[ordered.Length / 2];
+                static double? Average(IEnumerable<double?> values)
+                {
+                    var finite = values.Where(static value => value is { } item && double.IsFinite(item)).Select(static value => value!.Value).ToArray();
+                    return finite.Length == 0 ? null : finite.Average();
+                }
                 var candidate = report.Candidates.LastOrDefault(item =>
                     string.Equals(item.Phase, phase, StringComparison.Ordinal) &&
                     item.Processor.Equals(group.Key));
@@ -137,6 +142,9 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                     Processor = group.Key,
                     Core = candidate?.PhysicalCoreIndex,
                     MedianP99 = median,
+                    AvgFps = Average(group.Select(static trial => trial.AvgFps)),
+                    Low1PctFps = Average(group.Select(static trial => trial.OnePercentLowFps)),
+                    Low01PctFps = Average(group.Select(static trial => trial.Low01PctFps)),
                     Verdict = candidate?.Verdict ?? "—",
                     Improvement = candidate?.RelativeFrameP99Improvement,
                 };
@@ -178,9 +186,12 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             {
                 Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    "CPU {0}{1} · p99 {2:F2} ms{3} · {4}{5}",
+                    "CPU {0}{1} · AVG {2} · 1% {3} · 0.1% {4} FPS · p99 {5:F2} ms{6} · {7}{8}",
                     row.Processor.Number,
                     row.Core is { } core ? $" · core {core}" : string.Empty,
+                    FormatFps(row.AvgFps),
+                    FormatFps(row.Low1PctFps),
+                    FormatFps(row.Low01PctFps),
                     row.MedianP99,
                     improvement,
                     row.Verdict,
@@ -430,6 +441,11 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         "complete" => "Complete",
         _ => phase,
     };
+
+    private static string FormatFps(double? value) =>
+        value is { } fps && double.IsFinite(fps) && fps > 0
+            ? fps.ToString("F1", CultureInfo.InvariantCulture)
+            : "—";
 
     private static string FormatDuration(double milliseconds)
     {

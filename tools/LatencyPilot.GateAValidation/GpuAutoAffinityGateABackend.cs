@@ -429,7 +429,11 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             ? await VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false)
             : await VerifyCandidateStateAsync(experimentId!.Value, candidate, CancellationToken.None).ConfigureAwait(false);
         var continuity = GpuOptimizationCaptureContinuity.Evaluate(continuityBefore, continuityAfter);
-        var reasons = ValidateTrial(
+        // Hard reasons invalidate the trial. Soft notes degrade guardrails to
+        // best-effort context: ranking uses the benchmark's own frame periods
+        // (video-style AVG / 1% low / 0.1% low) and never depends on an
+        // external collector being healthy.
+        var (reasons, softNotes) = ValidateTrial(
             request,
             artifact,
             kernel,
@@ -445,7 +449,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         // interval so D3D12 device recreation + pre-roll idle cannot pollute
         // placement proof or driver guardrails.
         var scopedKernel = CropKernelToArtifact(kernel, artifact.StartedAtUtc, artifact.EndedAtUtc);
-        if (kernel.IsValid && storedBefore && storedAfter)
+        var attributionAttempted = kernel.IsValid && storedBefore && storedAfter;
+        if (attributionAttempted)
         {
             try
             {
@@ -481,6 +486,11 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                     $"GPU ISR attribution failed: {exception.GetType().Name}: {exception.Message}");
             }
         }
+        else if (candidate is not null)
+        {
+            softNotes.Add(
+                "Runtime ISR placement is unverified for this trial because kernel ETW is unavailable; ranking uses benchmark frame periods with verified stored affinity state.");
+        }
 
         var workload = GpuBenchmarkFrozenWorkload.Create(
             artifact.FrozenWorkload.Width,
@@ -515,7 +525,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             kernel.IsValid,
             kernel.EventsLost,
             reasons.AsReadOnly(),
-            artifact.FrozenWorkload);
+            artifact.FrozenWorkload,
+            artifact.Frames.Select(static frame => frame.FramePeriodMilliseconds).ToArray());
         reportProvenance ??= GpuAutoAffinityReportProvenance.FromEvidence(evidence);
 
         var interpretation = GpuBenchmarkEvidenceInterpreter.Interpret(evidence);
@@ -539,6 +550,15 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
 
         var driverDpc = FilterDriverDurations(scopedKernel, KernelLatencyEventKind.Dpc);
         var driverIsr = isrAttribution?.Events.Select(static item => item.DurationMicroseconds).ToArray() ?? [];
+        if (!kernel.IsValid)
+        {
+            softNotes.Add("Kernel ETW capture integrity is not clean; driver DPC/ISR guardrails are best-effort for this trial.");
+        }
+        if (!presentMon.IsAvailable || presentMon.ProcessId != benchmarkProcessId || presentMon.Frames.Count == 0)
+        {
+            softNotes.Add(
+                $"Standalone PresentMon evidence is unavailable for this trial [{presentMon.Status}]; ranking uses benchmark frame periods.");
+        }
         var contamination = new GpuBenchmarkContaminationContext(
             SystemCpuBusyDrifted: false,
             ControlTrialDrifted: controlDrifted,
@@ -547,7 +567,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 reason.Contains("awake", StringComparison.OrdinalIgnoreCase) ||
                 reason.Contains("suspend", StringComparison.OrdinalIgnoreCase)),
             DeviceResetDetected: false,
-            RetryAttempt: request.RetryAttempt);
+            RetryAttempt: request.RetryAttempt,
+            SoftNotes: softNotes.AsReadOnly());
 
         return new GpuAutoAffinityTrialObservation(
             evidence,
@@ -613,7 +634,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         return artifact;
     }
 
-    private List<string> ValidateTrial(
+    private (List<string> Hard, List<string> Soft) ValidateTrial(
         GpuAutoAffinityTrialRequest request,
         GpuBenchmarkTrialArtifact artifact,
         KernelLatencyCaptureResult kernel,
@@ -622,64 +643,65 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         bool storedBefore,
         bool storedAfter)
     {
-        var reasons = new List<string>();
+        var hard = new List<string>();
+        var soft = new List<string>();
         if (!string.Equals(artifact.Schema, GpuBenchmarkTrialArtifact.SchemaId, StringComparison.Ordinal) ||
             artifact.SessionId != sessionId || artifact.Frames.Count == 0)
         {
-            reasons.Add("Benchmark raw artifact schema/session/frame evidence is invalid.");
+            hard.Add("Benchmark raw artifact schema/session/frame evidence is invalid.");
         }
         if (artifact.FrozenWorkload.WorkerMap.Count == 0 ||
             artifact.WorkerChecksums.Count != artifact.FrozenWorkload.WorkerMap.Count)
         {
-            reasons.Add("Benchmark frozen worker map/checksum evidence is incomplete.");
-        }
-        if (!kernel.IsValid)
-        {
-            reasons.Add("Kernel ETW capture integrity is not clean.");
-        }
-        if (!presentMon.IsAvailable || presentMon.ProcessId != benchmarkProcessId || presentMon.Frames.Count == 0)
-        {
-            reasons.Add("Raw PresentMon evidence is unavailable, empty, or belongs to a different process.");
-            if (!string.IsNullOrWhiteSpace(presentMon.Error))
-            {
-                reasons.Add($"PresentMon detail [{presentMon.Status}]: {presentMon.Error}");
-            }
+            hard.Add("Benchmark frozen worker map/checksum evidence is incomplete.");
         }
         if (!storedBefore || !storedAfter)
         {
-            reasons.Add("Exact stored GPU affinity state was not stable before and after the trial.");
+            hard.Add("Exact stored GPU affinity state was not stable before and after the trial.");
         }
         if (!continuity.IsStable)
         {
-            reasons.AddRange(continuity.Reasons);
+            hard.AddRange(continuity.Reasons);
+        }
+
+        if (!kernel.IsValid)
+        {
+            soft.Add("Kernel ETW capture integrity is not clean; external timing cross-checks are best-effort.");
+        }
+        if (!presentMon.IsAvailable || presentMon.ProcessId != benchmarkProcessId || presentMon.Frames.Count == 0)
+        {
+            soft.Add("Raw PresentMon evidence is unavailable, empty, or belongs to a different process; ranking uses benchmark frame periods.");
+            if (!string.IsNullOrWhiteSpace(presentMon.Error))
+            {
+                soft.Add($"PresentMon detail [{presentMon.Status}]: {presentMon.Error}");
+            }
         }
 
         var kernelEnd = kernel.StartedAtUtc + kernel.ActualDuration;
         // The kernel window intentionally starts before the scored benchmark
         // (it covers D3D12 device recreation after a GPU restart) and runs
-        // longer than the trial. Require the scored artifact to be contained
-        // in the kernel window with 95% coverage, not a vacuous mutual
-        // overlap that fails on healthy recreation offsets.
+        // longer than the trial. A coverage miss only degrades external
+        // cross-checks; it never invalidates benchmark-period ranking.
         var kernelCoveredMs = (Min(artifact.EndedAtUtc, kernelEnd) -
             Max(artifact.StartedAtUtc, kernel.StartedAtUtc)).TotalMilliseconds;
         if (!double.IsFinite(kernelCoveredMs) ||
             kernelCoveredMs < request.Duration.TotalMilliseconds * MinimumOverlapRatio)
         {
-            reasons.Add("Kernel ETW does not cover at least 95% of the scored benchmark trial.");
+            soft.Add("Kernel ETW does not cover at least 95% of the scored benchmark trial.");
         }
 
-        // PresentMon now reports its honest CSV-observed window. Require the
-        // scored artifact to be covered by that window rather than comparing
-        // an echoed interval against itself.
+        // PresentMon reports its honest CSV-observed window. A miss only
+        // degrades external cross-checks; it never invalidates
+        // benchmark-period ranking.
         var presentMonCoveredMs = (Min(artifact.EndedAtUtc, presentMon.EndedAtUtc) -
             Max(artifact.StartedAtUtc, presentMon.StartedAtUtc)).TotalMilliseconds;
         if (!double.IsFinite(presentMonCoveredMs) ||
             presentMonCoveredMs < request.Duration.TotalMilliseconds * MinimumOverlapRatio)
         {
-            reasons.Add("Standalone PresentMon does not cover at least 95% of the scored benchmark trial.");
+            soft.Add("Standalone PresentMon does not cover at least 95% of the scored benchmark trial.");
         }
 
-        return reasons;
+        return (hard, soft);
     }
 
     private static KernelLatencyCaptureResult CropKernelToArtifact(

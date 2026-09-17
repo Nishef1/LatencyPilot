@@ -97,7 +97,9 @@ public sealed record GpuAutoAffinityTrialReport(
     double ActualDurationMilliseconds,
     IReadOnlyList<string> Reasons,
     GpuAutoAffinityReportProvenance? Provenance = null,
-    GpuAutoAffinityInterruptEvidence? InterruptEvidence = null);
+    GpuAutoAffinityInterruptEvidence? InterruptEvidence = null,
+    double? AvgFps = null,
+    double? Low01PctFps = null);
 
 public sealed record GpuAutoAffinityInterruptEvidence(
     string IsrModuleName,

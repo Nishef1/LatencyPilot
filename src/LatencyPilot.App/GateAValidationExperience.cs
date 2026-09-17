@@ -465,8 +465,24 @@ public sealed partial class MainWindow
                 $" Confirmation 1% low average: {originalFps:F1} → {candidateFps:F1} FPS (Δ {candidateFps - originalFps:+0.0;-0.0;0.0}).")
             : string.Empty;
 
+        var originalAvg = AverageTrialMetric(report, "Original", static trial => trial.AvgFps);
+        var candidateAvg = AverageTrialMetric(report, "Candidate", static trial => trial.AvgFps);
+        var rawAvg = originalAvg is { } originalAvgFps && candidateAvg is { } candidateAvgFps
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $" Confirmation AVG average: {originalAvgFps:F1} → {candidateAvgFps:F1} FPS (Δ {candidateAvgFps - originalAvgFps:+0.0;-0.0;0.0}).")
+            : string.Empty;
+
+        var originalLow01 = AverageTrialMetric(report, "Original", static trial => trial.Low01PctFps);
+        var candidateLow01 = AverageTrialMetric(report, "Candidate", static trial => trial.Low01PctFps);
+        var rawLow01 = originalLow01 is { } original001 && candidateLow01 is { } candidate001
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $" Confirmation 0.1% low average: {original001:F1} → {candidate001:F1} FPS (Δ {candidate001 - original001:+0.0;-0.0;0.0}).")
+            : string.Empty;
+
         var reasons = string.Join(" ", report.Reasons.Take(2));
-        return $"{headline}{relative}{rawP99}{rawLow} {reasons}".TrimEnd();
+        return $"{headline}{relative}{rawAvg}{rawP99}{rawLow}{rawLow01} {reasons}".TrimEnd();
     }
 
     private static double? AverageTrialMetric(

@@ -478,14 +478,16 @@ public sealed class GpuAutoAffinitySession
             cancellationToken.ThrowIfCancellationRequested();
 
             var finalistStability = EvaluateRunStability("Finalist", candidateRuns.ToArray());
-            if (finalistStability is null && comparison.Verdict != ExperimentVerdict.Inconclusive)
+            if (finalistStability is null &&
+                comparison.Verdict != ExperimentVerdict.Inconclusive &&
+                comparison.Verdict != ExperimentVerdict.Regressed)
             {
                 var keptExperimentId = activeExperiment.Value;
                 await backend.KeepAsync(keptExperimentId, CancellationToken.None).ConfigureAwait(false);
                 activeExperiment = null;
 
                 reasons.Add(
-                    "Balanced ABBA + BAAB confirmation kept the ranked finalist because its repeated candidate measurements remained decision-grade, attribution-consistent, and repeatable. The original comparison is retained as context, not as a minimum-improvement gate.");
+                    "Balanced ABBA + BAAB confirmation kept the ranked finalist because its repeated candidate measurements remained decision-grade and repeatable without regressing against the original state. The original comparison is retained as context, not as a minimum-improvement gate.");
                 return CreateResult(
                     request,
                     startedAtUtc,
@@ -714,6 +716,7 @@ public sealed class GpuAutoAffinitySession
     {
         ArgumentNullException.ThrowIfNull(observation);
         var reasons = new List<string>();
+        var context = new List<string>();
         if (!observation.StoredStateVerifiedBefore || !observation.StoredStateVerifiedAfter)
         {
             reasons.Add("Expected stored GPU affinity state was not verified before and after the trial.");
@@ -724,7 +727,19 @@ public sealed class GpuAutoAffinitySession
              observation.Placement.TargetProcessor != candidate.Processor ||
              !observation.Placement.ConfirmsRequestedPlacement))
         {
-            reasons.Add("Candidate trial lacks resolved single-adapter ISR placement confined to the requested logical processor.");
+            if (observation.Evidence.EtwIntegrityComplete)
+            {
+                // ETW was healthy, so attribution was attempted and placement
+                // genuinely failed: the trial cannot prove the candidate ran
+                // under the requested affinity.
+                reasons.Add("Candidate trial lacks resolved single-adapter ISR placement confined to the requested logical processor.");
+            }
+            else
+            {
+                // No ETW means no placement proof either way; ranking still
+                // uses benchmark frame periods under verified stored state.
+                context.Add("Runtime ISR placement is unverified for this trial (kernel ETW unavailable); stored affinity state was verified instead.");
+            }
         }
 
         var interpretation = GpuBenchmarkEvidenceInterpreter.Interpret(observation.Evidence);
@@ -739,7 +754,7 @@ public sealed class GpuAutoAffinitySession
                 GpuBenchmarkEvidence.MethodIdValue,
                 GpuBenchmarkReadinessState.Inconclusive,
                 reasons.AsReadOnly(),
-                []);
+                context.AsReadOnly());
         }
 
         if (reference is null)
@@ -748,11 +763,12 @@ public sealed class GpuAutoAffinitySession
                 GpuBenchmarkEvidence.MethodIdValue,
                 GpuBenchmarkReadinessState.Ready,
                 [],
-                []);
+                context.AsReadOnly());
         }
 
         var contamination = observation.Contamination with { RetryAttempt = retryAttempt };
-        return GpuBenchmarkReadiness.Evaluate(reference, observation.Evidence, contamination);
+        var readiness = GpuBenchmarkReadiness.Evaluate(reference, observation.Evidence, contamination);
+        return readiness with { Context = readiness.Context.Concat(context).ToArray() };
     }
 
     private static ComparisonResult Compare(
@@ -762,14 +778,28 @@ public sealed class GpuAutoAffinitySession
     {
         var originalTrials = originals.ToArray();
         var candidateTrials = candidates.ToArray();
+        var comparabilityNotes = new List<string>();
         var attributions = originalTrials.Concat(candidateTrials)
             .Select(static trial => trial.InterruptEvidence).ToArray();
-        if (attributions.Any(static item => item is not null) &&
-            (attributions.Any(static item => item is null) ||
-             attributions.Select(static item => (item!.IsrModuleName, item.IsrAttributionMode)).Distinct().Count() != 1))
+        var distinctSources = attributions
+            .Where(static item => item is not null)
+            .Select(static item => (item!.IsrModuleName, item.IsrAttributionMode))
+            .Distinct()
+            .Count();
+        if (distinctSources > 1)
         {
+            // ETW was healthy on both sides but attributes ISR execution to
+            // different modules: genuinely incomparable, not missing data.
             return new ComparisonResult(ExperimentVerdict.Inconclusive, null, null, null, [],
-                "GPU ISR attribution is missing or changed between trials; different ISR sources cannot be compared.");
+                "GPU ISR attribution changed between trials; different ISR sources cannot be compared.");
+        }
+        var compareDriverGuardrails = distinctSources == 1;
+        if (distinctSources == 0)
+        {
+            // No ISR attribution anywhere (ETW unavailable): drop only the
+            // driver-duration guardrails and still compare frame periods.
+            comparabilityNotes.Add(
+                "GPU ISR attribution is unavailable; driver DPC/ISR guardrails were excluded while frame periods were still compared.");
         }
 
         var originalStability = EvaluateRunStability("Original", originalTrials);
@@ -784,18 +814,21 @@ public sealed class GpuAutoAffinitySession
             return candidateStability;
         }
 
-        var originalSet = BuildMeasurementSet(originalTrials);
-        var candidateSet = BuildMeasurementSet(candidateTrials);
+        var originalSet = BuildMeasurementSet(originalTrials, compareDriverGuardrails);
+        var candidateSet = BuildMeasurementSet(candidateTrials, compareDriverGuardrails);
         var guardrailPairs = originalSet.Guardrails
             .Where(pair => candidateSet.Guardrails.ContainsKey(pair.Key))
             .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
             .Select(pair => (pair.Value, candidateSet.Guardrails[pair.Key]))
             .ToArray();
-        return BenchmarkComparer.Compare(
+        var comparison = BenchmarkComparer.Compare(
             originalSet.Primary,
             candidateSet.Primary,
             guardrailPairs,
             policy);
+        return comparabilityNotes.Count == 0
+            ? comparison
+            : comparison with { Reason = $"{comparison.Reason} {string.Join(" ", comparabilityNotes)}" };
     }
 
     private static ComparisonResult? EvaluateRunStability(
@@ -839,7 +872,8 @@ public sealed class GpuAutoAffinitySession
     }
 
     private static GpuOptimizationMeasurementSet BuildMeasurementSet(
-        GpuAutoAffinityTrialObservation[] observations)
+        GpuAutoAffinityTrialObservation[] observations,
+        bool includeDriverGuardrails)
     {
         if (observations.Length == 0)
         {
@@ -864,15 +898,27 @@ public sealed class GpuAutoAffinitySession
                 GpuBenchmarkEvidenceInterpreter.D3D12GpuWorkMetric,
                 MetricDirection.LowerIsBetter,
                 interpretations.SelectMany(static item => item.D3D12GpuWork.Samples)),
-            [DpcGuardrailMetric] = new(
+        };
+
+        // Driver-duration guardrails exist only when kernel ETW produced
+        // samples for every compared trial; otherwise they are skipped rather
+        // than failing the frame-period comparison.
+        if (includeDriverGuardrails &&
+            observations.All(static item => item.GpuDriverDpcDurationMicroseconds.Count > 0))
+        {
+            guardrails[DpcGuardrailMetric] = new(
                 DpcGuardrailMetric,
                 MetricDirection.LowerIsBetter,
-                observations.SelectMany(static item => item.GpuDriverDpcDurationMicroseconds)),
-            [IsrGuardrailMetric] = new(
+                observations.SelectMany(static item => item.GpuDriverDpcDurationMicroseconds));
+        }
+        if (includeDriverGuardrails &&
+            observations.All(static item => item.GpuDriverIsrDurationMicroseconds.Count > 0))
+        {
+            guardrails[IsrGuardrailMetric] = new(
                 IsrGuardrailMetric,
                 MetricDirection.LowerIsBetter,
-                observations.SelectMany(static item => item.GpuDriverIsrDurationMicroseconds)),
-        };
+                observations.SelectMany(static item => item.GpuDriverIsrDurationMicroseconds));
+        }
 
         foreach (var name in interpretations[0].Guardrails.Keys.Order(StringComparer.Ordinal))
         {
@@ -962,7 +1008,9 @@ public sealed class GpuAutoAffinitySession
             request.Duration.TotalMilliseconds,
             observation.Evidence.PresentMonCapture.ActualWindowMilliseconds,
             reasons,
-            InterruptEvidence: observation.InterruptEvidence);
+            InterruptEvidence: observation.InterruptEvidence,
+            AvgFps: interpretation.VideoStats is { } video && double.IsFinite(video.AvgFps) ? video.AvgFps : null,
+            Low01PctFps: interpretation.VideoStats is { } lows && double.IsFinite(lows.Low01PctFps) ? lows.Low01PctFps : null);
     }
 
     private static GpuAutoAffinitySessionResult CreateResult(
