@@ -135,7 +135,7 @@ internal static partial class GateAOneClickProgram
             RequireSuccess(prepare, "The GPU candidate could not be prepared.");
             primaryExperiment = ParseExperimentId(prepare.StandardOutput);
 
-            await RestartServiceAsync(steps, options.RepositoryRoot, "restart-service-after-prepare");
+            await RestartServiceAsync(steps, "restart-service-after-prepare");
             var preparedInspect = await RunHarnessAsync(steps, "inspect-prepared-after-restart", harnessDll, options.RepositoryRoot, "inspect");
             preparedStateSurvivedRestart = preparedInspect.ExitCode == 0 &&
                 preparedInspect.StandardOutput.Contains($"experiment={primaryExperiment:D}", StringComparison.OrdinalIgnoreCase) &&
@@ -179,7 +179,7 @@ internal static partial class GateAOneClickProgram
             if (!runtimePlacementVerified)
             {
                 throw new InvalidOperationException(
-                    "Runtime GPU-driver ISR placement was not proven on the requested processor. The original state will be restored.");
+                    "Resolved single-adapter GPU ISR placement was not proven on the requested processor. The original state will be restored.");
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -250,7 +250,7 @@ internal static partial class GateAOneClickProgram
                 RequireSuccess(prepareRecovery, "The prepared-state recovery exercise could not be created.");
                 recoveryExperiment = ParseExperimentId(prepareRecovery.StandardOutput);
 
-                await RestartServiceAsync(steps, options.RepositoryRoot, "restart-service-for-recovery");
+                await RestartServiceAsync(steps, "restart-service-for-recovery");
                 var recoverPrepared = await RunHarnessAsync(
                     steps,
                     "recover-prepared-state",
@@ -371,7 +371,6 @@ internal static partial class GateAOneClickProgram
 
     private static async Task RestartServiceAsync(
         List<GateAStepReport> steps,
-        string workingDirectory,
         string stepName)
     {
         var startedAtUtc = DateTimeOffset.UtcNow;
@@ -381,6 +380,27 @@ internal static partial class GateAOneClickProgram
         try
         {
             using var service = new ServiceController(ServiceBoundary.ServiceName);
+            service.Refresh();
+            switch (service.Status)
+            {
+                case ServiceControllerStatus.StartPending:
+                case ServiceControllerStatus.ContinuePending:
+                    service.WaitForStatus(
+                        ServiceControllerStatus.Running,
+                        TimeSpan.FromSeconds(30));
+                    break;
+                case ServiceControllerStatus.StopPending:
+                    service.WaitForStatus(
+                        ServiceControllerStatus.Stopped,
+                        TimeSpan.FromSeconds(30));
+                    break;
+                case ServiceControllerStatus.PausePending:
+                    service.WaitForStatus(
+                        ServiceControllerStatus.Paused,
+                        TimeSpan.FromSeconds(30));
+                    break;
+            }
+
             service.Refresh();
             if (service.Status != ServiceControllerStatus.Stopped)
             {
@@ -394,6 +414,7 @@ internal static partial class GateAOneClickProgram
             service.WaitForStatus(
                 ServiceControllerStatus.Running,
                 TimeSpan.FromSeconds(30));
+            service.Refresh();
             standardOutput = service.Status.ToString();
             if (service.Status != ServiceControllerStatus.Running)
             {
