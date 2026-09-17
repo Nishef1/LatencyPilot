@@ -394,7 +394,11 @@ public sealed class GpuAutoAffinitySession
             {
                 await backend.RollbackAsync(experimentId, CancellationToken.None).ConfigureAwait(false);
                 activeExperiment = null;
-                _ = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+                if (!await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException(
+                        "GPU auto-affinity confirmation rollback completed, but the exact original state could not be verified.");
+                }
             }
             catch (Exception rollbackFailure)
             {
