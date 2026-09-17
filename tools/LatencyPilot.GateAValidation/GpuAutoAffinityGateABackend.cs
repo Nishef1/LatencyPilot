@@ -369,6 +369,14 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             mutation.BeginMeasurement(experimentId.Value);
         }
 
+        // Provision and start the pinned standalone PresentMon collector before
+        // the decision-grade workload begins. Provisioning is outside the trial
+        // deadline so a first-run download cannot shorten the benchmark window.
+        await using var presentMonSession = await PresentMonConsoleFrameMetricsReader.StartAsync(
+            benchmarkProcessId,
+            request.Duration,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(request.Duration + TimeSpan.FromSeconds(20));
         var kernelTask = Task.Run(
@@ -376,10 +384,6 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 new KernelLatencyCaptureOptions(request.Duration, KernelMaximumEvents),
                 deadline.Token),
             deadline.Token);
-        var presentMonTask = PresentMonFrameMetricsReader.CaptureAsync(
-            benchmarkProcessId,
-            request.Duration,
-            cancellationToken: deadline.Token);
 
         await Task.Delay(TimeSpan.FromMilliseconds(150), deadline.Token).ConfigureAwait(false);
         var artifactPathTask = benchmark.RunTrialAsync(
@@ -387,11 +391,14 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             request.Duration,
             deadline.Token);
 
-        await Task.WhenAll(kernelTask, presentMonTask, artifactPathTask).ConfigureAwait(false);
+        await Task.WhenAll(kernelTask, artifactPathTask).ConfigureAwait(false);
         var kernel = await kernelTask.ConfigureAwait(false);
-        var presentMon = await presentMonTask.ConfigureAwait(false);
         var artifactPath = await artifactPathTask.ConfigureAwait(false);
         var artifact = await ReadArtifactAsync(artifactPath, deadline.Token).ConfigureAwait(false);
+        var presentMon = await presentMonSession.CompleteAsync(
+            artifact.StartedAtUtc,
+            artifact.EndedAtUtc,
+            deadline.Token).ConfigureAwait(false);
 
         if (!GpuOptimizationCaptureContinuity.TryCapture(
                 benchmarkProcessId,
