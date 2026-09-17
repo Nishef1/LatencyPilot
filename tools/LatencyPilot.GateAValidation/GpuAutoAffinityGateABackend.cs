@@ -640,6 +640,10 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         if (!presentMon.IsAvailable || presentMon.ProcessId != benchmarkProcessId || presentMon.Frames.Count == 0)
         {
             reasons.Add("Raw PresentMon evidence is unavailable, empty, or belongs to a different process.");
+            if (!string.IsNullOrWhiteSpace(presentMon.Error))
+            {
+                reasons.Add($"PresentMon detail [{presentMon.Status}]: {presentMon.Error}");
+            }
         }
         if (!storedBefore || !storedAfter)
         {

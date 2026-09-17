@@ -333,8 +333,18 @@ public static class PresentMonConsoleFrameMetricsReader
         return -1;
     }
 
-    private static void AddUnavailable(List<string> unavailable, int ordinal, string name)
+    private static string Truncate(string? value, int maximumLength = 500)
     {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length <= maximumLength ? trimmed : trimmed[..maximumLength];
+    }
+
+    private static void AddUnavailable(List<string> unavailable, int ordinal, string name)    {
         if (ordinal < 0)
         {
             unavailable.Add(name);
@@ -476,6 +486,7 @@ public static class PresentMonConsoleFrameMetricsReader
 
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(requestedWindow + CompletionSlack);
+            PresentMonFrameCaptureSnapshot snapshot;
             try
             {
                 await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
@@ -483,31 +494,48 @@ public static class PresentMonConsoleFrameMetricsReader
                 var error = await stderr.ConfigureAwait(false);
                 if (process.ExitCode != 0)
                 {
-                    return Failure(
+                    snapshot = Failure(
                         PresentMonWorkloadCaptureStatus.TrackingFailed,
                         processId,
                         requestedWindow,
                         presentMonPath,
-                        $"PresentMon exited with code {process.ExitCode}. {error} {output}".Trim(),
+                        $"PresentMon exited with code {process.ExitCode}. {Truncate(error)} {Truncate(output)}".Trim(),
                         benchmarkStartedAtUtc,
                         benchmarkEndedAtUtc);
                 }
-
-                return await ParseAsync(
-                    csvPath,
-                    processId,
-                    requestedWindow,
-                    benchmarkStartedAtUtc,
-                    benchmarkEndedAtUtc,
-                    presentMonPath,
-                    cancellationToken).ConfigureAwait(false);
+                else
+                {
+                    snapshot = await ParseAsync(
+                        csvPath,
+                        processId,
+                        requestedWindow,
+                        benchmarkStartedAtUtc,
+                        benchmarkEndedAtUtc,
+                        presentMonPath,
+                        cancellationToken).ConfigureAwait(false);
+                }
             }
             finally
             {
                 TryTerminate(process);
                 process.Dispose();
+            }
+
+            if (snapshot.IsAvailable)
+            {
                 TryDeleteDirectory(tempDirectory);
             }
+            else if (!string.IsNullOrWhiteSpace(snapshot.Error))
+            {
+                // Keep the raw CSV next to the error for owner-local diagnosis.
+                // Failed-trial directories accumulate only on failures.
+                snapshot = snapshot with
+                {
+                    Error = $"{snapshot.Error} Raw CSV retained at: {csvPath}",
+                };
+            }
+
+            return snapshot;
         }
 
         public ValueTask DisposeAsync()
