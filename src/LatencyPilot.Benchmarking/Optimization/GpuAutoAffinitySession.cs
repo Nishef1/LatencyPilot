@@ -78,8 +78,9 @@ public sealed class GpuAutoAffinitySession
     private const string DpcGuardrailMetric = "GPU-driver DPC duration (us)";
     private const string IsrGuardrailMetric = "GPU ISR duration (us)";
     private const double MaximumRunToRunFrameP99Drift = 0.20;
-    private const int MaximumTieBreakCandidates = 4;
-    private const string TieBreakPhaseName = "screening-tiebreak";
+    private const int MaximumFinalistCandidates = 3;
+    private const string FinalistPhaseName = "screening-finalists";
+    private static readonly TimeSpan TransitionWarmupDuration = TimeSpan.FromSeconds(5);
     private readonly IGpuAutoAffinitySessionBackend backend;
     private readonly IGpuAutoAffinitySessionObserver? observer;
 
@@ -129,17 +130,15 @@ public sealed class GpuAutoAffinitySession
         {
             var controls = new List<GpuAutoAffinityTrialObservation>(2);
 
-            // Let the freshly started benchmark settle before selecting the
-            // decision-grade control reference. Startup/render-pipeline work
-            // can make the first whole-run capture a legitimate but
-            // non-representative outlier; using it as the reference would
-            // make the bounded control-drift retry unable to recover.
+            // Warm the controlled D3D12 workload before decision-grade controls.
+            // The same five-second non-scored warmup is used after every affinity
+            // transition so scored runs are not the transition itself.
             await CaptureAcceptedAsync(
                 () => ++nextRunNumber,
                 "screening-warmup",
                 GpuConfirmationOrder.Original,
                 null,
-                request.ScreeningDuration,
+                TransitionWarmupDuration,
                 null,
                 null,
                 trialReports,
@@ -180,10 +179,10 @@ public sealed class GpuAutoAffinitySession
                 candidateReports.Add(report);
                 await PublishCandidateReportAsync(report).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
-                physicalEvaluations.Add(new CandidateEvaluation(candidate, comparison));
+                physicalEvaluations.Add(CreateEvaluation(candidate, observations, comparison));
             }
 
-            var physicalFinalist = await SelectFinalistWithTieBreakAsync(
+            var physicalFinalist = await RescreenTopCandidatesAsync(
                 request,
                 physicalEvaluations,
                 controls,
@@ -194,10 +193,8 @@ public sealed class GpuAutoAffinitySession
                 cancellationToken).ConfigureAwait(false);
             if (physicalFinalist is null)
             {
-                var inconclusive = candidateReports.Count(static item => item.Verdict == "Inconclusive");
-                reasons.Add(inconclusive > 0
-                    ? $"No finalist was established; {inconclusive} of {candidateReports.Count} screening comparisons were Inconclusive. This does not establish that the original state is faster."
-                    : "No physical-core candidate measurably improved frame-tail performance without a guardrail regression.");
+                reasons.Add(
+                    "No physical-core candidate remained decision-grade and repeatable after the bounded finalist re-screen. The original state was restored rather than guessing.");
                 reasons.AddRange(candidateReports.Select(static item =>
                     $"CPU {item.Processor.Number}: {item.Verdict}. {item.Reason}"));
                 var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
@@ -236,10 +233,12 @@ public sealed class GpuAutoAffinitySession
                 candidateReports.Add(report);
                 await PublishCandidateReportAsync(report).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
-                refinementEvaluations.Add(new CandidateEvaluation(sibling, comparison));
+                refinementEvaluations.Add(CreateEvaluation(sibling, observations, comparison));
             }
 
-            var refinedFinalist = SelectFinalist(refinementEvaluations) ?? physicalFinalist;
+            var refinedFinalist = SelectBestCandidate(refinementEvaluations) ?? physicalFinalist;
+            reasons.Add(
+                $"CPU {refinedFinalist.Candidate.Processor.Number} ranked best among the repeatable GPU-affinity candidates by median frame-p99; the original/default state is reference context rather than a winner gate.");
             return await ConfirmFinalistAsync(
                 request,
                 startedAtUtc,
@@ -273,7 +272,7 @@ public sealed class GpuAutoAffinitySession
         }
     }
 
-    private async Task<CandidateEvaluation?> SelectFinalistWithTieBreakAsync(
+    private async Task<CandidateEvaluation?> RescreenTopCandidatesAsync(
         GpuAutoAffinitySessionRequest request,
         List<CandidateEvaluation> physicalEvaluations,
         List<GpuAutoAffinityTrialObservation> controls,
@@ -283,32 +282,21 @@ public sealed class GpuAutoAffinitySession
         Func<int> nextRunNumber,
         CancellationToken cancellationToken)
     {
-        var directFinalist = SelectFinalist(physicalEvaluations);
-        if (directFinalist is not null)
-        {
-            return directFinalist;
-        }
-
-        var tiedEvaluations = physicalEvaluations
-            .Where(static evaluation =>
-                evaluation.Comparison.Verdict == ExperimentVerdict.Improved ||
-                evaluation.Comparison.Verdict == ExperimentVerdict.NoMeasurableDifference)
+        var shortlist = OrderRankableCandidates(physicalEvaluations)
+            .Take(MaximumFinalistCandidates)
             .ToArray();
-        if (tiedEvaluations.Length < 2 ||
-            tiedEvaluations.Length > MaximumTieBreakCandidates)
+        if (shortlist.Length == 0)
         {
             return null;
         }
 
-        // Every tie-break candidate is re-measured, including already-Improved
-        // cores: both statistics must come from the same re-screened evidence.
-        var tieBreakEvaluations = new List<CandidateEvaluation>(tiedEvaluations.Length);
-        foreach (var tied in tiedEvaluations)
+        var finalistEvaluations = new List<CandidateEvaluation>(shortlist.Length);
+        foreach (var shortlisted in shortlist)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var observations = await MeasureCandidateAsync(
-                tied.Candidate,
-                TieBreakPhaseName,
+                shortlisted.Candidate,
+                FinalistPhaseName,
                 repetitions: 2,
                 request.ScreeningDuration,
                 reference,
@@ -316,14 +304,14 @@ public sealed class GpuAutoAffinitySession
                 trialReports,
                 cancellationToken).ConfigureAwait(false);
             var comparison = Compare(controls, observations, request.Policy);
-            var report = ToReport(TieBreakPhaseName, tied.Candidate, observations.Length, comparison);
+            var report = ToReport(FinalistPhaseName, shortlisted.Candidate, observations.Length, comparison);
             candidateReports.Add(report);
             await PublishCandidateReportAsync(report).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            tieBreakEvaluations.Add(new CandidateEvaluation(tied.Candidate, comparison));
+            finalistEvaluations.Add(CreateEvaluation(shortlisted.Candidate, observations, comparison));
         }
 
-        return SelectFinalist(tieBreakEvaluations);
+        return SelectBestCandidate(finalistEvaluations);
     }
 
     private async Task<GpuAutoAffinitySessionResult> ConfirmFinalistAsync(
@@ -356,6 +344,17 @@ public sealed class GpuAutoAffinitySession
                             $"Confirmation run {index + 1} could not verify the exact original GPU affinity state.");
                     }
 
+                    await CaptureAcceptedAsync(
+                        nextRunNumber,
+                        "confirmation-warmup",
+                        role,
+                        null,
+                        TransitionWarmupDuration,
+                        null,
+                        null,
+                        trialReports,
+                        cancellationToken).ConfigureAwait(false);
+
                     originalRuns.Add(await CaptureAcceptedAsync(
                         nextRunNumber,
                         "confirmation",
@@ -379,6 +378,17 @@ public sealed class GpuAutoAffinitySession
                     throw new SessionAbortException(
                         $"Confirmation run {index + 1} could not verify the requested candidate state before measurement.");
                 }
+
+                await CaptureAcceptedAsync(
+                    nextRunNumber,
+                    "confirmation-warmup",
+                    role,
+                    finalist,
+                    TransitionWarmupDuration,
+                    null,
+                    activeExperiment,
+                    trialReports,
+                    cancellationToken).ConfigureAwait(false);
 
                 candidateRuns.Add(await CaptureAcceptedAsync(
                     nextRunNumber,
@@ -415,13 +425,16 @@ public sealed class GpuAutoAffinitySession
             candidateReports.Add(report);
             await PublishCandidateReportAsync(report).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            if (comparison.Verdict == ExperimentVerdict.Improved)
+
+            var finalistStability = EvaluateRunStability("Finalist", candidateRuns.ToArray());
+            if (finalistStability is null)
             {
                 var keptExperimentId = activeExperiment.Value;
                 await backend.KeepAsync(keptExperimentId, CancellationToken.None).ConfigureAwait(false);
                 activeExperiment = null;
 
-                reasons.Add("Balanced ABBA + BAAB confirmation established a measurable improvement without a guardrail regression.");
+                reasons.Add(
+                    "Balanced ABBA + BAAB confirmation kept the ranked finalist because its repeated candidate measurements remained decision-grade and repeatable. The original comparison is retained as context, not as a minimum-improvement gate.");
                 return CreateResult(
                     request,
                     startedAtUtc,
@@ -437,8 +450,7 @@ public sealed class GpuAutoAffinitySession
             await backend.RollbackAsync(activeExperiment.Value, CancellationToken.None).ConfigureAwait(false);
             activeExperiment = null;
             var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
-            reasons.Add(
-                $"Balanced confirmation did not establish a safe measurable improvement: {comparison.Reason}");
+            reasons.Add($"Ranked finalist confirmation was not repeatable: {finalistStability.Reason}");
             return CreateResult(
                 request,
                 startedAtUtc,
@@ -499,6 +511,17 @@ public sealed class GpuAutoAffinitySession
                 throw new SessionAbortException(
                     $"{phase}: candidate {candidate.Processor} was not verified before measurement.");
             }
+
+            await CaptureAcceptedAsync(
+                nextRunNumber,
+                $"{phase}-warmup",
+                GpuConfirmationOrder.Candidate,
+                candidate,
+                TransitionWarmupDuration,
+                null,
+                experimentId,
+                trialReports,
+                cancellationToken).ConfigureAwait(false);
 
             observations = new GpuAutoAffinityTrialObservation[repetitions];
             for (var pass = 0; pass < repetitions; pass++)
@@ -787,14 +810,37 @@ public sealed class GpuAutoAffinitySession
         return new GpuOptimizationMeasurementSet(primary, guardrails);
     }
 
-    private static CandidateEvaluation? SelectFinalist(List<CandidateEvaluation> evaluations) =>
+    private static CandidateEvaluation CreateEvaluation(
+        GpuAffinityCandidate candidate,
+        GpuAutoAffinityTrialObservation[] observations,
+        ComparisonResult comparison)
+    {
+        var values = observations
+            .Select(static observation => GpuBenchmarkEvidenceInterpreter.Interpret(observation.Evidence).FrameP99Milliseconds)
+            .Order()
+            .ToArray();
+        var rankable = values.Length > 0 &&
+            values.All(static value => double.IsFinite(value) && value > 0) &&
+            EvaluateRunStability("Candidate", observations) is null;
+        var median = rankable
+            ? values.Length % 2 == 0
+                ? (values[(values.Length / 2) - 1] + values[values.Length / 2]) / 2d
+                : values[values.Length / 2]
+            : double.PositiveInfinity;
+        return new CandidateEvaluation(candidate, comparison, median, rankable);
+    }
+
+    private static IEnumerable<CandidateEvaluation> OrderRankableCandidates(
+        IEnumerable<CandidateEvaluation> evaluations) =>
         evaluations
-            .Where(static evaluation => evaluation.Comparison.Verdict == ExperimentVerdict.Improved)
-            .OrderByDescending(static evaluation => evaluation.Comparison.RelativeImprovement ?? double.NegativeInfinity)
+            .Where(static evaluation => evaluation.IsRankable && double.IsFinite(evaluation.RankingFrameP99Milliseconds))
+            .OrderBy(static evaluation => evaluation.RankingFrameP99Milliseconds)
             .ThenBy(static evaluation => evaluation.Candidate.ObservedPressureScore)
             .ThenBy(static evaluation => evaluation.Candidate.PhysicalCoreIndex)
-            .ThenBy(static evaluation => evaluation.Candidate.Processor.Number)
-            .FirstOrDefault();
+            .ThenBy(static evaluation => evaluation.Candidate.Processor.Number);
+
+    private static CandidateEvaluation? SelectBestCandidate(IEnumerable<CandidateEvaluation> evaluations) =>
+        OrderRankableCandidates(evaluations).FirstOrDefault();
 
     private static GpuAutoAffinityCandidateReport ToReport(
         string phase,
@@ -903,7 +949,9 @@ public sealed class GpuAutoAffinitySession
 
     private sealed record CandidateEvaluation(
         GpuAffinityCandidate Candidate,
-        ComparisonResult Comparison);
+        ComparisonResult Comparison,
+        double RankingFrameP99Milliseconds,
+        bool IsRankable);
 
     private sealed class SessionAbortException(string message) : Exception(message);
 }
