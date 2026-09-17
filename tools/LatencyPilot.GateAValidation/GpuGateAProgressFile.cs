@@ -237,12 +237,15 @@ internal sealed class GpuGateAProgressFile
             return "Retrying the contaminated trial once.";
         }
 
+        if (string.Equals(request.Phase, "screening-warmup", StringComparison.Ordinal))
+        {
+            return "Original warm-up; not used as the decision reference.";
+        }
+
         if (string.Equals(request.Phase, "screening-control", StringComparison.Ordinal))
         {
             screeningControlPassesStarted++;
-            return screeningControlPassesStarted == 1
-                ? "Original warm-up control; not used as the decision reference."
-                : $"Original decision control {screeningControlPassesStarted - 1} / 2.";
+            return $"Original decision control {screeningControlPassesStarted} / 2.";
         }
 
         if (string.Equals(request.Phase, "confirmation", StringComparison.Ordinal))
