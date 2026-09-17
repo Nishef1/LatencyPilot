@@ -16,8 +16,10 @@ Last updated: 2026-09-17
 - Steady workload readiness: **`workload-stability-v1`**.
 - Automatic GPU method: **`gpu-affinity-benchmark-v1`**.
 - Automatic GPU evidence/report: **`latencypilot-gpu-benchmark-v1` / `latencypilot-gpu-auto-affinity-report-v1`**.
-- Permanent deterministic test policy: **target 10, owner-authorized maximum 20 methods**. Temporary all-core coverage has been folded into the canonical GPU session test and the tiny core/protocol assertions were consolidated without dropping coverage; exact count is verified by the exact-head hosted run.
-- Hosted GitHub Actions: **test-only**. It compile-checks referenced source projects and proves deterministic contracts; it does not prove actual App rendering, LocalSystem behavior, hardware placement/restart, installer/signing or accessibility.
+- Current automatic GPU design authority: `docs/superpowers/specs/2026-09-17-gpu-auto-affinity-ranking-design.md`.
+- Gate A frame collector: pinned standalone **PresentMon 2.5.1 console**, official SHA-256 verified; separate PresentMon Service/API installation is not a Gate A prerequisite.
+- Permanent deterministic test policy: **target 10, owner-authorized maximum 20 methods**. Exact count is owned by the exact-head hosted run.
+- Hosted GitHub Actions: **test-only**. It compile-checks referenced source projects and proves deterministic contracts; it does not prove actual App rendering, LocalSystem behavior, hardware placement/restart, standalone PresentMon operation on the owner machine, installer/signing or accessibility.
 
 ## Completion summary
 
@@ -28,8 +30,8 @@ The major 1.0 source foundations are implemented across:
 - observation-only Protocol v6 and protected Service capture path;
 - processor/device/interrupt inventory and ETW DPC/ISR attribution;
 - `baseline-quality-v2` and steady `workload-stability-v1` evidence;
-- deterministic GPU affinity comparison/guardrail policy and exact rollback journal;
-- **benchmark-backed automatic GPU candidate search source** using a managed D3D12 workload, D3D12 timestamps, raw PresentMon evidence, GPU-specific readiness, bounded all-core screening, SMT refinement, runtime ISR placement proof and balanced confirmation;
+- deterministic GPU affinity evidence/guardrail policy and exact rollback journal;
+- **ranked benchmark-backed automatic GPU candidate search source** using a managed D3D12 workload, D3D12 timestamps, standalone raw PresentMon evidence, GPU-specific validity, bounded all-core screening, post-transition warm-ups, fresh top-candidate re-screen, SMT refinement, runtime ISR placement proof and balanced confirmation;
 - development-only **Run GPU Gate A** App orchestration with real progress, minimize/restore behavior, explicit UAC helper boundary and safe cancellation/recovery ownership;
 - USB/xHCI route/input timing and NIC/RSS read-only/readiness source;
 - workload profiles/Pareto policy and global Restore Baseline planning;
@@ -40,7 +42,7 @@ Supported USB/NIC mutation implementations remain deliberately unarmed until the
 
 ### True product completion
 
-**Not 100% yet.** Phase 2 owner-local closure, GPU Gate A physical proof, product mutation gates and final release/package/hardware validation remain open. Source existence or hosted CI must not be substituted for those physical claims.
+**Not 100% yet.** Exact-final-HEAD hosted Tests for the current ranked/standalone-collector revision, Phase 2 owner-local closure, GPU Gate A physical proof, product mutation gates and final release/package/hardware validation remain open. Source existence must not be substituted for those claims.
 
 ## Measurement authority
 
@@ -65,18 +67,20 @@ Steady optimizer readiness — workload-stability-v1
 Automatic GPU affinity — gpu-affinity-benchmark-v1
   deterministic D3D12 benchmark
   one adaptive calibration, then frozen workload/worker mapping
-  one non-reference original warm-up, then repeated original controls
+  5 s non-scored original warm-up, then two original reference controls
   every eligible physical core actively screened within v1 bound (max 16)
-  CPU0 remains eligible
-  passive processor pressure = ordering/context only
+  each affinity transition: apply/restart → 5 s non-scored warm-up → two scored runs → exact rollback
+  candidate run-level frame-p99 spread must remain <=20% for rankability
+  Inconclusive/invalid candidates are not ranked
+  rank valid physical cores by median run-level frame-p99
+  fresh re-screen of the best up-to-three physical cores
   winning physical core receives sibling refinement when applicable
-  final ABBA + BAAB confirmation against exact original state
-  repeated-side frame-p99 spread must remain <=20% before pooled comparison
-  original/default wins when no candidate establishes safe measurable improvement
+  final ABBA + BAAB confirmation against exact original state, with warm-up after each state transition
+  original/default = exact reference/recovery state, not a fixed minimum-improvement winner gate
   one bounded retry for retryable contamination; otherwise Inconclusive
 ```
 
-Automatic GPU benchmark validity is owned by exact source/GPU/driver/benchmark/frozen-workload identity, ETW integrity, stored-state verification, runtime GPU ISR placement, per-side repeatability and control comparability. System-wide CPU-busy drift alone is not a hard failure for this synthetic method.
+Automatic GPU benchmark validity is owned by exact source/GPU/driver/benchmark/frozen-workload identity, ETW integrity, stored-state verification, runtime GPU ISR attribution/placement, standalone PresentMon raw-frame evidence, per-candidate repeatability and control comparability. System-wide CPU-busy drift alone is not a hard failure for this synthetic method.
 
 `Valid` never means globally healthy or optimal.
 
@@ -90,7 +94,7 @@ Prior physical evidence includes a valid Real-world five-window baseline on hist
 
 Remaining owner-local Phase 2 obligations include exact-closure-revision Real-world + Controlled-idle baselines, consolidated read-only audit, current inspector/device sanity, attribution plausibility, App/Service cleanup/session rejection, UI/accessibility review and proof that read-only closure performs no unrelated mutation.
 
-## Phase 3 — benchmark-backed GPU source implemented; physical arming OPEN
+## Phase 3 — ranked benchmark-backed GPU source implemented; exact-head CI + physical arming OPEN
 
 ### Durable mutation/recovery substrate
 
@@ -114,36 +118,44 @@ Implemented source flow:
 ```text
 capture exact original/default GPU affinity
 → launch normal-user LatencyPilot.GpuBenchmark
-→ deterministic D3D12 warm-up/adaptive calibration
+→ deterministic D3D12 adaptive calibration
 → freeze worker map + workload + seed
-→ one non-reference original warm-up trial
+→ 5 s non-scored original warm-up
 → two original decision-control trials
 → generate every eligible physical-core candidate within v1 bound (max 16)
-→ deterministic shuffled screening, 2 × 15 s per candidate
-→ verify stored candidate + synchronized benchmark/ETW/raw PresentMon evidence
+→ deterministic shuffled screening
+→ each candidate: apply/restart → stored verify → 5 s non-scored warm-up → two scored runs
+→ synchronize benchmark artifact + kernel ETW + standalone PresentMon raw frames
 → require resolved single-adapter target-only ISR placement
    (display KMD preferred; labelled dxgkrnl fallback only when unambiguous)
-→ require repeated-side frame-p99 spread <=20% before pooled comparison
-→ exact rollback before next screening candidate
-→ nominate physical-core finalist only from measurable improvement
-→ test eligible sibling(s) of finalist physical core
-→ fixed eight-run ABBA + BAAB confirmation, >=30 s/run
+→ require candidate run-level frame-p99 spread <=20% for rankability
+→ exact rollback before next candidate
+→ rank valid/repeatable physical-core candidates by lower median run-level frame-p99
+→ fresh re-screen of best up-to-three physical-core candidates from new apply/restart/warm-up cycles
+→ test eligible sibling(s) of fresh physical-core winner
+→ fixed eight-run ABBA + BAAB confirmation, >=30 s scored run, each role preceded by a fresh 5 s warm-up
 → final cancellation boundary
-→ KeepCandidate only for confirmed safe improvement
+→ KeepCandidate only when ranked finalist remains decision-grade/repeatable and final state verifies
    otherwise exact RestoreOriginal / explicit recovery state
 ```
+
+Original/default affinity is retained as exact recovery/reference state and confirmation side. It is **not** the winner threshold for forced-CPU ranking. A valid finalist can be kept even when the generic Original-vs-candidate delta is inside ±3% or Original measures faster; the comparison remains visible context. Missing/inconsistent attribution, failed placement, dirty evidence or repeatability failure remains `Inconclusive` and cannot enter ranking.
 
 Dedicated source contracts now include:
 
 - `LatencyPilot.GpuBenchmark` normal-user D3D12 host;
 - frozen workload and GPU timestamp calibration;
-- PresentMon 2.5.1+/API compatibility boundary and raw-frame interpretation;
+- pinned standalone PresentMon 2.5.1 console locator with official SHA-256 verification and LatencyPilot-controlled packaged/cache provisioning;
+- `Sylvan.Data.Csv` 1.4.4 for robust PresentMon CSV parsing rather than a custom parser;
+- process-targeted PresentMon capture with unique ETW session name, timed V2 CSV output and crop to the exact benchmark artifact interval;
+- DXGI/PnP Gate A graphics identity continuity without a PresentMon Service graphics-device dependency;
 - `GpuBenchmarkReadiness` with GPU-specific contamination handling;
-- bounded all-core candidate planner + sibling refinement;
+- bounded all-core candidate planner + fresh top-three re-screen + sibling refinement;
 - `GpuAutoAffinitySession` orchestration/report;
 - topology-aware progress plan and real candidate verdict observer;
 - late-safe-stop contract: cancellation after final comparison still prevents Keep and forces rollback if candidate state remains owned;
-- confirmation/recovery failure handling that preserves the original failure and escalates an unverified exact-original rollback instead of silently discarding it.
+- confirmation/recovery failure handling that preserves the original failure and escalates an unverified exact-original rollback instead of silently discarding it;
+- third-party notices for PresentMon and Sylvan.
 
 ### Development App experience — source complete, physical UI inspection pending
 
@@ -158,6 +170,7 @@ main App remains non-elevated
 → opens compact progress window
 → obtains explicit UAC only for owner Gate A helper
 → shows real phase/pass/candidate progress, p99, 1% low, ISR state, last verdict and ETA
+→ distinguishes non-scored warm-up from scored measurement
 → Stop safely writes cancellation request
 → progress stays stopping/restoring until terminal state verification
 → main window restores after terminalization
@@ -165,7 +178,7 @@ main App remains non-elevated
 
 Dynamic UI Automation `ItemStatus` mirrors live candidate/phase/progress/status meaning; state is not color-only.
 
-Hosted Tests compile-check this source but **do not** prove actual rendered size, keyboard focus, taskbar behavior, screen-reader output or hardware rollback. Those remain Task 8/9 owner-local evidence.
+Hosted Tests compile-check this source but **do not** prove actual rendered size, keyboard focus, taskbar behavior, screen-reader output, standalone PresentMon runtime, hardware placement/restart or rollback. Those remain owner-local evidence.
 
 ### Gate A — internal physical benchmark + mutation proof — OPEN
 
@@ -184,74 +197,35 @@ Current Gate A runbook: `docs/PHASE3_PHYSICAL_VALIDATION.md`.
 
 Gate A now requires physical evidence on one exact clean revision for:
 
-1. normal App + protected Service path and clean journal;
+1. exact-final-HEAD green hosted Tests plus normal App + protected Service path and clean journal;
 2. D3D12 benchmark smoke without mutation, including multicore activity and finite/stable timestamp evidence;
-3. full bounded candidate search (expected eight physical cores on the owner Ryzen 7 5700X absent explicit CPU-set exclusions);
-4. real progress/taskbar/keyboard/accessibility behavior;
-5. exact candidate stored state + resolved target-only single-adapter ISR placement;
-6. exact rollback between screening candidates;
-7. balanced finalist decision with verified Keep or RestoreOriginal;
-8. **Stop safely** restoring/verifying original with zero unresolved state;
-9. repeated whole-search reproducibility/equivalence or explicit Inconclusive/NoMeasurableDifference;
-10. one supported failure/recovery exercise;
-11. final exact known machine state and `unresolved=0`.
+3. pinned standalone PresentMon 2.5.1 collection without a separately installed Service/API requirement;
+4. full bounded ranked candidate search (expected eight physical cores on the owner Ryzen 7 5700X absent explicit CPU-set exclusions), including a 5 s post-transition warm-up before scored candidate evidence;
+5. fresh best-up-to-three finalist re-screen and SMT sibling refinement;
+6. real progress/taskbar/keyboard/accessibility behavior;
+7. exact candidate stored state + resolved target-only single-adapter ISR placement;
+8. exact rollback between screening/finalist/refinement candidates;
+9. balanced finalist decision with verified Keep or RestoreOriginal and repeatability/integrity gate;
+10. **Stop safely** restoring/verifying original with zero unresolved state;
+11. repeated whole-search reproducibility/equivalence or explicit evidence-based Inconclusive;
+12. one supported failure/recovery exercise;
+13. final exact known machine state and `unresolved=0`.
 
-Latest owner-local Gate A benchmark evidence sampled on 2026-09-16 at source
-revision `245ea18c893996451f1fec3e4005e24eba3c4d3b`:
+### Historical physical evidence and why it does not select a winner
 
-- the normal-user App, protected LocalSystem Service, explicit UAC helper and
-  deterministic D3D12 benchmark completed one full 31/31 run;
-- the run screened all 8 eligible physical-core candidates with 2 × 15 s per
-  candidate, producing 19 capture-ready trials and 19 raw benchmark artifacts
-  (capture readiness alone does not establish a valid candidate comparison);
-- all 16 candidate trials produced resolved WDDM placement proof on the requested
-  processor with 192,030 target ISR events and 0 off-target ISR events;
-- the saved recommendation was `RestoreOriginal`; this must not be interpreted
-  as proof that original/default affinity is the fastest setting (see the
-  comparison-attribution correction below);
-- exact original state was verified after the run and the mutation journal
-  reported `clean-zero-unresolved`.
+Historical Gate A reports proved several substrate properties: deterministic benchmark execution, journal-owned candidate apply/rollback, exact original restoration, and later reports proved single-adapter WDDM ISR placement with zero off-target events. They did **not** establish the best CPU under the current ranked method.
 
-Evidence file:
-`C:\Users\PC\Documents\LatencyPilot\validation\gpu-auto-affinity-20260916T211332640Z-9100c66d2e2f441594765d5c3b88db3c\gpu-auto-affinity-report.json`.
+The most recent analyzed owner report before this redesign showed a systematic candidate first-pass transient after GPU apply/restart: first scored runs commonly had higher ISR/DPC activity and materially different frame-p99 than the immediately following run. That evidence is why every state transition now has a non-scored five-second warm-up and why the best up-to-three candidates are freshly re-screened before finalist selection.
 
-This is a successful full benchmark/search sample on one RTX 3070 system, not
-the complete physical exit gate: the separate Stop-safely interaction,
-rendered keyboard/accessibility/taskbar inspection, and an independent
-reproducibility/failure-recovery exercise remain owner-local closure items.
+Any historical `RestoreOriginal` result under the old “candidate must measurably beat Original” rule must remain historical evidence. It cannot be reinterpreted as proof that Windows default or CPU0 was the fastest setting.
 
-### Gate A comparison/safety correction — source fixed, physical rerun pending
+### Current execution ladder
 
-- **Completed now:** placement and ISR-duration collection share the same
-  single-adapter KMD/WDDM attribution on original and candidate trials. Changed
-  ISR sources fail closed. Reports retain module/mode/sample counts and each
-  comparison's actual reason; progress and terminal UI distinguish inconclusive
-  comparisons from measured non-improvement.
-- **Control/repeatability correction:** startup warm-up is now a distinct
-  `screening-warmup` phase and cannot seed the decision control-drift reference.
-  Repeated original/candidate sides with frame-p99 spread above 20% become
-  `Inconclusive` before pooled comparison, preventing an unstable finalist from
-  reaching automatic Keep.
-- **Recovery correction:** if confirmation fails while a candidate is owned,
-  rollback is followed by exact-original verification. A false verification is
-  retained together with the original failure as a recovery failure rather than
-  being ignored.
-- **Evidence discipline:** the regressions are folded into the canonical GPU
-  session test rather than creating more permanent test methods. The durable
-  suite remains at the owner-authorized **20-method maximum**; the exact final
-  source claim still requires a green hosted Tests run on the exact final HEAD.
-- **Still open:** the report at source `8324fac0750b195a305422e13f64383329ec1a3f`
-  (session `464e8268-422b-42f6-924b-789e71c3d1e3`) contains eight `Inconclusive`
-  comparisons with null improvement values. It proves verified restoration,
-  not that CPU0/default beats other CPUs. The historical report did not retain
-  comparison reasons or ISR-duration sample counts, so its exact failure cause
-  cannot be reconstructed from that report alone. No winner is established.
-- **Next stage:** verify Tests on the delivered revision, then run the automatic
-  search on that exact clean revision and inspect ISR sample counts, attribution,
-  comparison reasons, final machine state and zero unresolved journal entries.
-- **After that:** repeat the whole search and complete Stop-safely, supported
-  failure/recovery and rendered/accessibility checks before closing Gate A;
-  only then advance to Gate B mutation IPC.
+1. **Completed now — source/design:** ranked physical-core selection, post-transition warm-ups, fresh top-three re-screen, SMT refinement, integrity-gated ranking, balanced confirmation without a fixed 3% Original winner threshold, standalone PresentMon 2.5.1 capture/provisioning, Sylvan CSV parsing, DXGI/PnP Gate A identity, licensing notices and canonical methodology/runbook/spec/roadmap/system-design reconciliation are on `main`.
+2. **Evidence still required now:** obtain a successful hosted **Tests** workflow on the exact final HEAD after the current reconciliation commits. Cancelled/superseded runs do not count.
+3. **Next stage — physical Gate A rerun:** on that exact clean green revision, run the full automatic search on the owner machine and inspect per-candidate warm-up/scored trials, PresentMon provenance, ISR attribution/sample counts, target/off-target placement, ranking/finalist re-screen, `finalProcessor`, final stored state and `recoveryStatus=clean-zero-unresolved`.
+4. **After that — reproducibility/safety closure:** repeat the whole ranked search and complete Stop safely, supported failure/recovery and rendered/accessibility/taskbar checks.
+5. **Then:** only after Gate A passes, advance to Gate B typed mutation IPC; then Gate C physical IPC proof and Gate D product arming.
 
 ### Gate B — mutation-specific IPC — BLOCKED BY GATE A
 
@@ -294,7 +268,6 @@ Owner-local release closure remains open: actual final Release publish/launch, s
 - Hosted CI is test-only.
 - Permanent-test target is 10 and owner-authorized maximum is 20 methods.
 - Temporary/obsolete tests are removed rather than accumulated.
-- Coverage was consolidated back into canonical owners rather than deleting the bounded all-core contract.
 - Every final source claim requires a successful **Tests** workflow on the exact final HEAD.
 - Hardware/UI/package/signing claims require their corresponding owner-local evidence.
 
@@ -304,7 +277,8 @@ Owner-local release closure remains open: actual final Release publish/launch, s
 exact-revision Phase 2 read-only baselines/audit + UI accessibility review
 → pull exact-green current main
 → run non-mutating D3D12 benchmark smoke
-→ run complete benchmark-backed Gate A at least twice
+→ run complete ranked benchmark-backed Gate A at least twice
+→ verify standalone PresentMon + post-transition warm-ups + fresh finalist re-screen
 → verify progress/Stop safely/runtime ISR placement/rollback/recovery + unresolved=0
 → only if Gate A passes: implement Gate B typed mutation IPC
 → Gate C physical App/client → Service proof
