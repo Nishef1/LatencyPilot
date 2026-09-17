@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Core.Benchmarking;
+using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.System;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -43,7 +44,7 @@ public sealed partial class MainWindow
         AutomationProperties.SetName(_gateAValidationButton, "Run GPU Gate A development validation");
         AutomationProperties.SetHelpText(
             _gateAValidationButton,
-            "Development-only owner validation. Launches the deterministic Direct3D 12 benchmark as a normal-user process, asks for administrator consent once, screens eligible physical cores, refines SMT siblings, confirms the finalist with direct ISR placement evidence, and preserves journal-owned rollback/recovery.");
+            "Development-only owner validation. Launches the deterministic Direct3D 12 benchmark as a normal-user process, asks for administrator consent once, screens each eligible physical core once, re-tests the best up to three candidates, verifies final ISR placement, and preserves journal-owned rollback/recovery.");
         ToolTipService.SetToolTip(
             _gateAValidationButton,
             "Development-only physical GPU affinity validation.");
@@ -432,74 +433,66 @@ public sealed partial class MainWindow
 
     private static string BuildFinalSummary(GpuAutoAffinityReport report)
     {
-        var confirmation = report.Candidates.LastOrDefault(static candidate =>
-            string.Equals(candidate.Phase, "confirmation", StringComparison.Ordinal));
-        var headline = string.Equals(
-                report.FinalRecommendation,
-                "KeepCandidate",
-                StringComparison.Ordinal)
-            ? $"Verified finalist: CPU {report.FinalProcessor?.Number.ToString(CultureInfo.InvariantCulture) ?? "—"}."
+        var headline = string.Equals(report.FinalRecommendation, "KeepCandidate", StringComparison.Ordinal)
+            ? $"Verified winner: CPU {report.FinalProcessor?.Number.ToString(CultureInfo.InvariantCulture) ?? "—"}."
             : report.OriginalStateRestored
                 ? "Original GPU affinity state is verified/restored."
                 : $"Final recommendation: {report.FinalRecommendation}.";
 
-        var relative = confirmation?.RelativeFrameP99Improvement is { } improvement && double.IsFinite(improvement)
-            ? string.Create(
-                CultureInfo.InvariantCulture,
-                $" Canonical frame-p99 improvement: {improvement * 100d:F2}%.")
-            : string.Empty;
+        var metrics = string.Empty;
+        if (report.FinalProcessor is { } processor)
+        {
+            var low1 = MedianTrialMetric(report, processor, static trial => trial.OnePercentLowFps);
+            var low01 = MedianTrialMetric(report, processor, static trial => trial.Low01PctFps);
+            var avg = MedianTrialMetric(report, processor, static trial => trial.AvgFps);
+            var p99 = MedianTrialMetric(report, processor, static trial => trial.FrameP99Milliseconds);
+            if (low1 is not null || low01 is not null || avg is not null || p99 is not null)
+            {
+                metrics = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $" Ranked medians: 1% {FormatMetric(low1, "F1")} FPS · 0.1% {FormatMetric(low01, "F1")} FPS · AVG {FormatMetric(avg, "F1")} FPS · p99 {FormatMetric(p99, "F2")} ms.");
+            }
+        }
 
-        var originalP99 = AverageTrialMetric(report, "Original", static trial => trial.FrameP99Milliseconds);
-        var candidateP99 = AverageTrialMetric(report, "Candidate", static trial => trial.FrameP99Milliseconds);
-        var rawP99 = originalP99 is { } original && candidateP99 is { } candidate
-            ? string.Create(
-                CultureInfo.InvariantCulture,
-                $" Confirmation trial p99 average: {original:F2} ms → {candidate:F2} ms (Δ {candidate - original:+0.00;-0.00;0.00} ms).")
-            : string.Empty;
-
-        var originalLow = AverageTrialMetric(report, "Original", static trial => trial.OnePercentLowFps);
-        var candidateLow = AverageTrialMetric(report, "Candidate", static trial => trial.OnePercentLowFps);
-        var rawLow = originalLow is { } originalFps && candidateLow is { } candidateFps
-            ? string.Create(
-                CultureInfo.InvariantCulture,
-                $" Confirmation 1% low average: {originalFps:F1} → {candidateFps:F1} FPS (Δ {candidateFps - originalFps:+0.0;-0.0;0.0}).")
-            : string.Empty;
-
-        var originalAvg = AverageTrialMetric(report, "Original", static trial => trial.AvgFps);
-        var candidateAvg = AverageTrialMetric(report, "Candidate", static trial => trial.AvgFps);
-        var rawAvg = originalAvg is { } originalAvgFps && candidateAvg is { } candidateAvgFps
-            ? string.Create(
-                CultureInfo.InvariantCulture,
-                $" Confirmation AVG average: {originalAvgFps:F1} → {candidateAvgFps:F1} FPS (Δ {candidateAvgFps - originalAvgFps:+0.0;-0.0;0.0}).")
-            : string.Empty;
-
-        var originalLow01 = AverageTrialMetric(report, "Original", static trial => trial.Low01PctFps);
-        var candidateLow01 = AverageTrialMetric(report, "Candidate", static trial => trial.Low01PctFps);
-        var rawLow01 = originalLow01 is { } original001 && candidateLow01 is { } candidate001
-            ? string.Create(
-                CultureInfo.InvariantCulture,
-                $" Confirmation 0.1% low average: {original001:F1} → {candidate001:F1} FPS (Δ {candidate001 - original001:+0.0;-0.0;0.0}).")
-            : string.Empty;
-
+        var finalVerification = report.Trials.LastOrDefault(static trial =>
+            string.Equals(trial.Phase, "final-verification", StringComparison.Ordinal));
+        var placement = finalVerification?.Placement is { ConfirmsRequestedPlacement: true } proof
+            ? $" Final ISR placement verified on CPU {proof.TargetProcessor.Number}."
+            : string.Equals(report.FinalRecommendation, "KeepCandidate", StringComparison.Ordinal)
+                ? " Final ISR placement evidence is missing from the report."
+                : string.Empty;
         var reasons = string.Join(" ", report.Reasons.Take(2));
-        return $"{headline}{relative}{rawAvg}{rawP99}{rawLow}{rawLow01} {reasons}".TrimEnd();
+        return $"{headline}{metrics}{placement} {reasons}".TrimEnd();
     }
 
-    private static double? AverageTrialMetric(
+    private static double? MedianTrialMetric(
         GpuAutoAffinityReport report,
-        string role,
+        LogicalProcessorId processor,
         Func<GpuAutoAffinityTrialReport, double?> selector)
     {
         var values = report.Trials
             .Where(trial =>
-                string.Equals(trial.Phase, "confirmation", StringComparison.Ordinal) &&
-                string.Equals(trial.Role, role, StringComparison.Ordinal))
+                trial.Processor is { } trialProcessor && trialProcessor.Equals(processor) &&
+                (string.Equals(trial.Phase, "screening", StringComparison.Ordinal) ||
+                 string.Equals(trial.Phase, "screening-finalists", StringComparison.Ordinal)))
             .Select(selector)
-            .Where(static value => value is { } item && double.IsFinite(item))
+            .Where(static value => value is { } item && double.IsFinite(item) && item > 0)
             .Select(static value => value!.Value)
+            .Order()
             .ToArray();
-        return values.Length == 0 ? null : values.Average();
+        if (values.Length == 0)
+        {
+            return null;
+        }
+        return values.Length % 2 == 0
+            ? (values[(values.Length / 2) - 1] + values[values.Length / 2]) / 2d
+            : values[values.Length / 2];
     }
+
+    private static string FormatMetric(double? value, string format) =>
+        value is { } number && double.IsFinite(number)
+            ? number.ToString(format, CultureInfo.InvariantCulture)
+            : "—";
 
     private static string GetValidationDirectory()
     {
