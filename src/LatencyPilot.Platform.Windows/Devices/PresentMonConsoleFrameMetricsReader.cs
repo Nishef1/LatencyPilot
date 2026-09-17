@@ -25,15 +25,18 @@ public static class PresentMonConsoleFrameMetricsReader
         var presentMonPath = await PresentMonConsoleLocator.ResolveAsync(
             executablePath,
             cancellationToken).ConfigureAwait(false);
+        var captureId = Guid.NewGuid().ToString("N");
         var tempDirectory = Path.Combine(
             Path.GetTempPath(),
             "LatencyPilot",
             "PresentMon",
-            Guid.NewGuid().ToString("N"));
+            captureId);
         Directory.CreateDirectory(tempDirectory);
         var csvPath = Path.Combine(tempDirectory, "frames.csv");
 
-        var captureSeconds = Math.Max(1d, requestedWindow.TotalSeconds + 3d);
+        // PresentMon's --timed value is parsed as an unsigned integer. Gate A
+        // windows are whole seconds, so round up after adding bounded drain slack.
+        var captureSeconds = checked((uint)Math.Ceiling(requestedWindow.TotalSeconds + 3d));
         var startInfo = new ProcessStartInfo
         {
             FileName = presentMonPath,
@@ -49,8 +52,10 @@ public static class PresentMonConsoleFrameMetricsReader
         startInfo.ArgumentList.Add("--v2_metrics");
         startInfo.ArgumentList.Add("--date_time");
         startInfo.ArgumentList.Add("--no_console_stats");
+        startInfo.ArgumentList.Add("--session_name");
+        startInfo.ArgumentList.Add($"LatencyPilot-{captureId}");
         startInfo.ArgumentList.Add("--timed");
-        startInfo.ArgumentList.Add(captureSeconds.ToString("0.###", CultureInfo.InvariantCulture));
+        startInfo.ArgumentList.Add(captureSeconds.ToString(CultureInfo.InvariantCulture));
         startInfo.ArgumentList.Add("--terminate_after_timed");
 
         var process = Process.Start(startInfo)
