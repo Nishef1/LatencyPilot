@@ -51,8 +51,8 @@ public static class GpuBenchmarkEvidenceInterpreter
         var capture = evidence.PresentMonCapture;
         Require(capture.IsAvailable && capture.Frames.Count > 0,
             "Raw PresentMon frame capture is unavailable or empty.", reasons);
-        Require(IsSupportedPresentMonApi(capture.ApiVersion),
-            "PresentMon API 3.3 or later is required for authoritative GPU benchmark evidence.", reasons);
+        Require(IsSupportedPresentMonSource(capture),
+            "PresentMon API 3.3+ or the pinned standalone PresentMon console collector is required for authoritative GPU benchmark evidence.", reasons);
         Require(IsSupportedPresentMonBinary(evidence.PresentMonBinaryVersion),
             "PresentMon 2.5.1 or later is required for authoritative GPU benchmark evidence.", reasons);
         Require(capture.ActualWindowMilliseconds > 0 && capture.EndedAtUtc >= capture.StartedAtUtc,
@@ -110,8 +110,16 @@ public static class GpuBenchmarkEvidenceInterpreter
             onePercentLowFps);
     }
 
+    internal static bool IsStandaloneConsoleCapture(LatencyPilot.Core.Devices.PresentMonFrameCaptureSnapshot capture) =>
+        capture.ApiVersion is null &&
+        capture.ApiPath is { Length: > 0 } path &&
+        string.Equals(Path.GetExtension(path), ".exe", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsExactRevision(string? revision) =>
         revision is { Length: 40 } && revision.All(Uri.IsHexDigit);
+
+    private static bool IsSupportedPresentMonSource(LatencyPilot.Core.Devices.PresentMonFrameCaptureSnapshot capture) =>
+        IsStandaloneConsoleCapture(capture) || IsSupportedPresentMonApi(capture.ApiVersion);
 
     private static bool IsSupportedPresentMonApi(LatencyPilot.Core.Devices.PresentMonApiVersionSnapshot? version) =>
         version is not null && (version.Major > 3 || (version.Major == 3 && version.Minor >= 3));
