@@ -1,9 +1,9 @@
 # Benchmark Methodology
 
 Status: **V0.9 benchmark contract**  
-Last updated: 2026-09-16
+Last updated: 2026-09-17
 
-> **GPU auto-affinity authority amendment (2026-09-16).** The automatic GPU candidate-search method is now `gpu-affinity-benchmark-v1`, defined by `docs/superpowers/specs/2026-09-16-gpu-auto-affinity-benchmark-design.md` and implemented by `docs/superpowers/plans/2026-09-16-gpu-auto-affinity-benchmark.md`. The existing `baseline-quality-v2` + `workload-stability-v1` contract remains authoritative for steady `RealWorld` five-window evidence, but is **not** the readiness gate for the new deterministic synthetic candidate search. For automatic GPU affinity, system-wide CPU-busy drift is context rather than a standalone rejection; benchmark/GPU identity, frozen-workload identity, ETW integrity, control drift and device/sleep/reset events own validity. Passive processor pressure is ordering/context only, every eligible physical core is actively screened within the v1 bound, CPU0 remains eligible, the winning physical core receives SMT-sibling refinement, and original/default Windows affinity remains a real control candidate. The benchmark uses a separate `latencypilot-gpu-benchmark-v1` evidence family and does not pollute `latencypilot-evidence-v9`. `Run GPU Gate A` is development-only; `Auto-optimize GPU` remains blocked until Gate D. Where older GPU-specific text below conflicts with this amendment, this amendment and the 2026-09-16 spec/plan take precedence.
+> **GPU auto-affinity authority amendment (2026-09-16, reconciled 2026-09-17).** The automatic GPU candidate-search method is now `gpu-affinity-benchmark-v1`, defined by `docs/superpowers/specs/2026-09-16-gpu-auto-affinity-benchmark-design.md` and implemented by `docs/superpowers/plans/2026-09-16-gpu-auto-affinity-benchmark.md`. The existing `baseline-quality-v2` + `workload-stability-v1` contract remains authoritative for steady `RealWorld` five-window evidence, but is **not** the readiness gate for the new deterministic synthetic candidate search. For automatic GPU affinity, system-wide CPU-busy drift is context rather than a standalone rejection; benchmark/GPU identity, frozen-workload identity, ETW integrity, control drift, repeated-side frame-p99 repeatability and device/sleep/reset events own validity. Passive processor pressure is ordering/context only, every eligible physical core is actively screened within the v1 bound, CPU0 remains eligible, the winning physical core receives SMT-sibling refinement, and original/default Windows affinity remains a real control candidate. The benchmark uses a separate `latencypilot-gpu-benchmark-v1` evidence family and does not pollute `latencypilot-evidence-v9`. `Run GPU Gate A` is development-only; `Auto-optimize GPU` remains blocked until Gate D. Where older GPU-specific text below conflicts with this amendment, this amendment and the 2026-09-16 spec/plan take precedence.
 
 LatencyPilot exists to distinguish measurable improvement from placebo, ordinary run-to-run variation, workload drift, isolated workload spikes, or a trade-off hidden by one headline number. It is an experimental optimization platform, not a collection of assumed Windows tweaks.
 
@@ -179,7 +179,7 @@ Prepare journal
 → exact rollback
 ```
 
-If setup/capture/interpretation fails after mutation ownership is acquired, rollback remains in the same owned failure scope. If exact restoration cannot be proven, recovery remains unresolved.
+If setup/capture/interpretation fails after mutation ownership is acquired, rollback remains in the same owned failure scope. If exact restoration cannot be proven, recovery remains unresolved. A confirmation failure must not discard a failed exact-original verification after rollback; the original failure and restoration-verification failure are both retained as recovery evidence.
 
 Public protocol v6 exposes no mutation command.
 
@@ -247,6 +247,14 @@ A B B A B A A B
 
 Every run shares benchmark/session/environment/source/frozen-workload identity, has a unique capture identity and satisfies the method's duration/sample/integrity rules. Per-side noise/drift/state mismatch or guardrail regression prevents a confirmed automatic Keep.
 
+Before pooled comparison, each side with two or more accepted trials must satisfy:
+
+```text
+run-level frame-p99 spread = (max p99 - min p99) / min p99 <= 20%
+```
+
+A non-finite/non-positive run-level p99 or spread above 20% makes the comparison `Inconclusive`. The original state is restored rather than averaging unstable runs into an apparent winner.
+
 Only a clean confirmed `Improved` result without material guardrail regression recommends `KeepCandidate`; everything else recommends exact restoration.
 
 ## 11. Input/USB measurement contract
@@ -267,7 +275,7 @@ A `Kept` experiment is terminal for one experiment decision but still represents
 
 ## 15. Drift and invalid experiments
 
-For steady `RealWorld`, workload/system activity drift remains part of the existing method. For `gpu-affinity-benchmark-v1`, broad CPU-busy movement alone is not a terminal invalidation because the benchmark itself creates controlled multicore load. Benchmark contamination instead follows its own identity/integrity/control-drift rules; one retry is allowed for retryable contamination, then the result becomes `Inconclusive`.
+For steady `RealWorld`, workload/system activity drift remains part of the existing method. For `gpu-affinity-benchmark-v1`, broad CPU-busy movement alone is not a terminal invalidation because the benchmark itself creates controlled multicore load. Benchmark contamination follows identity/integrity/control-drift rules with one bounded retry; accepted repeated sides additionally must pass the 20% run-level frame-p99 repeatability bound before pooled comparison. A second retryable contamination failure or a repeatability failure becomes `Inconclusive`.
 
 Do not manufacture a favorable verdict around invalid evidence.
 
@@ -286,7 +294,7 @@ Avoid unnecessary per-event heap allocation, high-volume logging, synchronous fi
 ## 19. Permanent-test policy
 
 - Default/target permanent suite: **10** tests.
-- Current durable suite: **19** tests.
+- Current durable suite: **20** tests.
 - Every test source file: **<=1200 lines**.
 - Owner-authorized maximum: **20**, only for the file-size limit or materially safer durable subsystem separation.
 - Temporary/obsolete tests are removed rather than accumulated.
