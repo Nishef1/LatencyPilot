@@ -7,8 +7,9 @@ public sealed class GpuAutoAffinityProgressPlan
 {
     private const int ControlWarmupCount = 1;
     private const int DecisionControlTrialCount = 2;
-    private const int TrialsPerCandidate = 2;
-    private const int ConfirmationTrialCount = 8;
+    private const int TrialsPerCandidate = 3; // one non-scored warmup + two scored runs
+    private const int MaximumFinalistCandidates = 3;
+    private const int ConfirmationTrialCount = 16; // eight balanced roles, each warmup + scored run
     private readonly IReadOnlyDictionary<int, int> refinementCandidateCounts;
 
     private GpuAutoAffinityProgressPlan(
@@ -26,8 +27,11 @@ public sealed class GpuAutoAffinityProgressPlan
 
     public int MaximumRefinementCandidateCount { get; }
 
+    public int FinalistCandidateCount => Math.Min(MaximumFinalistCandidates, PhysicalCandidateCount);
+
     public int InitialTotalUnits =>
-        GetBaseTotalUnits() + (MaximumRefinementCandidateCount * TrialsPerCandidate);
+        GetBaseTotalUnits() +
+        (MaximumRefinementCandidateCount * TrialsPerCandidate);
 
     public int GetRefinementCandidateCount(int physicalCoreIndex)
     {
@@ -72,5 +76,6 @@ public sealed class GpuAutoAffinityProgressPlan
         ControlWarmupCount +
         DecisionControlTrialCount +
         (PhysicalCandidateCount * TrialsPerCandidate) +
+        (FinalistCandidateCount * TrialsPerCandidate) +
         ConfirmationTrialCount;
 }
