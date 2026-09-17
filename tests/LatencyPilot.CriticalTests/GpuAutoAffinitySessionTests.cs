@@ -177,6 +177,15 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsFalse(invalidKeepBackend.Events.Contains("keep:0:3"));
         Assert.IsTrue(invalidKeepBackend.Events.Contains("rollback:0:3"));
 
+        var unverifiedRecoveryBackend = new RecordingBackend(
+            failKeepPreflight: true,
+            failRecoveryVerificationAfterKeepFailure: true);
+        var recoveryFailure = await Assert.ThrowsExactlyAsync<AggregateException>(() =>
+            new GpuAutoAffinitySession(unverifiedRecoveryBackend).RunAsync(request));
+        Assert.IsTrue(recoveryFailure.InnerExceptions.Any(static exception =>
+            exception.Message.Contains("original state", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsTrue(unverifiedRecoveryBackend.Events.Contains("verify-original-failed"));
+
         var cancellingBackend = new RecordingBackend(cancelAfterFirstCandidateCapture: true);
         var cancellingSession = new GpuAutoAffinitySession(cancellingBackend);
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => cancellingSession.RunAsync(request));
@@ -219,12 +228,15 @@ public sealed class GpuAutoAffinitySessionTests
         bool failKeepPreflight = false,
         bool missingIsrSamples = false,
         bool changedIsrSource = false,
-        bool noisyConfirmation = false) : IGpuAutoAffinitySessionBackend
+        bool noisyConfirmation = false,
+        bool failRecoveryVerificationAfterKeepFailure = false) : IGpuAutoAffinitySessionBackend
     {
         private int captureSequence;
         private int originalControlSequence;
         private int confirmationCandidateSequence;
         private bool cancelled;
+        private bool keepPreflightFailed;
+        private bool failNextOriginalVerification;
         private readonly Dictionary<Guid, GpuAffinityCandidate> active = [];
         private Guid? keptExperimentId;
         private GpuAffinityCandidate? keptCandidate;
@@ -286,6 +298,10 @@ public sealed class GpuAutoAffinitySessionTests
             var candidate = active[experimentId];
             Events.Add($"rollback:{candidate.Processor}");
             active.Remove(experimentId);
+            if (failRecoveryVerificationAfterKeepFailure && keepPreflightFailed)
+            {
+                failNextOriginalVerification = true;
+            }
             return Task.CompletedTask;
         }
 
@@ -295,6 +311,7 @@ public sealed class GpuAutoAffinitySessionTests
             var candidate = active[experimentId];
             if (failKeepPreflight)
             {
+                keepPreflightFailed = true;
                 Events.Add($"keep-preflight-failed:{candidate.Processor}");
                 throw new InvalidOperationException("synthetic pre-keep verification failure");
             }
@@ -309,6 +326,13 @@ public sealed class GpuAutoAffinitySessionTests
         public Task<bool> VerifyOriginalStateAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (failNextOriginalVerification)
+            {
+                failNextOriginalVerification = false;
+                Events.Add("verify-original-failed");
+                return Task.FromResult(false);
+            }
+
             Events.Add("verify-original");
             return Task.FromResult(active.Count == 0 && keptCandidate is null);
         }
