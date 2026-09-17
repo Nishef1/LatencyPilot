@@ -21,6 +21,7 @@ public sealed record GpuGraphicsTargetIdentityResolution(
 
 public static class GpuGraphicsTargetIdentityResolver
 {
+    public const uint UnknownPresentMonDeviceId = uint.MaxValue;
     private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
 
     public static GpuGraphicsTargetIdentityResolution Capture(
@@ -32,9 +33,7 @@ public static class GpuGraphicsTargetIdentityResolver
 
         try
         {
-            var target = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(device =>
-                device.ClassGuid == DisplayDeviceClass &&
-                string.Equals(device.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase));
+            var target = FindTarget(deviceInstanceId);
             if (target is null)
             {
                 return GpuGraphicsTargetIdentityResolution.Unusable(
@@ -46,16 +45,52 @@ public static class GpuGraphicsTargetIdentityResolver
                 GraphicsAdapterReader.Capture(),
                 PresentMonDeviceReader.Capture(presentMonApiPath, presentMonControlPipeName));
         }
-        catch (Exception exception) when (exception is
-            InvalidDataException or
-            InvalidOperationException or
-            NotSupportedException or
-            global::System.ComponentModel.Win32Exception or
-            global::System.Runtime.InteropServices.COMException)
+        catch (Exception exception) when (IsResolutionException(exception))
         {
             return GpuGraphicsTargetIdentityResolution.Unusable(
                 $"GPU identity could not be resolved: {exception.GetType().Name}: {exception.Message}");
         }
+    }
+
+    public static GpuGraphicsTargetIdentityResolution CaptureDxgiOnly(string deviceInstanceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
+
+        try
+        {
+            var target = FindTarget(deviceInstanceId);
+            if (target is null)
+            {
+                return GpuGraphicsTargetIdentityResolution.Unusable(
+                    "The GPU optimization target is not a present display adapter.");
+            }
+
+            return ResolveDxgiOnly(target, GraphicsAdapterReader.Capture());
+        }
+        catch (Exception exception) when (IsResolutionException(exception))
+        {
+            return GpuGraphicsTargetIdentityResolution.Unusable(
+                $"GPU identity could not be resolved: {exception.GetType().Name}: {exception.Message}");
+        }
+    }
+
+    public static GpuGraphicsTargetIdentityResolution ResolveDxgiOnly(
+        PnPDeviceSnapshot target,
+        GraphicsAdapterInventory graphics)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(graphics);
+
+        var resolved = ResolveDxgiTarget(target, graphics);
+        if (!resolved.IsUsable || resolved.Identity is null)
+        {
+            return resolved;
+        }
+
+        return new GpuGraphicsTargetIdentityResolution(
+            true,
+            resolved.Identity with { PresentMonDeviceId = UnknownPresentMonDeviceId },
+            null);
     }
 
     public static GpuGraphicsTargetIdentityResolution Resolve(
@@ -67,6 +102,61 @@ public static class GpuGraphicsTargetIdentityResolver
         ArgumentNullException.ThrowIfNull(graphics);
         ArgumentNullException.ThrowIfNull(presentMon);
 
+        var dxgiResolution = ResolveDxgiTarget(target, graphics);
+        if (!dxgiResolution.IsUsable || dxgiResolution.Identity is null)
+        {
+            return dxgiResolution;
+        }
+
+        if (!presentMon.IsAvailable)
+        {
+            return GpuGraphicsTargetIdentityResolution.Unusable(
+                "PresentMon graphics-device evidence is unavailable.");
+        }
+
+        var dxgiIdentity = dxgiResolution.Identity;
+        PresentMonGraphicsDeviceSnapshot presentMonDevice;
+        if (presentMon.HasGraphicsLuidEvidence)
+        {
+            var presentMonMatches = presentMon.GraphicsDevices
+                .Where(device => device.Luid == dxgiIdentity.Luid)
+                .ToArray();
+            if (presentMonMatches.Length != 1)
+            {
+                return GpuGraphicsTargetIdentityResolution.Unusable(
+                    "The DXGI target could not be mapped uniquely to one PresentMon graphics device by LUID.");
+            }
+
+            presentMonDevice = presentMonMatches[0];
+        }
+        else
+        {
+            if (presentMon.GraphicsDevices.Count != 1)
+            {
+                return GpuGraphicsTargetIdentityResolution.Unusable(
+                    "PresentMon did not expose a LUID and reported more than one graphics device, so the target cannot be correlated uniquely.");
+            }
+
+            presentMonDevice = presentMon.GraphicsDevices[0];
+            var dxgi = graphics.HardwareAdapters.Single(adapter => adapter.Luid == dxgiIdentity.Luid);
+            if (!MatchesVendor(dxgi.VendorId, presentMonDevice.NativeVendor) ||
+                !string.Equals(dxgi.Description, presentMonDevice.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                return GpuGraphicsTargetIdentityResolution.Unusable(
+                    "PresentMon did not expose a LUID and its unique graphics device did not match the DXGI vendor and adapter name.");
+            }
+        }
+
+        return new GpuGraphicsTargetIdentityResolution(
+            true,
+            dxgiIdentity with { PresentMonDeviceId = presentMonDevice.DeviceId },
+            null);
+    }
+
+    private static GpuGraphicsTargetIdentityResolution ResolveDxgiTarget(
+        PnPDeviceSnapshot target,
+        GraphicsAdapterInventory graphics)
+    {
         if (target.ClassGuid != DisplayDeviceClass)
         {
             return GpuGraphicsTargetIdentityResolution.Unusable(
@@ -101,54 +191,29 @@ public static class GpuGraphicsTargetIdentityResolver
                 "The target PnP display adapter could not be mapped uniquely to one DXGI hardware adapter.");
         }
 
-        if (!presentMon.IsAvailable)
-        {
-            return GpuGraphicsTargetIdentityResolution.Unusable(
-                "PresentMon graphics-device evidence is unavailable.");
-        }
-
         var dxgi = dxgiMatches[0];
-        PresentMonGraphicsDeviceSnapshot presentMonDevice;
-        if (presentMon.HasGraphicsLuidEvidence)
-        {
-            var presentMonMatches = presentMon.GraphicsDevices
-                .Where(device => device.Luid == dxgi.Luid)
-                .ToArray();
-            if (presentMonMatches.Length != 1)
-            {
-                return GpuGraphicsTargetIdentityResolution.Unusable(
-                    "The DXGI target could not be mapped uniquely to one PresentMon graphics device by LUID.");
-            }
-
-            presentMonDevice = presentMonMatches[0];
-        }
-        else
-        {
-            if (presentMon.GraphicsDevices.Count != 1)
-            {
-                return GpuGraphicsTargetIdentityResolution.Unusable(
-                    "PresentMon did not expose a LUID and reported more than one graphics device, so the target cannot be correlated uniquely.");
-            }
-
-            presentMonDevice = presentMon.GraphicsDevices[0];
-            if (!MatchesVendor(dxgi.VendorId, presentMonDevice.NativeVendor) ||
-                !string.Equals(dxgi.Description, presentMonDevice.Name, StringComparison.OrdinalIgnoreCase))
-            {
-                return GpuGraphicsTargetIdentityResolution.Unusable(
-                    "PresentMon did not expose a LUID and its unique graphics device did not match the DXGI vendor and adapter name.");
-            }
-        }
-
         return new GpuGraphicsTargetIdentityResolution(
             true,
             new GpuGraphicsTargetIdentitySnapshot(
                 target.InstanceId,
                 dxgi.Luid,
-                presentMonDevice.DeviceId,
+                UnknownPresentMonDeviceId,
                 dxgi.Description,
                 hardwareAdapters.Count),
             null);
     }
+
+    private static PnPDeviceSnapshot? FindTarget(string deviceInstanceId) =>
+        DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(device =>
+            device.ClassGuid == DisplayDeviceClass &&
+            string.Equals(device.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsResolutionException(Exception exception) => exception is
+        InvalidDataException or
+        InvalidOperationException or
+        NotSupportedException or
+        global::System.ComponentModel.Win32Exception or
+        global::System.Runtime.InteropServices.COMException;
 
     private static bool MatchesVendor(uint pciVendorId, int presentMonVendor) =>
         presentMonVendor switch
