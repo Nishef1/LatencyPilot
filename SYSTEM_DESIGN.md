@@ -1,7 +1,7 @@
 # LatencyPilot System Design
 
 Status: **Authoritative architecture baseline**  
-Last updated: 2026-09-16
+Last updated: 2026-09-17
 
 `ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence and execution state. ADRs own accepted architecture decisions.
 
@@ -22,7 +22,7 @@ Detect applicability
 → Journal pending experiment
 → Apply one narrow change
 → Verify actual applied state
-→ Measure control/candidate
+→ Measure reference/candidate evidence
 → Compare target + guardrails
 → Keep or Revert
 → Verify final state
@@ -53,7 +53,8 @@ Current observation authorization is intentionally active-console-session orient
 - narrow Windows Service;
 - typed/versioned local Named Pipes;
 - ETW / `Microsoft.Diagnostics.Tracing.TraceEvent`;
-- PresentMon for graphics/frame telemetry;
+- pinned standalone PresentMon console for Gate A raw frame telemetry; existing PresentMon API readers may remain for other observation surfaces;
+- `Sylvan.Data.Csv` for robust PresentMon CSV parsing;
 - managed Direct3D 12/DXGI through Vortice for the deterministic GPU benchmark;
 - SetupAPI + Configuration Manager;
 - documented processor-topology / CPU-set APIs;
@@ -65,7 +66,7 @@ Current observation authorization is intentionally active-console-session orient
 - Inno Setup + PowerShell owner-local release tooling;
 - bounded structured local diagnostics with Serilog.
 
-NuGet versions are centrally owned by `Directory.Packages.props`. Native C++ and a Vulkan SDK are not baseline dependencies.
+NuGet versions are centrally owned by `Directory.Packages.props`. Native C++ and a Vulkan SDK are not baseline dependencies. Gate A does not require a separately installed PresentMon Service/API; the official standalone executable is hash-pinned and resolved from LatencyPilot-controlled packaged/cache locations.
 
 ## 4. High-level architecture
 
@@ -98,9 +99,10 @@ NuGet versions are centrally owned by `Directory.Packages.props`. Native C++ and
                ▼                 ▼
 ┌──────────────────────────┐  ┌──────────────────────────┐
 │ Platform.Windows         │  │ Persistence              │
-│ ETW / SetupAPI / CM      │  │ SQLite mutation journal │
-│ USB / Raw Input / RSS    │  │ + recovery state        │
-└──────────────┬───────────┘  └──────────────────────────┘
+│ ETW / SetupAPI / DXGI    │  │ SQLite mutation journal │
+│ PresentMon console + CSV │  │ + recovery state        │
+│ USB / Raw Input / RSS    │  └──────────────────────────┘
+└──────────────┬───────────┘
                ▼
          Windows 11 / hardware
 
@@ -133,7 +135,8 @@ Hardware-independent deterministic interpretation and orchestration policy:
 - automatic GPU `gpu-affinity-benchmark-v1` validity/readiness;
 - metric series/comparison/guardrail verdicts;
 - bounded physical-core GPU candidate generation and SMT refinement;
-- GPU candidate-search/confirmation orchestration and progress-plan policy;
+- transparent median frame-p99 GPU ranking and fresh top-candidate re-screen;
+- GPU confirmation orchestration and progress-plan policy;
 - USB/network readiness metric contracts;
 - local-network benchmark interpretation;
 - versioned workload profiles;
@@ -160,7 +163,9 @@ Windows-specific mechanisms:
 - PnP/driver/stored/allocated interrupt evidence;
 - ETW capture and module/runtime attribution;
 - GPU interrupt-affinity state/applicability and exact-target activation;
-- PresentMon API/frame/workload evidence;
+- DXGI adapter identity;
+- pinned standalone PresentMon console resolution, integrity verification and raw CSV frame capture for Gate A;
+- legacy/shared PresentMon API/frame/workload readers where another observation path still needs them;
 - USB hub topology + exact driver-key/port correlation;
 - Raw Input route discovery and bounded timing capture;
 - StandardCimv2 RSS provider reader/correlation;
@@ -176,8 +181,9 @@ Normal-user deterministic workload/telemetry process:
 - fixed multi-core worker mapping;
 - deterministic CPU simulation and command recording;
 - D3D12 timestamp calibration;
-- one adaptive warm-up followed by frozen workload parameters;
+- one adaptive startup calibration followed by frozen workload parameters;
 - raw benchmark artifact/control protocol for trial execution;
+- renderer recreation after GPU device restart as required;
 - no registry/device mutation and no administrator requirement.
 
 Candidate identity must never change the frozen worker map or workload shape.
@@ -241,6 +247,8 @@ The App and `LatencyPilot.GpuBenchmark` are non-elevated. Installer deployment p
 before LocalSystem registration. LocalSystem must never run the Service executable directly from a user-writable portable folder.
 
 Install/upgrade/uninstall must not destroy recovery tools while LatencyPilot still owns a retained or unresolved system change.
+
+The standalone PresentMon collector is not a privileged plugin surface. Only the exact pinned executable/hash in a LatencyPilot-controlled packaged/cache location is accepted. Release packaging that embeds PresentMon must retain the required upstream notices.
 
 ## 8. Evidence semantics
 
@@ -327,17 +335,24 @@ This contract remains valid for the steady evidence product. It is **not** the r
 The built-in D3D12 benchmark is a separate repeated whole-run method:
 
 ```text
-one adaptive warm-up/calibration
+one adaptive startup calibration
 → freeze worker map + CPU simulation + GPU command workload
-→ original control trials
-→ two 15 s trials per eligible physical-core candidate
-→ SMT sibling refinement of the winning physical core
-→ eight-run ABBA + BAAB confirmation, >=30 s each
+→ 5 s original non-scored warm-up
+→ two original reference controls
+→ every eligible physical-core candidate:
+     apply/restart
+     5 s non-scored warm-up
+     two scored whole-run captures
+     exact rollback
+→ rank decision-grade/repeatable candidates by median run-level frame-p99
+→ fresh re-screen of best up-to-three candidates with the same apply/warm-up/two-run lifecycle
+→ SMT sibling refinement of the fresh physical-core winner
+→ eight-run ABBA + BAAB confirmation, >=30 s scored run, with fresh warm-up after each state transition
 ```
 
-Validity is owned by exact GPU/driver/benchmark/frozen-workload identity, ETW integrity, stored-state verification, runtime ISR placement and repeated control comparability. System-wide CPU-busy drift is context, not an independent hard rejection.
+Validity is owned by exact GPU/driver/benchmark/frozen-workload identity, ETW integrity, stored-state verification, runtime ISR attribution/placement, raw standalone-PresentMon frame evidence and repeated-side frame-p99 repeatability. System-wide CPU-busy drift is context, not an independent hard rejection.
 
-Original/default Windows affinity remains a real control and wins when no candidate establishes a safe measurable improvement.
+Original/default Windows affinity remains the exact reference/recovery state. It is **not** a minimum-improvement winner gate for forced-CPU ranking. If no candidate is decision-grade/repeatable, restore original; otherwise the best valid forced-CPU candidate is selected transparently and then confirmed.
 
 ## 10. Canonical statistics
 
@@ -409,7 +424,7 @@ latencypilot-gpu-auto-affinity-report-v1
 method = gpu-affinity-benchmark-v1
 ```
 
-The benchmark artifact retains exact source/GPU/driver/topology identity, frozen workload/worker map, seed/trial identity, D3D12 timestamp evidence, raw PresentMon representation/reference and ETW validity context. The report retains every candidate/trial, placement proof, comparison verdict, rollback/recovery outcome and final state.
+The benchmark artifact retains exact source/GPU/driver/topology identity, frozen workload/worker map, seed/trial identity and D3D12 timestamp evidence. The Gate A backend combines that artifact with synchronized kernel ETW and raw standalone-PresentMon CSV-derived frame evidence. The report retains every warm-up/scored trial, candidate comparison context, placement proof, ranking path, rollback/recovery outcome and final state.
 
 Serialization/file I/O stays outside authoritative hot measurement paths where possible.
 
@@ -419,24 +434,26 @@ Serialization/file I/O stays outside authoritative hot measurement paths where p
 capture exact original/default state
 → calibrate deterministic D3D12 benchmark once
 → freeze worker map/workload/seed
-→ capture repeated original controls
+→ original 5 s warm-up + repeated controls
 → generate every eligible physical-core candidate within v1 bound (max 16)
 → deterministic shuffled screening order
 → for each candidate:
      journal/apply/activate
      verify exact stored candidate
-     benchmark + synchronized ETW/raw PresentMon
-     prove GPU-driver ISR placement on requested logical processor
-     compare named metrics/guardrails
+     5 s non-scored post-transition warm-up
+     two synchronized benchmark + ETW + raw standalone-PresentMon captures
+     prove GPU ISR placement on requested logical processor
+     reject invalid/Inconclusive/unstable evidence from ranking
      exact rollback before next candidate
-→ nominate physical-core finalist only if measurably improved
-→ test finalist physical core's eligible SMT sibling(s)
-→ fixed ABBA + BAAB original/finalist confirmation
-→ Keep only after confirmed safe improvement and a final cancellation boundary
+→ rank valid candidates by lower median run-level frame-p99
+→ fresh apply/warm-up/re-screen of best up-to-three physical cores
+→ refine winning physical core's eligible SMT sibling(s)
+→ fixed ABBA + BAAB original/finalist confirmation with warm-up after every state transition
+→ Keep ranked finalist only if confirmation remains decision-grade/repeatable and final state verifies
    otherwise exact RestoreOriginal / RecoveryRequired
 ```
 
-Passive interrupt pressure is ordering/context only; it never decides the winner before active measurement. CPU0 is eligible. Screening cannot Keep directly. Missing guardrails, dirty identity, failed placement, contaminated evidence after bounded retry or incomparable control evidence remain Inconclusive/Restore rather than being promoted.
+Passive interrupt pressure is ordering/context only; it never decides the winner before active measurement. CPU0 is eligible. Screening/finalist/refinement cannot Keep directly. Missing evidence, dirty identity, failed placement, contaminated evidence after bounded retry or unstable candidate evidence remain Inconclusive/Restore rather than being promoted. Generic Original-vs-candidate 3% comparison remains report context; it does not disqualify an otherwise valid best forced-CPU candidate.
 
 Safe cancellation is rollback-biased. Once a candidate mutation is owned, cancellation prevents future work/Keep but does not abandon rollback/recovery. The development progress window remains in stopping/restoring state until terminal final-state verification.
 
@@ -538,12 +555,12 @@ Hardware validation is separate from this budget.
 
 ## 20. Completion discipline
 
-Hosted Tests prove deterministic/source contracts and compile-check referenced source projects. They do not prove actual App rendering/runtime, LocalSystem Service behavior, hardware placement, device restart, installer behavior, signing or accessibility.
+Hosted Tests prove deterministic/source contracts and compile-check referenced source projects. They do not prove actual App rendering/runtime, LocalSystem Service behavior, hardware placement, device restart, standalone PresentMon operation on the owner machine, installer behavior, signing or accessibility.
 
 Physical sequence remains:
 
 1. close Phase 2 read-only physical checks;
-2. Gate A benchmark-backed GPU search + mutation/recovery proof on supported hardware;
+2. Gate A ranked benchmark-backed GPU search + mutation/recovery proof on supported hardware, including standalone PresentMon and post-transition warm-up behavior;
 3. Gate B typed mutation IPC;
 4. Gate C physical IPC proof;
 5. Gate D user-facing GPU arming;
