@@ -77,6 +77,7 @@ public sealed class GpuAutoAffinitySession
     private const string FramePrimaryMetric = "CPU frame time (ms)";
     private const string DpcGuardrailMetric = "GPU-driver DPC duration (us)";
     private const string IsrGuardrailMetric = "GPU ISR duration (us)";
+    private const double MaximumRunToRunFrameP99Drift = 0.20;
     private readonly IGpuAutoAffinitySessionBackend backend;
     private readonly IGpuAutoAffinitySessionObserver? observer;
 
@@ -599,6 +600,18 @@ public sealed class GpuAutoAffinitySession
                 "GPU ISR attribution is missing or changed between trials; different ISR sources cannot be compared.");
         }
 
+        var originalStability = EvaluateRunStability("Original", originalTrials);
+        if (originalStability is not null)
+        {
+            return originalStability;
+        }
+
+        var candidateStability = EvaluateRunStability("Candidate", candidateTrials);
+        if (candidateStability is not null)
+        {
+            return candidateStability;
+        }
+
         var originalSet = BuildMeasurementSet(originalTrials);
         var candidateSet = BuildMeasurementSet(candidateTrials);
         var guardrailPairs = originalSet.Guardrails
@@ -611,6 +624,46 @@ public sealed class GpuAutoAffinitySession
             candidateSet.Primary,
             guardrailPairs,
             policy);
+    }
+
+    private static ComparisonResult? EvaluateRunStability(
+        string label,
+        GpuAutoAffinityTrialObservation[] trials)
+    {
+        if (trials.Length < 2)
+        {
+            return null;
+        }
+
+        var frameP99 = trials
+            .Select(static trial => GpuBenchmarkEvidenceInterpreter.Interpret(trial.Evidence).FrameP99Milliseconds)
+            .ToArray();
+        if (frameP99.Any(static value => !double.IsFinite(value) || value <= 0))
+        {
+            return new ComparisonResult(
+                ExperimentVerdict.Inconclusive,
+                null,
+                null,
+                null,
+                [],
+                $"{label} run-to-run frame-p99 evidence is incomplete; repeated trials cannot be compared safely.");
+        }
+
+        var minimum = frameP99.Min();
+        var maximum = frameP99.Max();
+        var relativeSpread = (maximum - minimum) / minimum;
+        if (!double.IsFinite(relativeSpread) || relativeSpread > MaximumRunToRunFrameP99Drift)
+        {
+            return new ComparisonResult(
+                ExperimentVerdict.Inconclusive,
+                null,
+                null,
+                null,
+                [],
+                $"{label} run-to-run frame-p99 drift is {relativeSpread:P1}, exceeding the {MaximumRunToRunFrameP99Drift:P0} repeatability bound.");
+        }
+
+        return null;
     }
 
     private static GpuOptimizationMeasurementSet BuildMeasurementSet(
