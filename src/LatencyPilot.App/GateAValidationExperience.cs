@@ -57,8 +57,14 @@ public sealed partial class MainWindow
 
     private async void GateAValidationButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_gateAValidationButton is null || _gateARepositoryRoot is null || _measurementBusy || _gateAValidationRunning)
+        if (_gateAValidationButton is null || _gateARepositoryRoot is null)
         {
+            return;
+        }
+
+        if (_measurementBusy || _gateAValidationRunning)
+        {
+            SetGateAValidationStatus("GPU Gate A is unavailable while another measurement is running.");
             return;
         }
 
@@ -72,6 +78,7 @@ public sealed partial class MainWindow
 
         try
         {
+            SetGateAValidationStatus("Checking the clean source revision before starting Gate A.");
             var sourceRevision = await ReadCleanSourceRevisionAsync(_gateARepositoryRoot);
             var topology = ProcessorTopologyReader.Capture();
             if (topology.ProcessorGroupCount != 1 || topology.PhysicalCoreCount <= 0)
@@ -117,8 +124,8 @@ public sealed partial class MainWindow
                     "The GPU benchmark or Gate A validation project was not found in this development checkout.");
             }
 
-            EvidenceExportStatusText.Text =
-                "GPU Gate A is starting the deterministic normal-user benchmark. A compact progress window will remain available while the main window is minimized.";
+            SetGateAValidationStatus(
+                "GPU Gate A is starting the deterministic normal-user benchmark. A compact progress window will remain available while the main window is minimized.");
 
             var benchmarkStartInfo = new ProcessStartInfo
             {
@@ -228,7 +235,7 @@ public sealed partial class MainWindow
             var terminalSummary = BuildGateATerminalSummary(helper.ExitCode, report);
             var terminalStateVerified = IsGateATerminalStateVerified(helper.ExitCode, report);
             progressWindow.ShowFinalOutcome(terminalSummary, reportPath, terminalStateVerified);
-            EvidenceExportStatusText.Text = $"{terminalSummary} Report: {reportPath}";
+            SetGateAValidationStatus($"{terminalSummary} Report: {reportPath}");
             TryRevealReport(reportPath);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
@@ -239,8 +246,8 @@ public sealed partial class MainWindow
                 progressWindow.ShowStartupFailure(
                     "GPU Gate A was cancelled at the UAC prompt. The normal-user benchmark will be stopped; no privileged mutation helper was started.");
             }
-            EvidenceExportStatusText.Text =
-                "GPU Gate A was cancelled at the UAC prompt. No privileged mutation helper was started.";
+            SetGateAValidationStatus(
+                "GPU Gate A was cancelled at the UAC prompt. No privileged mutation helper was started.");
         }
         catch (Exception exception) when (exception is
             IOException or
@@ -258,7 +265,19 @@ public sealed partial class MainWindow
                 progressWindow.ShowStartupFailure(
                     $"GPU Gate A could not complete: {exception.Message}");
             }
-            EvidenceExportStatusText.Text = $"GPU Gate A could not complete: {exception.Message}";
+            SetGateAValidationStatus($"GPU Gate A could not complete: {exception.Message}");
+        }
+        catch (Exception exception)
+        {
+            Logger.Error(exception, "Development GPU Gate A validation failed with an unexpected UI-bound error.");
+            if (progressWindow is not null)
+            {
+                await progressWindow.StopMonitoringAsync();
+                progressWindow.ShowStartupFailure(
+                    $"GPU Gate A could not complete: {exception.Message}");
+            }
+
+            SetGateAValidationStatus($"GPU Gate A could not complete: {exception.Message}");
         }
         finally
         {
@@ -292,6 +311,12 @@ public sealed partial class MainWindow
             SetGateAValidationBusy(false);
             _gateAValidationButton.IsEnabled = true;
         }
+    }
+
+    private void SetGateAValidationStatus(string message)
+    {
+        DeveloperValidationStatusText.Text = message;
+        EvidenceExportStatusText.Text = message;
     }
 
     private void SetGateAValidationBusy(bool busy)

@@ -629,6 +629,11 @@
                                             <TextBlock Text="Developer validation" Style="{StaticResource MetricLabelTextStyle}" />
                                             <TextBlock Text="Development-only GPU affinity validation for this checkout."
                                                        Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock x:Name="DeveloperValidationStatusText"
+                                                       Text="Ready. Requires a clean main checkout at one exact revision."
+                                                       MaxLines="2"
+                                                       TextWrapping="Wrap"
+                                                       Style="{StaticResource CaptionTextStyle}" />
                                         </StackPanel>
                                         <StackPanel x:Name="DeveloperValidationHost"
                                                     Grid.Column="1"
