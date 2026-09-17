@@ -372,16 +372,29 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         // Provision and start the pinned standalone PresentMon collector before
         // the decision-grade workload begins. Provisioning is outside the trial
         // deadline so a first-run download cannot shorten the benchmark window.
+        // The collector window covers typical D3D12 device recreation after
+        // a GPU restart plus the full scored trial; the CSV is cropped to the
+        // benchmark artifact interval during parsing. Kept to +12 s (not the
+        // full 30 s recreation budget) so a fast trial does not idle 30 s
+        // waiting for an over-long PresentMon timed exit on every run.
+        var presentMonWindow = request.Duration + TimeSpan.FromSeconds(12);
         await using var presentMonSession = await PresentMonConsoleFrameMetricsReader.StartAsync(
             benchmarkProcessId,
-            request.Duration,
+            presentMonWindow,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(request.Duration + TimeSpan.FromSeconds(20));
+        deadline.CancelAfter(request.Duration + TimeSpan.FromSeconds(60));
+        // The controlled benchmark recreates its D3D12 device/window inside
+        // RunTrial (required after a GPU apply/restart removes the device).
+        // That recreation costs 1-3 s after the trial command is sent, so the
+        // kernel window must cover recreation + the full scored trial.
+        // Without this headroom the kernel/benchmark overlap gate fails
+        // systematically even when every stream is healthy.
+        var kernelDuration = request.Duration + TimeSpan.FromSeconds(8);
         var kernelTask = Task.Run(
             () => KernelLatencyCapture.Capture(
-                new KernelLatencyCaptureOptions(request.Duration, KernelMaximumEvents),
+                new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),
                 deadline.Token),
             deadline.Token);
 
@@ -428,11 +441,15 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         GpuInterruptRuntimePlacementEvidence? runtimePlacement = null;
         GpuAutoAffinityPlacementProof? placement = null;
         GpuInterruptIsrAttribution? isrAttribution = null;
+        // Crop the extended kernel window to the scored benchmark artifact
+        // interval so D3D12 device recreation + pre-roll idle cannot pollute
+        // placement proof or driver guardrails.
+        var scopedKernel = CropKernelToArtifact(kernel, artifact.StartedAtUtc, artifact.EndedAtUtc);
         if (kernel.IsValid && storedBefore && storedAfter)
         {
             try
             {
-                isrAttribution = GpuInterruptRuntimePlacementVerifier.CaptureIsrAttribution(kernel, deviceInstanceId);
+                isrAttribution = GpuInterruptRuntimePlacementVerifier.CaptureIsrAttribution(scopedKernel, deviceInstanceId);
                 if (isrAttribution.Events.Count > 0)
                 {
                     referenceIsrModuleName ??= isrAttribution.ModuleName;
@@ -520,7 +537,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             }
         }
 
-        var driverDpc = FilterDriverDurations(kernel, KernelLatencyEventKind.Dpc);
+        var driverDpc = FilterDriverDurations(scopedKernel, KernelLatencyEventKind.Dpc);
         var driverIsr = isrAttribution?.Events.Select(static item => item.DurationMicroseconds).ToArray() ?? [];
         var contamination = new GpuBenchmarkContaminationContext(
             SystemCpuBusyDrifted: false,
@@ -633,22 +650,51 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             reasons.AddRange(continuity.Reasons);
         }
 
-        var overlapStart = Max(
-            artifact.StartedAtUtc,
-            kernel.StartedAtUtc,
-            presentMon.StartedAtUtc);
-        var overlapEnd = Min(
-            artifact.EndedAtUtc,
-            kernel.StartedAtUtc + kernel.ActualDuration,
-            presentMon.EndedAtUtc);
-        var overlapMilliseconds = (overlapEnd - overlapStart).TotalMilliseconds;
-        if (!double.IsFinite(overlapMilliseconds) ||
-            overlapMilliseconds < request.Duration.TotalMilliseconds * MinimumOverlapRatio)
+        var kernelEnd = kernel.StartedAtUtc + kernel.ActualDuration;
+        // The kernel window intentionally starts before the scored benchmark
+        // (it covers D3D12 device recreation after a GPU restart) and runs
+        // longer than the trial. Require the scored artifact to be contained
+        // in the kernel window with 95% coverage, not a vacuous mutual
+        // overlap that fails on healthy recreation offsets.
+        var kernelCoveredMs = (Min(artifact.EndedAtUtc, kernelEnd) -
+            Max(artifact.StartedAtUtc, kernel.StartedAtUtc)).TotalMilliseconds;
+        if (!double.IsFinite(kernelCoveredMs) ||
+            kernelCoveredMs < request.Duration.TotalMilliseconds * MinimumOverlapRatio)
         {
-            reasons.Add("Benchmark, ETW, and PresentMon do not overlap for at least 95% of the requested trial.");
+            reasons.Add("Kernel ETW does not cover at least 95% of the scored benchmark trial.");
+        }
+
+        // PresentMon now reports its honest CSV-observed window. Require the
+        // scored artifact to be covered by that window rather than comparing
+        // an echoed interval against itself.
+        var presentMonCoveredMs = (Min(artifact.EndedAtUtc, presentMon.EndedAtUtc) -
+            Max(artifact.StartedAtUtc, presentMon.StartedAtUtc)).TotalMilliseconds;
+        if (!double.IsFinite(presentMonCoveredMs) ||
+            presentMonCoveredMs < request.Duration.TotalMilliseconds * MinimumOverlapRatio)
+        {
+            reasons.Add("Standalone PresentMon does not cover at least 95% of the scored benchmark trial.");
         }
 
         return reasons;
+    }
+
+    private static KernelLatencyCaptureResult CropKernelToArtifact(
+        KernelLatencyCaptureResult kernel,
+        DateTimeOffset artifactStart,
+        DateTimeOffset artifactEnd)
+    {
+        var offsetStartMs = (artifactStart - kernel.StartedAtUtc).TotalMilliseconds - 1000d;
+        var offsetEndMs = (artifactEnd - kernel.StartedAtUtc).TotalMilliseconds + 1000d;
+        if (!double.IsFinite(offsetStartMs) || !double.IsFinite(offsetEndMs) || offsetEndMs <= 0)
+        {
+            return kernel;
+        }
+
+        var scoped = kernel.Events
+            .Where(item => item.TimeStampRelativeMilliseconds >= offsetStartMs &&
+                item.TimeStampRelativeMilliseconds <= offsetEndMs)
+            .ToArray();
+        return kernel with { Events = scoped };
     }
 
     private double[] FilterDriverDurations(
@@ -728,22 +774,41 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             return null;
         }
 
-        return FileVersionInfo.GetVersionInfo(apiPath).FileVersion;
+        var version = FileVersionInfo.GetVersionInfo(apiPath).FileVersion;
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            return version;
+        }
+
+        // The standalone collector path is already SHA-256 pinned to 2.5.1 by
+        // the locator before it is ever used. A missing version resource must
+        // not fail an otherwise decision-grade trial.
+        if (string.Equals(
+                Path.GetFileName(apiPath),
+                PresentMonConsoleLocator.PinnedFileName,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return PresentMonConsoleLocator.PinnedVersion;
+        }
+
+        return null;
     }
+
+    private static DateTimeOffset Max(DateTimeOffset first, DateTimeOffset second) =>
+        first >= second ? first : second;
+
+    private static DateTimeOffset Min(DateTimeOffset first, DateTimeOffset second) =>
+        first <= second ? first : second;
 
     private static DateTimeOffset Max(
         DateTimeOffset first,
         DateTimeOffset second,
         DateTimeOffset third) =>
-        first >= second
-            ? first >= third ? first : third
-            : second >= third ? second : third;
+        Max(Max(first, second), third);
 
     private static DateTimeOffset Min(
         DateTimeOffset first,
         DateTimeOffset second,
         DateTimeOffset third) =>
-        first <= second
-            ? first <= third ? first : third
-            : second <= third ? second : third;
+        Min(Min(first, second), third);
 }

@@ -64,8 +64,12 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
         GpuBenchmarkControlClient? client = null;
         try
         {
+            // The normal-user benchmark is launched via `dotnet run` plus a
+            // 10 s D3D12 calibration before its control pipe exists. The
+            // elevated helper also waits behind a UAC prompt. A 45 s budget
+            // times out healthy starts; allow three minutes.
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            deadline.CancelAfter(TimeSpan.FromSeconds(45));
+            deadline.CancelAfter(TimeSpan.FromSeconds(180));
             await pipe.ConnectAsync(deadline.Token).ConfigureAwait(false);
 
             client = new GpuBenchmarkControlClient(sessionId, token, pipe);

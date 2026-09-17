@@ -124,15 +124,20 @@ public static class PresentMonConsoleFrameMetricsReader
 
             var processIdOrdinal = RequireColumn(csv, "ProcessID");
             var swapChainOrdinal = RequireColumn(csv, "SwapChainAddress");
-            var startTimeOrdinal = RequireColumn(csv, "CPUStartDateTime");
-            var frameTimeOrdinal = RequireColumn(csv, "FrameTime");
-            var cpuBusyOrdinal = RequireColumn(csv, "CPUBusy");
-            var cpuWaitOrdinal = RequireColumn(csv, "CPUWait");
-            var gpuLatencyOrdinal = OptionalColumn(csv, "GPULatency");
-            var gpuTimeOrdinal = OptionalColumn(csv, "GPUTime");
-            var gpuBusyOrdinal = OptionalColumn(csv, "GPUBusy");
-            var gpuWaitOrdinal = OptionalColumn(csv, "GPUWait");
-            var displayLatencyOrdinal = OptionalColumn(csv, "DisplayLatency");
+            var startTimeOrdinal = RequireAnyColumn(csv, "CPUStartDateTime", "CPUStartTime", "CPUStartQPC", "CPUStartQPCTime");
+            // PresentMon console headers differ by metric set: legacy names
+            // (FrameTime/CPUBusy/CPUWait/GPULatency/...) vs --v2_metrics
+            // names (MsBetweenAppStart/MsCPUBusy/MsCPUWait/MsGPULatency/...).
+            // Accept either so a pinned-collector upgrade cannot silently
+            // zero out every Gate A trial.
+            var frameTimeOrdinal = RequireAnyColumn(csv, "FrameTime", "MsBetweenAppStart", "MsBetweenPresents");
+            var cpuBusyOrdinal = RequireAnyColumn(csv, "CPUBusy", "MsCPUBusy");
+            var cpuWaitOrdinal = RequireAnyColumn(csv, "CPUWait", "MsCPUWait");
+            var gpuLatencyOrdinal = OptionalAnyColumn(csv, "GPULatency", "MsGPULatency");
+            var gpuTimeOrdinal = OptionalAnyColumn(csv, "GPUTime", "MsGPUTime", "MsUntilRenderComplete");
+            var gpuBusyOrdinal = OptionalAnyColumn(csv, "GPUBusy", "MsGPUBusy");
+            var gpuWaitOrdinal = OptionalAnyColumn(csv, "GPUWait", "MsGPUWait");
+            var displayLatencyOrdinal = OptionalAnyColumn(csv, "DisplayLatency", "MsUntilDisplayed");
 
             var unavailable = new List<string> { "Dropped frame ratio" };
             AddUnavailable(unavailable, gpuLatencyOrdinal, "GPU latency (ms)");
@@ -142,6 +147,12 @@ public static class PresentMonConsoleFrameMetricsReader
             AddUnavailable(unavailable, displayLatencyOrdinal, "Display latency (ms)");
 
             var frames = new List<PresentMonFrameMetricsSnapshot>(8_192);
+            var startColumnName = csv.GetName(startTimeOrdinal);
+            var useDateCrop = startColumnName.Contains("DateTime", StringComparison.OrdinalIgnoreCase);
+            var minRowUtc = DateTimeOffset.MaxValue;
+            var maxRowUtc = DateTimeOffset.MinValue;
+            var rowsForProcess = 0;
+            var rowsInWindow = 0;
             while (await csv.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 if (!uint.TryParse(csv.GetString(processIdOrdinal), NumberStyles.Integer, CultureInfo.InvariantCulture, out var rowProcessId) ||
@@ -150,11 +161,30 @@ public static class PresentMonConsoleFrameMetricsReader
                     continue;
                 }
 
-                if (!TryParseLocalTimestamp(csv.GetString(startTimeOrdinal), out var rowStartedAtUtc) ||
-                    rowStartedAtUtc < benchmarkStartedAtUtc ||
-                    rowStartedAtUtc > benchmarkEndedAtUtc)
+                rowsForProcess++;
+                if (useDateCrop)
                 {
-                    continue;
+                    if (!TryParseLocalTimestamp(csv.GetString(startTimeOrdinal), out var rowStartedAtUtc) ||
+                        rowStartedAtUtc < benchmarkStartedAtUtc - TimeSpan.FromSeconds(5) ||
+                        rowStartedAtUtc > benchmarkEndedAtUtc + TimeSpan.FromSeconds(5))
+                    {
+                        continue;
+                    }
+
+                    rowsInWindow++;
+                    if (rowStartedAtUtc < minRowUtc)
+                    {
+                        minRowUtc = rowStartedAtUtc;
+                    }
+
+                    if (rowStartedAtUtc > maxRowUtc)
+                    {
+                        maxRowUtc = rowStartedAtUtc;
+                    }
+                }
+                else
+                {
+                    rowsInWindow++;
                 }
 
                 if (!TryParseSwapChain(csv.GetString(swapChainOrdinal), out var swapChain) || swapChain == 0 ||
@@ -185,24 +215,30 @@ public static class PresentMonConsoleFrameMetricsReader
                     processId,
                     requestedWindow,
                     presentMonPath,
-                    "PresentMon produced no valid frame rows inside the benchmark artifact window.",
+                    $"PresentMon produced no valid frame rows inside the benchmark artifact window (rows for PID={rowsForProcess}, in window={rowsInWindow}).",
                     benchmarkStartedAtUtc,
                     benchmarkEndedAtUtc);
             }
 
+            // Report the honest CSV-observed window instead of echoing the
+            // benchmark artifact interval, so the Gate A overlap gate measures
+            // real collector coverage rather than a vacuous self-comparison.
+            var observedStart = useDateCrop && maxRowUtc >= minRowUtc ? minRowUtc : benchmarkStartedAtUtc;
+            var observedEnd = useDateCrop && maxRowUtc >= minRowUtc ? maxRowUtc : benchmarkEndedAtUtc;
+            var actualWindowMs = Math.Max(1d, (observedEnd - observedStart).TotalMilliseconds);
             return new PresentMonFrameCaptureSnapshot(
                 PresentMonWorkloadCaptureStatus.Available,
                 processId,
                 requestedWindow.TotalMilliseconds,
-                (benchmarkEndedAtUtc - benchmarkStartedAtUtc).TotalMilliseconds,
+                actualWindowMs,
                 ApiVersion: null,
                 frames.AsReadOnly(),
                 unavailable.AsReadOnly(),
                 presentMonPath,
                 NativeStatusCode: 0,
                 Error: null,
-                benchmarkStartedAtUtc,
-                benchmarkEndedAtUtc);
+                observedStart,
+                observedEnd);
         }
         catch (OperationCanceledException)
         {
@@ -254,6 +290,35 @@ public static class PresentMonConsoleFrameMetricsReader
         return ordinal >= 0
             ? ordinal
             : throw new InvalidDataException($"PresentMon CSV is missing required column '{name}'.");
+    }
+
+    private static int RequireAnyColumn(CsvDataReader csv, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var ordinal = OptionalColumn(csv, name);
+            if (ordinal >= 0)
+            {
+                return ordinal;
+            }
+        }
+
+        throw new InvalidDataException(
+            $"PresentMon CSV is missing required column '{names[0]}' (tried {string.Join('/', names)}; have {string.Join(',', Enumerable.Range(0, csv.FieldCount).Select(csv.GetName))}).");
+    }
+
+    private static int OptionalAnyColumn(CsvDataReader csv, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var ordinal = OptionalColumn(csv, name);
+            if (ordinal >= 0)
+            {
+                return ordinal;
+            }
+        }
+
+        return -1;
     }
 
     private static int OptionalColumn(CsvDataReader csv, string name)

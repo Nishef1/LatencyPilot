@@ -5,7 +5,9 @@ namespace LatencyPilot.Platform.Windows.Devices;
 public static class PresentMonConsoleLocator
 {
     public const string Version = "2.5.1";
+    public const string PinnedVersion = Version;
     public const string FileName = "PresentMon-2.5.1-x64.exe";
+    public const string PinnedFileName = FileName;
     public const string Sha256 = "9bec3083069f58f911e6a512f4806db51a27bd096103087bc1d05ef54c80a191";
     public const string DownloadUrl = "https://github.com/GameTechDev/PresentMon/releases/download/v2.5.1/PresentMon-2.5.1-x64.exe";
 

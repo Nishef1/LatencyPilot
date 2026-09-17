@@ -165,21 +165,40 @@ public sealed class GpuAutoAffinitySession
             foreach (var candidate in physicalCandidates)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var observations = await MeasureCandidateAsync(
-                    candidate,
-                    "screening",
-                    repetitions: 2,
-                    request.ScreeningDuration,
-                    reference!,
-                    () => ++nextRunNumber,
-                    trialReports,
-                    cancellationToken).ConfigureAwait(false);
-                var comparison = Compare(controls, observations, request.Policy);
-                var report = ToReport("screening", candidate, observations.Length, comparison);
-                candidateReports.Add(report);
-                await PublishCandidateReportAsync(report).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                physicalEvaluations.Add(CreateEvaluation(candidate, observations, comparison));
+                // A single flaky screening trial (ETW loss, PresentMon gap,
+                // post-restart transient) must mark that CPU unrankable, not
+                // abort the remaining 7+ candidates and the whole Gate A run.
+                CandidateEvaluation evaluation;
+                try
+                {
+                    var observations = await MeasureCandidateAsync(
+                        candidate,
+                        "screening",
+                        repetitions: 2,
+                        request.ScreeningDuration,
+                        reference!,
+                        () => ++nextRunNumber,
+                        trialReports,
+                        cancellationToken).ConfigureAwait(false);
+                    var comparison = Compare(controls, observations, request.Policy);
+                    var report = ToReport("screening", candidate, observations.Length, comparison);
+                    candidateReports.Add(report);
+                    await PublishCandidateReportAsync(report).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    evaluation = CreateEvaluation(candidate, observations, comparison);
+                }
+                catch (SessionAbortException abort)
+                {
+                    var comparison = new ComparisonResult(
+                        ExperimentVerdict.Inconclusive, null, null, null, [],
+                        $"Screening CPU {candidate.Processor.Number} could not complete a decision-grade trial: {abort.Message}");
+                    var report = ToReport("screening", candidate, 0, comparison);
+                    candidateReports.Add(report);
+                    await PublishCandidateReportAsync(report).ConfigureAwait(false);
+                    evaluation = CreateEvaluation(candidate, [], comparison);
+                }
+
+                physicalEvaluations.Add(evaluation);
             }
 
             var physicalFinalist = await RescreenTopCandidatesAsync(
@@ -219,21 +238,37 @@ public sealed class GpuAutoAffinitySession
             foreach (var sibling in siblings)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var observations = await MeasureCandidateAsync(
-                    sibling,
-                    "smt-refinement",
-                    repetitions: 2,
-                    request.ScreeningDuration,
-                    reference!,
-                    () => ++nextRunNumber,
-                    trialReports,
-                    cancellationToken).ConfigureAwait(false);
-                var comparison = Compare(controls, observations, request.Policy);
-                var report = ToReport("smt-refinement", sibling, observations.Length, comparison);
-                candidateReports.Add(report);
-                await PublishCandidateReportAsync(report).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                refinementEvaluations.Add(CreateEvaluation(sibling, observations, comparison));
+                CandidateEvaluation evaluation;
+                try
+                {
+                    var observations = await MeasureCandidateAsync(
+                        sibling,
+                        "smt-refinement",
+                        repetitions: 2,
+                        request.ScreeningDuration,
+                        reference!,
+                        () => ++nextRunNumber,
+                        trialReports,
+                        cancellationToken).ConfigureAwait(false);
+                    var comparison = Compare(controls, observations, request.Policy);
+                    var report = ToReport("smt-refinement", sibling, observations.Length, comparison);
+                    candidateReports.Add(report);
+                    await PublishCandidateReportAsync(report).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    evaluation = CreateEvaluation(sibling, observations, comparison);
+                }
+                catch (SessionAbortException abort)
+                {
+                    var comparison = new ComparisonResult(
+                        ExperimentVerdict.Inconclusive, null, null, null, [],
+                        $"SMT refinement {sibling.Processor} could not complete a decision-grade trial: {abort.Message}");
+                    var report = ToReport("smt-refinement", sibling, 0, comparison);
+                    candidateReports.Add(report);
+                    await PublishCandidateReportAsync(report).ConfigureAwait(false);
+                    evaluation = CreateEvaluation(sibling, [], comparison);
+                }
+
+                refinementEvaluations.Add(evaluation);
             }
 
             var refinedFinalist = SelectBestCandidate(refinementEvaluations) ?? physicalFinalist;
@@ -294,21 +329,37 @@ public sealed class GpuAutoAffinitySession
         foreach (var shortlisted in shortlist)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var observations = await MeasureCandidateAsync(
-                shortlisted.Candidate,
-                FinalistPhaseName,
-                repetitions: 2,
-                request.ScreeningDuration,
-                reference,
-                nextRunNumber,
-                trialReports,
-                cancellationToken).ConfigureAwait(false);
-            var comparison = Compare(controls, observations, request.Policy);
-            var report = ToReport(FinalistPhaseName, shortlisted.Candidate, observations.Length, comparison);
-            candidateReports.Add(report);
-            await PublishCandidateReportAsync(report).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            finalistEvaluations.Add(CreateEvaluation(shortlisted.Candidate, observations, comparison));
+            CandidateEvaluation evaluation;
+            try
+            {
+                var observations = await MeasureCandidateAsync(
+                    shortlisted.Candidate,
+                    FinalistPhaseName,
+                    repetitions: 2,
+                    request.ScreeningDuration,
+                    reference,
+                    nextRunNumber,
+                    trialReports,
+                    cancellationToken).ConfigureAwait(false);
+                var comparison = Compare(controls, observations, request.Policy);
+                var report = ToReport(FinalistPhaseName, shortlisted.Candidate, observations.Length, comparison);
+                candidateReports.Add(report);
+                await PublishCandidateReportAsync(report).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                evaluation = CreateEvaluation(shortlisted.Candidate, observations, comparison);
+            }
+            catch (SessionAbortException abort)
+            {
+                var comparison = new ComparisonResult(
+                    ExperimentVerdict.Inconclusive, null, null, null, [],
+                    $"Finalist re-screen CPU {shortlisted.Candidate.Processor.Number} could not complete a decision-grade trial: {abort.Message}");
+                var report = ToReport(FinalistPhaseName, shortlisted.Candidate, 0, comparison);
+                candidateReports.Add(report);
+                await PublishCandidateReportAsync(report).ConfigureAwait(false);
+                evaluation = CreateEvaluation(shortlisted.Candidate, [], comparison);
+            }
+
+            finalistEvaluations.Add(evaluation);
         }
 
         return SelectBestCandidate(finalistEvaluations);
@@ -614,11 +665,40 @@ public sealed class GpuAutoAffinitySession
                 continue;
             }
 
+            // Transient collector faults (ETW loss, PresentMon gap, overlap
+            // miss after a restart) deserve the same single bounded retry as
+            // control contamination. Persistent stored-state, placement, or
+            // identity failures stay Inconclusive without a retry.
+            if (readiness.State == GpuBenchmarkReadinessState.Inconclusive &&
+                retryAttempt == 0 &&
+                IsTransientCollectorFailure(readiness.Reasons))
+            {
+                continue;
+            }
+
             throw new SessionAbortException(
                 $"{phase} run {trialRequest.RunNumber} is not decision-grade: {string.Join(" ", readiness.Reasons)}");
         }
 
         throw new InvalidOperationException("GPU benchmark retry loop exited without a terminal result.");
+    }
+
+    private static bool IsTransientCollectorFailure(IReadOnlyList<string> reasons)
+    {
+        foreach (var reason in reasons)
+        {
+            if (reason.Contains("ETW", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("PresentMon", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("overlap", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("cover at least", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("frame-p99 evidence is incomplete", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("benchmark evidence is invalid", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private Task PublishCandidateReportAsync(GpuAutoAffinityCandidateReport report) =>

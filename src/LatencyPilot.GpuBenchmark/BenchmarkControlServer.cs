@@ -137,7 +137,12 @@ internal sealed class BenchmarkControlServer(
                     // submit work through a device removed by that restart.
                     // The process, frozen workload, seed and worker map remain
                     // stable for continuity and comparability checks.
-                    var nextRenderer = rendererFactory();
+                    // Device re-enumeration after a restart can lag several
+                    // seconds; retry recreation instead of failing the whole
+                    // Gate A search on the first post-restart trial.
+                    var nextRenderer = await RecreateRendererWithRetryAsync(
+                        rendererFactory,
+                        cancellationToken).ConfigureAwait(false);
                     var previousRenderer = activeRenderer;
                     activeRenderer = nextRenderer;
                     previousRenderer.Dispose();
@@ -185,6 +190,38 @@ internal sealed class BenchmarkControlServer(
         {
             activeRenderer.Dispose();
         }
+    }
+
+    private static async Task<D3D12BenchmarkRenderer> RecreateRendererWithRetryAsync(
+        Func<D3D12BenchmarkRenderer> rendererFactory,
+        CancellationToken cancellationToken)
+    {
+        var deadline = TimeSpan.FromSeconds(30);
+        var started = DateTimeOffset.UtcNow;
+        var delay = TimeSpan.FromMilliseconds(500);
+        Exception? lastFailure = null;
+        while (DateTimeOffset.UtcNow - started < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                return rendererFactory();
+            }
+            catch (Exception exception) when (exception is
+                InvalidOperationException or
+                PlatformNotSupportedException or
+                System.ComponentModel.Win32Exception or
+                SharpGen.Runtime.SharpGenException)
+            {
+                lastFailure = exception;
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2d, 4000d));
+            }
+        }
+
+        throw new InvalidOperationException(
+            "D3D12 benchmark device recreation failed after the GPU configuration-change restart; the display adapter did not return in time.",
+            lastFailure);
     }
 
     private static NamedPipeServerStream CreatePipe(string pipeName)
