@@ -111,45 +111,49 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         ArgumentNullException.ThrowIfNull(report);
         RankedCandidatesPanel.Children.Clear();
 
-        // Prefer the fresh finalist re-screen when it exists; otherwise rank
-        // the bounded screening phase. Medians come from scored trial p99s so
-        // the chart matches the session's own ranking input.
-        var phase = report.Trials.Any(static trial =>
-                string.Equals(trial.Phase, "screening-finalists", StringComparison.Ordinal))
-            ? "screening-finalists"
-            : "screening";
+        static double? Median(IEnumerable<double?> values)
+        {
+            var finite = values
+                .Where(static value => value is { } item && double.IsFinite(item) && item > 0)
+                .Select(static value => value!.Value)
+                .Order()
+                .ToArray();
+            if (finite.Length == 0)
+            {
+                return null;
+            }
+            return finite.Length % 2 == 0
+                ? (finite[(finite.Length / 2) - 1] + finite[finite.Length / 2]) / 2d
+                : finite[finite.Length / 2];
+        }
+
+        // Top candidates have one screening run plus two fresh re-tests. Use
+        // all scored v1 ranking runs so the UI mirrors the decision engine.
         var rows = report.Trials
-            .Where(trial => string.Equals(trial.Phase, phase, StringComparison.Ordinal) &&
-                trial.Processor.HasValue &&
-                trial.FrameP99Milliseconds is { } p99 && double.IsFinite(p99) && p99 > 0)
+            .Where(static trial =>
+                (string.Equals(trial.Phase, "screening", StringComparison.Ordinal) ||
+                 string.Equals(trial.Phase, "screening-finalists", StringComparison.Ordinal)) &&
+                trial.Processor.HasValue)
             .GroupBy(static trial => trial.Processor!.Value)
             .Select(group =>
             {
-                var ordered = group.Select(static trial => trial.FrameP99Milliseconds!.Value).Order().ToArray();
-                var median = ordered.Length % 2 == 0
-                    ? (ordered[(ordered.Length / 2) - 1] + ordered[ordered.Length / 2]) / 2d
-                    : ordered[ordered.Length / 2];
-                static double? Average(IEnumerable<double?> values)
-                {
-                    var finite = values.Where(static value => value is { } item && double.IsFinite(item)).Select(static value => value!.Value).ToArray();
-                    return finite.Length == 0 ? null : finite.Average();
-                }
-                var candidate = report.Candidates.LastOrDefault(item =>
-                    string.Equals(item.Phase, phase, StringComparison.Ordinal) &&
-                    item.Processor.Equals(group.Key));
+                var candidate = report.Candidates.LastOrDefault(item => item.Processor.Equals(group.Key));
                 return new
                 {
                     Processor = group.Key,
                     Core = candidate?.PhysicalCoreIndex,
-                    MedianP99 = median,
-                    AvgFps = Average(group.Select(static trial => trial.AvgFps)),
-                    Low1PctFps = Average(group.Select(static trial => trial.OnePercentLowFps)),
-                    Low01PctFps = Average(group.Select(static trial => trial.Low01PctFps)),
+                    Low1PctFps = Median(group.Select(static trial => trial.OnePercentLowFps)),
+                    Low01PctFps = Median(group.Select(static trial => trial.Low01PctFps)),
+                    AvgFps = Median(group.Select(static trial => trial.AvgFps)),
+                    MedianP99 = Median(group.Select(static trial => trial.FrameP99Milliseconds)),
                     Verdict = candidate?.Verdict ?? "—",
-                    Improvement = candidate?.RelativeFrameP99Improvement,
                 };
             })
-            .OrderBy(static row => row.MedianP99)
+            .Where(static row => row.Low1PctFps is { } low && double.IsFinite(low) && low > 0)
+            .OrderByDescending(static row => row.Low1PctFps)
+            .ThenByDescending(static row => row.Low01PctFps)
+            .ThenByDescending(static row => row.AvgFps)
+            .ThenBy(static row => row.MedianP99)
             .ToArray();
 
         if (rows.Length == 0)
@@ -160,40 +164,37 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         }
 
         var inconclusive = report.Candidates
-            .Where(item => string.Equals(item.Verdict, "Inconclusive", StringComparison.Ordinal))
+            .Where(static item => string.Equals(item.Verdict, "Inconclusive", StringComparison.Ordinal))
             .Select(static item => item.Processor.Number)
             .Distinct()
             .Count();
         var best = rows[0];
         RankedSummaryText.Text = string.Format(
             CultureInfo.InvariantCulture,
-            "Best observed: CPU {0} (median frame-p99 {1:F2} ms, {2} ranked{3}). Lower is better; the original/default state is reference context, not a ranked row.",
+            "Best observed: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}). Higher is better; 0.1% low and AVG break ties, while p99 stays diagnostic context.",
             best.Processor.Number,
-            best.MedianP99,
+            best.Low1PctFps!.Value,
             rows.Length,
             inconclusive > 0 ? $", {inconclusive} inconclusive" : string.Empty);
         AutomationProperties.SetName(RankedSummaryText, $"Ranked candidates. {RankedSummaryText.Text}");
 
-        var slowest = rows[^1].MedianP99;
-        var span = slowest - best.MedianP99;
+        var minimumLow = rows.Min(static row => row.Low1PctFps!.Value);
+        var maximumLow = rows.Max(static row => row.Low1PctFps!.Value);
+        var span = maximumLow - minimumLow;
         foreach (var row in rows)
         {
             var isFinalist = report.FinalProcessor is not null && report.FinalProcessor.Equals(row.Processor);
-            var improvement = row.Improvement is { } delta && double.IsFinite(delta)
-                ? string.Create(CultureInfo.InvariantCulture, $" · {(delta >= 0 ? "+" : string.Empty)}{delta * 100d:F1}% vs default")
-                : string.Empty;
             var label = new TextBlock
             {
                 Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    "CPU {0}{1} · AVG {2} · 1% {3} · 0.1% {4} FPS · p99 {5:F2} ms{6} · {7}{8}",
+                    "CPU {0}{1} · 1% {2} · 0.1% {3} · AVG {4} FPS · p99 {5} ms · {6}{7}",
                     row.Processor.Number,
                     row.Core is { } core ? $" · core {core}" : string.Empty,
-                    FormatFps(row.AvgFps),
                     FormatFps(row.Low1PctFps),
                     FormatFps(row.Low01PctFps),
-                    row.MedianP99,
-                    improvement,
+                    FormatFps(row.AvgFps),
+                    row.MedianP99 is { } p99 ? p99.ToString("F2", CultureInfo.InvariantCulture) : "—",
                     row.Verdict,
                     isFinalist ? " · finalist" : string.Empty),
                 Style = (Style)Application.Current.Resources["BodyTextStyle"],
@@ -204,12 +205,12 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             {
                 Minimum = 0,
                 Maximum = 100,
-                Value = span > 0 ? (slowest - row.MedianP99) / span * 100d : 100d,
+                Value = span > 0 ? (row.Low1PctFps!.Value - minimumLow) / span * 100d : 100d,
                 Height = 8,
             };
             AutomationProperties.SetName(
                 bar,
-                string.Create(CultureInfo.InvariantCulture, $"CPU {row.Processor.Number} relative frame-p99 bar"));
+                string.Create(CultureInfo.InvariantCulture, $"CPU {row.Processor.Number} relative 1 percent low bar"));
             var container = new StackPanel { Spacing = 2 };
             container.Children.Add(label);
             container.Children.Add(bar);
@@ -283,17 +284,14 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         }
         catch (IOException)
         {
-            // Atomic replacement can briefly move the file between directory entries.
             return false;
         }
         catch (UnauthorizedAccessException)
         {
-            // A file watcher or security scanner can briefly deny the shared progress read.
             return false;
         }
         catch (JsonException)
         {
-            // Ignore a transient unreadable snapshot; the next atomic write supersedes it.
             return false;
         }
     }
@@ -430,10 +428,10 @@ public sealed partial class GpuOptimizationProgressWindow : Window
     private static string FormatPhase(string phase) => phase switch
     {
         "initializing" => "Initializing",
-        "screening-control" => "Original control",
+        "screening-warmup" => "Benchmark warm-up",
         "screening" => "Physical-core screening",
-        "smt-refinement" => "SMT sibling refinement",
-        "confirmation" => "Finalist confirmation",
+        "screening-finalists" => "Top-candidate re-test",
+        "final-verification" => "Winner placement verification",
         "stopping-safely" => "Stopping safely",
         "restoring-original" => "Restoring original state",
         "failed-safely" => "Failed safely",
