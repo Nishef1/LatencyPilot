@@ -97,6 +97,19 @@
                     </StackPanel>
                 </Border>
 
+                <Border Style="{StaticResource SubtleCardStyle}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Ranked candidates (lower frame-p99 is better)"
+                                   Style="{StaticResource CaptionTextStyle}"
+                                   AutomationProperties.Name="Ranked candidates" />
+                        <TextBlock x:Name="RankedSummaryText"
+                                   Text="Results appear here when the search finishes."
+                                   Style="{StaticResource BodyTextStyle}"
+                                   TextWrapping="Wrap" />
+                        <StackPanel x:Name="RankedCandidatesPanel" Spacing="8" />
+                    </StackPanel>
+                </Border>
+
                 <TextBlock x:Name="StatusText"
                            Text="Starting the normal-user benchmark process."
                            Style="{StaticResource MutedBodyTextStyle}"

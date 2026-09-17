@@ -4,6 +4,7 @@ using LatencyPilot.Core.Benchmarking;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Controls;
 using Windows.Graphics;
 
 namespace LatencyPilot.App;
@@ -74,12 +75,16 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         }
     }
 
-    internal void ShowFinalOutcome(string summary, string reportPath, bool finalStateVerified)
+    internal void ShowFinalOutcome(string summary, string reportPath, bool finalStateVerified, GpuAutoAffinityReport? report = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(summary);
         ArgumentException.ThrowIfNullOrWhiteSpace(reportPath);
 
         terminal = true;
+        if (report is not null)
+        {
+            ShowRankedResults(report);
+        }
         if (terminalSnapshotReceived)
         {
             StatusText.Text = $"{StatusText.Text}\n{summary}\nReport: {reportPath}";
@@ -99,6 +104,106 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         StopButton.Content = "Close";
         StopButton.IsEnabled = true;
         UpdateAutomationStatus(OptimizationProgressBar.Value);
+    }
+
+    private void ShowRankedResults(GpuAutoAffinityReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        RankedCandidatesPanel.Children.Clear();
+
+        // Prefer the fresh finalist re-screen when it exists; otherwise rank
+        // the bounded screening phase. Medians come from scored trial p99s so
+        // the chart matches the session's own ranking input.
+        var phase = report.Trials.Any(static trial =>
+                string.Equals(trial.Phase, "screening-finalists", StringComparison.Ordinal))
+            ? "screening-finalists"
+            : "screening";
+        var rows = report.Trials
+            .Where(trial => string.Equals(trial.Phase, phase, StringComparison.Ordinal) &&
+                trial.Processor.HasValue &&
+                trial.FrameP99Milliseconds is { } p99 && double.IsFinite(p99) && p99 > 0)
+            .GroupBy(static trial => trial.Processor!.Value)
+            .Select(group =>
+            {
+                var ordered = group.Select(static trial => trial.FrameP99Milliseconds!.Value).Order().ToArray();
+                var median = ordered.Length % 2 == 0
+                    ? (ordered[(ordered.Length / 2) - 1] + ordered[ordered.Length / 2]) / 2d
+                    : ordered[ordered.Length / 2];
+                var candidate = report.Candidates.LastOrDefault(item =>
+                    string.Equals(item.Phase, phase, StringComparison.Ordinal) &&
+                    item.Processor.Equals(group.Key));
+                return new
+                {
+                    Processor = group.Key,
+                    Core = candidate?.PhysicalCoreIndex,
+                    MedianP99 = median,
+                    Verdict = candidate?.Verdict ?? "—",
+                    Improvement = candidate?.RelativeFrameP99Improvement,
+                };
+            })
+            .OrderBy(static row => row.MedianP99)
+            .ToArray();
+
+        if (rows.Length == 0)
+        {
+            RankedSummaryText.Text = "No ranked candidates. The search restored the original state or ended Inconclusive; open the JSON report for trial reasons.";
+            AutomationProperties.SetName(RankedSummaryText, "Ranked candidates: none");
+            return;
+        }
+
+        var inconclusive = report.Candidates
+            .Where(item => string.Equals(item.Verdict, "Inconclusive", StringComparison.Ordinal))
+            .Select(static item => item.Processor.Number)
+            .Distinct()
+            .Count();
+        var best = rows[0];
+        RankedSummaryText.Text = string.Format(
+            CultureInfo.InvariantCulture,
+            "Best observed: CPU {0} (median frame-p99 {1:F2} ms, {2} ranked{3}). Lower is better; the original/default state is reference context, not a ranked row.",
+            best.Processor.Number,
+            best.MedianP99,
+            rows.Length,
+            inconclusive > 0 ? $", {inconclusive} inconclusive" : string.Empty);
+        AutomationProperties.SetName(RankedSummaryText, $"Ranked candidates. {RankedSummaryText.Text}");
+
+        var slowest = rows[^1].MedianP99;
+        var span = slowest - best.MedianP99;
+        foreach (var row in rows)
+        {
+            var isFinalist = report.FinalProcessor is not null && report.FinalProcessor.Equals(row.Processor);
+            var improvement = row.Improvement is { } delta && double.IsFinite(delta)
+                ? string.Create(CultureInfo.InvariantCulture, $" · {(delta >= 0 ? "+" : string.Empty)}{delta * 100d:F1}% vs default")
+                : string.Empty;
+            var label = new TextBlock
+            {
+                Text = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "CPU {0}{1} · p99 {2:F2} ms{3} · {4}{5}",
+                    row.Processor.Number,
+                    row.Core is { } core ? $" · core {core}" : string.Empty,
+                    row.MedianP99,
+                    improvement,
+                    row.Verdict,
+                    isFinalist ? " · finalist" : string.Empty),
+                Style = (Style)Application.Current.Resources["BodyTextStyle"],
+                TextWrapping = TextWrapping.Wrap,
+            };
+            AutomationProperties.SetName(label, label.Text);
+            var bar = new ProgressBar
+            {
+                Minimum = 0,
+                Maximum = 100,
+                Value = span > 0 ? (slowest - row.MedianP99) / span * 100d : 100d,
+                Height = 8,
+            };
+            AutomationProperties.SetName(
+                bar,
+                string.Create(CultureInfo.InvariantCulture, $"CPU {row.Processor.Number} relative frame-p99 bar"));
+            var container = new StackPanel { Spacing = 2 };
+            container.Children.Add(label);
+            container.Children.Add(bar);
+            RankedCandidatesPanel.Children.Add(container);
+        }
     }
 
     internal void ShowStartupFailure(string message)

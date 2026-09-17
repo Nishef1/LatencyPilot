@@ -234,7 +234,7 @@ public sealed partial class MainWindow
 
             var terminalSummary = BuildGateATerminalSummary(helper.ExitCode, report);
             var terminalStateVerified = IsGateATerminalStateVerified(helper.ExitCode, report);
-            progressWindow.ShowFinalOutcome(terminalSummary, reportPath, terminalStateVerified);
+            progressWindow.ShowFinalOutcome(terminalSummary, reportPath, terminalStateVerified, report);
             SetGateAValidationStatus($"{terminalSummary} Report: {reportPath}");
             TryRevealReport(reportPath);
         }
