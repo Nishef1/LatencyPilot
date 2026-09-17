@@ -1,10 +1,10 @@
 using System.Text.Json;
-using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.Observation;
+using LatencyPilot.Core.Results;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.Devices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -14,269 +14,110 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class GpuAutoAffinitySessionTests
 {
-    private static readonly string[] ExpectedConfirmationRoles =
-    [
-        "Original",
-        "Candidate",
-        "Candidate",
-        "Original",
-        "Candidate",
-        "Original",
-        "Original",
-        "Candidate",
-    ];
-
     [TestMethod]
-    public async Task SessionOwnsCandidateRollbackRefinementConfirmationAndCancellation()
+    public async Task SessionRanksByLowsScreensOnceRetestsFinalistsAndRequiresFinalPlacement()
     {
-        var topology = new ProcessorTopologySnapshot(
-            [new ProcessorPackageSnapshot(0,
-                [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 1), new LogicalProcessorId(0, 2), new LogicalProcessorId(0, 3)])],
-            [
-                new ProcessorCoreSnapshot(0, 0, [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 1)]),
-                new ProcessorCoreSnapshot(1, 0, [new LogicalProcessorId(0, 2), new LogicalProcessorId(0, 3)]),
-            ],
-            DateTimeOffset.UnixEpoch);
-        var pressure = new[]
-        {
-            new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0.4),
-            new ProcessorPressureEvidence(new LogicalProcessorId(0, 1), 0.5),
-            new ProcessorPressureEvidence(new LogicalProcessorId(0, 2), 0.1),
-            new ProcessorPressureEvidence(new LogicalProcessorId(0, 3), 0.2),
-        };
+        var (topology, pressure, request) = CreateTwoCoreRequest();
         var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets: null);
         Assert.AreEqual(2, progressPlan.PhysicalCandidateCount);
-        Assert.AreEqual(2, progressPlan.MaximumRefinementCandidateCount);
+        Assert.AreEqual(0, progressPlan.MaximumRefinementCandidateCount);
         Assert.AreEqual(2, progressPlan.FinalistCandidateCount);
-        Assert.AreEqual(37, progressPlan.InitialTotalUnits);
-        Assert.AreEqual(2, progressPlan.GetRefinementCandidateCount(0));
-        Assert.AreEqual(37, progressPlan.GetTotalUnitsForFinalist(1));
+        Assert.AreEqual(12, progressPlan.InitialTotalUnits);
+        Assert.AreEqual(0, progressPlan.GetRefinementCandidateCount(0));
+        Assert.AreEqual(12, progressPlan.GetTotalUnitsForFinalist(1));
 
         var nonSmtTopology = new ProcessorTopologySnapshot(
             [new ProcessorPackageSnapshot(0, [new LogicalProcessorId(0, 0)])],
             [new ProcessorCoreSnapshot(0, 0, [new LogicalProcessorId(0, 0)])],
             DateTimeOffset.UnixEpoch);
-        var nonSmtProgressPlan = GpuAutoAffinityProgressPlan.Create(
+        var nonSmtPlan = GpuAutoAffinityProgressPlan.Create(
             nonSmtTopology,
             [new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0d)],
             cpuSets: null);
-        Assert.AreEqual(1, nonSmtProgressPlan.MaximumRefinementCandidateCount);
-        Assert.AreEqual(1, nonSmtProgressPlan.FinalistCandidateCount);
-        Assert.AreEqual(28, nonSmtProgressPlan.InitialTotalUnits);
-        Assert.AreEqual(28, nonSmtProgressPlan.GetTotalUnitsForFinalist(0));
+        Assert.AreEqual(0, nonSmtPlan.MaximumRefinementCandidateCount);
+        Assert.AreEqual(1, nonSmtPlan.FinalistCandidateCount);
+        Assert.AreEqual(7, nonSmtPlan.InitialTotalUnits);
 
-        var boundedCores = Enumerable.Range(0, 8)
-            .Select(index => new ProcessorCoreSnapshot(
-                index,
-                0,
-                [
-                    new LogicalProcessorId(0, checked((byte)(index * 2))),
-                    new LogicalProcessorId(0, checked((byte)(index * 2 + 1))),
-                ]))
-            .ToArray();
-        var boundedLogical = boundedCores.SelectMany(static core => core.LogicalProcessors).ToArray();
-        var boundedTopology = new ProcessorTopologySnapshot(
-            [new ProcessorPackageSnapshot(0, boundedLogical)],
-            boundedCores,
-            DateTimeOffset.UnixEpoch);
-        var boundedPressure = boundedLogical
-            .Select(processor => new ProcessorPressureEvidence(processor, processor.Number / 100d))
-            .ToArray();
-        var boundedCandidates = GpuAffinityCandidatePlanner.Create(boundedTopology, boundedPressure);
-        Assert.AreEqual(8, boundedCandidates.Count);
-        CollectionAssert.AreEquivalent(
-            Enumerable.Range(0, 8).ToArray(),
-            boundedCandidates.Select(static candidate => candidate.PhysicalCoreIndex).ToArray());
-        Assert.IsTrue(boundedCandidates.Any(static candidate =>
-            candidate.Processor == new LogicalProcessorId(0, 0)));
-        var boundedWinner = boundedCandidates.Single(static candidate => candidate.PhysicalCoreIndex == 3);
-        CollectionAssert.AreEquivalent(
-            new[] { new LogicalProcessorId(0, 6), new LogicalProcessorId(0, 7) },
-            GpuAffinityCandidatePlanner.CreateSiblingRefinement(
-                    boundedTopology,
-                    boundedPressure,
-                    boundedWinner)
-                .Select(static candidate => candidate.Processor)
-                .ToArray());
-
-        var request = new GpuAutoAffinitySessionRequest(
-            Guid.NewGuid(),
-            topology,
-            pressure,
-            null,
-            0x51A7,
-            TimeSpan.FromSeconds(15),
-            TimeSpan.FromSeconds(30),
-            new ComparisonPolicy(20, 0.03, 0.05, 0.99));
         var backend = new RecordingBackend();
         var observer = new RecordingObserver();
-        var session = new GpuAutoAffinitySession(backend, observer);
-
-        var result = await session.RunAsync(request);
-
-        Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, result.Recommendation);
-        Assert.IsNotNull(result.Finalist);
-        Assert.AreEqual(new LogicalProcessorId(0, 3), result.Finalist.Processor);
-        Assert.AreEqual(GpuAutoAffinityReport.SchemaId, result.Report.Schema);
-        Assert.AreEqual(request.ShuffleSeed, result.Report.ShuffleSeed);
-        Assert.IsTrue(result.Report.FinalStateVerified);
-        Assert.IsFalse(result.Report.OriginalStateRestored);
-        Assert.IsTrue(backend.Events.Contains("keep:0:3"));
-        Assert.IsFalse(backend.Events.Any(static item =>
-            item.StartsWith("verify-after-keep:", StringComparison.Ordinal)));
-        Assert.IsTrue(backend.Events.Any(static item => item.StartsWith("rollback:", StringComparison.Ordinal)));
-        Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "screening"));
-        Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "screening-finalists"));
-        Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "smt-refinement"));
-        Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "confirmation"));
-        Assert.IsTrue(result.Report.Trials.Any(static trial =>
-            trial.Phase == "screening-warmup" && trial.Processor is null));
-        Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "screening-finalists-warmup"));
-        Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "confirmation-warmup"));
-
-        var confirmationRoles = result.Report.Trials
-            .Where(static trial => trial.Phase == "confirmation")
-            .Select(static trial => trial.Role)
-            .ToArray();
-        CollectionAssert.AreEqual(ExpectedConfirmationRoles, confirmationRoles);
-
-        var missingIsrBackend = new RecordingBackend(missingIsrSamples: true);
-        var missingIsrResult = await new GpuAutoAffinitySession(missingIsrBackend).RunAsync(request);
-        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, missingIsrResult.Recommendation);
-        Assert.IsTrue(missingIsrResult.Report.Reasons.Any(static reason =>
-            reason.Contains("ISR", StringComparison.Ordinal) ||
-            reason.Contains("placement", StringComparison.OrdinalIgnoreCase)));
-        Assert.IsTrue(missingIsrResult.Report.OriginalStateRestored);
-        Assert.IsFalse(missingIsrBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
-        var serialized = JsonSerializer.Serialize(missingIsrResult.Report);
-        var roundTrip = JsonSerializer.Deserialize<GpuAutoAffinityReport>(serialized)!;
-        Assert.AreEqual(missingIsrResult.Report.Trials.Count, roundTrip.Trials.Count);
-
-        Assert.IsTrue(result.Report.Trials
-            .Where(static item => item.Processor is not null)
-            .All(static item => item.InterruptEvidence is { IsrModuleName: "dxgkrnl", IsrSampleCount: 100 }));
-        var changedSourceBackend = new RecordingBackend(changedIsrSource: true);
-        var changedSourceResult = await new GpuAutoAffinitySession(changedSourceBackend).RunAsync(request);
-        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, changedSourceResult.Recommendation);
-        Assert.IsFalse(changedSourceBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
-
-        var noisyConfirmationBackend = new RecordingBackend(noisyConfirmation: true);
-        var noisyConfirmationResult = await new GpuAutoAffinitySession(noisyConfirmationBackend).RunAsync(request);
-        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, noisyConfirmationResult.Recommendation);
-        Assert.IsTrue(noisyConfirmationResult.Report.Reasons.Any(static reason =>
-            reason.Contains("repeat", StringComparison.OrdinalIgnoreCase) ||
-            reason.Contains("drift", StringComparison.OrdinalIgnoreCase)));
-        Assert.IsTrue(noisyConfirmationResult.Report.OriginalStateRestored);
-        Assert.IsFalse(noisyConfirmationBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
-
-        var invalidKeepBackend = new RecordingBackend(failKeepPreflight: true);
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
-            new GpuAutoAffinitySession(invalidKeepBackend).RunAsync(request));
-        Assert.IsTrue(invalidKeepBackend.Events.Contains("keep-preflight-failed:0:3"));
-        Assert.IsFalse(invalidKeepBackend.Events.Contains("keep:0:3"));
-        Assert.IsTrue(invalidKeepBackend.Events.Contains("rollback:0:3"));
-
-        var unverifiedRecoveryBackend = new RecordingBackend(
-            failKeepPreflight: true,
-            failRecoveryVerificationAfterKeepFailure: true);
-        var recoveryFailure = await Assert.ThrowsExactlyAsync<AggregateException>(() =>
-            new GpuAutoAffinitySession(unverifiedRecoveryBackend).RunAsync(request));
-        Assert.IsTrue(recoveryFailure.InnerExceptions.Any(static exception =>
-            exception.Message.Contains("original state", StringComparison.OrdinalIgnoreCase)));
-        Assert.IsTrue(unverifiedRecoveryBackend.Events.Contains("verify-original-failed"));
-
-        var cancellingBackend = new RecordingBackend(cancelAfterFirstCandidateCapture: true);
-        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
-            new GpuAutoAffinitySession(cancellingBackend).RunAsync(request));
-        Assert.IsTrue(cancellingBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)));
-        Assert.IsTrue(cancellingBackend.Events.Any(static item => item.StartsWith("rollback:", StringComparison.Ordinal)));
-        Assert.IsFalse(cancellingBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
-
-        using var finalStop = new CancellationTokenSource();
-        var finalStopBackend = new RecordingBackend();
-        var finalStopObserver = new RecordingObserver(report =>
-        {
-            if (report.Phase == "confirmation")
-            {
-                finalStop.Cancel();
-            }
-        });
-        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
-            new GpuAutoAffinitySession(finalStopBackend, finalStopObserver).RunAsync(request, finalStop.Token));
-        Assert.IsTrue(finalStopObserver.Reports.Any(static report => report.Phase == "confirmation"));
-        Assert.IsTrue(finalStopBackend.Events.Any(static item => item.StartsWith("rollback:", StringComparison.Ordinal)));
-        Assert.IsFalse(finalStopBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
-    }
-
-    [TestMethod]
-    public async Task SessionRanksStableCoresAndReScreensTopCandidates()
-    {
-        var topology = new ProcessorTopologySnapshot(
-            [new ProcessorPackageSnapshot(0,
-                [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 2)])],
-            [
-                new ProcessorCoreSnapshot(0, 0, [new LogicalProcessorId(0, 0)]),
-                new ProcessorCoreSnapshot(1, 0, [new LogicalProcessorId(0, 2)]),
-            ],
-            DateTimeOffset.UnixEpoch);
-        var pressure = new[]
-        {
-            new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0.1),
-            new ProcessorPressureEvidence(new LogicalProcessorId(0, 2), 0.2),
-        };
-        var request = new GpuAutoAffinitySessionRequest(
-            Guid.NewGuid(),
-            topology,
-            pressure,
-            null,
-            0x51A7,
-            TimeSpan.FromSeconds(15),
-            TimeSpan.FromSeconds(30),
-            new ComparisonPolicy(20, 0.03, 0.05, 0.99));
-        var backend = new RecordingBackend(noisyScreening: true);
-        var observer = new RecordingObserver();
-
         var result = await new GpuAutoAffinitySession(backend, observer).RunAsync(request);
 
         Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, result.Recommendation);
         Assert.IsNotNull(result.Finalist);
-        Assert.AreEqual(new LogicalProcessorId(0, 2), result.Finalist.Processor);
-        var finalistReports = observer.Reports.Where(static report =>
-            report.Phase == "screening-finalists").ToArray();
+        Assert.AreEqual(new LogicalProcessorId(0, 2), result.Finalist.Processor,
+            "CPU2 must win because its 1%/0.1% lows are stronger even though CPU0 has the lower frame-p99.");
+        Assert.IsTrue(result.Report.FinalStateVerified);
+        Assert.IsFalse(result.Report.OriginalStateRestored);
+        Assert.IsTrue(backend.Events.Contains("keep:0:2"));
+
+        var screeningReports = observer.Reports.Where(static report => report.Phase == "screening").ToArray();
+        Assert.AreEqual(2, screeningReports.Length);
+        Assert.IsTrue(screeningReports.All(static report => report.TrialCount == 1));
+        var finalistReports = observer.Reports.Where(static report => report.Phase == "screening-finalists").ToArray();
         Assert.AreEqual(2, finalistReports.Length);
         Assert.IsTrue(finalistReports.All(static report => report.TrialCount == 2));
+
+        Assert.IsTrue(result.Report.Trials.Any(static trial =>
+            trial.Phase == "screening-warmup" && trial.Processor is null));
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "screening-finalists-warmup"));
-        Assert.IsTrue(backend.Events.Contains("keep:0:2"));
-        Assert.IsTrue(result.Report.Reasons.Any(static reason =>
-            reason.Contains("ranked best", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "final-verification"));
+        Assert.IsFalse(result.Report.Trials.Any(static trial =>
+            trial.Phase == "confirmation" || trial.Phase == "smt-refinement"));
+        var finalVerification = result.Report.Trials.Single(static trial => trial.Phase == "final-verification");
+        Assert.AreEqual(new LogicalProcessorId(0, 2), finalVerification.Processor);
+        Assert.IsTrue(finalVerification.Placement is { ConfirmsRequestedPlacement: true });
+        Assert.IsTrue(finalVerification.InterruptEvidence is { IsrSampleCount: > 0 });
+
+        var serialized = JsonSerializer.Serialize(result.Report);
+        var roundTrip = JsonSerializer.Deserialize<GpuAutoAffinityReport>(serialized)!;
+        Assert.AreEqual(result.Report.Trials.Count, roundTrip.Trials.Count);
+        Assert.AreEqual(result.Report.FinalProcessor, roundTrip.FinalProcessor);
     }
 
     [TestMethod]
-    public async Task SessionRestoresOriginalWhenFinalistReScreenRemainsUnstable()
+    public async Task SessionRestoresOnUnverifiedFinalPlacementAndKeepsRollbackOwnershipOnFailureOrCancel()
     {
-        var topology = new ProcessorTopologySnapshot(
-            [new ProcessorPackageSnapshot(0,
-                [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 2)])],
-            [
-                new ProcessorCoreSnapshot(0, 0, [new LogicalProcessorId(0, 0)]),
-                new ProcessorCoreSnapshot(1, 0, [new LogicalProcessorId(0, 2)]),
-            ],
-            DateTimeOffset.UnixEpoch);
-        var pressure = new[]
-        {
-            new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0.1),
-            new ProcessorPressureEvidence(new LogicalProcessorId(0, 2), 0.2),
-        };
-        var request = new GpuAutoAffinitySessionRequest(
-            Guid.NewGuid(),
-            topology,
-            pressure,
-            null,
-            0x51A7,
-            TimeSpan.FromSeconds(15),
-            TimeSpan.FromSeconds(30),
-            new ComparisonPolicy(20, 0.03, 0.05, 0.99));
-        var backend = new RecordingBackend(noisyScreening: true, noisyFinalistReScreen: true);
+        var (_, _, request) = CreateTwoCoreRequest();
+
+        var missingFinalEtw = new RecordingBackend(finalEtwUnavailable: true);
+        var missingFinalResult = await new GpuAutoAffinitySession(missingFinalEtw).RunAsync(request);
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, missingFinalResult.Recommendation);
+        Assert.AreEqual(new LogicalProcessorId(0, 2), missingFinalResult.Finalist?.Processor);
+        Assert.IsTrue(missingFinalResult.Report.OriginalStateRestored);
+        Assert.IsTrue(missingFinalResult.Report.FinalStateVerified);
+        Assert.IsFalse(missingFinalEtw.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
+        Assert.IsTrue(missingFinalEtw.Events.Contains("rollback:0:2"));
+        Assert.IsTrue(missingFinalResult.Report.Reasons.Any(static reason =>
+            reason.Contains("placement", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("ETW", StringComparison.OrdinalIgnoreCase)));
+
+        var invalidKeep = new RecordingBackend(failKeep: true);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            new GpuAutoAffinitySession(invalidKeep).RunAsync(request));
+        Assert.IsTrue(invalidKeep.Events.Contains("keep-failed:0:2"));
+        Assert.IsTrue(invalidKeep.Events.Contains("rollback:0:2"));
+        Assert.IsFalse(invalidKeep.Events.Contains("keep:0:2"));
+
+        var unverifiedRecovery = new RecordingBackend(failKeep: true, failRecoveryVerification: true);
+        var recoveryFailure = await Assert.ThrowsExactlyAsync<AggregateException>(() =>
+            new GpuAutoAffinitySession(unverifiedRecovery).RunAsync(request));
+        Assert.IsTrue(recoveryFailure.InnerExceptions.Any(static exception =>
+            exception.Message.Contains("original state", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsTrue(unverifiedRecovery.Events.Contains("verify-original-failed"));
+
+        var cancelling = new RecordingBackend(cancelDuringFirstScoredCandidate: true);
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            new GpuAutoAffinitySession(cancelling).RunAsync(request));
+        Assert.IsTrue(cancelling.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)));
+        Assert.IsTrue(cancelling.Events.Any(static item => item.StartsWith("rollback:", StringComparison.Ordinal)));
+        Assert.IsFalse(cancelling.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task SessionRestoresOriginalWhenFinalistLowFpsMeasurementsRemainUnstable()
+    {
+        var (_, _, request) = CreateTwoCoreRequest();
+        var backend = new RecordingBackend(unstableFinalists: true);
 
         var result = await new GpuAutoAffinitySession(backend).RunAsync(request);
 
@@ -285,45 +126,66 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsTrue(result.Report.FinalStateVerified);
         Assert.IsTrue(result.Report.OriginalStateRestored);
         Assert.IsFalse(backend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
-        Assert.IsFalse(result.Report.Trials.Any(static trial => trial.Phase == "confirmation"));
+        Assert.IsFalse(result.Report.Trials.Any(static trial =>
+            trial.Phase == "confirmation" || trial.Phase == "smt-refinement" || trial.Phase == "final-verification"));
         Assert.IsTrue(result.Report.Candidates
             .Where(static item => item.Phase == "screening-finalists")
             .All(static item => item.Verdict == "Inconclusive"));
+        Assert.IsTrue(result.Report.Candidates.Any(static item =>
+            item.Reason.Contains("1% low", StringComparison.OrdinalIgnoreCase) ||
+            item.Reason.Contains("drift", StringComparison.OrdinalIgnoreCase)));
     }
 
-    private sealed class RecordingObserver(Action<GpuAutoAffinityCandidateReport>? onReport = null)
-        : IGpuAutoAffinitySessionObserver
+    private static (ProcessorTopologySnapshot Topology, ProcessorPressureEvidence[] Pressure, GpuAutoAffinitySessionRequest Request)
+        CreateTwoCoreRequest()
+    {
+        var topology = new ProcessorTopologySnapshot(
+            [new ProcessorPackageSnapshot(0, [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 2)])],
+            [
+                new ProcessorCoreSnapshot(0, 0, [new LogicalProcessorId(0, 0)]),
+                new ProcessorCoreSnapshot(1, 0, [new LogicalProcessorId(0, 2)]),
+            ],
+            DateTimeOffset.UnixEpoch);
+        var pressure = new[]
+        {
+            new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0.1),
+            new ProcessorPressureEvidence(new LogicalProcessorId(0, 2), 0.2),
+        };
+        var request = new GpuAutoAffinitySessionRequest(
+            Guid.NewGuid(),
+            topology,
+            pressure,
+            null,
+            0x51A7,
+            TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(30),
+            new ComparisonPolicy(20, 0.03, 0.05, 0.99));
+        return (topology, pressure, request);
+    }
+
+    private sealed class RecordingObserver : IGpuAutoAffinitySessionObserver
     {
         internal List<GpuAutoAffinityCandidateReport> Reports { get; } = [];
 
         public Task CandidateEvaluatedAsync(GpuAutoAffinityCandidateReport report)
         {
             Reports.Add(report);
-            onReport?.Invoke(report);
             return Task.CompletedTask;
         }
     }
 
     private sealed class RecordingBackend(
-        bool cancelAfterFirstCandidateCapture = false,
-        bool failKeepPreflight = false,
-        bool missingIsrSamples = false,
-        bool changedIsrSource = false,
-        bool noisyConfirmation = false,
-        bool failRecoveryVerificationAfterKeepFailure = false,
-        bool noisyScreening = false,
-        bool noisyFinalistReScreen = false) : IGpuAutoAffinitySessionBackend
+        bool finalEtwUnavailable = false,
+        bool failKeep = false,
+        bool failRecoveryVerification = false,
+        bool cancelDuringFirstScoredCandidate = false,
+        bool unstableFinalists = false) : IGpuAutoAffinitySessionBackend
     {
-        private int captureSequence;
-        private int originalControlSequence;
-        private int confirmationCandidateSequence;
-        private int finalistScoredSequence;
-        private bool cancelled;
-        private bool keepPreflightFailed;
-        private bool failNextOriginalVerification;
         private readonly Dictionary<Guid, GpuAffinityCandidate> active = [];
-        private Guid? keptExperimentId;
-        private GpuAffinityCandidate? keptCandidate;
+        private int captureSequence;
+        private int finalistSequence;
+        private bool cancelled;
+        private bool keepFailed;
 
         internal List<string> Events { get; } = [];
 
@@ -332,21 +194,17 @@ public sealed class GpuAutoAffinitySessionTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Events.Add($"control:{request.Phase}:{request.RunNumber}");
-            var controlSequence = Interlocked.Increment(ref originalControlSequence);
-            var frameTime = controlSequence == 1 ? 13d : 10d;
-            return Task.FromResult(CreateObservation(request, null, frameTime));
+            Events.Add($"original:{request.Phase}:{request.RunNumber}");
+            return Task.FromResult(CreateObservation(request, null, Enumerable.Repeat(8d, 100).ToArray(), etwHealthy: true));
         }
 
-        public Task<Guid> ApplyCandidateAsync(
-            GpuAffinityCandidate candidate,
-            CancellationToken cancellationToken)
+        public Task<Guid> ApplyCandidateAsync(GpuAffinityCandidate candidate, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var experimentId = Guid.NewGuid();
-            active.Add(experimentId, candidate);
+            var id = Guid.NewGuid();
+            active.Add(id, candidate);
             Events.Add($"apply:{candidate.Processor}");
-            return Task.FromResult(experimentId);
+            return Task.FromResult(id);
         }
 
         public Task<GpuAutoAffinityTrialObservation> CaptureCandidateAsync(
@@ -357,43 +215,28 @@ public sealed class GpuAutoAffinitySessionTests
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = active[experimentId];
             Events.Add($"candidate:{request.Phase}:{request.RunNumber}:{candidate.Processor}");
-            if (cancelAfterFirstCandidateCapture && !cancelled)
+
+            if (cancelDuringFirstScoredCandidate &&
+                !cancelled &&
+                string.Equals(request.Phase, "screening", StringComparison.Ordinal))
             {
                 cancelled = true;
                 throw new OperationCanceledException("synthetic safe-stop request");
             }
 
-            var frameTime = candidate.Processor.Number switch
+            var periods = candidate.Processor.Number == 0
+                ? Enumerable.Repeat(5d, 99).Append(20d).ToArray()
+                : Enumerable.Repeat(6d, 99).Append(10d).ToArray();
+
+            if (unstableFinalists && string.Equals(request.Phase, "screening-finalists", StringComparison.Ordinal))
             {
-                2 => 8.5d,
-                3 => 8d,
-                _ => 10.2d,
-            };
-            if (noisyConfirmation && string.Equals(request.Phase, "confirmation", StringComparison.Ordinal))
-            {
-                var sequence = Interlocked.Increment(ref confirmationCandidateSequence);
-                frameTime = sequence % 2 == 0 ? 4d : 9d;
+                var sequence = Interlocked.Increment(ref finalistSequence);
+                var tail = sequence % 2 == 0 ? 30d : 6d;
+                periods = Enumerable.Repeat(6d, 99).Append(tail).ToArray();
             }
 
-            if (noisyScreening && string.Equals(request.Phase, "screening", StringComparison.Ordinal))
-            {
-                frameTime = candidate.Processor.Number == 2 ? 10d : 10.2d;
-            }
-
-            if (noisyScreening && string.Equals(request.Phase, "screening-finalists", StringComparison.Ordinal))
-            {
-                if (noisyFinalistReScreen)
-                {
-                    var sequence = Interlocked.Increment(ref finalistScoredSequence);
-                    frameTime = sequence % 2 == 0 ? 12d : 4d;
-                }
-                else
-                {
-                    frameTime = candidate.Processor.Number == 2 ? 4d : 10.2d;
-                }
-            }
-
-            return Task.FromResult(CreateObservation(request, candidate, frameTime));
+            var etwHealthy = !(finalEtwUnavailable && string.Equals(request.Phase, "final-verification", StringComparison.Ordinal));
+            return Task.FromResult(CreateObservation(request, candidate, periods, etwHealthy));
         }
 
         public Task RollbackAsync(Guid experimentId, CancellationToken cancellationToken)
@@ -401,10 +244,6 @@ public sealed class GpuAutoAffinitySessionTests
             var candidate = active[experimentId];
             Events.Add($"rollback:{candidate.Processor}");
             active.Remove(experimentId);
-            if (failRecoveryVerificationAfterKeepFailure && keepPreflightFailed)
-            {
-                failNextOriginalVerification = true;
-            }
             return Task.CompletedTask;
         }
 
@@ -412,32 +251,29 @@ public sealed class GpuAutoAffinitySessionTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = active[experimentId];
-            if (failKeepPreflight)
+            if (failKeep)
             {
-                keepPreflightFailed = true;
-                Events.Add($"keep-preflight-failed:{candidate.Processor}");
-                throw new InvalidOperationException("synthetic pre-keep verification failure");
+                keepFailed = true;
+                Events.Add($"keep-failed:{candidate.Processor}");
+                throw new InvalidOperationException("synthetic Keep failure");
             }
 
             Events.Add($"keep:{candidate.Processor}");
             active.Remove(experimentId);
-            keptExperimentId = experimentId;
-            keptCandidate = candidate;
             return Task.CompletedTask;
         }
 
         public Task<bool> VerifyOriginalStateAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (failNextOriginalVerification)
+            if (failRecoveryVerification && keepFailed)
             {
-                failNextOriginalVerification = false;
                 Events.Add("verify-original-failed");
                 return Task.FromResult(false);
             }
 
             Events.Add("verify-original");
-            return Task.FromResult(active.Count == 0 && keptCandidate is null);
+            return Task.FromResult(active.Count == 0);
         }
 
         public Task<bool> VerifyCandidateStateAsync(
@@ -446,41 +282,31 @@ public sealed class GpuAutoAffinitySessionTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (active.TryGetValue(experimentId, out var current) && current == candidate)
-            {
-                Events.Add($"verify-candidate:{candidate.Processor}");
-                return Task.FromResult(true);
-            }
-
-            if (keptExperimentId == experimentId && keptCandidate == candidate)
-            {
-                Events.Add($"verify-after-keep:{candidate.Processor}");
-                return Task.FromResult(true);
-            }
-
-            Events.Add($"verify-candidate:{candidate.Processor}");
-            return Task.FromResult(false);
+            var verified = active.TryGetValue(experimentId, out var current) && current == candidate;
+            Events.Add($"verify-candidate:{candidate.Processor}:{verified}");
+            return Task.FromResult(verified);
         }
 
         private GpuAutoAffinityTrialObservation CreateObservation(
             GpuAutoAffinityTrialRequest request,
             GpuAffinityCandidate? candidate,
-            double frameTime)
+            double[] framePeriods,
+            bool etwHealthy)
         {
             var processId = 77u;
             var started = DateTimeOffset.UnixEpoch.AddSeconds(Interlocked.Increment(ref captureSequence) * 40);
-            var frameCount = 100;
+            var frameCount = framePeriods.Length;
             var capture = new PresentMonFrameCaptureSnapshot(
                 PresentMonWorkloadCaptureStatus.Available,
                 processId,
                 request.Duration.TotalMilliseconds,
                 request.Duration.TotalMilliseconds,
                 new PresentMonApiVersionSnapshot(3, 4, 0),
-                Enumerable.Range(0, frameCount).Select(_ => new PresentMonFrameMetricsSnapshot(
+                framePeriods.Select(period => new PresentMonFrameMetricsSnapshot(
                     1,
-                    frameTime,
-                    frameTime * 0.7,
-                    frameTime * 0.3,
+                    period,
+                    period * 0.7,
+                    period * 0.3,
                     null,
                     5,
                     null,
@@ -513,21 +339,34 @@ public sealed class GpuAutoAffinitySessionTests
                 capture,
                 "2.5.1",
                 Guid.NewGuid(),
-                true,
-                0,
-                []);
-            var events = missingIsrSamples ? Array.Empty<KernelLatencyEvent>() : Enumerable.Range(0, frameCount)
+                etwHealthy,
+                etwHealthy ? 0 : 1,
+                [],
+                FramePeriodMilliseconds: framePeriods);
+
+            if (!etwHealthy || candidate is null)
+            {
+                return new GpuAutoAffinityTrialObservation(
+                    evidence,
+                    GpuBenchmarkContaminationContext.Clean,
+                    true,
+                    true,
+                    Placement: null,
+                    GpuDriverDpcDurationMicroseconds: [],
+                    GpuDriverIsrDurationMicroseconds: [],
+                    InterruptEvidence: null);
+            }
+
+            var events = Enumerable.Range(0, frameCount)
                 .Select(index => new KernelLatencyEvent(
                     KernelLatencyEventKind.Isr,
-                    candidate?.Processor.Number ?? 0,
+                    candidate.Processor.Number,
                     index,
                     5d,
                     0x1000,
                     null,
                     null,
-                    changedIsrSource && candidate is not null
-                        ? "nvlddmkm.sys"
-                        : @"C:\Windows\System32\drivers\dxgkrnl.sys"))
+                    @"C:\Windows\System32\drivers\dxgkrnl.sys"))
                 .ToArray();
             var target = new PnPDeviceSnapshot(
                 "PCI\\TEST",
@@ -546,11 +385,9 @@ public sealed class GpuAutoAffinitySessionTests
             return new GpuAutoAffinityTrialObservation(
                 evidence,
                 GpuBenchmarkContaminationContext.Clean,
-                StoredStateVerifiedBefore: true,
-                StoredStateVerifiedAfter: true,
-                candidate is null
-                    ? null
-                    : new GpuAutoAffinityPlacementProof(candidate.Processor, attribution.Events.Count, 0),
+                true,
+                true,
+                new GpuAutoAffinityPlacementProof(candidate.Processor, attribution.Events.Count, 0),
                 Enumerable.Repeat(20d, frameCount).ToArray(),
                 attribution.Events.Select(static item => item.DurationMicroseconds).ToArray(),
                 new GpuAutoAffinityInterruptEvidence(
