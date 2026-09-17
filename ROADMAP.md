@@ -1,7 +1,7 @@
 # LatencyPilot Product Roadmap
 
 Status: **Authoritative completion plan**  
-Last updated: 2026-09-16
+Last updated: 2026-09-17
 
 LatencyPilot is complete only when it can safely measure a supported Windows 11 system, identify latency pressure, run narrowly scoped experiments, quantify target and collateral effects, and keep or restore supported changes with trustworthy recovery.
 
@@ -168,11 +168,13 @@ Automatic internal workflow:
 exact original/default affinity
 → normal-user deterministic D3D12 benchmark calibration
 → freeze worker map/workload/seed
-→ repeated original controls
+→ one non-reference original warm-up + two decision controls
 → screen every eligible physical core within v1 bound (max 16)
 → journaled apply / stored verify / exact-target activation
 → synchronized benchmark + ETW + raw PresentMon evidence
-→ direct target-only GPU ISR placement proof
+→ resolved single-adapter target-only ISR placement proof
+   (display KMD preferred; labelled dxgkrnl fallback only when unambiguous)
+→ repeated-side frame-p99 spread <=20% before pooled comparison
 → exact rollback before next screening candidate
 → SMT sibling refinement of winning physical core
 → fixed ABBA + BAAB finalist confirmation
@@ -204,11 +206,13 @@ Original/default Windows affinity is a real control and wins when no candidate e
 - [x] winning physical core receives eligible SMT sibling refinement;
 - [x] synchronized ETW + raw PresentMon + benchmark evidence per trial;
 - [x] exact stored-state verification around candidate measurement;
-- [x] direct resolved GPU-driver ISR runtime-placement verification with zero resolved off-target ISR;
+- [x] resolved single-adapter target-only ISR runtime-placement verification with zero resolved off-target ISR; display KMD is preferred and `dxgkrnl` fallback is accepted only when conservatively attributable on a single-adapter system;
 - [x] screening cannot Keep directly;
 - [x] fixed eight-run ABBA+BAAB confirmation;
+- [x] repeated-side frame-p99 spread above 20% fails closed as `Inconclusive` before pooled comparison;
 - [x] explicit named metric/guardrail interpretation without hidden weighted score;
 - [x] exact rollback between screening candidates and final RestoreOriginal/RecoveryRequired path;
+- [x] confirmation failure rollback must prove exact original state; failed verification is preserved with the original failure rather than discarded;
 - [x] late cancellation after final comparison still prevents Keep while candidate state is owned;
 - [x] development-only **Run GPU Gate A** App flow starts benchmark non-elevated, minimizes main window, shows real candidate/pass/progress/metric state and requests UAC only for the owner helper;
 - [x] **Stop safely** source preserves rollback/recovery ownership until terminal verification;
@@ -219,7 +223,7 @@ Original/default Windows affinity is a real control and wins when no candidate e
 
 ### Arming gates
 
-- [ ] **Gate A — internal physical benchmark + mutation proof:** exact-green clean revision; normal App/Service path; non-mutating D3D12 benchmark smoke; full bounded candidate search; current progress/taskbar/accessibility behavior; candidate stored-state + direct runtime ISR placement; exact rollback between candidates; balanced finalist Keep/Restore; Stop safely proof; repeated-search reproducibility/equivalence or explicit inconclusive result; one supported failure/recovery exercise; final known state + zero unresolved.
+- [ ] **Gate A — internal physical benchmark + mutation proof:** exact-green clean revision; normal App/Service path; non-mutating D3D12 benchmark smoke; full bounded candidate search; current progress/taskbar/accessibility behavior; candidate stored-state + resolved single-adapter target-only ISR placement; exact rollback between candidates; balanced finalist Keep/Restore with repeatability gate; Stop safely proof; repeated-search reproducibility/equivalence or explicit inconclusive result; one supported failure/recovery exercise; final known state + zero unresolved.
 - [ ] **Gate B — typed mutation IPC:** after Gate A only; mutation-specific typed/allowlisted commands and authorization. `MutationAvailable` remains false during source implementation.
 - [ ] **Gate C — physical IPC proof:** real App/client → Service mutation authorization, target identity, journal/recovery and exact rollback.
 - [ ] **Gate D — product arming:** expose normal-user `Auto-optimize GPU` only after Gate C and credible target/guardrail UX.
