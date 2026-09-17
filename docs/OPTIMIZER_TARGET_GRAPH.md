@@ -1,336 +1,130 @@
-# LatencyPilot Whole-System Optimizer Target Graph
+# LatencyPilot v1 Interrupt-Affinity Target Graph
 
-Status: **Authoritative design input for Phases 3–6**  
-Last updated: 2026-09-17
+Status: **Authoritative v1 topology input; whole-system optimizer design superseded for v1**  
+Last updated: 2026-09-18
 
-LatencyPilot must not become a GPU-only affinity tool. The one-click optimizer is a whole-system experiment orchestrator. It observes every DPC/ISR contributor it can attribute, then applies only narrow, supported, reversible mutations to the active hardware paths that can plausibly affect the current workload.
+ADR 0006 narrows the v1 automatic product. LatencyPilot v1 does **not** attempt to optimize every DPC/ISR-producing subsystem. Its automatic path is intentionally limited to the GPU interrupt target and the primary input device's exact xHCI/controller path, with rollback and runtime verification.
 
-The core rule is:
+Broad kernel observation remains useful: unsupported contributors can still be shown as evidence. Presence in inventory never grants mutation authority.
 
-```text
-Discover actual active path
-→ identify dependencies and shared hardware
-→ measure
-→ choose a narrow supported experiment
-→ snapshot exact original state
-→ journal
-→ apply one change
-→ verify actual applied state
-→ measure target + guardrails
-→ keep or revert
-```
-
-A device being present is not enough reason to mutate it. Disabled radios, unused adapters, inactive GPUs and unrelated audio endpoints are inventory/context unless runtime evidence makes them relevant.
-
-## 1. Universal observation, selective mutation
-
-LatencyPilot should not maintain a brittle hardcoded list of "bad drivers". Kernel observation remains universal: every attributable DPC/ISR module is eligible to become a suspect regardless of whether it belongs to a currently supported optimizer domain.
-
-Known latency-sensitive domains are used for topology mapping, guardrails and supported experiments:
-
-- graphics/display adapters;
-- audio adapters and active render/capture endpoints;
-- keyboard, mouse and other HID input devices;
-- USB hubs/controllers, especially xHCI;
-- wired network adapters;
-- Wi-Fi adapters/radios;
-- Bluetooth radios/transports;
-- storage/NVMe/SATA/SCSI controllers when they appear in latency evidence;
-- system/ACPI/bus devices as context and attribution targets;
-- CPU topology, processor groups, SMT and heterogeneous core classes.
-
-Unknown or unsupported contributors remain visible with raw evidence. They must never be converted into guessed tweaks.
-
-## 2. Runtime dependency graph
-
-The optimizer reasons about paths, not isolated rows in Device Manager.
-
-Conceptually:
+## 1. v1 runtime dependency graph
 
 ```text
-workload process
- ├─ presentation path
- │   ├─ active DXGI adapter / GPU
- │   ├─ display output / monitor
- │   └─ PresentMon frame/display metrics
+Windows session
+ ├─ GPU path
+ │   └─ target hardware display adapter
+ │       └─ GPU interrupt target CPU
  │
- ├─ audio path
- │   └─ active audio endpoint
- │       └─ underlying audio adapter/function
- │           ├─ GPU HDMI/DisplayPort audio
- │           ├─ onboard/PCIe audio
- │           ├─ USB audio → USB hub → xHCI
- │           └─ Bluetooth audio → Bluetooth radio/transport
- │
- ├─ input path
- │   └─ keyboard/mouse/HID
- │       ├─ USB → hub/port → xHCI
- │       └─ Bluetooth → Bluetooth radio/transport
- │
- ├─ network path
- │   └─ active interface
- │       ├─ Ethernet NIC → NDIS/RSS
- │       └─ Wi-Fi adapter/radio → WLAN/NDIS
- │
- └─ CPU execution/interrupt path
-     ├─ processor group
-     ├─ physical core
-     ├─ SMT sibling(s)
-     └─ heterogeneous efficiency/performance class
+ └─ primary input path
+     └─ Raw Input device
+         └─ PnP ancestry
+             └─ USB hub / exact port
+                 └─ xHCI interrupt-owning controller
+                     └─ selected non-GPU CPU
 ```
 
-Current source captures PnP parent identity and provides a bounded `DeviceRelationshipGraph` for ancestor/shared-parent reasoning. Orchestration must use those relationships rather than treating shared transports as independent.
-
-A combo Wi-Fi/Bluetooth device, USB audio plus mouse on one xHCI controller, or GPU plus HDMI audio are not independent when they share hardware or restart semantics.
-
-## 3. GPU and multiple-adapter systems
-
-Windows can expose several graphics adapters, including integrated GPUs, discrete GPUs and software adapters. LatencyPilot must enumerate hardware adapters and prove which adapter owns the target workload before arming a product GPU mutation.
-
-Current **Gate A** ranked auto-affinity source deliberately supports only a single hardware graphics adapter for authoritative mutation evidence. It maps the exact PnP display target to one DXGI hardware adapter and fails closed when multiple hardware adapters make workload routing ambiguous. This conservative Gate A rule avoids inventing PresentMon Service/device-ID coupling merely to guess a route.
-
-Long-term product behavior for hybrid/multi-adapter systems remains:
-
-1. enumerate DXGI adapters and retain stable adapter identity/LUID where available;
-2. exclude software render adapters from hardware tuning candidates;
-3. prove the workload/present stream's active adapter with an authoritative route;
-4. account for hybrid/cross-adapter presentation rather than assuming the dGPU owns every displayed frame;
-5. mutate only the resolved target adapter;
-6. treat other GPUs as context/guardrails unless the workload uses them;
-7. fail closed when adapter identity is ambiguous.
-
-An iGPU plus dGPU is therefore not inherently an error for the future product, but it remains outside the current Gate A mutation proof until direct workload-to-adapter routing is implemented and validated.
-
-## 4. GPU-backed HDMI/DisplayPort audio
-
-Audio must be tied to the actual active endpoint, not to a generic "sound card" assumption.
-
-Current source can read the default render endpoint roles and walk the Core Audio device-topology connection far enough to retain the connected hardware-topology device ID when Windows exposes it. That evidence must be reconciled with PnP ancestry before it becomes a mutation guardrail.
-
-For systems where sound is rendered through a monitor over HDMI/DisplayPort, the active audio endpoint can belong to the GPU/display-audio path. LatencyPilot must therefore resolve:
+CPU topology remains a shared dependency:
 
 ```text
-default/selected audio render endpoint
-→ endpoint topology
-→ underlying adapter/function
-→ PnP ancestry/shared GPU relationship
+processor group
+→ physical core
+→ logical processor / SMT sibling
+→ CPU-set eligibility / topology context
 ```
 
-If the active endpoint is GPU-backed, a GPU restart or interrupt experiment must include audio guardrails such as endpoint continuity, glitch/dropout evidence where available and unexpected endpoint/device reset. It must not independently optimize an unused onboard audio controller just because it is present.
+Candidate generation must use Windows topology rather than even/odd CPU-number assumptions. CPU0 is not automatically excluded.
 
-If the active endpoint is USB or Bluetooth, the corresponding transport/controller becomes part of the dependency graph instead.
+## 2. GPU path
 
-## 5. Keyboard and mouse latency
+Current Gate A supports only cases where the target GPU can be resolved conservatively without guessing. Multi/hybrid-GPU routing remains fail-closed until the workload-to-adapter route is directly proven.
 
-Input optimization is not a single registry tweak.
+GPU automatic search:
 
-Current source now includes:
+```text
+all eligible physical-core representatives
+→ one scored screen each after apply/restart/warm-up
+→ rank by 1% low → 0.1% low → AVG; p99 context
+→ two additional scored re-tests for best up to three
+→ finalist repeatability
+→ final ETW target-only ISR placement proof
+→ Keep or exact RestoreOriginal
+```
 
-- Raw Input device discovery and stable PnP route correlation;
+Windows default is exact recovery/reference state, not a fixed minimum-improvement winner gate.
+
+## 3. Input / USB / xHCI path
+
+Current read-only source already provides:
+
+- Raw Input device identity;
+- stable PnP ancestry;
 - documented USB hub interface/IOCTL enumeration;
-- unique driver-key → hub/port correlation with explicit ambiguity/unavailability;
-- exact xHCI controller ancestry where it can be proven;
-- bounded host-observable Raw Input timing capture;
-- median/p95/p99 interval, observed report rate, tail jitter, long-gap and burst/coalescing evidence;
-- xHCI module-attributed DPC/ISR readiness evidence;
-- App inspector wiring for route/port evidence and explicit on-demand host timing capture.
+- exact unique driver-key → hub/port correlation where available;
+- xHCI controller identity;
+- host-observable Raw Input timing;
+- xHCI module-attributed DPC/ISR evidence.
 
-The evidence boundary remains strict:
+The evidence boundary remains:
 
 ```text
-host-observable Raw Input dispatch timing
+host-observable Raw Input timing
 != physical switch latency
 != click-to-photon latency
 ```
 
-The source can therefore characterize the Windows-host input path without claiming a hardware latency measurement it does not have.
+After the GPU winner is fixed, v1 selects a separate CPU from remaining interrupt headroom using DPC duration, ISR duration and tail spikes. Counts are visible context rather than the sole decision rule. The mutation target is the exact interrupt-owning xHCI/controller, not blindly the leaf mouse.
 
-A system-changing xHCI/controller-affinity experiment remains deliberately unarmed and its mutation source remains deferred until the shared GPU mutation substrate passes physical Gate A. When that gate is satisfied, any xHCI candidate must still account for collateral devices sharing the controller and preserve exact rollback/recovery semantics.
+System-changing xHCI affinity remains unarmed until the GPU Gate A mutation/recovery substrate is physically proven. This is sequencing, not a change in v1 scope.
 
-## 6. Ethernet, Wi-Fi and Bluetooth
+## 4. Shared-controller guardrails
 
-Networking is path-aware.
+A USB controller can own more than the selected input device. Before xHCI mutation, LatencyPilot must retain the exact controller route and treat other active devices on that controller as collateral context/guardrails. It must not pretend the mouse is an isolated interrupt source when the controller is shared.
 
-For wired Ethernet, current read-only/readiness source already provides:
+## 5. GPU final-placement guardrail
 
-- authoritative `Root\StandardCimv2` `MSFT_NetAdapterRssSettingData` state;
-- RSS enabled/support state, MSI/MSI-X provider fields, queue/message counts, profile, processor range and processor/indirection evidence when exposed;
-- conservative provider→PnP correlation;
-- vendor-driver DPC/ISR attribution kept distinct from generic NDIS evidence;
-- a controlled local benchmark interpretation contract for RTT, jitter, loss, throughput and CPU guardrails;
-- Internet observations treated as supplemental rather than authoritative local adapter evidence.
+Screening can continue when ETW is unavailable, provided controlled benchmark evidence and stored-state identity are valid. Healthy ETW proving wrong/off-target GPU placement invalidates the candidate.
 
-For heterogeneous CPUs, Windows RSS behavior can itself be topology-aware. LatencyPilot must not blindly force a P-core or E-core policy when the active RSS profile is designed to balance across heterogeneous processors. Windows/default behavior remains a control candidate for RSS experiments where the domain's comparison contract requires it.
+Final Keep is different: it requires clean ETW, attributable GPU ISR samples and zero resolved off-target ISR. Missing proof means RestoreOriginal.
 
-A system-changing RSS/affinity experiment remains deliberately unarmed and its mutation source is deferred until Gate A proves the shared mutation/recovery substrate physically.
+## 6. What stays observable but is not v1 automatic mutation
 
-For Wi-Fi:
+The repository may continue to inventory/measure:
 
-- inventory the adapter even when disconnected/disabled;
-- if the radio/interface is off or unused, skip mutation rather than turning it on;
-- when active, add WLAN/NDIS connection-quality and latency evidence before candidate testing.
+- NIC/RSS/network drivers;
+- audio endpoints/adapters;
+- Wi-Fi/Bluetooth;
+- storage and system drivers;
+- profile/Pareto/future workload policies.
 
-For Bluetooth:
+These sources are useful for diagnostics and future work, but v1 does not automatically mutate them. There is no generic “optimize every driver” traversal and no hidden cross-domain weighted score.
 
-- inventory the radio and dependent input/audio devices;
-- if Bluetooth is off and no active workload dependency uses it, skip it;
-- when active, treat Bluetooth audio/input transport as a latency domain and guardrail.
+## 7. Future target graph
 
-Combo Wi-Fi/Bluetooth hardware must be represented as shared hardware when PnP ancestry shows that relationship.
+Post-v1 work may expand into network, audio or multi-subsystem orchestration only after each domain has a documented supported mutation mechanism, independent physical evidence, exact rollback and clear guardrails. The old whole-system optimizer concept is historical design context, not a v1 completion requirement.
 
-## 7. Storage and other drivers
-
-Storage is not a primary tuning domain merely because it exists, but NVMe/SATA/SCSI/storage drivers can create meaningful DPC/ISR or workload stalls. Therefore:
-
-- storage controllers/devices are part of latency-sensitive inventory;
-- storage modules remain eligible suspects from ETW attribution;
-- workload I/O context may promote storage into an active domain;
-- no storage mutation is allowed until a documented, reversible mechanism with clear guardrails exists.
-
-The same rule applies to system/ACPI/bus drivers: observe broadly, mutate only when a specific supported experiment exists.
-
-## 8. Heterogeneous CPUs: P-cores, E-cores and beyond
-
-LatencyPilot must not hardcode Intel marketing labels into the core model. Windows exposes an `EfficiencyClass`; higher numerical classes represent intrinsically faster but less power-efficient cores, while lower classes represent more efficient cores. This is a relative topology property, not proof that a given interrupt or workload should always run on the highest class.
-
-Current source captures processor topology together with CPU-set state including efficiency/scheduling class, parked/allocated flags and processor-group identity. GPU candidate generation consumes that evidence while remaining bounded and single-group for the current KAFFINITY writer.
-
-Current policy:
-
-- retain physical-core and SMT identity;
-- retain processor group identity;
-- retain CPU-set availability/parked/allocated context;
-- expose heterogeneous-core detection;
-- bounded candidate screening must represent distinct efficiency classes instead of silently sampling only one class;
-- within a physical core, avoid pretending SMT siblings are independent physical candidates;
-- never hard-ban CPU 0;
-- passive measured pressure is ordering/context only for GPU auto-affinity;
-- active repeated outcome decides GPU finalists;
-- multi-group machines remain fail-closed for the current single-group GPU affinity writer until a group-correct mutation model exists.
-
-## 9. GPU ranked-search contract inside one-click orchestration
-
-The long-term user experience is one high-level action, but internally it remains dependency-aware and domain-specific:
+## 8. Current execution order
 
 ```text
-Optimize this PC / Optimize this workload
-    ↓
-Preflight + current-state discovery
-    ↓
-Resolve active workload, GPU(s), audio endpoint, input transport, network path
-    ↓
-Build dependency graph and shared-controller constraints
-    ↓
-Acquire the evidence contract required by each domain
-    ↓
-Run one reversible experiment at a time
-    ↓
-After every mutation: verify state + target + cross-domain guardrails
-    ↓
-Keep winner or restore exact original state
-    ↓
-Move to next independent domain only when safe
-    ↓
-Final combined confirmation
-    ↓
-Present raw deltas, trade-offs and Restore Baseline
+exact-head green CI
+→ physical GPU Gate A
+→ typed mutation-specific IPC / physical client-service proof
+→ normal-user GPU arming
+→ automatic USB CPU selection
+→ reversible xHCI mutation + physical proof
+→ combined one-reboot GPU+xHCI verification
+→ before/after UX + Restore Windows Defaults
+→ release/accessibility/recovery closure
 ```
 
-The combined optimizer must not stack several unverified changes and then guess which one helped.
+`ROADMAP.md` and `PROJECT_STATUS.md` own exact progress/blockers.
 
-Evidence v9 and the App keep a critical distinction explicit for steady/manual evidence:
+## 9. Platform references
 
-```text
-Valid for comparison
-!=
-Ready for optimization
-```
+- Microsoft processor topology / CPU Sets for processor identity and eligibility.
+- Microsoft DXGI/PnP for display-adapter identity.
+- Microsoft Raw Input and USB hub/IOCTL documentation for input route topology.
+- Microsoft interrupt-affinity policy documentation for supported affinity semantics.
+- Microsoft ETW/WPT semantics for runtime DPC/ISR evidence.
+- Intel/GameTechDev PresentMon as an independent frame-cadence cross-check.
 
-The automatic GPU affinity search intentionally uses a separate whole-run method: `gpu-affinity-benchmark-v1`. It does **not** reuse the steady `baseline-quality-v2 + workload-stability-v1` readiness gate. Its validity is owned by frozen-workload/process/GPU identity, ETW integrity, exact candidate state, target-only ISR placement, raw standalone-PresentMon frame evidence and repeated candidate stability.
-
-GPU ranking semantics:
-
-```text
-original/default = reference + exact recovery state
-all eligible physical cores = actively measured candidates
-apply/restart → 5 s non-scored warm-up → two scored runs → rollback
-invalid/Inconclusive/unstable = not rankable
-rankable = lower median run-level frame-p99 is better
-best up-to-three = fresh re-screen
-fresh physical-core winner = SMT sibling refinement
-finalist = ABBA + BAAB confirmation with warm-up after each state transition
-```
-
-The original/default Windows affinity is **not** the minimum-improvement winner gate for this forced-CPU search. The generic Original-vs-candidate comparison remains transparent context and can still expose trade-offs; it does not erase the best valid forced-CPU result merely because Windows default measured within a 3% band or faster on that comparison.
-
-## 10. Cross-domain guardrails
-
-Examples of required dependency-aware guardrails:
-
-- GPU affinity change → frame metrics + display latency + GPU-backed audio continuity + total DPC/ISR;
-- xHCI/input change → Raw Input timing + USB controller DPC + any audio/storage device sharing that controller;
-- NIC/RSS change → RTT/jitter/loss + throughput + CPU pressure + total DPC/ISR;
-- Wi-Fi/Bluetooth shared transport change → both active radio-dependent paths;
-- CPU/core-placement experiment → target metric plus contention on other active latency-sensitive domains.
-
-For generic cross-domain comparison, a local win with a material collateral regression remains `Tradeoff`, not `Improved`. For the current GPU forced-CPU **ranking**, comparison verdicts are retained as context, while invalid/`Inconclusive` evidence, placement failure and repeatability failure are hard rankability gates. The product does not use a hidden weighted guardrail score to choose a CPU.
-
-## 11. Current implementation sequence
-
-Already present in source and therefore **not** future scaffolding:
-
-- durable SQLite mutation journal/recovery substrate;
-- processor topology + CPU-set evidence;
-- present PnP inventory and parent relationships;
-- representative GPU/NIC/xHCI evidence;
-- Core Audio default-render route discovery;
-- Raw Input device route discovery and bounded host timing;
-- documented USB hub/port correlation and xHCI ancestry;
-- StandardCimv2 RSS inventory/correlation and local network readiness interpretation;
-- DXGI graphics-adapter identity and conservative single-adapter Gate A continuity;
-- pinned standalone PresentMon 2.5.1 console capture with official SHA-256 verification and LatencyPilot-controlled packaged/cache provisioning;
-- `Sylvan.Data.Csv` parsing of PresentMon output rather than custom CSV infrastructure;
-- bounded GPU-affinity candidate generation;
-- explicit steady baseline/workload readiness for the steady/manual evidence product;
-- separate `gpu-affinity-benchmark-v1` readiness for automatic GPU ranking;
-- exact original/candidate stored-state apply/revert path;
-- exact-target SetupAPI device refresh/restart checks;
-- synchronized ETW + raw standalone-PresentMon GPU evidence;
-- runtime GPU ISR processor-placement verification;
-- non-scored post-transition warm-up;
-- transparent median frame-p99 candidate ranking + fresh best-up-to-three re-screen;
-- SMT sibling refinement and fixed ABBA+BAAB confirmation source;
-- startup recovery classification;
-- rollback-biased explicit recovery execution;
-- global Restore Baseline planning/execution for retained GPU changes;
-- owner-only non-shipping Gate A validation flow.
-
-Immediate remaining sequence is physical-gate driven rather than source-churn driven:
-
-1. obtain exact-final-HEAD successful hosted Tests for the current ranked/standalone-collector revision;
-2. close the remaining owner-local **Phase 2 read-only physical validation** on the exact current revision;
-3. **Gate A:** physically prove standalone PresentMon collection, post-transition stabilization, bounded all-core ranking, fresh top-candidate re-screen, SMT refinement, target-only ISR placement, exact rollback, balanced finalist keep/restore, Stop safely and one supported failure/recovery path while protocol v6 stays read-only;
-4. repeat the whole ranked search to prove equivalent/reproducible selection or explicit evidence-based inconclusive behavior;
-5. **Gate B:** only after Gate A, implement mutation-specific typed/allowlisted IPC and mutation authorization while keeping the product unarmed during development;
-6. **Gate C:** physically validate the real client/App → Service mutation path, including authorization, journal ownership, restart/recovery and exact rollback;
-7. **Gate D:** arm the supported user-facing GPU workflow only after Gate C and the required target/guardrail UX are credible;
-8. implement and physically validate the supported xHCI/controller-affinity mutation experiment using the proven shared safety substrate;
-9. implement and physically validate the supported NIC/RSS mutation experiment;
-10. combine only physically proven per-domain experiments into bounded one-click orchestration with Pareto/guardrail handling and Restore Baseline;
-11. finish release/accessibility/representative-hardware closure for 1.0.
-
-Until Gate A evidence exists, USB/NIC mutation source and product arming are sequencing targets, not permission to duplicate an unproven mutation path. `PROJECT_STATUS.md` owns the exact current execution ladder and physical blockers.
-
-## 12. Primary references
-
-- Microsoft `PROCESSOR_RELATIONSHIP` / `SYSTEM_CPU_SET_INFORMATION`: heterogeneous core efficiency-class semantics.
-- Microsoft CPU Sets: current CPU-set state and assignment APIs.
-- Microsoft system-defined device setup classes: Display, Media, Net, HID, Keyboard, Mouse, Bluetooth, USB, storage and system classes.
-- Microsoft Raw Input APIs: keyboard/mouse/HID host-observable input.
-- Microsoft USB hub/interface documentation: authoritative hub/port/controller correlation semantics.
-- Microsoft Core Audio / MMDevice / DeviceTopology: active audio endpoints and adapter topology.
-- Microsoft DXGI: multi-adapter enumeration.
-- Microsoft RSS/NDIS documentation: processor distribution, RSS profiles and heterogeneous-CPU considerations.
-- Intel/GameTechDev PresentMon: standalone per-frame capture/CSV semantics and graphics telemetry.
-
-Product decisions in this document remain LatencyPilot decisions; external documentation defines platform semantics, not universal optimization winners.
+External docs define platform semantics; local measurement decides the selected CPU on the tested machine.
