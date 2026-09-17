@@ -1,7 +1,7 @@
 # LatencyPilot Whole-System Optimizer Target Graph
 
 Status: **Authoritative design input for Phases 3–6**  
-Last updated: 2026-09-15
+Last updated: 2026-09-17
 
 LatencyPilot must not become a GPU-only affinity tool. The one-click optimizer is a whole-system experiment orchestrator. It observes every DPC/ISR contributor it can attribute, then applies only narrow, supported, reversible mutations to the active hardware paths that can plausibly affect the current workload.
 
@@ -85,21 +85,21 @@ A combo Wi-Fi/Bluetooth device, USB audio plus mouse on one xHCI controller, or 
 
 ## 3. GPU and multiple-adapter systems
 
-Windows can expose several graphics adapters, including integrated GPUs, discrete GPUs and software adapters. LatencyPilot must enumerate all real hardware adapters and resolve which adapter is actually presenting the target workload before arming a GPU mutation.
+Windows can expose several graphics adapters, including integrated GPUs, discrete GPUs and software adapters. LatencyPilot must enumerate hardware adapters and prove which adapter owns the target workload before arming a product GPU mutation.
 
-Current source includes DXGI graphics-adapter identity plus PresentMon graphics-device introspection/correlation. The end-to-end experiment still must fail closed whenever workload-to-adapter identity is not authoritative enough for mutation.
+Current **Gate A** ranked auto-affinity source deliberately supports only a single hardware graphics adapter for authoritative mutation evidence. It maps the exact PnP display target to one DXGI hardware adapter and fails closed when multiple hardware adapters make workload routing ambiguous. This conservative Gate A rule avoids inventing PresentMon Service/device-ID coupling merely to guess a route.
 
-Required behavior:
+Long-term product behavior for hybrid/multi-adapter systems remains:
 
 1. enumerate DXGI adapters and retain stable adapter identity/LUID where available;
 2. exclude software render adapters from hardware tuning candidates;
-3. correlate the workload/present stream with the active adapter using PresentMon/DXGI evidence;
-4. account for hybrid/cross-adapter presentation instead of assuming the dGPU owns every displayed frame;
+3. prove the workload/present stream's active adapter with an authoritative route;
+4. account for hybrid/cross-adapter presentation rather than assuming the dGPU owns every displayed frame;
 5. mutate only the resolved target adapter;
 6. treat other GPUs as context/guardrails unless the workload uses them;
 7. fail closed when adapter identity is ambiguous.
 
-An iGPU plus dGPU is therefore not an error case and does not imply that both should be tuned.
+An iGPU plus dGPU is therefore not inherently an error for the future product, but it remains outside the current Gate A mutation proof until direct workload-to-adapter routing is implemented and validated.
 
 ## 4. GPU-backed HDMI/DisplayPort audio
 
@@ -160,7 +160,7 @@ For wired Ethernet, current read-only/readiness source already provides:
 - a controlled local benchmark interpretation contract for RTT, jitter, loss, throughput and CPU guardrails;
 - Internet observations treated as supplemental rather than authoritative local adapter evidence.
 
-For heterogeneous CPUs, Windows RSS behavior can itself be topology-aware. LatencyPilot must not blindly force a P-core or E-core policy when the active RSS profile is designed to balance across heterogeneous processors. Windows/default behavior remains a control candidate.
+For heterogeneous CPUs, Windows RSS behavior can itself be topology-aware. LatencyPilot must not blindly force a P-core or E-core policy when the active RSS profile is designed to balance across heterogeneous processors. Windows/default behavior remains a control candidate for RSS experiments where the domain's comparison contract requires it.
 
 A system-changing RSS/affinity experiment remains deliberately unarmed and its mutation source is deferred until Gate A proves the shared mutation/recovery substrate physically.
 
@@ -204,12 +204,13 @@ Current policy:
 - bounded candidate screening must represent distinct efficiency classes instead of silently sampling only one class;
 - within a physical core, avoid pretending SMT siblings are independent physical candidates;
 - never hard-ban CPU 0;
-- measured pressure and repeated outcome decide finalists;
+- passive measured pressure is ordering/context only for GPU auto-affinity;
+- active repeated outcome decides GPU finalists;
 - multi-group machines remain fail-closed for the current single-group GPU affinity writer until a group-correct mutation model exists.
 
-## 9. One-click orchestration order
+## 9. GPU ranked-search contract inside one-click orchestration
 
-The intended user experience is one high-level action, but internally it is dependency-aware:
+The long-term user experience is one high-level action, but internally it remains dependency-aware and domain-specific:
 
 ```text
 Optimize this PC / Optimize this workload
@@ -220,11 +221,7 @@ Resolve active workload, GPU(s), audio endpoint, input transport, network path
     ↓
 Build dependency graph and shared-controller constraints
     ↓
-Reuse or acquire valid baseline
-    ↓
-Require explicit optimizer readiness
-    ↓
-Rank evidence-backed domains
+Acquire the evidence contract required by each domain
     ↓
 Run one reversible experiment at a time
     ↓
@@ -241,7 +238,7 @@ Present raw deltas, trade-offs and Restore Baseline
 
 The combined optimizer must not stack several unverified changes and then guess which one helped.
 
-Evidence v9 and the App now make a critical distinction explicit before this flow starts:
+Evidence v9 and the App keep a critical distinction explicit for steady/manual evidence:
 
 ```text
 Valid for comparison
@@ -249,7 +246,22 @@ Valid for comparison
 Ready for optimization
 ```
 
-The GPU optimizer target uses the shared `baseline-quality-v2` + `workload-stability-v1` readiness contract and serializes the resulting `gpu-affinity-v1` eligibility/reason.
+The automatic GPU affinity search intentionally uses a separate whole-run method: `gpu-affinity-benchmark-v1`. It does **not** reuse the steady `baseline-quality-v2 + workload-stability-v1` readiness gate. Its validity is owned by frozen-workload/process/GPU identity, ETW integrity, exact candidate state, target-only ISR placement, raw standalone-PresentMon frame evidence and repeated candidate stability.
+
+GPU ranking semantics:
+
+```text
+original/default = reference + exact recovery state
+all eligible physical cores = actively measured candidates
+apply/restart → 5 s non-scored warm-up → two scored runs → rollback
+invalid/Inconclusive/unstable = not rankable
+rankable = lower median run-level frame-p99 is better
+best up-to-three = fresh re-screen
+fresh physical-core winner = SMT sibling refinement
+finalist = ABBA + BAAB confirmation with warm-up after each state transition
+```
+
+The original/default Windows affinity is **not** the minimum-improvement winner gate for this forced-CPU search. The generic Original-vs-candidate comparison remains transparent context and can still expose trade-offs; it does not erase the best valid forced-CPU result merely because Windows default measured within a 3% band or faster on that comparison.
 
 ## 10. Cross-domain guardrails
 
@@ -261,7 +273,7 @@ Examples of required dependency-aware guardrails:
 - Wi-Fi/Bluetooth shared transport change → both active radio-dependent paths;
 - CPU/core-placement experiment → target metric plus contention on other active latency-sensitive domains.
 
-A local win with a material collateral regression is `Tradeoff`, not `Improved`.
+For generic cross-domain comparison, a local win with a material collateral regression remains `Tradeoff`, not `Improved`. For the current GPU forced-CPU **ranking**, comparison verdicts are retained as context, while invalid/`Inconclusive` evidence, placement failure and repeatability failure are hard rankability gates. The product does not use a hidden weighted guardrail score to choose a CPU.
 
 ## 11. Current implementation sequence
 
@@ -275,32 +287,37 @@ Already present in source and therefore **not** future scaffolding:
 - Raw Input device route discovery and bounded host timing;
 - documented USB hub/port correlation and xHCI ancestry;
 - StandardCimv2 RSS inventory/correlation and local network readiness interpretation;
-- DXGI/PresentMon graphics-device correlation;
-- PresentMon workload metric capture;
+- DXGI graphics-adapter identity and conservative single-adapter Gate A continuity;
+- pinned standalone PresentMon 2.5.1 console capture with official SHA-256 verification and LatencyPilot-controlled packaged/cache provisioning;
+- `Sylvan.Data.Csv` parsing of PresentMon output rather than custom CSV infrastructure;
 - bounded GPU-affinity candidate generation;
-- shared baseline/workload optimizer-readiness contract;
-- explicit evidence-v9 workload/optimizer readiness serialization;
+- explicit steady baseline/workload readiness for the steady/manual evidence product;
+- separate `gpu-affinity-benchmark-v1` readiness for automatic GPU ranking;
 - exact original/candidate stored-state apply/revert path;
 - exact-target SetupAPI device refresh/restart checks;
-- synchronized ETW + raw PresentMon GPU evidence;
+- synchronized ETW + raw standalone-PresentMon GPU evidence;
 - runtime GPU ISR processor-placement verification;
-- screening/finalist policy and fixed ABBA+BAAB confirmation source;
+- non-scored post-transition warm-up;
+- transparent median frame-p99 candidate ranking + fresh best-up-to-three re-screen;
+- SMT sibling refinement and fixed ABBA+BAAB confirmation source;
 - startup recovery classification;
 - rollback-biased explicit recovery execution;
 - global Restore Baseline planning/execution for retained GPU changes;
-- owner-only non-shipping Phase 3 physical-validation harness.
+- owner-only non-shipping Gate A validation flow.
 
-Immediate remaining sequence is now physical-gate driven rather than source-churn driven:
+Immediate remaining sequence is physical-gate driven rather than source-churn driven:
 
-1. close the remaining owner-local **Phase 2 read-only physical validation** on the exact current revision;
-2. **Gate A:** physically prove startup/recovery, unresolved-state survival/classification, exact-target restart/reboot-required behavior, one bounded GPU candidate apply → stored verification → runtime ISR placement → exact rollback, and one supported forced-failure recovery while protocol v6 stays read-only;
-3. **Gate B:** only after Gate A, implement mutation-specific typed/allowlisted IPC and mutation authorization while keeping the product unarmed during development;
-4. **Gate C:** physically validate the real client/App → Service mutation path, including authorization, journal ownership, restart/recovery and exact rollback;
-5. **Gate D:** arm the supported user-facing GPU workflow only after Gate C and the required target/guardrail UX are credible;
-6. implement and physically validate the supported xHCI/controller-affinity mutation experiment using the proven shared safety substrate;
-7. implement and physically validate the supported NIC/RSS mutation experiment;
-8. combine only physically proven per-domain experiments into bounded one-click orchestration with Pareto/guardrail handling and Restore Baseline;
-9. finish release/accessibility/representative-hardware closure for 1.0.
+1. obtain exact-final-HEAD successful hosted Tests for the current ranked/standalone-collector revision;
+2. close the remaining owner-local **Phase 2 read-only physical validation** on the exact current revision;
+3. **Gate A:** physically prove standalone PresentMon collection, post-transition stabilization, bounded all-core ranking, fresh top-candidate re-screen, SMT refinement, target-only ISR placement, exact rollback, balanced finalist keep/restore, Stop safely and one supported failure/recovery path while protocol v6 stays read-only;
+4. repeat the whole ranked search to prove equivalent/reproducible selection or explicit evidence-based inconclusive behavior;
+5. **Gate B:** only after Gate A, implement mutation-specific typed/allowlisted IPC and mutation authorization while keeping the product unarmed during development;
+6. **Gate C:** physically validate the real client/App → Service mutation path, including authorization, journal ownership, restart/recovery and exact rollback;
+7. **Gate D:** arm the supported user-facing GPU workflow only after Gate C and the required target/guardrail UX are credible;
+8. implement and physically validate the supported xHCI/controller-affinity mutation experiment using the proven shared safety substrate;
+9. implement and physically validate the supported NIC/RSS mutation experiment;
+10. combine only physically proven per-domain experiments into bounded one-click orchestration with Pareto/guardrail handling and Restore Baseline;
+11. finish release/accessibility/representative-hardware closure for 1.0.
 
 Until Gate A evidence exists, USB/NIC mutation source and product arming are sequencing targets, not permission to duplicate an unproven mutation path. `PROJECT_STATUS.md` owns the exact current execution ladder and physical blockers.
 
@@ -314,6 +331,6 @@ Until Gate A evidence exists, USB/NIC mutation source and product arming are seq
 - Microsoft Core Audio / MMDevice / DeviceTopology: active audio endpoints and adapter topology.
 - Microsoft DXGI: multi-adapter enumeration.
 - Microsoft RSS/NDIS documentation: processor distribution, RSS profiles and heterogeneous-CPU considerations.
-- Intel/GameTechDev PresentMon: per-frame CPU/GPU/display/input metrics, device identity and multi-device telemetry.
+- Intel/GameTechDev PresentMon: standalone per-frame capture/CSV semantics and graphics telemetry.
 
 Product decisions in this document remain LatencyPilot decisions; external documentation defines platform semantics, not universal optimization winners.
