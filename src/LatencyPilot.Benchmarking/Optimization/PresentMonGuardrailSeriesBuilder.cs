@@ -22,8 +22,6 @@ public static class PresentMonGuardrailSeriesBuilder
     {
         ArgumentNullException.ThrowIfNull(windows);
 
-        // These are window aggregates, not raw frame samples. Keep the whole
-        // sequence: silently dropping failed windows would bias comparisons.
         var available = windows.ToArray();
         var result = new Dictionary<string, MetricSeries>(StringComparer.Ordinal);
         if (available.Length == 0 || available.Any(static window =>
@@ -45,36 +43,12 @@ public static class PresentMonGuardrailSeriesBuilder
             return result.AsReadOnly();
         }
 
-        AddLowerIsBetter(
-            result,
-            CpuFrameTimeMetric,
-            available,
-            static chain => chain.CpuFrameTimeMilliseconds);
-        AddHigherIsBetter(
-            result,
-            PresentedFpsMetric,
-            available,
-            static chain => chain.PresentedFps);
-        AddHigherIsBetter(
-            result,
-            DisplayedFpsMetric,
-            available,
-            static chain => chain.DisplayedFps);
-        AddLowerIsBetter(
-            result,
-            DroppedFrameRatioMetric,
-            available,
-            static chain => chain.DroppedFrameRatio);
-        AddLowerIsBetter(
-            result,
-            GpuLatencyMetric,
-            available,
-            static chain => chain.GpuLatencyMilliseconds);
-        AddLowerIsBetter(
-            result,
-            DisplayLatencyMetric,
-            available,
-            static chain => chain.DisplayLatencyMilliseconds);
+        AddLowerIsBetter(result, CpuFrameTimeMetric, available, static chain => chain.CpuFrameTimeMilliseconds);
+        AddHigherIsBetter(result, PresentedFpsMetric, available, static chain => chain.PresentedFps);
+        AddHigherIsBetter(result, DisplayedFpsMetric, available, static chain => chain.DisplayedFps);
+        AddLowerIsBetter(result, DroppedFrameRatioMetric, available, static chain => chain.DroppedFrameRatio);
+        AddLowerIsBetter(result, GpuLatencyMetric, available, static chain => chain.GpuLatencyMilliseconds);
+        AddLowerIsBetter(result, DisplayLatencyMetric, available, static chain => chain.DisplayLatencyMilliseconds);
         AddLowerIsBetter(result, CpuBusyMetric, available, static chain => chain.CpuBusyMilliseconds);
         AddLowerIsBetter(result, CpuWaitMetric, available, static chain => chain.CpuWaitMilliseconds);
         AddLowerIsBetter(result, GpuTimeMetric, available, static chain => chain.GpuTimeMilliseconds);
@@ -89,9 +63,11 @@ public static class PresentMonGuardrailSeriesBuilder
         ArgumentNullException.ThrowIfNull(capture);
 
         var result = new Dictionary<string, MetricSeries>(StringComparer.Ordinal);
+        var supportedSource = capture.ApiVersion is not null ||
+            GpuBenchmarkEvidenceInterpreter.IsStandaloneConsoleCapture(capture);
         if (!capture.IsAvailable ||
             capture.ProcessId == 0 ||
-            capture.ApiVersion is null ||
+            !supportedSource ||
             !double.IsFinite(capture.RequestedWindowMilliseconds) || capture.RequestedWindowMilliseconds <= 0 ||
             !double.IsFinite(capture.ActualWindowMilliseconds) || capture.ActualWindowMilliseconds <= 0 ||
             capture.EndedAtUtc < capture.StartedAtUtc ||
@@ -119,9 +95,6 @@ public static class PresentMonGuardrailSeriesBuilder
                 dropped.Select(static value => value!.Value ? 1d : 0d));
         }
 
-        // Presented/displayed FPS are aggregate PresentMon metrics, not one
-        // observation per raw frame. Do not synthesize FPS from frame time or
-        // duplicate an aggregate to satisfy confirmation sample thresholds.
         return result.AsReadOnly();
     }
 
