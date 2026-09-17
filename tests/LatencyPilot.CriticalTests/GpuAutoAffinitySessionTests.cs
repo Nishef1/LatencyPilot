@@ -130,7 +130,7 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "smt-refinement"));
         Assert.IsTrue(observer.Reports.Any(static report => report.Phase == "confirmation"));
         Assert.IsTrue(result.Report.Trials.Any(static trial =>
-            trial.Phase == "screening-warmup" && trial.Processor is not null));
+            trial.Phase == "screening-warmup" && trial.Processor is null));
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "screening-finalists-warmup"));
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "confirmation-warmup"));
 
