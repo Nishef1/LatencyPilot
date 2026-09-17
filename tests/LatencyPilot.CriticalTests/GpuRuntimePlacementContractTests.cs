@@ -270,7 +270,7 @@ public sealed class GpuRuntimePlacementContractTests
                 GraphicsTarget = laterContext.GraphicsTarget with { PresentMonDeviceId = 8 },
             }).IsStable);
 
-        Assert.IsTrue(GpuOptimizationCaptureContinuity.Evaluate(
+        Assert.IsFalse(GpuOptimizationCaptureContinuity.Evaluate(
             stableContext,
             laterContext with
             {
