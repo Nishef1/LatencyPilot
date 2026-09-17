@@ -205,7 +205,7 @@
     <x:Double x:Key="TitleBarHeight">50</x:Double>
     <x:Double x:Key="InitialWindowWidth">1664</x:Double>
     <x:Double x:Key="InitialWindowHeight">936</x:Double>
-    <x:Double x:Key="ContentMaxWidth">1440</x:Double>
+    <x:Double x:Key="ContentMaxWidth">1360</x:Double>
     <x:Double x:Key="ChartMinHeight">226</x:Double>
     <x:Double x:Key="DashboardGap">16</x:Double>
 

@@ -27,6 +27,8 @@ public sealed partial class MainWindow
 
         UpdateAppearanceMenu();
         RootGrid.SizeChanged += (_, _) => ApplyDashboardLayout();
+        AppNavigationView.PaneOpened += (_, _) => ApplyDashboardLayout();
+        AppNavigationView.PaneClosed += (_, _) => ApplyDashboardLayout();
         ServiceStatusBadgeText.RegisterPropertyChangedCallback(
             TextBlock.TextProperty,
             (_, _) => UpdateServiceStatusVisibility());
@@ -91,7 +93,10 @@ public sealed partial class MainWindow
 
     private void ApplyDashboardLayout()
     {
-        var contentWidth = Math.Max(0d, RootGrid.ActualWidth - AppNavigationView.CompactPaneLength - 64d);
+        var paneWidth = AppNavigationView.IsPaneOpen
+            ? AppNavigationView.OpenPaneLength
+            : AppNavigationView.CompactPaneLength;
+        var contentWidth = Math.Max(0d, RootGrid.ActualWidth - paneWidth - 64d);
         if (contentWidth <= 0d)
         {
             return;
