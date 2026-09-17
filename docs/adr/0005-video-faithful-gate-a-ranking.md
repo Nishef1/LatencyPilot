@@ -1,10 +1,10 @@
 # ADR 0005 — Video-faithful Gate A ranking from in-app frame periods
 
-Status: **Accepted** (owner-directed, 2026-09-18)
-Supersedes: nothing. Amends the Gate A validity contract described in
-`docs/PHASE3_PHYSICAL_VALIDATION.md` and `docs/BENCHMARK_METHODOLOGY.md`.
+Status: **Superseded in ranking/confirmation/product-scope details by ADR 0006** (2026-09-18)
 
-## Context
+ADR 0005 remains the historical record for why the benchmark's own frame-period signal replaced PresentMon/ETW as a hard screening dependency. The current v1 decision contract is `0006-simple-auto-interrupt-affinity-v1.md`.
+
+## Historical context
 
 The manual per-core GPU affinity workflow this product automates is:
 
@@ -13,54 +13,25 @@ per CPU core: set affinity mask → restart → run 3D benchmark
 → record AVG FPS, 1% low, 0.1% low → pick the best core → keep it
 ```
 
-The decision signal is the benchmark application's own frame rate
-statistics. No external frame collector participates in the decision.
+The owner-local Gate A run `gpu-auto-affinity-20260917T213830632Z` showed that the controlled D3D12 benchmark could produce healthy frame evidence while standalone PresentMon produced zero usable rows. Requiring every external collector to succeed before any CPU could be ranked made the automation less robust than the manual workflow it was intended to replace.
 
-Gate A as previously specified required a pinned standalone PresentMon
-capture, kernel ETW integrity, and resolved ISR placement **for every
-trial to count at all**. Owner-local evidence (Gate A run
-`gpu-auto-affinity-20260917T213830632Z`) proved the failure mode: the
-D3D12 benchmark produced 800 healthy frames per trial while the external
-collector produced zero usable rows, so the whole search aborted at the
-first warm-up without testing a single CPU — even though the exact
-video-style signal was present in every artifact.
+## Durable decisions retained
 
-## Decision
+- The controlled benchmark's own wall-clock frame periods are sufficient for **screening/ranking** when artifact identity, stored-state verification and workload continuity are intact.
+- Standalone PresentMon and kernel ETW are independent cross-checks/guardrails during screening rather than mandatory ranking inputs.
+- Exact stored-state verification and journal-owned rollback remain hard safety requirements.
+- When ETW is healthy during screening, a proven wrong/off-target ISR placement invalidates that candidate; missing ETW is recorded explicitly rather than silently treated as proof.
+- PresentMon remains useful as an external frame-cadence cross-check, but its absence cannot abort the entire CPU search.
 
-1. **Primary ranking signal** is the benchmark's own wall-clock frame
-   periods (`FramePeriodMilliseconds` per artifact frame), interpreted as
-   AVG FPS / frame-p99 / 1% low / 0.1% low. This is the automated
-   equivalent of the manual workflow's decision table.
-2. **Standalone PresentMon and kernel ETW degrade to best-effort
-   guardrails.** When present they contribute cross-checks and
-   driver-duration guardrails; when absent the trial stays valid and the
-   absence is recorded as explicit context, never as a silent pass.
-3. **Stored-state verification stays hard.** Every trial still requires
-   the exact registry affinity state verified before and after capture,
-   plus artifact identity, frozen-workload identity, and continuity.
-4. **ISR placement proof applies when attempted.** With healthy ETW,
-   attribution is attempted and a failed placement invalidates the
-   trial. Without ETW there is no proof either way, so the trial is
-   rankable but explicitly flagged `placement unverified`.
-5. **Keep never leaves the machine measurably slower.** Confirmation
-   `Regressed` restores the exact original state instead of keeping.
-   `Improved`, `NoMeasurableDifference`, and `Tradeoff` (visible
-   guardrail cost) can keep after a repeatable ABBA + BAAB confirmation.
-6. **USB affinity stays manual and gated.** The manual workflow's second
-   half (lowest-DPC CPU → USB mask → reboot) is not automated: USB/xHCI
-   mutation remains deferred until Gate A proves the shared substrate
-   physically, per the existing contract. The App already surfaces
-   read-only USB route evidence and per-CPU interrupt distribution for
-   the manual step.
+## Superseded decisions
 
-## Consequences
+ADR 0006 replaces these earlier details:
 
-- Gate A can complete and rank on benchmark evidence alone; external
-  collector outages degrade confidence visibly instead of aborting the
-  search.
-- `latencypilot-gpu-benchmark-v1` artifacts now carry per-frame wall
-  periods;   trial reports carry AVG / 1% low / 0.1% FPS.
-- The progress window shows the ranked video-style table (AVG · 1% ·
-  0.1% · p99) that mirrors the manual decision step.
-- Journal ownership, exact rollback, recovery, and the Gate B/C/D
-  ordering are unchanged.
+- p99-centric or ambiguous multi-metric ranking order;
+- two scored runs for every physical core;
+- active SMT sibling refinement in v1;
+- ABBA + BAAB finalist confirmation;
+- allowing a kept final winner without fresh ETW runtime placement proof;
+- treating USB/xHCI automation as permanently manual/outside the v1 product workflow.
+
+The current v1 flow is intentionally smaller: one scored run per eligible physical core, two additional re-tests for the best up-to-three, ranking by median 1% low → 0.1% low → AVG FPS with p99 as diagnostic/tie context, followed by a hard final ETW ISR-placement verification before Keep.
