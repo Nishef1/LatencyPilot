@@ -47,7 +47,7 @@ Across window-level DPC/ISR p99 values:
 
 ```text
 relative noise = (P90 - P10) / |median| <= 30%
-early/late relative drift <= 20%
+early-versus-late relative drift <= 20%
 extreme-window deviation <= 50%
 ```
 
