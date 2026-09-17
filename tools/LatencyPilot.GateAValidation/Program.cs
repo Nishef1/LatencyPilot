@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Security.Principal;
+using System.ServiceProcess;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using LatencyPilot.GateAValidation;
@@ -369,29 +370,55 @@ internal static partial class GateAOneClickProgram
     }
 
     private static async Task RestartServiceAsync(
-        ICollection<GateAStepReport> steps,
+        List<GateAStepReport> steps,
         string workingDirectory,
         string stepName)
     {
-        const string command =
-            "$s=Get-Service -Name 'LatencyPilot.Observation' -ErrorAction Stop; " +
-            "if($s.Status -ne 'Stopped'){Stop-Service -Name 'LatencyPilot.Observation' -Force -ErrorAction Stop; " +
-            "$s.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(30))}; " +
-            "Start-Service -Name 'LatencyPilot.Observation' -ErrorAction Stop; " +
-            "$s=Get-Service -Name 'LatencyPilot.Observation'; " +
-            "$s.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(30)); " +
-            "(Get-Service -Name 'LatencyPilot.Observation').Status";
-        var restart = await RunStepAsync(
-            steps,
-            stepName,
-            "powershell.exe",
-            ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
-            workingDirectory);
-        RequireSuccess(restart, "The protected observation Service could not be restarted.");
-        if (!restart.StandardOutput.Contains("Running", StringComparison.OrdinalIgnoreCase))
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        var standardOutput = string.Empty;
+        var standardError = string.Empty;
+        var exitCode = 0;
+        try
         {
-            throw new InvalidOperationException("The observation Service did not return to Running after restart.");
+            using var service = new ServiceController(ServiceBoundary.ServiceName);
+            service.Refresh();
+            if (service.Status != ServiceControllerStatus.Stopped)
+            {
+                service.Stop();
+                service.WaitForStatus(
+                    ServiceControllerStatus.Stopped,
+                    TimeSpan.FromSeconds(30));
+            }
+
+            service.Start();
+            service.WaitForStatus(
+                ServiceControllerStatus.Running,
+                TimeSpan.FromSeconds(30));
+            standardOutput = service.Status.ToString();
+            if (service.Status != ServiceControllerStatus.Running)
+            {
+                throw new InvalidOperationException(
+                    "The observation Service did not return to Running after restart.");
+            }
         }
+        catch (Exception exception) when (exception is InvalidOperationException or
+            System.ComponentModel.Win32Exception or
+            System.ServiceProcess.TimeoutException)
+        {
+            exitCode = 1;
+            standardError = $"{exception.GetType().Name}: {exception.Message}";
+        }
+
+        var step = new GateAStepReport(
+            stepName,
+            startedAtUtc,
+            DateTimeOffset.UtcNow,
+            exitCode,
+            standardOutput,
+            standardError);
+        steps.Add(step);
+        RequireSuccess(step, "The protected observation Service could not be restarted.");
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     private static async Task<GateAStepReport> RunStepAsync(
