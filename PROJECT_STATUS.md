@@ -197,12 +197,13 @@ revision `245ea18c893996451f1fec3e4005e24eba3c4d3b`:
 - the normal-user App, protected LocalSystem Service, explicit UAC helper and
   deterministic D3D12 benchmark completed one full 31/31 run;
 - the run screened all 8 eligible physical-core candidates with 2 × 15 s per
-  candidate, producing 19 valid trials and 19 raw benchmark artifacts;
+  candidate, producing 19 capture-ready trials and 19 raw benchmark artifacts
+  (capture readiness alone does not establish a valid candidate comparison);
 - all 16 candidate trials produced direct WDDM placement proof on the requested
   processor with 192,030 target ISR events and 0 off-target ISR events;
-- no candidate established a measurable frame-tail improvement without a
-  guardrail regression, so the authoritative recommendation was
-  `RestoreOriginal`;
+- the saved recommendation was `RestoreOriginal`; this must not be interpreted
+  as proof that original/default affinity is the fastest setting (see the
+  comparison-attribution correction below);
 - exact original state was verified after the run and the mutation journal
   reported `clean-zero-unresolved`.
 
@@ -213,6 +214,31 @@ This is a successful full benchmark/search sample on one RTX 3070 system, not
 the complete physical exit gate: the separate Stop-safely interaction,
 rendered keyboard/accessibility/taskbar inspection, and an independent
 reproducibility/failure-recovery exercise remain owner-local closure items.
+
+### Gate A ISR comparison correction — source fixed, physical rerun pending
+
+- **Completed now:** placement and ISR-duration collection share the same
+  single-adapter KMD/WDDM attribution on original and candidate trials. Changed
+  ISR sources fail closed. Reports retain module/mode/sample counts and each
+  comparison's actual reason; progress and terminal UI distinguish inconclusive
+  comparisons from measured non-improvement.
+- **Evidence:** the missing-ISR regression failed before the repair; focused
+  attribution/session tests and the 21 existing critical tests passed locally.
+  No permanent test method was added. The existing 21-method count exceeds the
+  documented 20-method cap and remains a separate pre-existing consolidation item.
+  A fresh physical run of this correction is still required.
+- **Still open:** the report at source `8324fac0750b195a305422e13f64383329ec1a3f`
+  (session `464e8268-422b-42f6-924b-789e71c3d1e3`) contains eight `Inconclusive`
+  comparisons with null improvement values. It proves verified restoration,
+  not that CPU0/default beats other CPUs. The historical report did not retain
+  comparison reasons or ISR-duration sample counts, so its exact failure cause
+  cannot be reconstructed from that report alone. No winner is established.
+- **Next stage:** verify Tests on the delivered revision, then run the automatic
+  search on that exact clean revision and inspect ISR sample counts, attribution,
+  comparison reasons, final machine state and zero unresolved journal entries.
+- **After that:** repeat the whole search and complete Stop-safely, supported
+  failure/recovery and rendered/accessibility checks before closing Gate A;
+  only then advance to Gate B mutation IPC.
 
 ### Gate B — mutation-specific IPC — BLOCKED BY GATE A
 

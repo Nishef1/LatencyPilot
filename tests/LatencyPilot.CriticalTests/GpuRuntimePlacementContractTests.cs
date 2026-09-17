@@ -3,6 +3,7 @@ using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
+using LatencyPilot.Core.Observation;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
@@ -105,6 +106,45 @@ public sealed class GpuRuntimePlacementContractTests
             new DriverMetadataSnapshot("1.0", "NVIDIA", "display.inf"),
             InterruptConfigurationSnapshot.Available(1, null, null, null),
             InterruptResourceSnapshot.Available([]));
+        var dispatchEvents = Enumerable.Range(0, 40)
+            .Select(index => new KernelLatencyEvent(
+                KernelLatencyEventKind.Isr, 3, index, 5d, 0x1000, null, null,
+                @"C:\Windows\System32\drivers\dxgkrnl.sys"))
+            .Append(new KernelLatencyEvent(KernelLatencyEventKind.Isr, 4, 41, 9d, 0x2000, null, null))
+            .Append(new KernelLatencyEvent(KernelLatencyEventKind.Dpc, 4, 42, 20d, 0x3000, null, null, "nvlddmkm.sys"))
+            .ToArray();
+        var dispatchCapture = new KernelLatencyCaptureResult(
+            DateTimeOffset.UnixEpoch, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15),
+            dispatchEvents, 0, 0, 0, false);
+        var attribution = GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+            dispatchCapture, target.InstanceId, [target]);
+        Assert.AreEqual("dxgkrnl", attribution.ModuleName);
+        Assert.AreEqual("wddm-graphics-kernel-dispatch", attribution.Mode);
+        Assert.AreEqual(40, attribution.Events.Count);
+        Assert.AreEqual(1, attribution.UnresolvedIsrEventCount);
+        var dispatchPlacement = GpuInterruptRuntimePlacementVerifier.Analyze(
+            attribution, new GpuInterruptAffinityCandidate(0, 3, 1UL << 3));
+        Assert.IsTrue(dispatchPlacement.ConfirmsRequestedPlacement);
+        Assert.AreEqual(attribution.Events.Count, dispatchPlacement.TargetProcessorIsrEventCount);
+        Assert.IsTrue(attribution.Events.All(static item => item.DurationMicroseconds == 5d));
+        var directCapture = dispatchCapture with
+        {
+            Events = [.. dispatchEvents,
+                new KernelLatencyEvent(KernelLatencyEventKind.Isr, 4, 43, 7d, 0x4000, null, null, "nvlddmkm.sys")],
+        };
+        var directAttribution = GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+            directCapture, target.InstanceId, [target]);
+        Assert.AreEqual("nvlddmkm", directAttribution.ModuleName);
+        Assert.AreEqual(1, directAttribution.Events.Count);
+        Assert.IsFalse(GpuInterruptRuntimePlacementVerifier.Analyze(
+            directAttribution, new GpuInterruptAffinityCandidate(0, 3, 1UL << 3)).ConfirmsRequestedPlacement);
+        Assert.AreEqual(0, GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+            dispatchCapture with { Events = [] }, target.InstanceId, [target]).Events.Count);
+        Assert.ThrowsExactly<NotSupportedException>(() =>
+            GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+                dispatchCapture, target.InstanceId, [target, target with { InstanceId = "PCI\\SECOND" }]));
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(dispatchCapture, "PCI\\MISSING", [target]));
         var luid = new GraphicsAdapterLuid(0x12345678, 0x10203040);
         var dxgi = new GraphicsAdapterSnapshot(
             0,

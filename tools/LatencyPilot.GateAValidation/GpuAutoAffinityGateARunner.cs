@@ -186,7 +186,7 @@ internal static class GpuAutoAffinityGateARunner
                 finalReport.FinalStateVerified,
                 result.Recommendation == GpuOptimizationRecommendation.KeepCandidate
                     ? "GPU auto-affinity finished with a verified finalist candidate."
-                    : "GPU auto-affinity finished with the verified original state.").ConfigureAwait(false);
+                    : $"GPU auto-affinity finished with the verified original state. {string.Join(" ", finalReport.Reasons.Take(2))}").ConfigureAwait(false);
             Console.WriteLine($"recommendation={result.Recommendation}");
             Console.WriteLine($"final-processor={result.Finalist?.Processor.ToString() ?? "original"}");
             Console.WriteLine("unresolved=0");

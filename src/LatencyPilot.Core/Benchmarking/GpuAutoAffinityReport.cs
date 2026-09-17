@@ -96,7 +96,15 @@ public sealed record GpuAutoAffinityTrialReport(
     double RequestedDurationMilliseconds,
     double ActualDurationMilliseconds,
     IReadOnlyList<string> Reasons,
-    GpuAutoAffinityReportProvenance? Provenance = null);
+    GpuAutoAffinityReportProvenance? Provenance = null,
+    GpuAutoAffinityInterruptEvidence? InterruptEvidence = null);
+
+public sealed record GpuAutoAffinityInterruptEvidence(
+    string IsrModuleName,
+    string IsrAttributionMode,
+    int DpcSampleCount,
+    int IsrSampleCount,
+    int UnresolvedIsrEventCount);
 
 public sealed record GpuAutoAffinityCandidateReport(
     string Phase,
@@ -105,7 +113,8 @@ public sealed record GpuAutoAffinityCandidateReport(
     int TrialCount,
     string Verdict,
     double? RelativeFrameP99Improvement,
-    IReadOnlyList<string> RegressedGuardrails);
+    IReadOnlyList<string> RegressedGuardrails,
+    string? Reason = null);
 
 public sealed record GpuAutoAffinityReport(
     string Schema,

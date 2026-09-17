@@ -1,9 +1,12 @@
+using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
+using LatencyPilot.Core.Observation;
+using LatencyPilot.Platform.Windows.Devices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -132,6 +135,31 @@ public sealed class GpuAutoAffinitySessionTests
             .ToArray();
         CollectionAssert.AreEqual(ExpectedConfirmationRoles, confirmationRoles);
 
+        var missingIsrBackend = new RecordingBackend(missingIsrSamples: true);
+        var missingIsrResult = await new GpuAutoAffinitySession(missingIsrBackend).RunAsync(request);
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, missingIsrResult.Recommendation);
+        Assert.IsTrue(missingIsrResult.Report.Candidates.All(static item => item.Verdict == "Inconclusive"));
+        Assert.IsTrue(missingIsrResult.Report.Reasons.Any(static reason =>
+            reason.Contains("ISR", StringComparison.Ordinal) &&
+            reason.Contains("samples", StringComparison.Ordinal)),
+            "Insufficient ISR evidence must retain its actual cause instead of claiming that no CPU improved.");
+        Assert.IsTrue(missingIsrResult.Report.OriginalStateRestored);
+        Assert.IsTrue(missingIsrResult.Report.Candidates.All(static item =>
+            item.Reason?.Contains("ISR", StringComparison.Ordinal) == true));
+        Assert.IsTrue(missingIsrResult.Report.Trials.All(static item => item.InterruptEvidence?.IsrSampleCount == 0));
+        var serialized = JsonSerializer.Serialize(missingIsrResult.Report);
+        var roundTrip = JsonSerializer.Deserialize<GpuAutoAffinityReport>(serialized)!;
+        Assert.AreEqual(missingIsrResult.Report.Candidates[0].Reason, roundTrip.Candidates[0].Reason);
+        Assert.AreEqual(missingIsrResult.Report.Trials[0].InterruptEvidence, roundTrip.Trials[0].InterruptEvidence);
+        Assert.IsFalse(missingIsrBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
+        Assert.IsTrue(result.Report.Trials.All(static item =>
+            item.InterruptEvidence is { IsrModuleName: "dxgkrnl", IsrSampleCount: 100 }));
+        var changedSourceBackend = new RecordingBackend(changedIsrSource: true);
+        var changedSourceResult = await new GpuAutoAffinitySession(changedSourceBackend).RunAsync(request);
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, changedSourceResult.Recommendation);
+        Assert.IsTrue(changedSourceResult.Report.Candidates.All(static item =>
+            item.Verdict == "Inconclusive" && item.Reason!.Contains("attribution", StringComparison.Ordinal)));
+
         var invalidKeepBackend = new RecordingBackend(failKeepPreflight: true);
         var invalidKeepSession = new GpuAutoAffinitySession(invalidKeepBackend);
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => invalidKeepSession.RunAsync(request));
@@ -178,7 +206,9 @@ public sealed class GpuAutoAffinitySessionTests
 
     private sealed class RecordingBackend(
         bool cancelAfterFirstCandidateCapture = false,
-        bool failKeepPreflight = false) : IGpuAutoAffinitySessionBackend
+        bool failKeepPreflight = false,
+        bool missingIsrSamples = false,
+        bool changedIsrSource = false) : IGpuAutoAffinitySessionBackend
     {
         private int captureSequence;
         private int originalControlSequence;
@@ -342,6 +372,19 @@ public sealed class GpuAutoAffinitySessionTests
                 true,
                 0,
                 []);
+            var events = missingIsrSamples ? Array.Empty<KernelLatencyEvent>() : Enumerable.Range(0, frameCount)
+                .Select(index => new KernelLatencyEvent(
+                    KernelLatencyEventKind.Isr, candidate?.Processor.Number ?? 0, index, 5d, 0x1000, null, null,
+                    changedIsrSource && candidate is not null ? "nvlddmkm.sys" : @"C:\Windows\System32\drivers\dxgkrnl.sys"))
+                .ToArray();
+            var target = new PnPDeviceSnapshot("PCI\\TEST",
+                new Guid("4D36E968-E325-11CE-BFC1-08002BE10318"), "Test GPU", "NVIDIA", "PCI", "nvlddmkm",
+                new DriverMetadataSnapshot("1", "NVIDIA", "display.inf"),
+                InterruptConfigurationSnapshot.Available(1, null, null, null),
+                InterruptResourceSnapshot.Available([]));
+            var attribution = GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+                new KernelLatencyCaptureResult(started, request.Duration, request.Duration, events, 0, 0, 0, false),
+                target.InstanceId, [target]);
             return new GpuAutoAffinityTrialObservation(
                 evidence,
                 GpuBenchmarkContaminationContext.Clean,
@@ -351,7 +394,9 @@ public sealed class GpuAutoAffinitySessionTests
                     ? null
                     : new GpuAutoAffinityPlacementProof(candidate.Processor, 20, 0),
                 Enumerable.Repeat(20d, frameCount).ToArray(),
-                Enumerable.Repeat(5d, frameCount).ToArray());
+                attribution.Events.Select(static item => item.DurationMicroseconds).ToArray(),
+                new GpuAutoAffinityInterruptEvidence(attribution.ModuleName, attribution.Mode,
+                    frameCount, attribution.Events.Count, attribution.UnresolvedIsrEventCount));
         }
     }
 }

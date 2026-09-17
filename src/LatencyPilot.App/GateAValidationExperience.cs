@@ -440,7 +440,8 @@ public sealed partial class MainWindow
                 $" Confirmation 1% low average: {originalFps:F1} → {candidateFps:F1} FPS (Δ {candidateFps - originalFps:+0.0;-0.0;0.0}).")
             : string.Empty;
 
-        return $"{headline}{relative}{rawP99}{rawLow}";
+        var reasons = string.Join(" ", report.Reasons.Take(2));
+        return $"{headline}{relative}{rawP99}{rawLow} {reasons}".TrimEnd();
     }
 
     private static double? AverageTrialMetric(

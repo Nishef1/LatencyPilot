@@ -32,7 +32,8 @@ public sealed record GpuAutoAffinityTrialObservation(
     bool StoredStateVerifiedAfter,
     GpuAutoAffinityPlacementProof? Placement,
     IReadOnlyList<double> GpuDriverDpcDurationMicroseconds,
-    IReadOnlyList<double> GpuDriverIsrDurationMicroseconds);
+    IReadOnlyList<double> GpuDriverIsrDurationMicroseconds,
+    GpuAutoAffinityInterruptEvidence? InterruptEvidence = null);
 
 public interface IGpuAutoAffinitySessionBackend
 {
@@ -75,7 +76,7 @@ public sealed class GpuAutoAffinitySession
 {
     private const string FramePrimaryMetric = "CPU frame time (ms)";
     private const string DpcGuardrailMetric = "GPU-driver DPC duration (us)";
-    private const string IsrGuardrailMetric = "GPU-driver ISR duration (us)";
+    private const string IsrGuardrailMetric = "GPU ISR duration (us)";
     private readonly IGpuAutoAffinitySessionBackend backend;
     private readonly IGpuAutoAffinitySessionObserver? observer;
 
@@ -182,7 +183,12 @@ public sealed class GpuAutoAffinitySession
             var physicalFinalist = SelectFinalist(physicalEvaluations);
             if (physicalFinalist is null)
             {
-                reasons.Add("No physical-core candidate measurably improved frame-tail performance without a guardrail regression.");
+                var inconclusive = candidateReports.Count(static item => item.Verdict == "Inconclusive");
+                reasons.Add(inconclusive > 0
+                    ? $"No finalist was established; {inconclusive} of {candidateReports.Count} screening comparisons were Inconclusive. This does not establish that the original state is faster."
+                    : "No physical-core candidate measurably improved frame-tail performance without a guardrail regression.");
+                reasons.AddRange(candidateReports.Select(static item =>
+                    $"CPU {item.Processor.Number}: {item.Verdict}. {item.Reason}"));
                 var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
                 return CreateResult(
                     request,
@@ -581,8 +587,20 @@ public sealed class GpuAutoAffinitySession
         IEnumerable<GpuAutoAffinityTrialObservation> candidates,
         ComparisonPolicy policy)
     {
-        var originalSet = BuildMeasurementSet(originals.ToArray());
-        var candidateSet = BuildMeasurementSet(candidates.ToArray());
+        var originalTrials = originals.ToArray();
+        var candidateTrials = candidates.ToArray();
+        var attributions = originalTrials.Concat(candidateTrials)
+            .Select(static trial => trial.InterruptEvidence).ToArray();
+        if (attributions.Any(static item => item is not null) &&
+            (attributions.Any(static item => item is null) ||
+             attributions.Select(static item => (item!.IsrModuleName, item.IsrAttributionMode)).Distinct().Count() != 1))
+        {
+            return new ComparisonResult(ExperimentVerdict.Inconclusive, null, null, null, [],
+                "GPU ISR attribution is missing or changed between trials; different ISR sources cannot be compared.");
+        }
+
+        var originalSet = BuildMeasurementSet(originalTrials);
+        var candidateSet = BuildMeasurementSet(candidateTrials);
         var guardrailPairs = originalSet.Guardrails
             .Where(pair => candidateSet.Guardrails.ContainsKey(pair.Key))
             .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
@@ -670,7 +688,8 @@ public sealed class GpuAutoAffinitySession
             trialCount,
             comparison.Verdict.ToString(),
             comparison.RelativeImprovement,
-            comparison.RegressedGuardrails);
+            comparison.RegressedGuardrails,
+            comparison.Reason);
 
     private static GpuAutoAffinityTrialReport ToTrialReport(
         GpuAutoAffinityTrialRequest request,
@@ -693,7 +712,8 @@ public sealed class GpuAutoAffinitySession
             double.IsFinite(interpretation.OnePercentLowFps) ? interpretation.OnePercentLowFps : null,
             request.Duration.TotalMilliseconds,
             observation.Evidence.PresentMonCapture.ActualWindowMilliseconds,
-            reasons);
+            reasons,
+            InterruptEvidence: observation.InterruptEvidence);
     }
 
     private static GpuAutoAffinitySessionResult CreateResult(

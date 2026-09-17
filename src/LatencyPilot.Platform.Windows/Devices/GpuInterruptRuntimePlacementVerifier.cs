@@ -1,3 +1,4 @@
+using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.Observation;
 
 namespace LatencyPilot.Platform.Windows.Devices;
@@ -5,6 +6,14 @@ namespace LatencyPilot.Platform.Windows.Devices;
 public sealed record ProcessorObservedInterruptCount(
     int ProcessorNumber,
     int IsrEventCount);
+
+public sealed record GpuInterruptIsrAttribution(
+    string DeviceInstanceId,
+    string DriverServiceName,
+    string ModuleName,
+    string Mode,
+    IReadOnlyList<KernelLatencyEvent> Events,
+    int UnresolvedIsrEventCount);
 
 public sealed record GpuInterruptRuntimePlacementEvidence(
     string DeviceInstanceId,
@@ -55,19 +64,25 @@ public static class GpuInterruptRuntimePlacementVerifier
     public static GpuInterruptRuntimePlacementEvidence Analyze(
         KernelLatencyCaptureResult capture,
         string deviceInstanceId,
-        GpuInterruptAffinityCandidate candidate)
+        GpuInterruptAffinityCandidate candidate) =>
+        Analyze(CaptureIsrAttribution(capture, deviceInstanceId), candidate);
+
+    public static GpuInterruptIsrAttribution CaptureIsrAttribution(
+        KernelLatencyCaptureResult capture,
+        string deviceInstanceId) =>
+        ResolveIsrAttribution(capture, deviceInstanceId,
+            DeviceInventoryReader.CapturePresentDevices().Devices);
+
+    public static GpuInterruptIsrAttribution ResolveIsrAttribution(
+        KernelLatencyCaptureResult capture,
+        string deviceInstanceId,
+        IReadOnlyList<PnPDeviceSnapshot> devices)
     {
         ArgumentNullException.ThrowIfNull(capture);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
-        ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(devices);
 
-        if (candidate.ProcessorGroup != 0 || candidate.ProcessorNumber >= 64)
-        {
-            throw new NotSupportedException(
-                "GPU runtime placement verification v1 supports only a group-0 x64 affinity candidate.");
-        }
-
-        var displayAdapters = DeviceInventoryReader.CapturePresentDevices().Devices
+        var displayAdapters = devices
             .Where(device => device.ClassGuid == DisplayDeviceClass)
             .ToArray();
         var target = displayAdapters.FirstOrDefault(device =>
@@ -109,6 +124,27 @@ public static class GpuInterruptRuntimePlacementVerifier
                 .ToArray()
             : driverMatching;
 
+        return new GpuInterruptIsrAttribution(
+            deviceInstanceId, serviceName, attributionModuleName, attributionMode,
+            Array.AsReadOnly(matching),
+            capture.Events.Count(static item =>
+                item.Kind == KernelLatencyEventKind.Isr && item.ModulePath is null));
+    }
+
+    public static GpuInterruptRuntimePlacementEvidence Analyze(
+        GpuInterruptIsrAttribution attribution,
+        GpuInterruptAffinityCandidate candidate)
+    {
+        ArgumentNullException.ThrowIfNull(attribution);
+        ArgumentNullException.ThrowIfNull(candidate);
+        if (candidate.ProcessorGroup != 0 || candidate.ProcessorNumber >= 64)
+        {
+            throw new NotSupportedException(
+                "GPU runtime placement verification v1 supports only a group-0 x64 affinity candidate.");
+        }
+
+        var matching = attribution.Events;
+
         var observedProcessors = matching
             .GroupBy(static item => item.ProcessorNumber)
             .Select(static group => new ProcessorObservedInterruptCount(group.Key, group.Count()))
@@ -117,21 +153,18 @@ public static class GpuInterruptRuntimePlacementVerifier
             .ToArray();
 
         var targetCount = matching.Count(item => item.ProcessorNumber == candidate.ProcessorNumber);
-        var unresolvedIsrCount = capture.Events.Count(static item =>
-            item.Kind == KernelLatencyEventKind.Isr && item.ModulePath is null);
-
         return new GpuInterruptRuntimePlacementEvidence(
-            deviceInstanceId,
-            serviceName,
+            attribution.DeviceInstanceId,
+            attribution.DriverServiceName,
             candidate.ProcessorNumber,
-            matching.Length,
+            matching.Count,
             targetCount,
-            matching.Length - targetCount,
-            unresolvedIsrCount,
+            matching.Count - targetCount,
+            attribution.UnresolvedIsrEventCount,
             observedProcessors)
         {
-            AttributionModuleName = attributionModuleName,
-            AttributionMode = attributionMode,
+            AttributionModuleName = attribution.ModuleName,
+            AttributionMode = attribution.Mode,
         };
     }
 

@@ -136,7 +136,7 @@ internal sealed class GpuGateAProgressFile
                 : WriteAsync(latestSnapshot with
                 {
                     LastCompletedCandidateVerdict = lastCompletedCandidateVerdict,
-                    Message = lastCompletedCandidateVerdict,
+                    Message = $"{lastCompletedCandidateVerdict}. {report.Reason}",
                 });
         }
     }

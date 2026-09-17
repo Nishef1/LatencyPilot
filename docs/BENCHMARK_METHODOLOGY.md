@@ -216,6 +216,23 @@ resolved `dxgkrnl.sys` ISR dispatch evidence as an explicitly labelled WDDM fall
 the fallback is refused when more than one display adapter is present because the
 shared graphics-kernel stream cannot then be attributed to one GPU without guessing.
 
+The automatic Gate A backend uses this same resolved ISR event set for both
+placement and ISR-duration comparisons, including original/control trials. It
+must not verify placement with `dxgkrnl` and then measure an empty KMD ISR stream.
+The ISR module/mode must remain consistent across compared trials; a source
+change invalidates comparison. DPC duration remains explicitly KMD-attributed.
+Each trial report retains the ISR module/mode, DPC/ISR sample counts and unresolved
+ISR count. Each candidate retains the exact comparison reason. Insufficient
+samples remain `Inconclusive` and restore original; they do not establish that
+the original state is faster. These are additive report fields; historical
+reports without them remain historical evidence and are not rewritten.
+
+The WDDM dispatch/KMD distinction follows Microsoft's description of the
+[DirectX graphics kernel subsystem](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/directx-graphics-kernel-subsystem)
+and [display interrupt callback](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/dispmprt/nc-dispmprt-dxgkddi_interrupt_routine).
+The single-adapter ETW attribution restriction is LatencyPilot's conservative
+measurement rule, not a claim that module names identify a GPU on multi-adapter systems.
+
 This is a validity contract. Physical Gate A must still prove it on supported hardware.
 
 ## 10. `gpu-affinity-confirmation-v1`

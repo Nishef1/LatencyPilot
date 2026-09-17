@@ -40,6 +40,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private readonly List<GpuAutoAffinityMutationAuditEntry> mutationAudit = [];
     private double? referenceControlP99Milliseconds;
     private GpuAutoAffinityReportProvenance? reportProvenance;
+    private string? referenceIsrModuleName;
 
     internal GpuAutoAffinityGateABackend(
         string deviceInstanceId,
@@ -419,22 +420,32 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
 
         GpuInterruptRuntimePlacementEvidence? runtimePlacement = null;
         GpuAutoAffinityPlacementProof? placement = null;
-        if (candidate is not null && kernel.IsValid && storedBefore && storedAfter)
+        GpuInterruptIsrAttribution? isrAttribution = null;
+        if (kernel.IsValid && storedBefore && storedAfter)
         {
             try
             {
-                runtimePlacement = GpuInterruptRuntimePlacementVerifier.Analyze(
-                    kernel,
-                    deviceInstanceId,
-                    ToMutationCandidate(candidate));
-                placement = new GpuAutoAffinityPlacementProof(
-                    candidate.Processor,
-                    runtimePlacement.TargetProcessorIsrEventCount,
-                    runtimePlacement.OffTargetIsrEventCount);
-                if (!runtimePlacement.ConfirmsRequestedPlacement)
+                isrAttribution = GpuInterruptRuntimePlacementVerifier.CaptureIsrAttribution(kernel, deviceInstanceId);
+                if (isrAttribution.Events.Count > 0)
                 {
-                    reasons.Add(
-                        "Resolved GPU-driver ISR placement was not confined to the requested logical processor.");
+                    referenceIsrModuleName ??= isrAttribution.ModuleName;
+                    if (!string.Equals(referenceIsrModuleName, isrAttribution.ModuleName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        reasons.Add($"GPU ISR attribution changed from {referenceIsrModuleName} to {isrAttribution.ModuleName}; timings from different modules cannot be compared.");
+                    }
+                }
+
+                if (candidate is not null)
+                {
+                    runtimePlacement = GpuInterruptRuntimePlacementVerifier.Analyze(isrAttribution, ToMutationCandidate(candidate));
+                    placement = new GpuAutoAffinityPlacementProof(
+                        candidate.Processor,
+                        runtimePlacement.TargetProcessorIsrEventCount,
+                        runtimePlacement.OffTargetIsrEventCount);
+                    if (!runtimePlacement.ConfirmsRequestedPlacement)
+                    {
+                        reasons.Add("Resolved GPU-driver ISR placement was not confined to the requested logical processor.");
+                    }
                 }
             }
             catch (Exception exception) when (exception is
@@ -443,7 +454,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 System.ComponentModel.Win32Exception)
             {
                 reasons.Add(
-                    $"GPU-driver ISR placement proof failed: {exception.GetType().Name}: {exception.Message}");
+                    $"GPU ISR attribution failed: {exception.GetType().Name}: {exception.Message}");
             }
         }
 
@@ -501,7 +512,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         }
 
         var driverDpc = FilterDriverDurations(kernel, KernelLatencyEventKind.Dpc);
-        var driverIsr = FilterDriverDurations(kernel, KernelLatencyEventKind.Isr);
+        var driverIsr = isrAttribution?.Events.Select(static item => item.DurationMicroseconds).ToArray() ?? [];
         var contamination = new GpuBenchmarkContaminationContext(
             SystemCpuBusyDrifted: false,
             ControlTrialDrifted: controlDrifted,
@@ -519,7 +530,10 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             storedAfter,
             placement,
             driverDpc,
-            driverIsr);
+            driverIsr,
+            isrAttribution is null ? null : new GpuAutoAffinityInterruptEvidence(
+                isrAttribution.ModuleName, isrAttribution.Mode,
+                driverDpc.Length, driverIsr.Length, isrAttribution.UnresolvedIsrEventCount));
     }
 
     private static async Task<GpuBenchmarkTrialArtifact> ReadArtifactAsync(

@@ -48,7 +48,7 @@ public static class BenchmarkComparer
             EnsureCompatible(guardrailBaseline, guardrailCandidate);
             if (!HasEnoughSamples(guardrailBaseline, guardrailCandidate, policy.MinimumSamples))
             {
-                return Inconclusive($"Guardrail '{guardrailBaseline.Name}' does not have enough samples.");
+                return Inconclusive($"Guardrail '{guardrailBaseline.Name}' does not have enough samples: original={guardrailBaseline.Samples.Count}, candidate={guardrailCandidate.Samples.Count}, required={policy.MinimumSamples}.");
             }
 
             var guardrailBaselineValue = Percentiles.Calculate(guardrailBaseline.Samples, policy.EvaluationPercentile);
