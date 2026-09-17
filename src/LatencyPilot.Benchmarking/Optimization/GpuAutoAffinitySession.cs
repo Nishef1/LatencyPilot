@@ -427,14 +427,14 @@ public sealed class GpuAutoAffinitySession
             cancellationToken.ThrowIfCancellationRequested();
 
             var finalistStability = EvaluateRunStability("Finalist", candidateRuns.ToArray());
-            if (finalistStability is null)
+            if (finalistStability is null && comparison.Verdict != ExperimentVerdict.Inconclusive)
             {
                 var keptExperimentId = activeExperiment.Value;
                 await backend.KeepAsync(keptExperimentId, CancellationToken.None).ConfigureAwait(false);
                 activeExperiment = null;
 
                 reasons.Add(
-                    "Balanced ABBA + BAAB confirmation kept the ranked finalist because its repeated candidate measurements remained decision-grade and repeatable. The original comparison is retained as context, not as a minimum-improvement gate.");
+                    "Balanced ABBA + BAAB confirmation kept the ranked finalist because its repeated candidate measurements remained decision-grade, attribution-consistent, and repeatable. The original comparison is retained as context, not as a minimum-improvement gate.");
                 return CreateResult(
                     request,
                     startedAtUtc,
@@ -450,7 +450,9 @@ public sealed class GpuAutoAffinitySession
             await backend.RollbackAsync(activeExperiment.Value, CancellationToken.None).ConfigureAwait(false);
             activeExperiment = null;
             var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
-            reasons.Add($"Ranked finalist confirmation was not repeatable: {finalistStability.Reason}");
+            reasons.Add(finalistStability is not null
+                ? $"Ranked finalist confirmation was not repeatable: {finalistStability.Reason}"
+                : $"Ranked finalist confirmation was not decision-grade: {comparison.Reason}");
             return CreateResult(
                 request,
                 startedAtUtc,
@@ -819,7 +821,8 @@ public sealed class GpuAutoAffinitySession
             .Select(static observation => GpuBenchmarkEvidenceInterpreter.Interpret(observation.Evidence).FrameP99Milliseconds)
             .Order()
             .ToArray();
-        var rankable = values.Length > 0 &&
+        var rankable = comparison.Verdict != ExperimentVerdict.Inconclusive &&
+            values.Length > 0 &&
             values.All(static value => double.IsFinite(value) && value > 0) &&
             EvaluateRunStability("Candidate", observations) is null;
         var median = rankable
