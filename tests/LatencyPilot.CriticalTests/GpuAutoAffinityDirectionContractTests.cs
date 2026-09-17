@@ -116,7 +116,7 @@ public sealed class GpuAutoAffinityDirectionContractTests
         private static GpuAutoAffinityTrialObservation CreateObservation(
             GpuAutoAffinityTrialRequest request,
             GpuAffinityCandidate? candidate,
-            IReadOnlyList<double> framePeriods)
+            double[] framePeriods)
         {
             var processId = 77u;
             var started = DateTimeOffset.UnixEpoch.AddSeconds(request.RunNumber * 40);
@@ -150,7 +150,7 @@ public sealed class GpuAutoAffinityDirectionContractTests
                 [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 2)],
                 0x51A7,
                 1_000_000,
-                Enumerable.Repeat(4d, framePeriods.Count).ToArray(),
+                Enumerable.Repeat(4d, framePeriods.Length).ToArray(),
                 presentMon,
                 "2.5.1",
                 Guid.NewGuid(),
@@ -158,15 +158,15 @@ public sealed class GpuAutoAffinityDirectionContractTests
                 0,
                 [],
                 FramePeriodMilliseconds: framePeriods);
-            var interrupt = new GpuAutoAffinityInterruptEvidence("dxgkrnl", "test", framePeriods.Count, framePeriods.Count, 0);
+            var interrupt = new GpuAutoAffinityInterruptEvidence("dxgkrnl", "test", framePeriods.Length, framePeriods.Length, 0);
             return new GpuAutoAffinityTrialObservation(
                 evidence,
                 GpuBenchmarkContaminationContext.Clean,
                 true,
                 true,
-                candidate is null ? null : new GpuAutoAffinityPlacementProof(candidate.Processor, framePeriods.Count, 0),
-                Enumerable.Repeat(20d, framePeriods.Count).ToArray(),
-                Enumerable.Repeat(5d, framePeriods.Count).ToArray(),
+                candidate is null ? null : new GpuAutoAffinityPlacementProof(candidate.Processor, framePeriods.Length, 0),
+                Enumerable.Repeat(20d, framePeriods.Length).ToArray(),
+                Enumerable.Repeat(5d, framePeriods.Length).ToArray(),
                 interrupt);
         }
     }
