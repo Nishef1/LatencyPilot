@@ -100,6 +100,39 @@ public sealed class UsbOptimizationTests
         Assert.AreEqual(new LogicalProcessorId(0, 4), rankedCpuHeadroom[1].Processor);
         Assert.AreEqual(12d, rankedCpuHeadroom[1].TotalInterruptDurationMicroseconds, 0.001d);
 
+        var inventory = new UserInputRouteInventory([route], DateTimeOffset.UnixEpoch);
+        var recommendation = UsbAffinityRecommendationPlanner.Create(
+            topology,
+            capture,
+            inventory,
+            new LogicalProcessorId(0, 0));
+        Assert.IsTrue(recommendation.IsReady);
+        Assert.AreEqual(controller.InstanceId, recommendation.ControllerInstanceId);
+        Assert.AreEqual(new LogicalProcessorId(0, 3), recommendation.Processor);
+        CollectionAssert.Contains(recommendation.InputDeviceInstanceIds.ToList(), raw.PnPInstanceId);
+        StringAssert.Contains(recommendation.Reason, "physical core");
+
+        var ambiguousInventory = new UserInputRouteInventory(
+            [
+                route,
+                route with
+                {
+                    UsbHostControllerInstanceId = "PCI\\\\VEN_TEST&DEV_OTHER_XHCI",
+                    UsbPortRoute = new UsbPortRouteEvidence(
+                        UsbPortRouteResolutionStatus.Available,
+                        port with { HostControllerInstanceId = "PCI\\\\VEN_TEST&DEV_OTHER_XHCI" },
+                        null),
+                },
+            ],
+            DateTimeOffset.UnixEpoch);
+        Assert.AreEqual(
+            UsbAffinityRecommendationStatus.NotReady,
+            UsbAffinityRecommendationPlanner.Create(
+                topology,
+                capture,
+                ambiguousInventory,
+                new LogicalProcessorId(0, 0)).Status);
+
         var ticks = Enumerable.Range(0, 101).Select(index => index * 1_000_000L).ToArray();
         var timing = InputTimingAnalyzer.Analyze(new InputReportTimestampSeries("HID\\VID_TEST", 1_000_000_000L, ticks));
         var ready = UsbOptimizationReadiness.Evaluate(route, timing, attribution);
