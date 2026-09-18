@@ -303,7 +303,7 @@ internal sealed class GpuGateAProgressFile
                 if (finalistCandidates.Count > progressPlan.FinalistCandidateCount)
                 {
                     totalUnits = checked(
-                        totalUnits + progressPlan.AdditionalFinalistUnitsPerCandidate);
+                        totalUnits + GpuAutoAffinityProgressPlan.AdditionalFinalistUnitsPerCandidate);
                 }
             }
             return (
