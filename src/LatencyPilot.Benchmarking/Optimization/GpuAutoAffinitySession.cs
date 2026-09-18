@@ -70,8 +70,9 @@ public sealed record GpuAutoAffinitySessionResult(
 
 /// <summary>
 /// Bounded v1 GPU interrupt-affinity search. Every eligible physical core gets
-/// one scored screen. The best up-to-three get two fresh scored re-tests, then
-/// the winner is selected by median 1% low, 0.1% low, AVG FPS and finally p99.
+/// one scored screen. The best up-to-three get two fresh transition-isolated
+/// scored re-tests, then the winner is selected by median 1% low, AVG FPS,
+/// frame-p99 and only then 0.1% low as rare-tail diagnostic context.
 /// Windows default remains the exact recovery/reference state; it is not a
 /// minimum-improvement opponent. A winner is kept only after a final ETW-backed
 /// runtime ISR placement capture verifies the requested processor.
@@ -191,7 +192,7 @@ public sealed class GpuAutoAffinitySession
 
             reasons.Add(string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
-                $"CPU {finalist.Candidate.Processor.Number} ranked best by median 1% low ({finalist.MedianLow1Fps:F1} FPS), then 0.1% low ({finalist.MedianLow01Fps:F1} FPS) and AVG ({finalist.MedianAvgFps:F1} FPS). Frame-p99 ({finalist.MedianFrameP99Milliseconds:F2} ms) is diagnostic/tie context only."));
+                $"CPU {finalist.Candidate.Processor.Number} ranked best by median 1% low ({finalist.MedianLow1Fps:F1} FPS), then AVG ({finalist.MedianAvgFps:F1} FPS) and frame-p99 ({finalist.MedianFrameP99Milliseconds:F2} ms). 0.1% low ({finalist.MedianLow01Fps:F1} FPS) remains rare-tail diagnostic/tie context."));
 
             return await VerifyAndKeepFinalistAsync(
                 request,
@@ -281,36 +282,75 @@ public sealed class GpuAutoAffinitySession
             return [];
         }
 
+        // Each finalist gets two additional measurements, but never back-to-back
+        // under one affinity activation. Every round performs a fresh
+        // apply/restart/warm-up/score/rollback transition so all three scored
+        // observations for a finalist are independent of a single restart.
+        // Round order is shuffled deterministically to reduce time/thermal bias
+        // without making the evidence irreproducible.
+        var freshByProcessor = shortlist.ToDictionary(
+            static item => item.Candidate.Processor,
+            static _ => new List<GpuAutoAffinityTrialObservation>(capacity: 2));
+        var failureByProcessor = new Dictionary<LogicalProcessorId, string>();
+
+        for (var round = 0; round < 2; round++)
+        {
+            var roundCandidates = shortlist
+                .Where(item => !failureByProcessor.ContainsKey(item.Candidate.Processor))
+                .Select(static item => item.Candidate)
+                .ToArray();
+            var roundSeed = unchecked(request.ShuffleSeed ^ (int)(0x9E3779B9u * (uint)(round + 1)));
+            ShuffleDeterministically(roundCandidates, roundSeed);
+
+            foreach (var candidate in roundCandidates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    var fresh = await MeasureCandidateAsync(
+                        candidate,
+                        FinalistPhaseName,
+                        repetitions: 1,
+                        request.ScreeningDuration,
+                        reference,
+                        nextRunNumber,
+                        trialReports,
+                        cancellationToken).ConfigureAwait(false);
+                    freshByProcessor[candidate.Processor].AddRange(fresh);
+                }
+                catch (SessionAbortException abort)
+                {
+                    failureByProcessor[candidate.Processor] = abort.Message;
+                }
+            }
+        }
+
         var finalists = new List<CandidateEvaluation>(shortlist.Length);
         foreach (var screened in shortlist)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
+            CandidateEvaluation evaluation;
+            if (failureByProcessor.TryGetValue(screened.Candidate.Processor, out var failure))
             {
-                var fresh = await MeasureCandidateAsync(
-                    screened.Candidate,
-                    FinalistPhaseName,
-                    repetitions: 2,
-                    request.ScreeningDuration,
-                    reference,
-                    nextRunNumber,
-                    trialReports,
-                    cancellationToken).ConfigureAwait(false);
+                evaluation = CandidateEvaluation.Unrankable(screened.Candidate, failure);
+            }
+            else
+            {
+                var fresh = freshByProcessor[screened.Candidate.Processor];
                 var combined = screened.Observations.Concat(fresh).ToArray();
-                var evaluation = CreateEvaluation(screened.Candidate, combined);
-                var report = ToReport(FinalistPhaseName, evaluation, fresh.Length);
-                candidateReports.Add(report);
-                await PublishCandidateReportAsync(report).ConfigureAwait(false);
-                finalists.Add(evaluation);
+                evaluation = combined.Length == 3
+                    ? CreateEvaluation(screened.Candidate, combined)
+                    : CandidateEvaluation.Unrankable(
+                        screened.Candidate,
+                        $"Finalist CPU {screened.Candidate.Processor.Number} produced {combined.Length} scored observations; exactly three transition-isolated observations are required.");
             }
-            catch (SessionAbortException abort)
-            {
-                var evaluation = CandidateEvaluation.Unrankable(screened.Candidate, abort.Message);
-                var report = ToReport(FinalistPhaseName, evaluation, 0);
-                candidateReports.Add(report);
-                await PublishCandidateReportAsync(report).ConfigureAwait(false);
-                finalists.Add(evaluation);
-            }
+
+            var report = ToReport(
+                FinalistPhaseName,
+                evaluation,
+                freshByProcessor[screened.Candidate.Processor].Count);
+            candidateReports.Add(report);
+            await PublishCandidateReportAsync(report).ConfigureAwait(false);
+            finalists.Add(evaluation);
         }
 
         return finalists;
@@ -718,9 +758,9 @@ public sealed class GpuAutoAffinitySession
         evaluations
             .Where(static evaluation => evaluation.IsRankable)
             .OrderByDescending(static evaluation => evaluation.MedianLow1Fps)
-            .ThenByDescending(static evaluation => evaluation.MedianLow01Fps)
             .ThenByDescending(static evaluation => evaluation.MedianAvgFps)
             .ThenBy(static evaluation => evaluation.MedianFrameP99Milliseconds)
+            .ThenByDescending(static evaluation => evaluation.MedianLow01Fps)
             .ThenBy(static evaluation => evaluation.Candidate.ObservedPressureScore)
             .ThenBy(static evaluation => evaluation.Candidate.PhysicalCoreIndex)
             .ThenBy(static evaluation => evaluation.Candidate.Processor.Number);
