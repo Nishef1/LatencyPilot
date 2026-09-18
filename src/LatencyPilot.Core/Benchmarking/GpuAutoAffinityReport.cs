@@ -118,6 +118,17 @@ public sealed record GpuAutoAffinityCandidateReport(
     IReadOnlyList<string> RegressedGuardrails,
     string? Reason = null);
 
+public sealed record UsbAffinityRecommendationReport(
+    string Status,
+    string? ControllerInstanceId,
+    LogicalProcessorId? Processor,
+    IReadOnlyList<string> InputDeviceInstanceIds,
+    double? TotalInterruptDurationMicroseconds,
+    double? InterruptTailP99Microseconds,
+    int? DpcCount,
+    int? IsrCount,
+    string Reason);
+
 public sealed record GpuAutoAffinityReport(
     string Schema,
     Guid SessionId,
@@ -135,7 +146,8 @@ public sealed record GpuAutoAffinityReport(
     GpuAutoAffinityStoredStateReport? OriginalStoredState = null,
     GpuAutoAffinityStoredStateReport? FinalStoredState = null,
     IReadOnlyList<GpuAutoAffinityMutationAuditEntry>? MutationAudit = null,
-    string? RecoveryStatus = null)
+    string? RecoveryStatus = null,
+    UsbAffinityRecommendationReport? UsbRecommendation = null)
 {
     public const string SchemaId = "latencypilot-gpu-auto-affinity-report-v1";
 }
