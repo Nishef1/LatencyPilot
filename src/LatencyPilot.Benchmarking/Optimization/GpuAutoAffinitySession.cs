@@ -1,5 +1,4 @@
 using LatencyPilot.Benchmarking.Candidates;
-using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Core.Benchmarking;
 using LatencyPilot.Core.Results;
 using LatencyPilot.Core.System;
@@ -12,9 +11,7 @@ public sealed record GpuAutoAffinitySessionRequest(
     IEnumerable<ProcessorPressureEvidence> PressureEvidence,
     ProcessorCpuSetSnapshot? CpuSets,
     int ShuffleSeed,
-    TimeSpan ScreeningDuration,
-    TimeSpan ConfirmationDuration,
-    ComparisonPolicy Policy);
+    TimeSpan ScreeningDuration);
 
 public sealed record GpuAutoAffinityTrialRequest(
     int RunNumber,
