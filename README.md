@@ -73,9 +73,9 @@ The best up to three candidates then enter two independent re-test rounds. Each 
 3. lower median **frame-p99**;
 4. higher median **0.1% low** only as rare-tail final tie context.
 
-There is no fixed “must beat Windows default by 3%” rule, no active SMT sibling-refinement phase and no ABBA/BAAB confirmation loop in v1. Windows default is the exact reference/recovery state.
+There is no fixed “must beat Windows default by 3%” rule, no SMT/hyperthread sibling refinement and no ABBA/BAAB confirmation loop in v1. Windows default is the exact reference/recovery state.
 
-The benchmark process intentionally stays alive for the whole search. GPU restarts force D3D12 renderer/device recreation before each trial, but process identity, frozen workload, seed and worker map remain constant so process-start/JIT/cold-cache effects are not reintroduced for every CPU.
+The benchmark process intentionally stays alive for the whole search. After each GPU configuration restart, the D3D12 renderer/device is recreated once. Warm-up and the following scored run reuse that same recreated renderer/device instance, while process identity, frozen workload, seed and worker map remain constant so process-start/JIT/cold-cache effects are not reintroduced for every CPU.
 
 The benchmark records its own controlled wall-clock loop periods. They are a deterministic comparison signal for this workload; they are not claimed to be identical to arbitrary game end-to-end frametime.
 
