@@ -40,7 +40,7 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
 3. For every physical-core candidate:
    - apply exact GPU interrupt affinity;
    - restart/activate and verify stored state;
-   - run a 5 s non-scored warm-up;
+   - run a 5 s non-scored warm-up (benchmark only; no PresentMon/ETW);
    - run **one** scored screening measurement;
    - restore and verify the exact original state.
 4. Rank valid screening candidates by:
@@ -63,7 +63,7 @@ Screening must remain resilient:
 - Missing PresentMon or missing ETW is recorded visibly and does not by itself abort ranking when the controlled benchmark artifact, stored state and continuity are valid.
 - If ETW is healthy and proves wrong/off-target ISR placement, that candidate is invalid.
 
-**Keep is stricter than screening.** After selecting the ranked winner, LatencyPilot applies it once more and performs a final kernel-ETW verification capture. Keep is allowed only when:
+**Keep is stricter than screening.** After selecting the ranked winner, LatencyPilot applies it once more and performs a fresh 5 s benchmark-only warm-up and then a final kernel-ETW verification capture. Keep is allowed only when:
 
 - exact stored candidate state is verified before/after the capture;
 - ETW integrity is clean with no event loss;
