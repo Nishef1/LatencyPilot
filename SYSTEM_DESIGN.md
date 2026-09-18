@@ -126,9 +126,9 @@ Current GPU ranking is lexicographic and transparent:
 
 ```text
 higher median 1% low
-→ higher median 0.1% low
 → higher median AVG FPS
-→ lower median frame-p99 as final diagnostic/tie context
+→ lower median frame-p99
+→ higher median 0.1% low as rare-tail final tie context
 ```
 
 No weighted score, active SMT-refinement phase or ABBA/BAAB confirmation exists in the v1 GPU session.
@@ -219,6 +219,8 @@ Unavailable evidence remains unavailable.
 
 ### Automatic GPU search
 
+The benchmark process remains stable across the complete search. After each GPU configuration restart only the D3D12 renderer/device is recreated; workload calibration, process identity, seed and worker map remain frozen.
+
 ```text
 one adaptive calibration
 → frozen workload
@@ -228,11 +230,10 @@ one adaptive calibration
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored run
      exact rollback
-→ rank by 1% low → 0.1% low → AVG → p99 context
+→ rank by 1% low → AVG → p99 → 0.1% low rare-tail context
 → best up to three:
-     fresh apply/restart/warm-up
-     2 scored re-tests
-     exact rollback
+     two independent deterministically shuffled re-test rounds
+     fresh apply/restart/warm-up + 1 scored 30 s run + exact rollback per round
 → reject materially unstable repeated 1% lows
 → apply winner
 → final benchmark-only warm-up → ETW placement-verification capture
