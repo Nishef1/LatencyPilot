@@ -338,6 +338,17 @@ public sealed class GpuAutoAffinitySession
                     $"Final GPU winner CPU {finalist.Processor.Number} could not verify its stored affinity state before runtime placement verification.");
             }
 
+            await CaptureAcceptedAsync(
+                nextRunNumber,
+                "final-verification-warmup",
+                GpuConfirmationOrder.Candidate,
+                finalist,
+                TransitionWarmupDuration,
+                reference: null,
+                activeExperiment,
+                trialReports,
+                cancellationToken).ConfigureAwait(false);
+
             var verification = await CaptureAcceptedAsync(
                 nextRunNumber,
                 "final-verification",
