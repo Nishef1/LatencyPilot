@@ -50,13 +50,13 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
    4. higher 0.1% low only as rare-tail final tie context.
 5. Re-test the best up-to-three candidates in **two independent rounds**. In each round the finalist order is deterministically shuffled and every candidate gets a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback.
 6. Rank finalists from the median of all three scored observations captured across three separate affinity activations. A finalist with materially unstable repeated 1% lows is not rankable.
-7. There is no active SMT sibling-refinement phase in v1 and no ABBA/BAAB confirmation loop.
+7. SMT/hyperthread siblings are intentionally not benchmarked or refined separately; one representative logical processor per physical core is the permanent v1 search shape. There is no ABBA/BAAB confirmation loop.
 
 Windows default is the exact recovery/reference state, not an opponent that every forced CPU must beat by a fixed percentage.
 
 ## Benchmark process lifetime
 
-LatencyPilot intentionally keeps one calibrated benchmark process alive for the complete GPU search. A GPU configuration restart invalidates the D3D12 device, so the renderer/device is recreated before each controlled trial, but the process identity, frozen workload, seed and worker map remain unchanged.
+LatencyPilot intentionally keeps one calibrated benchmark process alive for the complete GPU search. A GPU configuration restart invalidates the D3D12 device, so the renderer/device is recreated once immediately after each affinity-triggered restart. The subsequent non-scored warm-up and scored run reuse that same recreated renderer/device, while process identity, frozen workload, seed and worker map remain unchanged.
 
 This differs from launching a fresh benchmark subject for every candidate. Re-launching would reintroduce process startup, .NET JIT and cold-cache state as additional variables. The controlled process remains fixed; only GPU interrupt affinity and the required D3D12 device recreation change.
 
