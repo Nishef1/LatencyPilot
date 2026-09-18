@@ -288,6 +288,36 @@ public sealed class SourceRevisionIdentityTests
             gateASessionSource,
             "ShuffleDeterministically(roundCandidates, roundSeed);",
             "Finalist round order must be deterministically shuffled to reduce time/thermal ordering bias.");
+        StringAssert.Contains(
+            gateASessionSource,
+            "CandidateMetricEquivalenceTolerance",
+            "GPU ranking must use an explicit practical-equivalence margin instead of false precision.");
+        StringAssert.Contains(
+            gateASessionSource,
+            "CreateAdaptiveShortlist",
+            "GPU screening must re-test candidates inside the primary-noise margin of the third-place cutoff.");
+
+        var rendererSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.GpuBenchmark",
+            "D3D12BenchmarkRenderer.cs"));
+        StringAssert.Contains(rendererSource, "private const int BufferCount = 3;");
+        StringAssert.Contains(rendererSource, "private const int FrameContextCount = 2;");
+        StringAssert.Contains(rendererSource, "DrainFrames");
+        var renderFrameStart = rendererSource.IndexOf(
+            "internal BenchmarkFrameTelemetry? RenderFrame",
+            StringComparison.Ordinal);
+        var captureChecksumsStart = rendererSource.IndexOf(
+            "internal IReadOnlyList<ulong> CaptureWorkerChecksums",
+            renderFrameStart,
+            StringComparison.Ordinal);
+        Assert.IsTrue(renderFrameStart >= 0 && captureChecksumsStart > renderFrameStart);
+        Assert.IsFalse(
+            rendererSource[renderFrameStart..captureChecksumsStart]
+                .Contains("WaitForGpu();", StringComparison.Ordinal),
+            "The benchmark must not fully drain the GPU after every submitted frame.");
+
         StringAssert.Contains(gateASessionSource, "\"final-verification-warmup\"");
         StringAssert.Contains(gateASessionSource, "\"final-verification\"");
         Assert.IsFalse(
