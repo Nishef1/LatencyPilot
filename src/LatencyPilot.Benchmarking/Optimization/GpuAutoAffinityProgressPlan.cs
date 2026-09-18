@@ -10,35 +10,17 @@ public sealed class GpuAutoAffinityProgressPlan
     private const int FinalistUnitsPerCandidate = 3; // transition warm-up + two scored re-tests
     private const int MaximumFinalistCandidates = 3;
     private const int FinalVerificationCount = 1;
-    private readonly HashSet<int> physicalCoreIndexes;
 
     private GpuAutoAffinityProgressPlan(IReadOnlyList<GpuAffinityCandidate> physicalCandidates)
     {
         PhysicalCandidateCount = physicalCandidates.Count;
-        physicalCoreIndexes = physicalCandidates.Select(static candidate => candidate.PhysicalCoreIndex).ToHashSet();
     }
 
     public int PhysicalCandidateCount { get; }
 
-    // Kept for compatibility with the development progress surface. The v1
-    // search no longer performs a separate SMT sibling-refinement phase.
-    public int MaximumRefinementCandidateCount => Math.Min(0, PhysicalCandidateCount);
-
     public int FinalistCandidateCount => Math.Min(MaximumFinalistCandidates, PhysicalCandidateCount);
 
     public int InitialTotalUnits => GetBaseTotalUnits();
-
-    public int GetRefinementCandidateCount(int physicalCoreIndex)
-    {
-        ValidatePhysicalCore(physicalCoreIndex);
-        return 0;
-    }
-
-    public int GetTotalUnitsForFinalist(int physicalCoreIndex)
-    {
-        ValidatePhysicalCore(physicalCoreIndex);
-        return GetBaseTotalUnits();
-    }
 
     public static GpuAutoAffinityProgressPlan Create(
         ProcessorTopologySnapshot topology,
@@ -59,13 +41,4 @@ public sealed class GpuAutoAffinityProgressPlan
         (FinalistCandidateCount * FinalistUnitsPerCandidate) +
         FinalVerificationCount;
 
-    private void ValidatePhysicalCore(int physicalCoreIndex)
-    {
-        if (!physicalCoreIndexes.Contains(physicalCoreIndex))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(physicalCoreIndex),
-                "Physical core is not part of the planned GPU affinity screen.");
-        }
-    }
 }
