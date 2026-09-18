@@ -134,7 +134,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         CancellationToken cancellationToken) =>
         CaptureAsync(request, experimentId: null, candidate: null, cancellationToken);
 
-    public Task<Guid> ApplyCandidateAsync(
+    public async Task<Guid> ApplyCandidateAsync(
         GpuAffinityCandidate candidate,
         CancellationToken cancellationToken)
     {
@@ -164,7 +164,15 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                     "GPU candidate post-apply verification failed before ownership could be transferred to the session.");
             }
 
-            return Task.FromResult(experimentId);
+            await benchmark.RecreateRendererAsync(cancellationToken).ConfigureAwait(false);
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow,
+                "RecreateBenchmarkRenderer",
+                experimentId,
+                candidate.Processor,
+                StoredStateVerified: true,
+                ToStoredStateReport(current)));
+            return experimentId;
         }
         catch (Exception postApplyFailure)
         {
