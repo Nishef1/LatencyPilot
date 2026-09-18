@@ -222,10 +222,10 @@ Unavailable evidence remains unavailable.
 ```text
 one adaptive calibration
 → frozen workload
-→ 5 s original non-scored warm-up/reference
+→ 5 s original non-scored warm-up/reference (benchmark only; no PresentMon/ETW)
 → each physical-core representative:
      apply/restart/verify
-     5 s non-scored warm-up
+     5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored run
      exact rollback
 → rank by 1% low → 0.1% low → AVG → p99 context
@@ -235,7 +235,7 @@ one adaptive calibration
      exact rollback
 → reject materially unstable repeated 1% lows
 → apply winner
-→ final ETW placement-verification capture
+→ final benchmark-only warm-up → ETW placement-verification capture
 → Keep only with clean target-only GPU ISR proof
    else exact RestoreOriginal
 ```
