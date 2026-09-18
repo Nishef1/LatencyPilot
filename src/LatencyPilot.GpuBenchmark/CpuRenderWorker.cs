@@ -9,8 +9,7 @@ namespace LatencyPilot.GpuBenchmark;
 
 internal sealed class CpuRenderWorker : IDisposable
 {
-    private readonly ID3D12CommandAllocator allocator;
-    private readonly ID3D12GraphicsCommandList commandList;
+    private readonly FrameResources[] frameResources;
     private readonly AutoResetEvent start = new(false);
     private readonly ManualResetEventSlim completed = new(false);
     private readonly Thread thread;
@@ -22,12 +21,34 @@ internal sealed class CpuRenderWorker : IDisposable
     private bool stop;
     private ulong simulationChecksum;
 
-    internal CpuRenderWorker(ID3D12Device device, LogicalProcessorId processor, int workerIndex, int workerCount, int width, int height, int seed)
+    internal CpuRenderWorker(
+        ID3D12Device device,
+        LogicalProcessorId processor,
+        int workerIndex,
+        int workerCount,
+        int width,
+        int height,
+        int seed,
+        int frameContextCount)
     {
         this.processor = processor;
-        allocator = device.CreateCommandAllocator(CommandListType.Direct);
-        commandList = device.CreateCommandList<ID3D12GraphicsCommandList>(CommandListType.Direct, allocator, null);
-        commandList.Close();
+        if (frameContextCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(frameContextCount));
+        }
+
+        frameResources = Enumerable.Range(0, frameContextCount)
+            .Select(_ =>
+            {
+                var allocator = device.CreateCommandAllocator(CommandListType.Direct);
+                var commandList = device.CreateCommandList<ID3D12GraphicsCommandList>(
+                    CommandListType.Direct,
+                    allocator,
+                    null);
+                commandList.Close();
+                return new FrameResources(allocator, commandList);
+            })
+            .ToArray();
 
         var top = (height * workerIndex) / workerCount;
         var bottom = (height * (workerIndex + 1)) / workerCount;
@@ -51,21 +72,43 @@ internal sealed class CpuRenderWorker : IDisposable
         thread.Start();
     }
 
-    internal ID3D12GraphicsCommandList CommandList => commandList;
+    internal ID3D12GraphicsCommandList GetCommandList(int frameContextIndex) =>
+        frameResources[frameContextIndex].CommandList;
+
     internal ulong SimulationChecksum => Volatile.Read(ref simulationChecksum);
 
-    internal void BeginFrame(CpuDescriptorHandle renderTargetView, int simulationIterations, int commandBatches)
+    internal void BeginFrame(
+        int frameContextIndex,
+        CpuDescriptorHandle renderTargetView,
+        int simulationIterations,
+        int commandBatches)
     {
-        if (failure is not null) throw new InvalidOperationException($"Benchmark worker {processor} failed.", failure);
+        if (failure is not null)
+        {
+            throw new InvalidOperationException($"Benchmark worker {processor} failed.", failure);
+        }
+
+        if ((uint)frameContextIndex >= (uint)frameResources.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(frameContextIndex));
+        }
+
         completed.Reset();
-        request = new FrameRequest(renderTargetView, simulationIterations, commandBatches);
+        request = new FrameRequest(
+            frameContextIndex,
+            renderTargetView,
+            simulationIterations,
+            commandBatches);
         start.Set();
     }
 
     internal void WaitForFrame()
     {
         completed.Wait();
-        if (failure is not null) throw new InvalidOperationException($"Benchmark worker {processor} failed.", failure);
+        if (failure is not null)
+        {
+            throw new InvalidOperationException($"Benchmark worker {processor} failed.", failure);
+        }
     }
 
     public void Dispose()
@@ -75,8 +118,11 @@ internal sealed class CpuRenderWorker : IDisposable
         thread.Join();
         completed.Dispose();
         start.Dispose();
-        commandList.Dispose();
-        allocator.Dispose();
+        foreach (var resource in frameResources)
+        {
+            resource.CommandList.Dispose();
+            resource.Allocator.Dispose();
+        }
     }
 
     private void Run()
@@ -87,7 +133,11 @@ internal sealed class CpuRenderWorker : IDisposable
             while (true)
             {
                 start.WaitOne();
-                if (stop) return;
+                if (stop)
+                {
+                    return;
+                }
+
                 RecordFrame(request);
                 completed.Set();
             }
@@ -111,30 +161,49 @@ internal sealed class CpuRenderWorker : IDisposable
         }
         Volatile.Write(ref simulationChecksum, state);
 
-        allocator.Reset();
-        commandList.Reset(allocator, null);
+        var resources = frameResources[frame.FrameContextIndex];
+        resources.Allocator.Reset();
+        resources.CommandList.Reset(resources.Allocator, null);
         for (var batch = 0; batch < frame.CommandBatches; batch++)
         {
-            commandList.ClearRenderTargetView(frame.RenderTargetView, colors[batch & 3], region);
+            resources.CommandList.ClearRenderTargetView(
+                frame.RenderTargetView,
+                colors[batch & 3],
+                region);
         }
-        commandList.Close();
+        resources.CommandList.Close();
     }
 
     private static void PinCurrentThread(LogicalProcessorId processor)
     {
         if (processor.Number >= 64)
         {
-            throw new NotSupportedException("gpu-affinity-benchmark-v1 supports processor numbers below 64 in each group.");
+            throw new NotSupportedException(
+                "gpu-affinity-benchmark-v1 supports processor numbers below 64 in each group.");
         }
 
-        var affinity = new GroupAffinity { Mask = 1UL << processor.Number, Group = processor.Group };
+        var affinity = new GroupAffinity
+        {
+            Mask = 1UL << processor.Number,
+            Group = processor.Group,
+        };
         if (!SetThreadGroupAffinity(GetCurrentThread(), in affinity, out _))
         {
-            throw new Win32Exception(Marshal.GetLastPInvokeError(), $"Unable to pin benchmark worker to processor {processor}.");
+            throw new Win32Exception(
+                Marshal.GetLastPInvokeError(),
+                $"Unable to pin benchmark worker to processor {processor}.");
         }
     }
 
-    private readonly record struct FrameRequest(CpuDescriptorHandle RenderTargetView, int SimulationIterations, int CommandBatches);
+    private readonly record struct FrameRequest(
+        int FrameContextIndex,
+        CpuDescriptorHandle RenderTargetView,
+        int SimulationIterations,
+        int CommandBatches);
+
+    private sealed record FrameResources(
+        ID3D12CommandAllocator Allocator,
+        ID3D12GraphicsCommandList CommandList);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct GroupAffinity
@@ -146,7 +215,12 @@ internal sealed class CpuRenderWorker : IDisposable
         internal ushort Reserved2;
     }
 
-    [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentThread();
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentThread();
+
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool SetThreadGroupAffinity(IntPtr thread, in GroupAffinity groupAffinity, out GroupAffinity previousGroupAffinity);
+    private static extern bool SetThreadGroupAffinity(
+        IntPtr thread,
+        in GroupAffinity groupAffinity,
+        out GroupAffinity previousGroupAffinity);
 }
