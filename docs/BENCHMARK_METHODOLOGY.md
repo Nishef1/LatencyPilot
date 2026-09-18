@@ -80,7 +80,7 @@ The built-in D3D12 benchmark performs one adaptive calibration and then freezes:
 - resolution;
 - benchmark process identity.
 
-Applying GPU interrupt affinity may restart the display adapter. The benchmark intentionally keeps one authenticated benchmark process alive for the whole search, while recreating its D3D12 renderer/device after each restart. The frozen workload, seed and worker map therefore stay process-stable; process launch/JIT/cold-start effects are not reintroduced for every candidate.
+Applying GPU interrupt affinity may restart the display adapter. The benchmark intentionally keeps one authenticated benchmark process alive for the whole search and recreates its D3D12 renderer/device exactly once after each affinity-triggered restart. The non-scored warm-up and its scored run then reuse that same renderer/device. The frozen workload, seed and worker map therefore stay process-stable; process launch/JIT/cold-start effects are not reintroduced for every candidate.
 
 ### 5.1 Controlled frame period
 
@@ -124,7 +124,7 @@ exact original/default state
    otherwise exact RestoreOriginal
 ```
 
-There is no active SMT sibling-refinement phase in v1 and no ABBA/BAAB finalist loop.
+There is no SMT/hyperthread sibling refinement in v1 and no ABBA/BAAB finalist loop.
 
 ### 6.1 Ranking order
 
