@@ -266,8 +266,29 @@ public sealed class SourceRevisionIdentityTests
             "GpuAutoAffinityGateABackend.cs"));
         StringAssert.Contains(
             gateABackendSource,
-            "string.Equals(request.Phase, \"screening-control\", StringComparison.Ordinal)",
-            "Only decision controls may establish/check the control-drift reference; the startup warm-up must be excluded.");
+            "var isWarmup = request.Phase.EndsWith(\"-warmup\", StringComparison.Ordinal);",
+            "Warm-up must remain explicitly distinguishable from scored/final evidence.");
+        StringAssert.Contains(
+            gateABackendSource,
+            "var attributionAttempted = !isWarmup && kernel.IsValid && storedBefore && storedAfter;",
+            "Non-scored warm-up must not pretend to carry runtime ISR placement evidence.");
+
+        var gateASessionSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.Benchmarking",
+            "Optimization",
+            "GpuAutoAffinitySession.cs"));
+        StringAssert.Contains(gateASessionSource, "repetitions: 1");
+        StringAssert.Contains(gateASessionSource, "repetitions: 2");
+        StringAssert.Contains(gateASessionSource, "\"final-verification-warmup\"");
+        StringAssert.Contains(gateASessionSource, "\"final-verification\"");
+        Assert.IsFalse(
+            gateASessionSource.Contains("screening-control", StringComparison.Ordinal) ||
+            gateASessionSource.Contains("smt-refinement", StringComparison.Ordinal) ||
+            gateASessionSource.Contains("ABBA", StringComparison.Ordinal) ||
+            gateASessionSource.Contains("BAAB", StringComparison.Ordinal),
+            "The simplified v1 GPU session must not regress to legacy control/SMT/ABBA paths.");
         var keepStartIndex = gateABackendSource.IndexOf(
             "public Task KeepAsync",
             StringComparison.Ordinal);
