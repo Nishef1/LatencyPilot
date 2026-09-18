@@ -129,8 +129,9 @@ public sealed class GpuAutoAffinitySessionTests
             .Where(static item => item.Phase == "screening-finalists")
             .All(static item => item.Verdict == "Inconclusive"));
         Assert.IsTrue(result.Report.Candidates.Any(static item =>
-            item.Reason.Contains("1% low", StringComparison.OrdinalIgnoreCase) ||
-            item.Reason.Contains("drift", StringComparison.OrdinalIgnoreCase)));
+            item.Reason is { } reason &&
+            (reason.Contains("1% low", StringComparison.OrdinalIgnoreCase) ||
+             reason.Contains("drift", StringComparison.OrdinalIgnoreCase))));
     }
 
     private static (ProcessorTopologySnapshot Topology, ProcessorPressureEvidence[] Pressure, GpuAutoAffinitySessionRequest Request)
