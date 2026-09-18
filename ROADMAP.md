@@ -149,7 +149,7 @@ Source checklist:
 - [x] best up-to-three receive two additional scored re-tests in separate fresh transition rounds;
 - [x] finalist order is deterministically shuffled in each re-test round to reduce time/thermal ordering bias;
 - [x] ranking order: median 1% low → AVG → p99 → 0.1% low rare-tail tie context;
-- [x] no active SMT sibling-refinement phase in v1;
+- [x] no SMT/hyperthread sibling refinement in v1;
 - [x] no ABBA/BAAB confirmation loop;
 - [x] Windows default is recovery/reference state, not a fixed minimum-improvement gate;
 - [x] 5 s non-scored post-transition warm-up;
