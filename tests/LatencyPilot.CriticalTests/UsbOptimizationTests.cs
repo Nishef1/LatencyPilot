@@ -97,8 +97,9 @@ public sealed class UsbOptimizationTests
             "The whole physical core containing the GPU winner must be excluded from USB/xHCI selection.");
         Assert.AreEqual(new LogicalProcessorId(0, 3), rankedCpuHeadroom[0].Processor,
             "A CPU with no observed DPC/ISR load should rank ahead of busier eligible CPUs.");
-        Assert.AreEqual(new LogicalProcessorId(0, 4), rankedCpuHeadroom[1].Processor);
-        Assert.AreEqual(12d, rankedCpuHeadroom[1].TotalInterruptDurationMicroseconds, 0.001d);
+        Assert.AreEqual(new LogicalProcessorId(0, 5), rankedCpuHeadroom[1].Processor);
+        Assert.AreEqual(new LogicalProcessorId(0, 4), rankedCpuHeadroom[2].Processor);
+        Assert.AreEqual(12d, rankedCpuHeadroom[2].TotalInterruptDurationMicroseconds, 0.001d);
 
         var inventory = new UserInputRouteInventory([route], DateTimeOffset.UnixEpoch);
         var recommendation = UsbAffinityRecommendationPlanner.Create(
