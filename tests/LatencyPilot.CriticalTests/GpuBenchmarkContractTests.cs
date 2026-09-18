@@ -298,6 +298,14 @@ public sealed class GpuBenchmarkContractTests
         Assert.IsFalse(GpuBenchmarkControlProtocol.TryValidate(
             run with { RunNumber = 0 }, sessionId, token, out _));
 
+        var recreate = GpuBenchmarkControlCommand.RecreateRenderer(sessionId, token);
+        Assert.AreEqual(GpuBenchmarkControlCommandKind.RecreateRenderer, recreate.Kind);
+        Assert.IsTrue(
+            GpuBenchmarkControlProtocol.TryValidate(recreate, sessionId, token, out var recreateReason),
+            recreateReason);
+        Assert.AreEqual(0, recreate.RunNumber);
+        Assert.AreEqual(0, recreate.DurationMilliseconds);
+
         var stop = GpuBenchmarkControlCommand.Stop(sessionId, token);
         Assert.AreEqual(GpuBenchmarkControlCommandKind.Stop, stop.Kind);
         Assert.IsTrue(GpuBenchmarkControlProtocol.TryValidate(stop, sessionId, token, out var stopReason), stopReason);
