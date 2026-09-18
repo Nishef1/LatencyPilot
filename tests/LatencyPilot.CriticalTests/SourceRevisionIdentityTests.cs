@@ -280,7 +280,14 @@ public sealed class SourceRevisionIdentityTests
             "Optimization",
             "GpuAutoAffinitySession.cs"));
         StringAssert.Contains(gateASessionSource, "repetitions: 1");
-        StringAssert.Contains(gateASessionSource, "repetitions: 2");
+        StringAssert.Contains(
+            gateASessionSource,
+            "for (var round = 0; round < 2; round++)",
+            "Top finalists must be re-tested in two independent transition rounds rather than two back-to-back scores under one affinity activation.");
+        StringAssert.Contains(
+            gateASessionSource,
+            "ShuffleDeterministically(roundCandidates, roundSeed);",
+            "Finalist round order must be deterministically shuffled to reduce time/thermal ordering bias.");
         StringAssert.Contains(gateASessionSource, "\"final-verification-warmup\"");
         StringAssert.Contains(gateASessionSource, "\"final-verification\"");
         Assert.IsFalse(
