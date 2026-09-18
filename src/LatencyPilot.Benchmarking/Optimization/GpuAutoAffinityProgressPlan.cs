@@ -20,6 +20,8 @@ public sealed class GpuAutoAffinityProgressPlan
 
     public int FinalistCandidateCount => Math.Min(MaximumFinalistCandidates, PhysicalCandidateCount);
 
+    public int AdditionalFinalistUnitsPerCandidate => FinalistUnitsPerCandidate;
+
     public int InitialTotalUnits => GetBaseTotalUnits();
 
     public static GpuAutoAffinityProgressPlan Create(
