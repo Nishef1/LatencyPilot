@@ -1,6 +1,7 @@
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.Observation;
+using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Service;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -73,6 +74,31 @@ public sealed class UsbOptimizationTests
         Assert.AreEqual(1, attribution.MatchingDpcEventCount);
         Assert.AreEqual(1, attribution.MatchingIsrEventCount);
         Assert.IsTrue(attribution.HasTargetEvidence);
+
+        var topology = new ProcessorTopologySnapshot(
+            [new ProcessorPackageSnapshot(0,
+                [
+                    new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 1),
+                    new LogicalProcessorId(0, 2), new LogicalProcessorId(0, 3),
+                    new LogicalProcessorId(0, 4), new LogicalProcessorId(0, 5),
+                ])],
+            [
+                new ProcessorCoreSnapshot(0, 0, [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 1)]),
+                new ProcessorCoreSnapshot(1, 0, [new LogicalProcessorId(0, 2), new LogicalProcessorId(0, 3)]),
+                new ProcessorCoreSnapshot(2, 0, [new LogicalProcessorId(0, 4), new LogicalProcessorId(0, 5)]),
+            ],
+            DateTimeOffset.UnixEpoch);
+        var rankedCpuHeadroom = UsbAffinityCpuSelector.Rank(
+            topology,
+            capture,
+            new LogicalProcessorId(0, 0));
+        Assert.IsFalse(rankedCpuHeadroom.Any(static candidate =>
+            candidate.Processor.Number is 0 or 1),
+            "The whole physical core containing the GPU winner must be excluded from USB/xHCI selection.");
+        Assert.AreEqual(new LogicalProcessorId(0, 3), rankedCpuHeadroom[0].Processor,
+            "A CPU with no observed DPC/ISR load should rank ahead of busier eligible CPUs.");
+        Assert.AreEqual(new LogicalProcessorId(0, 4), rankedCpuHeadroom[1].Processor);
+        Assert.AreEqual(12d, rankedCpuHeadroom[1].TotalInterruptDurationMicroseconds, 0.001d);
 
         var ticks = Enumerable.Range(0, 101).Select(index => index * 1_000_000L).ToArray();
         var timing = InputTimingAnalyzer.Analyze(new InputReportTimestampSeries("HID\\VID_TEST", 1_000_000_000L, ticks));
