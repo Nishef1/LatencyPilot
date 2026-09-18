@@ -105,6 +105,47 @@ internal sealed class BenchmarkControlServer(
                 return;
             }
 
+            if (command.Kind == GpuBenchmarkControlCommandKind.RecreateRenderer)
+            {
+                try
+                {
+                    var nextRenderer = await RecreateRendererWithRetryAsync(
+                        rendererFactory,
+                        cancellationToken).ConfigureAwait(false);
+                    var previousRenderer = activeRenderer;
+                    activeRenderer = nextRenderer;
+                    previousRenderer.Dispose();
+
+                    await WriteResponseAsync(
+                        writer,
+                        new GpuBenchmarkControlResponse(
+                            GpuBenchmarkControlResponse.SchemaId,
+                            options.SessionId,
+                            GpuBenchmarkControlResponseStatus.RendererReady,
+                            0,
+                            checked((uint)Environment.ProcessId),
+                            null,
+                            "D3D12 renderer recreated after the GPU configuration change."),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    await WriteResponseAsync(
+                        writer,
+                        new GpuBenchmarkControlResponse(
+                            GpuBenchmarkControlResponse.SchemaId,
+                            options.SessionId,
+                            GpuBenchmarkControlResponseStatus.Failed,
+                            0,
+                            checked((uint)Environment.ProcessId),
+                            null,
+                            $"Benchmark renderer recreation failed: {exception.GetType().Name}: {exception.Message}"),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                continue;
+            }
+
             if (!completedRuns.Add(command.RunNumber))
             {
                 await WriteRejectedAsync(
@@ -131,22 +172,11 @@ internal sealed class BenchmarkControlServer(
 
                 try
                 {
-                    // Applying a GPU interrupt-affinity candidate restarts the
-                    // display adapter. Recreate only the D3D12 device/window
-                    // before every controlled trial so the benchmark does not
-                    // submit work through a device removed by that restart.
-                    // The process, frozen workload, seed and worker map remain
-                    // stable for continuity and comparability checks.
-                    // Device re-enumeration after a restart can lag several
-                    // seconds; retry recreation instead of failing the whole
-                    // Gate A search on the first post-restart trial.
-                    var nextRenderer = await RecreateRendererWithRetryAsync(
-                        rendererFactory,
-                        cancellationToken).ConfigureAwait(false);
-                    var previousRenderer = activeRenderer;
-                    activeRenderer = nextRenderer;
-                    previousRenderer.Dispose();
-
+                    // The controller explicitly recreates the D3D12 renderer
+                    // once after each GPU configuration-change restart. Warm-up
+                    // and its following scored trial intentionally reuse that
+                    // same renderer so the warm-up is not discarded by another
+                    // cold device/window recreation.
                     var artifact = await benchmark.RunTrialAsync(
                         activeRenderer,
                         frozenWorkload,
