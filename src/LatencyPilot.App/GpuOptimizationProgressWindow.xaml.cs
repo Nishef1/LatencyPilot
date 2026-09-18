@@ -151,7 +151,10 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 };
             })
             .Where(static row => row.Low1PctFps is { } low && double.IsFinite(low) && low > 0)
-            .OrderByDescending(static row => row.Low1PctFps)
+            .OrderByDescending(row =>
+                report.FinalProcessor is not null &&
+                report.FinalProcessor.Equals(row.Processor))
+            .ThenByDescending(static row => row.Low1PctFps)
             .ThenByDescending(static row => row.AvgFps)
             .ThenBy(static row => row.MedianP99)
             .ThenByDescending(static row => row.Low01PctFps)
@@ -172,7 +175,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         var best = rows[0];
         RankedSummaryText.Text = string.Format(
             CultureInfo.InvariantCulture,
-            "Best observed: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}). Ranking uses 1% low first, then AVG and p99; 0.1% low is rare-tail context.",
+            "Selected: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}). Sub-1% differences in 1% low / AVG / p99 are treated as practical ties; 0.1% low uses a wider rare-tail margin.",
             best.Processor.Number,
             best.Low1PctFps!.Value,
             rows.Length,
