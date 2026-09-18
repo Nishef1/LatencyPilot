@@ -80,6 +80,20 @@ public sealed class GpuAutoAffinitySessionTests
         var roundTrip = JsonSerializer.Deserialize<GpuAutoAffinityReport>(serialized)!;
         Assert.AreEqual(result.Report.Trials.Count, roundTrip.Trials.Count);
         Assert.AreEqual(result.Report.FinalProcessor, roundTrip.FinalProcessor);
+
+        var (_, _, toleranceRequest) = CreateFourCoreRequest();
+        var toleranceBackend = new RecordingBackend(comparisonToleranceCase: true);
+        var toleranceResult = await new GpuAutoAffinitySession(toleranceBackend).RunAsync(toleranceRequest);
+
+        Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, toleranceResult.Recommendation);
+        Assert.AreEqual(
+            new LogicalProcessorId(0, 0),
+            toleranceResult.Finalist?.Processor,
+            "A sub-1% 1%-low edge must be treated as equivalent so materially stronger AVG/pacing can decide the winner.");
+        Assert.AreEqual(
+            3,
+            toleranceBackend.Events.Count(static item => item == "apply:0:6"),
+            "A fourth-place screen within the 1% primary-noise margin of the third-place cutoff must receive both finalist re-test rounds.");
     }
 
     [TestMethod]
@@ -170,6 +184,36 @@ public sealed class GpuAutoAffinitySessionTests
         return (topology, pressure, request);
     }
 
+    private static (ProcessorTopologySnapshot Topology, ProcessorPressureEvidence[] Pressure, GpuAutoAffinitySessionRequest Request)
+        CreateFourCoreRequest()
+    {
+        var processors = new[]
+        {
+            new LogicalProcessorId(0, 0),
+            new LogicalProcessorId(0, 2),
+            new LogicalProcessorId(0, 4),
+            new LogicalProcessorId(0, 6),
+        };
+        var topology = new ProcessorTopologySnapshot(
+            [new ProcessorPackageSnapshot(0, processors)],
+            processors.Select((processor, index) =>
+                new ProcessorCoreSnapshot(index, 0, [processor])).ToArray(),
+            DateTimeOffset.UnixEpoch);
+        var pressure = processors
+            .Select((processor, index) => new ProcessorPressureEvidence(processor, 0.1 + (index * 0.01)))
+            .ToArray();
+        return (
+            topology,
+            pressure,
+            new GpuAutoAffinitySessionRequest(
+                Guid.NewGuid(),
+                topology,
+                pressure,
+                null,
+                0x51A7,
+                TimeSpan.FromSeconds(15)));
+    }
+
     private sealed class RecordingObserver : IGpuAutoAffinitySessionObserver
     {
         internal List<GpuAutoAffinityCandidateReport> Reports { get; } = [];
@@ -186,7 +230,8 @@ public sealed class GpuAutoAffinitySessionTests
         bool failKeep = false,
         bool failRecoveryVerification = false,
         bool cancelDuringFirstScoredCandidate = false,
-        bool unstableFinalists = false) : IGpuAutoAffinitySessionBackend
+        bool unstableFinalists = false,
+        bool comparisonToleranceCase = false) : IGpuAutoAffinitySessionBackend
     {
         private readonly Dictionary<Guid, GpuAffinityCandidate> active = [];
         private int captureSequence;
@@ -231,9 +276,18 @@ public sealed class GpuAutoAffinitySessionTests
                 throw new OperationCanceledException("synthetic safe-stop request");
             }
 
-            var periods = candidate.Processor.Number == 0
-                ? Enumerable.Repeat(5d, 99).Append(20d).ToArray()
-                : Enumerable.Repeat(6d, 99).Append(10d).ToArray();
+            var periods = comparisonToleranceCase
+                ? candidate.Processor.Number switch
+                {
+                    0 => Enumerable.Repeat(5d, 99).Append(10d).ToArray(),
+                    2 => Enumerable.Repeat(6d, 99).Append(9.95d).ToArray(),
+                    4 => Enumerable.Repeat(6d, 99).Append(11.11d).ToArray(),
+                    6 => Enumerable.Repeat(6d, 99).Append(11.17d).ToArray(),
+                    _ => throw new InvalidOperationException("Unexpected synthetic comparison candidate."),
+                }
+                : candidate.Processor.Number == 0
+                    ? Enumerable.Repeat(5d, 99).Append(20d).ToArray()
+                    : Enumerable.Repeat(6d, 99).Append(10d).ToArray();
 
             if (unstableFinalists && string.Equals(request.Phase, "screening-finalists", StringComparison.Ordinal))
             {
