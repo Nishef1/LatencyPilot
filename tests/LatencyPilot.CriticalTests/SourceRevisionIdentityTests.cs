@@ -323,8 +323,13 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(keepSource, "pre-keep verification failed");
 
         var applyCandidateIndex = gateABackendSource.IndexOf(
-            "public Task<Guid> ApplyCandidateAsync",
+            "public async Task<Guid> ApplyCandidateAsync",
             StringComparison.Ordinal);
+        StringAssert.Contains(
+            gateABackendSource,
+            "await benchmark.RecreateRendererAsync(cancellationToken).ConfigureAwait(false);",
+            "The D3D12 renderer must be recreated exactly after GPU affinity activation so warm-up and score can share the warmed renderer.");
+
         var postApplyRollbackIndex = gateABackendSource.IndexOf(
             "RollbackCandidateAfterPostApplyFailure",
             StringComparison.Ordinal);
