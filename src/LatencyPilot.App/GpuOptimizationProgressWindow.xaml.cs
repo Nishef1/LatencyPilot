@@ -127,8 +127,9 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 : finite[finite.Length / 2];
         }
 
-        // Top candidates have one screening run plus two fresh re-tests. Use
-        // all scored v1 ranking runs so the UI mirrors the decision engine.
+        // Top candidates have one screening run plus one fresh score in each
+        // of two independent re-test rounds. Use all scored v1 ranking runs so
+        // the UI mirrors the decision engine.
         var rows = report.Trials
             .Where(static trial =>
                 (string.Equals(trial.Phase, "screening", StringComparison.Ordinal) ||
@@ -151,9 +152,9 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             })
             .Where(static row => row.Low1PctFps is { } low && double.IsFinite(low) && low > 0)
             .OrderByDescending(static row => row.Low1PctFps)
-            .ThenByDescending(static row => row.Low01PctFps)
             .ThenByDescending(static row => row.AvgFps)
             .ThenBy(static row => row.MedianP99)
+            .ThenByDescending(static row => row.Low01PctFps)
             .ToArray();
 
         if (rows.Length == 0)
@@ -171,7 +172,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         var best = rows[0];
         RankedSummaryText.Text = string.Format(
             CultureInfo.InvariantCulture,
-            "Best observed: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}). Higher is better; 0.1% low and AVG break ties, while p99 stays diagnostic context.",
+            "Best observed: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}). Ranking uses 1% low first, then AVG and p99; 0.1% low is rare-tail context.",
             best.Processor.Number,
             best.Low1PctFps!.Value,
             rows.Length,
