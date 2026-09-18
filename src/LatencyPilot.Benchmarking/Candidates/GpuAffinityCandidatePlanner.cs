@@ -93,33 +93,36 @@ public static class GpuAffinityCandidatePlanner
         var rankedCandidates = new List<RankedGpuAffinityCandidate>(topology.PhysicalCoreCount);
         foreach (var core in topology.Cores)
         {
-            var eligible = core.LogicalProcessors
-                .Where(processor => IsEligible(cpuSets, processor))
-                .Select(processor => new RankedLogicalProcessor(
-                    processor,
-                    GetAvailabilityRank(cpuSets, processor),
-                    pressureByProcessor.TryGetValue(processor, out var score)
-                        ? score
-                        : double.PositiveInfinity))
-                .OrderBy(static item => item.AvailabilityRank)
-                .ThenBy(static item => item.Pressure)
-                .ThenBy(static item => item.Processor.Group)
-                .ThenBy(static item => item.Processor.Number)
-                .ToArray();
-            if (eligible.Length == 0)
+            // v1 treats a physical core as one search unit. Hyperthread/SMT
+            // siblings are never separate candidates and are never substituted
+            // dynamically based on transient pressure. The canonical
+            // representative is the lowest-numbered logical processor reported
+            // by Windows for that physical core.
+            var canonicalProcessor = core.LogicalProcessors
+                .OrderBy(static processor => processor.Group)
+                .ThenBy(static processor => processor.Number)
+                .First();
+            if (!IsEligible(cpuSets, canonicalProcessor))
             {
                 continue;
             }
 
-            var bestLogical = eligible[0];
+            var observedCorePressure = core.LogicalProcessors
+                .Select(processor => pressureByProcessor.TryGetValue(processor, out var score)
+                    ? score
+                    : double.NaN)
+                .Where(static score => double.IsFinite(score))
+                .DefaultIfEmpty(double.PositiveInfinity)
+                .Average();
+
             rankedCandidates.Add(new RankedGpuAffinityCandidate(
                 new GpuAffinityCandidate(
                     core.Index,
-                    bestLogical.Processor,
+                    canonicalProcessor,
                     core.EfficiencyClass,
                     core.IsSmt,
-                    bestLogical.Pressure),
-                bestLogical.AvailabilityRank));
+                    observedCorePressure),
+                GetAvailabilityRank(cpuSets, canonicalProcessor)));
         }
 
         return rankedCandidates;
