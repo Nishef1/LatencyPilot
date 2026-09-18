@@ -62,17 +62,17 @@ The current source now follows ADR 0006:
 ```text
 capture exact original/default state
 → deterministic D3D12 calibration / frozen workload
-→ 5 s original non-scored warm-up/reference
+→ 5 s original non-scored warm-up/reference (benchmark only; no PresentMon/ETW)
 → each eligible physical core:
      apply/restart/verify
-     5 s non-scored warm-up
+     5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored screen
      exact rollback
 → rank valid screens by higher 1% low, then 0.1% low, AVG, then lower p99 context
 → re-test best up to three with 2 additional scored runs each
 → rank finalists from three-run medians; unstable repeated 1% lows are rejected
 → apply winner once
-→ final 5 s ETW-backed verification capture
+→ final 5 s benchmark-only warm-up → 5 s ETW-backed verification capture
 → Keep only with clean ETW + attributable target-only GPU ISR placement
    otherwise exact RestoreOriginal
 ```
