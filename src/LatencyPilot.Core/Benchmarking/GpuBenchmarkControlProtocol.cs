@@ -6,6 +6,7 @@ namespace LatencyPilot.Core.Benchmarking;
 public enum GpuBenchmarkControlCommandKind
 {
     RunTrial,
+    RecreateRenderer,
     Stop,
 }
 
@@ -32,6 +33,15 @@ public sealed record GpuBenchmarkControlCommand(
             runNumber,
             checked((int)duration.TotalMilliseconds));
 
+    public static GpuBenchmarkControlCommand RecreateRenderer(Guid sessionId, string token) =>
+        new(
+            SchemaId,
+            sessionId,
+            token,
+            GpuBenchmarkControlCommandKind.RecreateRenderer,
+            0,
+            0);
+
     public static GpuBenchmarkControlCommand Stop(Guid sessionId, string token) =>
         new(
             SchemaId,
@@ -45,6 +55,7 @@ public sealed record GpuBenchmarkControlCommand(
 public enum GpuBenchmarkControlResponseStatus
 {
     Ready,
+    RendererReady,
     TrialCompleted,
     Stopped,
     Rejected,
@@ -106,6 +117,14 @@ public static class GpuBenchmarkControlProtocol
                     command.DurationMilliseconds is < MinimumTrialDurationMilliseconds or > MaximumTrialDurationMilliseconds)
                 {
                     reason = "Benchmark trial command has an invalid run number or duration.";
+                    return false;
+                }
+
+                break;
+            case GpuBenchmarkControlCommandKind.RecreateRenderer:
+                if (command.RunNumber != 0 || command.DurationMilliseconds != 0)
+                {
+                    reason = "Benchmark renderer-recreation command must not carry trial state.";
                     return false;
                 }
 
