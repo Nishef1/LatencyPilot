@@ -127,14 +127,13 @@ exact original/default GPU affinity
 → every eligible physical core:
      journaled apply/restart + stored-state verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
-     1 scored screening run
+     1 scored 30 s screening run
      exact rollback
 → rank by 1% low ↓ priority, then 0.1% low, AVG FPS, p99 diagnostic fallback
 → best up to three:
-     fresh apply/restart + warm-up
-     2 additional scored runs
-     exact rollback
-→ rank finalists from three-run medians; unstable 1% lows are unrankable
+     two independent deterministically shuffled re-test rounds
+     each candidate gets fresh apply/restart + warm-up + one 30 s score + exact rollback
+→ rank finalists from three transition-isolated scored observations; unstable 1% lows are unrankable
 → apply winner once
 → final benchmark-only warm-up → ETW verification capture
 → Keep only with clean target-only runtime GPU ISR placement
@@ -147,8 +146,9 @@ Source checklist:
 - [x] controlled benchmark wall-period AVG / 1% / 0.1% / p99 statistics;
 - [x] physical-core candidates from actual Windows topology, CPU0 allowed;
 - [x] one scored screening run per candidate;
-- [x] best up-to-three receive two additional scored re-tests;
-- [x] ranking order: median 1% low → 0.1% low → AVG → p99 tie/diagnostic context;
+- [x] best up-to-three receive two additional scored re-tests in separate fresh transition rounds;
+- [x] finalist order is deterministically shuffled in each re-test round to reduce time/thermal ordering bias;
+- [x] ranking order: median 1% low → AVG → p99 → 0.1% low rare-tail tie context;
 - [x] no active SMT sibling-refinement phase in v1;
 - [x] no ABBA/BAAB confirmation loop;
 - [x] Windows default is recovery/reference state, not a fixed minimum-improvement gate;
