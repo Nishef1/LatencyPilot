@@ -103,21 +103,21 @@ Current v1 sequence:
 
 ```text
 exact original/default state
-→ 5 s non-scored original warm-up/reference
+→ 5 s non-scored original warm-up/reference (benchmark only; no PresentMon/ETW)
 → each eligible physical core:
      journaled apply/restart + stored-state verify
-     5 s non-scored warm-up
+     5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored screening run
      exact rollback
 → rank valid screening candidates
 → best up to three:
      fresh apply/restart + stored-state verify
-     5 s non-scored warm-up
+     5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      2 additional scored runs
      exact rollback
 → rank finalists from all three scored observations
 → apply winner once
-→ final ETW placement-verification capture
+→ final benchmark-only warm-up → ETW placement-verification capture
 → Keep only when final runtime ISR placement is proved
    otherwise exact RestoreOriginal
 ```
