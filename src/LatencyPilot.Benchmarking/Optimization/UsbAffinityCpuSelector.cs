@@ -98,10 +98,14 @@ public static class UsbAffinityCpuSelector
     public static UsbAffinityCpuCandidate Select(
         ProcessorTopologySnapshot topology,
         KernelLatencyCaptureResult capture,
-        LogicalProcessorId gpuWinner) =>
-        Rank(topology, capture, gpuWinner).FirstOrDefault()
-        ?? throw new InvalidOperationException(
-            "No logical processor remains for USB/xHCI affinity after excluding the GPU winner physical core.");
+        LogicalProcessorId gpuWinner)
+    {
+        var ranked = Rank(topology, capture, gpuWinner);
+        return ranked.Count > 0
+            ? ranked[0]
+            : throw new InvalidOperationException(
+                "No logical processor remains for USB/xHCI affinity after excluding the GPU winner physical core.");
+    }
 
     private static double Percentile99(double[] sortedAscending)
     {
