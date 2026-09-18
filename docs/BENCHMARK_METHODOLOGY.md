@@ -110,7 +110,8 @@ exact original/default state
      1 scored 30 s screening run
      exact rollback
 → rank valid screening candidates
-→ best up to three:
+→ shortlist the best three plus every additional candidate whose screening 1% low is within 1% of the third-place cutoff
+→ shortlisted candidates:
      two independent re-test rounds
      each round deterministically shuffles finalist order
      each finalist gets fresh apply/restart + stored-state verify
@@ -130,11 +131,15 @@ There is no SMT/hyperthread sibling refinement in v1 and no ABBA/BAAB finalist l
 
 Ranking is transparent and lexicographic; there is no hidden weighted score:
 
-1. higher **median 1% low**;
-2. higher median **AVG FPS**;
-3. lower median **frame-p99** as pacing/tie context;
-4. higher median **0.1% low** only as rare-tail final tie context;
-5. passive pressure/core/processor identity only as deterministic fallback.
+Ranking is noise-aware rather than raw-number lexicographic:
+
+1. compare median **1% low**; differences <=1% are treated as practical ties;
+2. if tied, compare median **AVG FPS** with the same 1% equivalence margin;
+3. if tied, compare lower median **frame-p99** with a 1% equivalence margin;
+4. if still tied, compare median **0.1% low** only when the relative difference exceeds 5%;
+5. if still tied, use passive core-pressure/core/processor identity only as deterministic fallback.
+
+The 1% comparison margin follows the practical repeatability scale expected from a well-behaved benchmark rather than pretending that tiny decimal differences identify a real winner.
 
 `0.1% low` remains visible because it is useful for spotting severe tail spikes, but a 30 s run can contain only a small number of frames in the worst 0.1%; it therefore does not outrank the more stable 1% low/AVG/p99 signals.
 
@@ -149,6 +154,10 @@ relative 1%-low spread = (max - min) / min <= 5%
 ```
 
 Non-finite/non-positive ranking metrics or spread above the bound makes that finalist unrankable. A 5% bound is intentionally more tolerant than the ~1% repeatability expected from a very good controlled benchmark, because Windows driver restart/recovery adds real system noise; 20% was too permissive for choosing a supposedly best CPU. If no finalist remains valid/repeatable, exact Original is retained rather than inventing a winner.
+
+### 6.3 Adaptive finalist cutoff
+
+The initial screen always advances at least the best three rankable physical cores. It also advances every additional core whose **screening 1% low is within 1% of the third-place screening value**. This prevents one noisy first-pass spike from permanently eliminating a statistically indistinguishable fourth/fifth candidate. The shortlist is intentionally uncapped; if many physical cores are effectively tied, extra re-tests are preferable to manufacturing a winner from noise.
 
 ## 7. Screening evidence and external collectors
 
