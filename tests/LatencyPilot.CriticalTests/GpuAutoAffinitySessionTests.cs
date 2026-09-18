@@ -1,6 +1,5 @@
 using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
-using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
 using LatencyPilot.Core.Devices;
@@ -158,9 +157,7 @@ public sealed class GpuAutoAffinitySessionTests
             pressure,
             null,
             0x51A7,
-            TimeSpan.FromSeconds(15),
-            TimeSpan.FromSeconds(30),
-            new ComparisonPolicy(20, 0.03, 0.05, 0.99));
+            TimeSpan.FromSeconds(15));
         return (topology, pressure, request);
     }
 
