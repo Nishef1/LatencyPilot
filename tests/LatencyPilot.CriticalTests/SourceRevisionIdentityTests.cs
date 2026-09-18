@@ -318,6 +318,34 @@ public sealed class SourceRevisionIdentityTests
                 .Contains("WaitForGpu();", StringComparison.Ordinal),
             "The benchmark must not fully drain the GPU after every submitted frame.");
 
+        var benchmarkControlServerSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.GpuBenchmark",
+            "BenchmarkControlServer.cs"));
+        StringAssert.Contains(
+            benchmarkControlServerSource,
+            "exception is not OperationCanceledException",
+            "A renderer/window cancellation must be considered separately from an authenticated session cancellation.");
+        StringAssert.Contains(
+            benchmarkControlServerSource,
+            "!cancellationToken.IsCancellationRequested",
+            "A renderer/window cancellation that is not the authenticated session cancellation must be returned as a failed control response instead of closing the pipe without a response.");
+
+        var gateAExperienceSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.App",
+            "GateAValidationExperience.cs"));
+        StringAssert.Contains(
+            gateAExperienceSource,
+            "var benchmarkStandardOutput",
+            "Gate A must retain benchmark stdout so a child-process failure is diagnosable from the App run.");
+        StringAssert.Contains(
+            gateAExperienceSource,
+            "benchmarkStandardError",
+            "Gate A must retain benchmark stderr so a child-process failure is diagnosable from the App run.");
+
         StringAssert.Contains(gateASessionSource, "\"final-verification-warmup\"");
         StringAssert.Contains(gateASessionSource, "\"final-verification\"");
         Assert.IsFalse(

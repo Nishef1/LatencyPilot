@@ -128,7 +128,9 @@ internal sealed class BenchmarkControlServer(
                             "D3D12 renderer recreated after the GPU configuration change."),
                         cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception exception) when (exception is not OperationCanceledException)
+                catch (Exception exception) when (
+                    exception is not OperationCanceledException ||
+                    !cancellationToken.IsCancellationRequested)
                 {
                     await WriteResponseAsync(
                         writer,
@@ -199,7 +201,9 @@ internal sealed class BenchmarkControlServer(
                         "Frozen benchmark trial completed."),
                     cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception exception) when (exception is not OperationCanceledException)
+                catch (Exception exception) when (
+                    exception is not OperationCanceledException ||
+                    !cancellationToken.IsCancellationRequested)
                 {
                 completedRuns.Remove(command.RunNumber);
                 await WriteResponseAsync(

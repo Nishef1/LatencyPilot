@@ -209,10 +209,18 @@ public sealed partial class MainWindow
             await progressWindow.StopMonitoringAsync();
 
             await EnsureBenchmarkExitedAsync(benchmarkProcess);
+            var benchmarkStandardOutput = benchmarkStdoutTask is null
+                ? string.Empty
+                : await benchmarkStdoutTask;
             var benchmarkStandardError = benchmarkStderrTask is null
                 ? string.Empty
                 : await benchmarkStderrTask;
-            _ = benchmarkStdoutTask is null ? string.Empty : await benchmarkStdoutTask;
+            Logger.Information(
+                "GPU Gate A benchmark process {BenchmarkProcessId} exited with code {BenchmarkExitCode}. stdout={BenchmarkStandardOutput} stderr={BenchmarkStandardError}",
+                benchmarkProcess.Id,
+                benchmarkProcess.ExitCode,
+                TruncateProcessOutput(benchmarkStandardOutput),
+                TruncateProcessOutput(benchmarkStandardError));
 
             if (!File.Exists(reportPath))
             {
@@ -493,6 +501,15 @@ public sealed partial class MainWindow
         value is { } number && double.IsFinite(number)
             ? number.ToString(format, CultureInfo.InvariantCulture)
             : "—";
+
+    private static string TruncateProcessOutput(string value)
+    {
+        const int maximumCharacters = 8_000;
+        var trimmed = value.Trim();
+        return trimmed.Length <= maximumCharacters
+            ? trimmed
+            : trimmed[^maximumCharacters..];
+    }
 
     private static string GetValidationDirectory()
     {
