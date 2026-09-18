@@ -151,6 +151,10 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(progressWindowSource, "terminalSnapshotReceived");
         StringAssert.Contains(progressWindowSource, "Failed safely · original state verified");
         StringAssert.Contains(progressWindowSource, "Stopped safely · original state verified");
+        StringAssert.Contains(
+            progressWindowSource,
+            "Elapsed {FormatDuration(snapshot.ElapsedMilliseconds)} · finished",
+            "A terminal Gate A snapshot must not continue presenting an estimated remaining time.");
 
         var gateAProgressSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
@@ -345,6 +349,14 @@ public sealed class SourceRevisionIdentityTests
             gateAExperienceSource,
             "benchmarkStandardError",
             "Gate A must retain benchmark stderr so a child-process failure is diagnosable from the App run.");
+        StringAssert.Contains(
+            gateAExperienceSource,
+            "WaitForGateAHelperAsync",
+            "The App must not wait indefinitely for an elevated wrapper after a terminal Gate A report is already available.");
+        StringAssert.Contains(
+            gateAExperienceSource,
+            "TryReadTerminalProgressAsync",
+            "The App must use the terminal progress snapshot as an independent completion signal for Gate A.");
 
         StringAssert.Contains(gateASessionSource, "\"final-verification-warmup\"");
         StringAssert.Contains(gateASessionSource, "\"final-verification\"");

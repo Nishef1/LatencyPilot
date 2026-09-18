@@ -205,7 +205,11 @@ public sealed partial class MainWindow
 
             using var helper = Process.Start(helperStartInfo)
                 ?? throw new InvalidOperationException("The elevated GPU Gate A helper could not be started.");
-            await helper.WaitForExitAsync();
+            var helperExitCode = await WaitForGateAHelperAsync(
+                helper,
+                reportPath,
+                progressPath,
+                sessionId);
             await progressWindow.StopMonitoringAsync();
 
             await EnsureBenchmarkExitedAsync(benchmarkProcess);
@@ -228,7 +232,7 @@ public sealed partial class MainWindow
                     ? string.Empty
                     : $" Benchmark: {benchmarkStandardError.Trim()}";
                 throw new InvalidOperationException(
-                    $"GPU Gate A helper exited with code {helper.ExitCode}, but no report was produced.{benchmarkDetails}");
+                    $"GPU Gate A helper exited with code {helperExitCode}, but no report was produced.{benchmarkDetails}");
             }
 
             var report = JsonSerializer.Deserialize<GpuAutoAffinityReport>(
@@ -241,8 +245,8 @@ public sealed partial class MainWindow
                 throw new InvalidDataException("GPU Gate A report schema or session identity does not match the owner run.");
             }
 
-            var terminalSummary = BuildGateATerminalSummary(helper.ExitCode, report);
-            var terminalStateVerified = IsGateATerminalStateVerified(helper.ExitCode, report);
+            var terminalSummary = BuildGateATerminalSummary(helperExitCode, report);
+            var terminalStateVerified = IsGateATerminalStateVerified(helperExitCode, report);
             progressWindow.ShowFinalOutcome(terminalSummary, reportPath, terminalStateVerified, report);
             SetGateAValidationStatus($"{terminalSummary} Report: {reportPath}");
             TryRevealReport(reportPath);
@@ -404,6 +408,90 @@ public sealed partial class MainWindow
         {
             benchmarkProcess.Kill(entireProcessTree: true);
             await benchmarkProcess.WaitForExitAsync();
+        }
+    }
+
+    private static async Task<int> WaitForGateAHelperAsync(
+        Process helper,
+        string reportPath,
+        string progressPath,
+        Guid sessionId)
+    {
+        while (!helper.HasExited)
+        {
+            var terminalSnapshot = await TryReadTerminalProgressAsync(
+                reportPath,
+                progressPath,
+                sessionId);
+            if (terminalSnapshot is not null)
+            {
+                Logger.Warning(
+                    "GPU Gate A report and terminal progress are available while elevated helper process {HelperProcessId} is still running; terminalizing the orphaned wrapper.",
+                    helper.Id);
+                try
+                {
+                    helper.Kill(entireProcessTree: true);
+                    await helper.WaitForExitAsync();
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+                {
+                    Logger.Warning(
+                        exception,
+                        "The terminal GPU Gate A helper wrapper could not be stopped cleanly.");
+                }
+
+                return terminalSnapshot.Phase switch
+                {
+                    "complete" => 0,
+                    "stopped-safely" => 3,
+                    "failed-safely" => 1,
+                    _ => 4,
+                };
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+        }
+
+        return helper.ExitCode;
+    }
+
+    private static async Task<GpuOptimizationProgressSnapshot?> TryReadTerminalProgressAsync(
+        string reportPath,
+        string progressPath,
+        Guid sessionId)
+    {
+        if (!File.Exists(reportPath) || !File.Exists(progressPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            await using var stream = new FileStream(
+                progressPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                bufferSize: 4096,
+                useAsync: true);
+            var snapshot = await JsonSerializer.DeserializeAsync<GpuOptimizationProgressSnapshot>(
+                stream,
+                GateAJsonOptions);
+            return snapshot is { IsTerminal: true } && snapshot.SessionId == sessionId
+                ? snapshot
+                : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 

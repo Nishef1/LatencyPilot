@@ -320,9 +320,11 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             : "—";
         IsrPlacementText.Text = snapshot.IsrPlacementState;
         LastCandidateText.Text = snapshot.LastCompletedCandidateVerdict;
-        TimingText.Text = snapshot.EstimatedRemainingMilliseconds is { } remaining && double.IsFinite(remaining)
-            ? $"Elapsed {FormatDuration(snapshot.ElapsedMilliseconds)} · Estimated remaining {FormatDuration(remaining)}"
-            : $"Elapsed {FormatDuration(snapshot.ElapsedMilliseconds)} · estimating remaining time";
+        TimingText.Text = snapshot.IsTerminal
+            ? $"Elapsed {FormatDuration(snapshot.ElapsedMilliseconds)} · finished"
+            : snapshot.EstimatedRemainingMilliseconds is { } remaining && double.IsFinite(remaining)
+                ? $"Elapsed {FormatDuration(snapshot.ElapsedMilliseconds)} · Estimated remaining {FormatDuration(remaining)}"
+                : $"Elapsed {FormatDuration(snapshot.ElapsedMilliseconds)} · estimating remaining time";
         StatusText.Text = snapshot.IsRestoring
             ? $"Restoring safely · {snapshot.Message}"
             : snapshot.Message;
