@@ -79,7 +79,7 @@ public sealed record GpuAutoAffinitySessionResult(
 /// </summary>
 public sealed class GpuAutoAffinitySession
 {
-    private const double MaximumRunToRunPrimaryDrift = 0.20;
+    private const double MaximumRunToRunPrimaryDrift = 0.05;
     private const int MaximumFinalistCandidates = 3;
     private const string FinalistPhaseName = "screening-finalists";
     private static readonly TimeSpan TransitionWarmupDuration = TimeSpan.FromSeconds(5);
