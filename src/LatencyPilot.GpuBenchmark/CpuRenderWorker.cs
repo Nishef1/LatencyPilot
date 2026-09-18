@@ -32,10 +32,7 @@ internal sealed class CpuRenderWorker : IDisposable
         int frameContextCount)
     {
         this.processor = processor;
-        if (frameContextCount < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(frameContextCount));
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(frameContextCount, 1);
 
         frameResources = Enumerable.Range(0, frameContextCount)
             .Select(_ =>
