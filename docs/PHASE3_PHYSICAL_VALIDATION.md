@@ -119,13 +119,13 @@ normal-user benchmark + one UAC owner helper
 → 5 s original warm-up/reference (not scored)
 → for every eligible physical core:
      apply/restart/verify stored state
-     5 s warm-up (not scored)
+     5 s warm-up (not scored; benchmark only, no PresentMon/ETW)
      1 scored screening run
      exact rollback
 → rank by higher 1% low, then 0.1% low, AVG; p99 is diagnostic/tie context
 → best up to three:
      fresh apply/restart/verify
-     5 s warm-up
+     5 s warm-up (benchmark only; no PresentMon/ETW)
      2 additional scored runs
      exact rollback
 → rank finalists from three-run medians
@@ -178,7 +178,7 @@ original snapshot retained
 → journal-owned apply
 → exact stored candidate verified
 → target restart/activation recorded
-→ 5 s non-scored warm-up
+→ 5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
 → scored benchmark artifact
 → exact stored candidate verified after capture
 → ETW placement evidence if healthy
