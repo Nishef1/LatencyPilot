@@ -204,6 +204,14 @@ public sealed class SourceRevisionIdentityTests
         Assert.IsTrue(
             connectAwaitIndex >= 0 && clientConstructionIndex > connectAwaitIndex,
             "GPU benchmark control streams must not be created before the named pipe is connected.");
+        StringAssert.Contains(
+            benchmarkControlClientSource,
+            "IsClosedRenderWindowFailure",
+            "A transient renderer-window loss after GPU affinity change must have one bounded recovery path.");
+        StringAssert.Contains(
+            benchmarkControlClientSource,
+            "await RecreateRendererAsync(cancellationToken)",
+            "The benchmark client must recreate the renderer before retrying a closed-window trial.");
 
         var gateARunnerSource = File.ReadAllText(Path.Combine(
             repositoryRoot,

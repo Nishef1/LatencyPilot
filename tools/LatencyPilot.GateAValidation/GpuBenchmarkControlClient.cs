@@ -142,7 +142,22 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
         }
 
         await WriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
-        var response = await ReadResponseAsync(cancellationToken).ConfigureAwait(false);
+        GpuBenchmarkControlResponse response;
+        try
+        {
+            response = await ReadResponseAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidDataException exception) when (IsClosedRenderWindowFailure(exception.Message))
+        {
+            // A GPU affinity change can close the old D3D12 window while the
+            // authenticated benchmark process remains healthy. The server
+            // removes the failed run number before sending this response, so
+            // recreate the renderer once and retry the same evidence slot.
+            await RecreateRendererAsync(cancellationToken).ConfigureAwait(false);
+            await WriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
+            response = await ReadResponseAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (response.Status != GpuBenchmarkControlResponseStatus.TrialCompleted ||
             response.RunNumber != runNumber ||
             string.IsNullOrWhiteSpace(response.ArtifactPath))
@@ -153,6 +168,10 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
 
         return Path.GetFullPath(response.ArtifactPath);
     }
+
+    private static bool IsClosedRenderWindowFailure(string message) =>
+        message.Contains("Benchmark trial failed:", StringComparison.OrdinalIgnoreCase) &&
+        message.Contains("render window was closed", StringComparison.OrdinalIgnoreCase);
 
     internal async Task StopAsync(CancellationToken cancellationToken = default)
     {
