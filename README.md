@@ -18,7 +18,7 @@ preflight / quiet check
 → deep ETW baseline
 → benchmark GPU interrupt affinity on eligible physical cores
 → re-test the best up to three
-→ choose by 1% low → 0.1% low → AVG FPS (p99 context)
+→ choose by 1% low → AVG FPS → p99 (0.1% low rare-tail context)
 → final ETW target-only GPU ISR placement proof
 → measure remaining per-CPU interrupt headroom
 → Raw Input → USB → exact xHCI controller
@@ -62,18 +62,20 @@ Every eligible physical core receives:
 ```text
 apply/restart/verify
 → 5 s non-scored warm-up
-→ 1 scored screening run
+→ 1 scored 30 s screening run
 → exact rollback
 ```
 
-The best up to three candidates then receive two additional fresh scored runs each. Finalists are ranked transparently by:
+The best up to three candidates then enter two independent re-test rounds. Each round deterministically shuffles finalist order; every candidate receives a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback. Finalists therefore have three scored observations from three separate affinity activations and are ranked transparently by:
 
 1. higher median **1% low**;
-2. higher median **0.1% low**;
-3. higher median **AVG FPS**;
-4. lower median frame-p99 only as final diagnostic/tie context.
+2. higher median **AVG FPS**;
+3. lower median **frame-p99**;
+4. higher median **0.1% low** only as rare-tail final tie context.
 
 There is no fixed “must beat Windows default by 3%” rule, no active SMT sibling-refinement phase and no ABBA/BAAB confirmation loop in v1. Windows default is the exact reference/recovery state.
+
+The benchmark process intentionally stays alive for the whole search. GPU restarts force D3D12 renderer/device recreation before each trial, but process identity, frozen workload, seed and worker map remain constant so process-start/JIT/cold-cache effects are not reintroduced for every CPU.
 
 The benchmark records its own controlled wall-clock loop periods. They are a deterministic comparison signal for this workload; they are not claimed to be identical to arbitrary game end-to-end frametime.
 
