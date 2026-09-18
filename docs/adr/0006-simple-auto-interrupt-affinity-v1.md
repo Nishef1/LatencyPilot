@@ -36,7 +36,7 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
 ## Candidate search
 
 1. Capture one non-scored original/default warm-up to establish benchmark/workload continuity.
-2. Generate one eligible logical representative for each physical core from Windows topology; do not assume even/odd CPU numbering and do not ban CPU0.
+2. Generate one canonical lowest-numbered logical representative for each physical core from Windows topology; do not assume even/odd CPU numbering and do not ban CPU0.
 3. For every physical-core candidate:
    - apply exact GPU interrupt affinity;
    - restart/activate and verify stored state;
@@ -50,7 +50,7 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
    4. higher 0.1% low only as rare-tail final tie context.
 5. Re-test the best up-to-three candidates in **two independent rounds**. In each round the finalist order is deterministically shuffled and every candidate gets a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback.
 6. Rank finalists from the median of all three scored observations captured across three separate affinity activations. A finalist with materially unstable repeated 1% lows is not rankable.
-7. SMT/hyperthread siblings are intentionally not benchmarked or refined separately; one representative logical processor per physical core is the permanent v1 search shape. There is no ABBA/BAAB confirmation loop.
+7. SMT/hyperthread siblings are intentionally neither benchmarked nor substituted dynamically; one canonical lowest-numbered logical processor per physical core is the permanent v1 search shape. There is no ABBA/BAAB confirmation loop.
 
 Windows default is the exact recovery/reference state, not an opponent that every forced CPU must beat by a fixed percentage.
 
