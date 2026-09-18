@@ -199,7 +199,7 @@ Product mutation IPC remains unarmed until this physical substrate passes.
 
 ## Phase 5 — Automatic USB/input CPU selection
 
-**State: READ-ONLY TOPOLOGY/MEASUREMENT SOURCE EXISTS; AUTOMATIC SELECTION WIRING OPEN**
+**State: READ-ONLY AUTOMATIC RECOMMENDATION SOURCE IMPLEMENTED; PHYSICAL EVIDENCE PENDING**
 
 Available:
 
@@ -212,11 +212,11 @@ Available:
 
 V1 selection work after GPU winner is fixed:
 
-- [ ] run the post-GPU quiet ETW capture used for CPU headroom;
-- [ ] exclude the GPU winner CPU by default;
-- [ ] rank available CPU headroom from DPC duration + ISR duration + tail spikes, with DPC count shown as context;
-- [ ] bind the selected CPU to the exact interrupt-owning xHCI controller, not blindly to the leaf mouse;
-- [ ] show the selected input route/controller and reason in UI.
+- [x] run the post-GPU quiet ETW capture used for CPU headroom in Gate A after a verified GPU Keep;
+- [x] exclude the entire physical core containing the GPU winner, including its SMT sibling;
+- [x] rank available CPU headroom from total DPC + ISR duration, then p99 interrupt tail, then event count as context;
+- [x] bind the selected CPU to the exact interrupt-owning xHCI controller, not blindly to the leaf mouse;
+- [x] persist the selected input route/controller/CPU and transparent reason in the Gate A report; normal-user UI rendering remains Phase 9.
 
 ---
 
