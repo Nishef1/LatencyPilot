@@ -143,7 +143,7 @@ internal static class GpuAutoAffinityGateARunner
                 pressure,
                 cpuSets,
                 shuffleSeed,
-                TimeSpan.FromSeconds(20));
+                TimeSpan.FromSeconds(30));
 
             Console.WriteLine($"session={options.SessionId:D}");
             Console.WriteLine($"source-revision={options.ExpectedCommit}");
