@@ -279,3 +279,8 @@ Gate A passes only when one exact clean green revision physically proves:
 14. final machine state is known and verified.
 
 Passing GPU Gate A authorizes the next mutation-boundary work; it does not arm public mutation by itself.
+
+
+## Post-GPU USB recommendation evidence
+
+When Gate A finishes with a verified GPU Keep, the helper now performs one additional **read-only** 10 s quiet ETW capture after stopping the benchmark. It resolves Raw Input mouse routes to exact USB hub/port/xHCI ownership, excludes the physical core containing the GPU winner, and records the recommended xHCI CPU in `UsbRecommendation` together with total DPC+ISR duration, p99 interrupt tail and DPC/ISR counts. Multiple distinct mouse xHCI controllers or unresolved routes produce `NotReady`; this phase does not mutate USB/xHCI policy before the GPU physical gate passes.
