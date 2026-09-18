@@ -41,7 +41,7 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, result.Recommendation);
         Assert.IsNotNull(result.Finalist);
         Assert.AreEqual(new LogicalProcessorId(0, 2), result.Finalist.Processor,
-            "CPU2 must win because its 1%/0.1% lows are stronger even though CPU0 has the lower frame-p99.");
+            "CPU2 must win because its 1% low is stronger even though CPU0 has higher AVG FPS and the lower frame-p99.");
         Assert.IsTrue(result.Report.FinalStateVerified);
         Assert.IsFalse(result.Report.OriginalStateRestored);
         Assert.IsTrue(backend.Events.Contains("keep:0:2"));
