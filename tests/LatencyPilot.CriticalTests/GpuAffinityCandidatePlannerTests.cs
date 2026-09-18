@@ -52,9 +52,12 @@ public sealed class GpuAffinityCandidatePlannerTests
 
         var candidates = GpuAffinityCandidatePlanner.Create(topology, pressure, maximumCandidates: 2);
         Assert.AreEqual(2, candidates.Count);
-        Assert.AreEqual(cpu3, candidates[0].Processor);
-        Assert.AreEqual(cpu1, candidates[1].Processor);
-        Assert.IsTrue(candidates[0].ObservedPressureScore < candidates[1].ObservedPressureScore);
+        Assert.AreEqual(cpu2, candidates[0].Processor,
+            "Physical core 1 must use its canonical lowest-numbered logical CPU rather than the quieter SMT sibling.");
+        Assert.AreEqual(cpu0, candidates[1].Processor,
+            "Physical core 0 must use its canonical lowest-numbered logical CPU rather than the quieter SMT sibling.");
+        Assert.IsTrue(candidates[0].ObservedPressureScore < candidates[1].ObservedPressureScore,
+            "Physical-core pressure may rank cores, but it must never select a different SMT sibling.");
 
         Span<byte> descriptor = stackalloc byte[AllocatedIrqDescriptorParser.Descriptor64Size];
         BinaryPrimitives.WriteUInt32LittleEndian(descriptor[0..4], 0);
