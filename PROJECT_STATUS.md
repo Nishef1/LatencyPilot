@@ -147,3 +147,8 @@ Product mutation IPC remains unarmed until this physical gate passes.
 Repository/source completion means every v1 source outcome is implemented or explicitly blocked by a documented physical safety prerequisite, canonical docs match actual source, and the exact final HEAD is green in hosted Tests.
 
 True v1 completion additionally requires physical read-only closure, GPU mutation gates, automatic USB/xHCI apply/verify, combined reboot/recovery, final before/after UX, accessibility/runtime validation, and signed package/install/upgrade/uninstall evidence.
+
+
+### Post-GPU USB/xHCI recommendation
+
+After a verified GPU winner is kept in Gate A, LatencyPilot now stops the benchmark, captures a 10 s quiet kernel-ETW window, resolves Raw Input mouse routes through exact USB hub/port evidence to xHCI, excludes the whole physical core containing the GPU winner, and ranks remaining logical CPUs by total DPC+ISR duration, p99 interrupt tail, then event count. The recommendation is read-only and is persisted in the Gate A report; ambiguous mouse-to-controller routing returns NotReady rather than guessing.
