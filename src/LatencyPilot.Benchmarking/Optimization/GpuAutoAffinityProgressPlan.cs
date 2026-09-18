@@ -22,7 +22,7 @@ public sealed class GpuAutoAffinityProgressPlan
 
     // Kept for compatibility with the development progress surface. The v1
     // search no longer performs a separate SMT sibling-refinement phase.
-    public int MaximumRefinementCandidateCount => 0;
+    public int MaximumRefinementCandidateCount => Math.Min(0, PhysicalCandidateCount);
 
     public int FinalistCandidateCount => Math.Min(MaximumFinalistCandidates, PhysicalCandidateCount);
 
