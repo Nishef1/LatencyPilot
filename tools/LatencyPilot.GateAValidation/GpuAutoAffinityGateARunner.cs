@@ -5,7 +5,6 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
-using LatencyPilot.Benchmarking.Comparisons;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
 using LatencyPilot.Core.System;
@@ -133,7 +132,7 @@ internal static class GpuAutoAffinityGateARunner
                     "GPU affinity state changed during Gate A startup before any owned mutation began.");
             }
 
-            stage = "GPU candidate search and confirmation";
+            stage = "GPU candidate search and final verification";
             var reportingBackend = new ProgressReportingGpuAutoAffinityBackend(rawBackend, progress);
             var shuffleSeed = RandomNumberGenerator.GetInt32(int.MaxValue);
             var request = new GpuAutoAffinitySessionRequest(
@@ -142,9 +141,7 @@ internal static class GpuAutoAffinityGateARunner
                 pressure,
                 cpuSets,
                 shuffleSeed,
-                TimeSpan.FromSeconds(20),
-                TimeSpan.FromSeconds(30),
-                new ComparisonPolicy());
+                TimeSpan.FromSeconds(20));
 
             Console.WriteLine($"session={options.SessionId:D}");
             Console.WriteLine($"source-revision={options.ExpectedCommit}");
