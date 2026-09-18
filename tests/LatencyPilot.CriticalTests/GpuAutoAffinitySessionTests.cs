@@ -21,7 +21,7 @@ public sealed class GpuAutoAffinitySessionTests
         var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets: null);
         Assert.AreEqual(2, progressPlan.PhysicalCandidateCount);
         Assert.AreEqual(2, progressPlan.FinalistCandidateCount);
-        Assert.AreEqual(13, progressPlan.InitialTotalUnits);
+        Assert.AreEqual(15, progressPlan.InitialTotalUnits);
 
         var nonSmtTopology = new ProcessorTopologySnapshot(
             [new ProcessorPackageSnapshot(0, [new LogicalProcessorId(0, 0)])],
@@ -32,7 +32,7 @@ public sealed class GpuAutoAffinitySessionTests
             [new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0d)],
             cpuSets: null);
         Assert.AreEqual(1, nonSmtPlan.FinalistCandidateCount);
-        Assert.AreEqual(8, nonSmtPlan.InitialTotalUnits);
+        Assert.AreEqual(9, nonSmtPlan.InitialTotalUnits);
 
         var backend = new RecordingBackend();
         var observer = new RecordingObserver();
@@ -45,6 +45,14 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsTrue(result.Report.FinalStateVerified);
         Assert.IsFalse(result.Report.OriginalStateRestored);
         Assert.IsTrue(backend.Events.Contains("keep:0:2"));
+        Assert.AreEqual(
+            3,
+            backend.Events.Count(static item => item == "apply:0:0"),
+            "The non-winning finalist must be applied once for screening and once in each independent finalist round.");
+        Assert.AreEqual(
+            4,
+            backend.Events.Count(static item => item == "apply:0:2"),
+            "The winner must be applied for screening, two independent finalist rounds, and final placement verification.");
 
         var screeningReports = observer.Reports.Where(static report => report.Phase == "screening").ToArray();
         Assert.AreEqual(2, screeningReports.Length);
@@ -55,7 +63,10 @@ public sealed class GpuAutoAffinitySessionTests
 
         Assert.IsTrue(result.Report.Trials.Any(static trial =>
             trial.Phase == "screening-warmup" && trial.Processor is null));
-        Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "screening-finalists-warmup"));
+        Assert.AreEqual(
+            4,
+            result.Report.Trials.Count(static trial => trial.Phase == "screening-finalists-warmup"),
+            "Each of the two finalists must receive a fresh apply/restart/warm-up in each of two independent re-test rounds.");
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "final-verification-warmup"));
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "final-verification"));
         Assert.IsFalse(result.Report.Trials.Any(static trial =>
