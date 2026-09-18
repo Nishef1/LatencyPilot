@@ -21,7 +21,7 @@ public sealed class GpuAutoAffinitySessionTests
         var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets: null);
         Assert.AreEqual(2, progressPlan.PhysicalCandidateCount);
         Assert.AreEqual(2, progressPlan.FinalistCandidateCount);
-        Assert.AreEqual(12, progressPlan.InitialTotalUnits);
+        Assert.AreEqual(13, progressPlan.InitialTotalUnits);
 
         var nonSmtTopology = new ProcessorTopologySnapshot(
             [new ProcessorPackageSnapshot(0, [new LogicalProcessorId(0, 0)])],
@@ -32,7 +32,7 @@ public sealed class GpuAutoAffinitySessionTests
             [new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0d)],
             cpuSets: null);
         Assert.AreEqual(1, nonSmtPlan.FinalistCandidateCount);
-        Assert.AreEqual(7, nonSmtPlan.InitialTotalUnits);
+        Assert.AreEqual(8, nonSmtPlan.InitialTotalUnits);
 
         var backend = new RecordingBackend();
         var observer = new RecordingObserver();
@@ -56,6 +56,7 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsTrue(result.Report.Trials.Any(static trial =>
             trial.Phase == "screening-warmup" && trial.Processor is null));
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "screening-finalists-warmup"));
+        Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "final-verification-warmup"));
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "final-verification"));
         Assert.IsFalse(result.Report.Trials.Any(static trial =>
             trial.Phase == "confirmation" || trial.Phase == "smt-refinement"));
