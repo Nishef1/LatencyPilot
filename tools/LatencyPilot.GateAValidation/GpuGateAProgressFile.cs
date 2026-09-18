@@ -83,14 +83,16 @@ internal sealed class GpuGateAProgressFile
             completedUnits = Math.Min(totalUnits, completedUnits + 1);
             var (candidateIndex, candidateCount) = GetCandidateOrdinal(request.Phase, request.Candidate);
             var interpretation = GpuBenchmarkEvidenceInterpreter.Interpret(observation.Evidence);
-            var placementState = request.Candidate is null
-                ? "Original/reference state"
-                : observation.Placement is { ConfirmsRequestedPlacement: true }
-                    ? "Confirmed on requested CPU"
-                    : observation.Evidence.EtwIntegrityComplete
-                        ? "Requested placement not confirmed"
-                        : "Placement unverified (ETW unavailable)";
             var isWarmup = request.Phase.EndsWith("-warmup", StringComparison.Ordinal);
+            var placementState = isWarmup
+                ? "Not measured during warm-up"
+                : request.Candidate is null
+                    ? "Original/reference state"
+                    : observation.Placement is { ConfirmsRequestedPlacement: true }
+                        ? "Confirmed on requested CPU"
+                        : observation.Evidence.EtwIntegrityComplete
+                            ? "Requested placement not confirmed"
+                            : "Placement unverified (ETW unavailable)";
             var trialState = isWarmup
                 ? "Warm-up complete · not scored"
                 : string.Equals(request.Phase, "final-verification", StringComparison.Ordinal)
