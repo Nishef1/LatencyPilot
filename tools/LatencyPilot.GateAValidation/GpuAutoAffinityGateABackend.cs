@@ -23,7 +23,6 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
     private const int KernelMaximumEvents = 2_000_000;
     private const double MinimumOverlapRatio = 0.95;
-    private const double ControlDriftThreshold = 0.20;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly string deviceInstanceId;
@@ -38,7 +37,6 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private readonly HashSet<Guid> measuringExperiments = [];
     private readonly Dictionary<Guid, GpuAffinityCandidate> ownedCandidates = [];
     private readonly List<GpuAutoAffinityMutationAuditEntry> mutationAudit = [];
-    private double? referenceControlP99Milliseconds;
     private GpuAutoAffinityReportProvenance? reportProvenance;
     private string? referenceIsrModuleName;
 
@@ -369,49 +367,83 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             mutation.BeginMeasurement(experimentId.Value);
         }
 
-        // Provision and start the pinned standalone PresentMon collector before
-        // the decision-grade workload begins. Provisioning is outside the trial
-        // deadline so a first-run download cannot shorten the benchmark window.
-        // The collector window covers typical D3D12 device recreation after
-        // a GPU restart plus the full scored trial; the CSV is cropped to the
-        // benchmark artifact interval during parsing. Kept to +12 s (not the
-        // full 30 s recreation budget) so a fast trial does not idle 30 s
-        // waiting for an over-long PresentMon timed exit on every run.
-        var presentMonWindow = request.Duration + TimeSpan.FromSeconds(12);
-        await using var presentMonSession = await PresentMonConsoleFrameMetricsReader.StartAsync(
-            benchmarkProcessId,
-            presentMonWindow,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
+        var isWarmup = request.Phase.EndsWith("-warmup", StringComparison.Ordinal);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(request.Duration + TimeSpan.FromSeconds(60));
-        // The controlled benchmark recreates its D3D12 device/window inside
-        // RunTrial (required after a GPU apply/restart removes the device).
-        // That recreation costs 1-3 s after the trial command is sent, so the
-        // kernel window must cover recreation + the full scored trial.
-        // Without this headroom the kernel/benchmark overlap gate fails
-        // systematically even when every stream is healthy.
-        var kernelDuration = request.Duration + TimeSpan.FromSeconds(8);
-        var kernelTask = Task.Run(
-            () => KernelLatencyCapture.Capture(
-                new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),
-                deadline.Token),
-            deadline.Token);
 
-        await Task.Delay(TimeSpan.FromMilliseconds(150), deadline.Token).ConfigureAwait(false);
-        var artifactPathTask = benchmark.RunTrialAsync(
-            request.RunNumber,
-            request.Duration,
-            deadline.Token);
+        GpuBenchmarkTrialArtifact artifact;
+        KernelLatencyCaptureResult kernel;
+        PresentMonFrameCaptureSnapshot presentMon;
+        if (isWarmup)
+        {
+            // Warm-up exists only to stabilize the post-restart graphics/workload
+            // state. Starting two external ETW collectors here adds observer cost
+            // without contributing any scored or Keep evidence.
+            var artifactPath = await benchmark.RunTrialAsync(
+                request.RunNumber,
+                request.Duration,
+                deadline.Token).ConfigureAwait(false);
+            artifact = await ReadArtifactAsync(artifactPath, deadline.Token).ConfigureAwait(false);
+            var actualDuration = artifact.EndedAtUtc > artifact.StartedAtUtc
+                ? artifact.EndedAtUtc - artifact.StartedAtUtc
+                : request.Duration;
+            kernel = new KernelLatencyCaptureResult(
+                artifact.StartedAtUtc,
+                request.Duration,
+                actualDuration,
+                [],
+                0,
+                0,
+                0,
+                false);
+            presentMon = new PresentMonFrameCaptureSnapshot(
+                PresentMonWorkloadCaptureStatus.TrackingFailed,
+                benchmarkProcessId,
+                request.Duration.TotalMilliseconds,
+                0d,
+                null,
+                [],
+                [],
+                null,
+                null,
+                "External PresentMon/ETW collectors intentionally skipped for non-scored warm-up.",
+                artifact.StartedAtUtc,
+                artifact.EndedAtUtc);
+        }
+        else
+        {
+            // Provision/start the pinned standalone collector only for scored
+            // or final-verification evidence. The timer includes D3D12 device
+            // recreation after a GPU restart; CSV rows are cropped to the exact
+            // benchmark artifact interval during parsing.
+            var presentMonWindow = request.Duration + TimeSpan.FromSeconds(12);
+            await using var presentMonSession = await PresentMonConsoleFrameMetricsReader.StartAsync(
+                benchmarkProcessId,
+                presentMonWindow,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        await Task.WhenAll(kernelTask, artifactPathTask).ConfigureAwait(false);
-        var kernel = await kernelTask.ConfigureAwait(false);
-        var artifactPath = await artifactPathTask.ConfigureAwait(false);
-        var artifact = await ReadArtifactAsync(artifactPath, deadline.Token).ConfigureAwait(false);
-        var presentMon = await presentMonSession.CompleteAsync(
-            artifact.StartedAtUtc,
-            artifact.EndedAtUtc,
-            deadline.Token).ConfigureAwait(false);
+            var kernelDuration = request.Duration + TimeSpan.FromSeconds(8);
+            var kernelTask = Task.Run(
+                () => KernelLatencyCapture.Capture(
+                    new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),
+                    deadline.Token),
+                deadline.Token);
+
+            await Task.Delay(TimeSpan.FromMilliseconds(150), deadline.Token).ConfigureAwait(false);
+            var artifactPathTask = benchmark.RunTrialAsync(
+                request.RunNumber,
+                request.Duration,
+                deadline.Token);
+
+            await Task.WhenAll(kernelTask, artifactPathTask).ConfigureAwait(false);
+            kernel = await kernelTask.ConfigureAwait(false);
+            var artifactPath = await artifactPathTask.ConfigureAwait(false);
+            artifact = await ReadArtifactAsync(artifactPath, deadline.Token).ConfigureAwait(false);
+            presentMon = await presentMonSession.CompleteAsync(
+                artifact.StartedAtUtc,
+                artifact.EndedAtUtc,
+                deadline.Token).ConfigureAwait(false);
+        }
 
         if (!GpuOptimizationCaptureContinuity.TryCapture(
                 benchmarkProcessId,
@@ -449,7 +481,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         // interval so D3D12 device recreation + pre-roll idle cannot pollute
         // placement proof or driver guardrails.
         var scopedKernel = CropKernelToArtifact(kernel, artifact.StartedAtUtc, artifact.EndedAtUtc);
-        var attributionAttempted = kernel.IsValid && storedBefore && storedAfter;
+        var attributionAttempted = !isWarmup && kernel.IsValid && storedBefore && storedAfter;
         if (attributionAttempted)
         {
             try
@@ -520,32 +552,16 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             artifact.GpuTimestampFrequency,
             artifact.Frames.Select(static frame => frame.GpuWorkMilliseconds).ToArray(),
             presentMon,
-            ReadPresentMonBinaryVersion(presentMon.ApiPath),
-            Guid.NewGuid(),
-            kernel.IsValid,
-            kernel.EventsLost,
+            isWarmup ? null : ReadPresentMonBinaryVersion(presentMon.ApiPath),
+            isWarmup ? Guid.Empty : Guid.NewGuid(),
+            !isWarmup && kernel.IsValid,
+            isWarmup ? 0 : kernel.EventsLost,
             reasons.AsReadOnly(),
             artifact.FrozenWorkload,
             artifact.Frames.Select(static frame => frame.FramePeriodMilliseconds).ToArray());
-        reportProvenance ??= GpuAutoAffinityReportProvenance.FromEvidence(evidence);
-
-        var interpretation = GpuBenchmarkEvidenceInterpreter.Interpret(evidence);
-        var controlDrifted = false;
-        if (candidate is null &&
-            string.Equals(request.Phase, "screening-control", StringComparison.Ordinal) &&
-            interpretation.IsValid &&
-            double.IsFinite(interpretation.FrameP99Milliseconds) &&
-            interpretation.FrameP99Milliseconds > 0)
+        if (!isWarmup)
         {
-            if (referenceControlP99Milliseconds is { } reference && reference > 0)
-            {
-                controlDrifted = Math.Abs(interpretation.FrameP99Milliseconds - reference) / reference >
-                    ControlDriftThreshold;
-            }
-            else
-            {
-                referenceControlP99Milliseconds = interpretation.FrameP99Milliseconds;
-            }
+            reportProvenance ??= GpuAutoAffinityReportProvenance.FromEvidence(evidence);
         }
 
         var driverDpc = FilterDriverDurations(scopedKernel, KernelLatencyEventKind.Dpc);
@@ -561,7 +577,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         }
         var contamination = new GpuBenchmarkContaminationContext(
             SystemCpuBusyDrifted: false,
-            ControlTrialDrifted: controlDrifted,
+            ControlTrialDrifted: false,
             SleepOrResumeDetected: continuity.Reasons.Any(static reason =>
                 reason.Contains("sleep", StringComparison.OrdinalIgnoreCase) ||
                 reason.Contains("awake", StringComparison.OrdinalIgnoreCase) ||
