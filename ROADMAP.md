@@ -123,10 +123,10 @@ Current source workflow:
 exact original/default GPU affinity
 → normal-user deterministic D3D12 calibration
 → frozen worker map/workload/seed
-→ 5 s non-scored original warm-up/reference
+→ 5 s non-scored original warm-up/reference (benchmark only; no PresentMon/ETW)
 → every eligible physical core:
      journaled apply/restart + stored-state verify
-     5 s non-scored warm-up
+     5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored screening run
      exact rollback
 → rank by 1% low ↓ priority, then 0.1% low, AVG FPS, p99 diagnostic fallback
@@ -136,7 +136,7 @@ exact original/default GPU affinity
      exact rollback
 → rank finalists from three-run medians; unstable 1% lows are unrankable
 → apply winner once
-→ final ETW verification capture
+→ final benchmark-only warm-up → ETW verification capture
 → Keep only with clean target-only runtime GPU ISR placement
    otherwise exact RestoreOriginal
 ```
