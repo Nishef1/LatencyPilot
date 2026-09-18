@@ -45,14 +45,20 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
    - restore and verify the exact original state.
 4. Rank valid screening candidates by:
    1. higher 1% low;
-   2. higher 0.1% low;
-   3. higher AVG FPS;
-   4. lower frame-p99 only as deterministic diagnostic/tie context.
-5. Re-test the best up-to-three candidates with **two additional scored runs each** after a fresh apply/restart/warm-up.
-6. Rank finalists from the median of all three scored observations. A finalist with materially unstable repeated 1% lows is not rankable.
+   2. higher AVG FPS;
+   3. lower frame-p99;
+   4. higher 0.1% low only as rare-tail final tie context.
+5. Re-test the best up-to-three candidates in **two independent rounds**. In each round the finalist order is deterministically shuffled and every candidate gets a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback.
+6. Rank finalists from the median of all three scored observations captured across three separate affinity activations. A finalist with materially unstable repeated 1% lows is not rankable.
 7. There is no active SMT sibling-refinement phase in v1 and no ABBA/BAAB confirmation loop.
 
 Windows default is the exact recovery/reference state, not an opponent that every forced CPU must beat by a fixed percentage.
+
+## Benchmark process lifetime
+
+LatencyPilot intentionally keeps one calibrated benchmark process alive for the complete GPU search. A GPU configuration restart invalidates the D3D12 device, so the renderer/device is recreated before each controlled trial, but the process identity, frozen workload, seed and worker map remain unchanged.
+
+This differs from launching a fresh benchmark subject for every candidate. Re-launching would reintroduce process startup, .NET JIT and cold-cache state as additional variables. The controlled process remains fixed; only GPU interrupt affinity and the required D3D12 device recreation change.
 
 ## Screening versus final verification
 
