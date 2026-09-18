@@ -7,9 +7,11 @@ using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
+using LatencyPilot.Core.Observation;
 using LatencyPilot.Core.System;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Platform.Windows.Etw;
 using LatencyPilot.Platform.Windows.System;
 
 namespace LatencyPilot.GateAValidation;
@@ -157,9 +159,28 @@ internal static class GpuAutoAffinityGateARunner
             stage = "final stop and report verification";
             await TryStopBenchmarkAsync(benchmark).ConfigureAwait(false);
 
+            UsbAffinityRecommendationReport? usbRecommendation = null;
+            if (result.Recommendation == GpuOptimizationRecommendation.KeepCandidate &&
+                result.Finalist is not null)
+            {
+                stage = "post-GPU USB recommendation";
+                usbRecommendation = CaptureUsbRecommendation(
+                    topology,
+                    result.Finalist.Processor,
+                    sessionCancellation.Token);
+                Console.WriteLine(
+                    $"usb-recommendation={usbRecommendation.Status};" +
+                    $"controller={usbRecommendation.ControllerInstanceId ?? "unavailable"};" +
+                    $"processor={usbRecommendation.Processor?.ToString() ?? "unavailable"}");
+                stage = "final stop and report verification";
+            }
+
             var unresolvedAfter = MutationJournalReadOnlyInspector.GetUnresolved(
                 MutationJournal.GetDefaultDatabasePath());
-            var finalReport = rawBackend.CompleteReport(result.Report, unresolvedAfter.Count);
+            var finalReport = rawBackend.CompleteReport(result.Report, unresolvedAfter.Count) with
+            {
+                UsbRecommendation = usbRecommendation,
+            };
             if (unresolvedAfter.Count != 0)
             {
                 throw new InvalidOperationException(
@@ -309,6 +330,60 @@ internal static class GpuAutoAffinityGateARunner
                     Console.Error.WriteLine($"Unable to dispose the Gate A benchmark control channel cleanly: {exception.Message}");
                 }
             }
+        }
+    }
+
+    private static UsbAffinityRecommendationReport CaptureUsbRecommendation(
+        ProcessorTopologySnapshot topology,
+        LogicalProcessorId gpuWinner,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var capture = KernelLatencyCapture.Capture(
+                new KernelLatencyCaptureOptions(TimeSpan.FromSeconds(10), 500_000),
+                cancellationToken);
+            var routes = InputDeviceRouteReader.Capture();
+            var recommendation = UsbAffinityRecommendationPlanner.Create(
+                topology,
+                capture,
+                routes,
+                gpuWinner);
+            var evidence = recommendation.CpuEvidence;
+            return new UsbAffinityRecommendationReport(
+                recommendation.Status.ToString(),
+                recommendation.ControllerInstanceId,
+                recommendation.Processor,
+                recommendation.InputDeviceInstanceIds,
+                evidence?.TotalInterruptDurationMicroseconds,
+                evidence?.InterruptTailP99Microseconds,
+                evidence?.DpcCount,
+                evidence?.IsrCount,
+                recommendation.Reason);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is
+            Win32Exception or
+            IOException or
+            InvalidDataException or
+            InvalidOperationException or
+            NotSupportedException or
+            UnauthorizedAccessException or
+            System.Security.SecurityException)
+        {
+            return new UsbAffinityRecommendationReport(
+                UsbAffinityRecommendationStatus.NotReady.ToString(),
+                null,
+                null,
+                [],
+                null,
+                null,
+                null,
+                null,
+                $"Post-GPU USB/xHCI recommendation is unavailable: {exception.GetType().Name}: {exception.Message}");
         }
     }
 
