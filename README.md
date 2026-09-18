@@ -37,10 +37,10 @@ Current product authority: [`docs/adr/0006-simple-auto-interrupt-affinity-v1.md`
 
 - Scope/safety/recovery foundations: **source complete**
 - Read-only ETW/topology/device evidence: **source substantially complete; physical closure remains**
-- Simplified GPU auto-affinity search: **source implemented; exact-head CI + physical Gate A open**
+- Simplified GPU auto-affinity search: **source implemented; hosted critical-test CI green; physical Gate A open**
 - Final GPU Keep: **internal source requires hard ETW target-only ISR proof**
 - USB/input route + xHCI read-only evidence: **source exists**
-- Automatic USB CPU selection: **orchestration open**
+- Automatic USB CPU selection: **read-only post-GPU recommendation implemented; physical evidence/UI integration open**
 - Reversible xHCI mutation: **open; gated behind physical GPU mutation proof**
 - Combined reboot verification / before-after UX: **open**
 - Public protocol: **v6**, `GetStatus` + `CaptureKernelLatency` only
