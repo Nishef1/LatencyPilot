@@ -109,6 +109,26 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
         }
     }
 
+    internal async Task RecreateRendererAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(stopped, this);
+        var command = GpuBenchmarkControlCommand.RecreateRenderer(sessionId, token);
+        if (!GpuBenchmarkControlProtocol.TryValidate(command, sessionId, token, out var reason))
+        {
+            throw new ArgumentException(reason, nameof(cancellationToken));
+        }
+
+        await WriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
+        var response = await ReadResponseAsync(cancellationToken).ConfigureAwait(false);
+        if (response.Status != GpuBenchmarkControlResponseStatus.RendererReady ||
+            response.RunNumber != 0 ||
+            response.ArtifactPath is not null)
+        {
+            throw new InvalidDataException(
+                $"Benchmark renderer recreation returned {response.Status}: {response.Message}");
+        }
+    }
+
     internal async Task<string> RunTrialAsync(
         int runNumber,
         TimeSpan duration,
