@@ -300,8 +300,15 @@ internal sealed class GpuGateAProgressFile
             {
                 index = finalistCandidates.Count + 1;
                 finalistCandidates.Add(candidate.PhysicalCoreIndex, index);
+                if (finalistCandidates.Count > progressPlan.FinalistCandidateCount)
+                {
+                    totalUnits = checked(
+                        totalUnits + progressPlan.AdditionalFinalistUnitsPerCandidate);
+                }
             }
-            return (index, progressPlan.FinalistCandidateCount);
+            return (
+                index,
+                Math.Max(progressPlan.FinalistCandidateCount, finalistCandidates.Count));
         }
 
         return string.Equals(phase, "final-verification", StringComparison.Ordinal)
