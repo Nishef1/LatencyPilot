@@ -125,10 +125,11 @@ Hardware-independent interpretation/orchestration:
 Current GPU ranking is lexicographic and transparent:
 
 ```text
-higher median 1% low
-→ higher median AVG FPS
-→ lower median frame-p99
-→ higher median 0.1% low as rare-tail final tie context
+median 1% low (<=1% relative difference = tie)
+→ median AVG FPS (<=1% = tie)
+→ lower median frame-p99 (<=1% = tie)
+→ median 0.1% low only for >5% rare-tail separation
+→ deterministic passive fallback
 ```
 
 No weighted score, active SMT-refinement phase or ABBA/BAAB confirmation exists in the v1 GPU session.
@@ -219,7 +220,7 @@ Unavailable evidence remains unavailable.
 
 ### Automatic GPU search
 
-The benchmark process remains stable across the complete search. After each GPU configuration restart only the D3D12 renderer/device is recreated; workload calibration, process identity, seed and worker map remain frozen.
+The benchmark process remains stable across the complete search. The D3D12 renderer uses a three-buffer flip chain with two frame contexts/fences, avoiding the old full GPU wait after every Present while bounding queue depth. After each GPU configuration restart only the D3D12 renderer/device is recreated; workload calibration, process identity, seed and worker map remain frozen.
 
 ```text
 one adaptive calibration
@@ -231,7 +232,7 @@ one adaptive calibration
      1 scored run
      exact rollback
 → rank by 1% low → AVG → p99 → 0.1% low rare-tail context
-→ best up to three:
+→ best three + all candidates within 1% 1%-low of the third-place screening cutoff:
      two independent deterministically shuffled re-test rounds
      fresh apply/restart/warm-up + 1 scored 30 s run + exact rollback per round
 → reject materially unstable repeated 1% lows
