@@ -115,7 +115,7 @@ LatencyMon is not a dependency; LatencyPilot uses its own ETW evidence.
 
 ## Phase 3 — Automatic GPU core search
 
-**State: SIMPLIFIED V1 SOURCE IMPLEMENTED; EXACT-HEAD CI + PHYSICAL PROOF OPEN**
+**State: SIMPLIFIED V1 SOURCE + HOSTED CRITICAL-TEST CI COMPLETE; PHYSICAL PROOF OPEN**
 
 Current source workflow:
 
@@ -161,7 +161,7 @@ Source checklist:
 - [x] PresentMon frame-cadence parsing distinguishes `MsBetweenPresents` from `MsBetweenAppStart`;
 - [x] failed PresentMon raw diagnostics use bounded retention;
 - [x] progress/result UI ranks by 1% low and displays 0.1%/AVG/p99 context;
-- [ ] exact-final-HEAD hosted Tests green for this simplified revision;
+- [x] exact-final-HEAD hosted Tests green for this simplified revision;
 - [ ] physical Gate A rerun on the owner machine;
 - [ ] repeat whole search to establish practical reproducibility;
 - [ ] Stop safely + supported failure/recovery physical exercise;
