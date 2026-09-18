@@ -80,7 +80,7 @@ The built-in D3D12 benchmark performs one adaptive calibration and then freezes:
 - resolution;
 - benchmark process identity.
 
-Applying GPU interrupt affinity may restart the display adapter. The benchmark recreates its D3D12 renderer after the restart but preserves the frozen workload/process identity.
+Applying GPU interrupt affinity may restart the display adapter. The benchmark intentionally keeps one authenticated benchmark process alive for the whole search, while recreating its D3D12 renderer/device after each restart. The frozen workload, seed and worker map therefore stay process-stable; process launch/JIT/cold-start effects are not reintroduced for every candidate.
 
 ### 5.1 Controlled frame period
 
@@ -107,15 +107,17 @@ exact original/default state
 → each eligible physical core:
      journaled apply/restart + stored-state verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
-     1 scored screening run
+     1 scored 30 s screening run
      exact rollback
 → rank valid screening candidates
 → best up to three:
-     fresh apply/restart + stored-state verify
+     two independent re-test rounds
+     each round deterministically shuffles finalist order
+     each finalist gets fresh apply/restart + stored-state verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
-     2 additional scored runs
+     1 scored 30 s run
      exact rollback
-→ rank finalists from all three scored observations
+→ rank finalists from three scored observations captured across three separate affinity activations
 → apply winner once
 → final benchmark-only warm-up → ETW placement-verification capture
 → Keep only when final runtime ISR placement is proved
@@ -129,12 +131,14 @@ There is no active SMT sibling-refinement phase in v1 and no ABBA/BAAB finalist 
 Ranking is transparent and lexicographic; there is no hidden weighted score:
 
 1. higher **median 1% low**;
-2. higher median **0.1% low**;
-3. higher median **AVG FPS**;
-4. lower median **frame-p99** only as final deterministic diagnostic/tie context;
+2. higher median **AVG FPS**;
+3. lower median **frame-p99** as pacing/tie context;
+4. higher median **0.1% low** only as rare-tail final tie context;
 5. passive pressure/core/processor identity only as deterministic fallback.
 
-An initial screening candidate has one scored observation. A finalist has three scored observations: its initial screen plus two fresh re-tests.
+`0.1% low` remains visible because it is useful for spotting severe tail spikes, but a 30 s run can contain only a small number of frames in the worst 0.1%; it therefore does not outrank the more stable 1% low/AVG/p99 signals.
+
+An initial screening candidate has one 30 s scored observation. A finalist has three scored observations: its initial screen plus one fresh score in each of two separate re-test rounds. No finalist receives two scored re-tests back-to-back under one affinity activation.
 
 ### 6.2 Repeatability
 
