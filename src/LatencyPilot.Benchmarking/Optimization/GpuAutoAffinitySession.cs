@@ -70,9 +70,10 @@ public sealed record GpuAutoAffinitySessionResult(
 
 /// <summary>
 /// Bounded v1 GPU interrupt-affinity search. Every eligible physical core gets
-/// one scored screen. The best up-to-three get two fresh transition-isolated
-/// scored re-tests, then the winner is selected by median 1% low, AVG FPS,
-/// frame-p99 and only then 0.1% low as rare-tail diagnostic context.
+/// one scored screen. The best three plus any candidate inside the practical
+/// primary-metric noise margin of the third-place cutoff get two fresh,
+/// transition-isolated re-tests. Final ranking treats sub-margin metric
+/// differences as ties instead of manufacturing false precision.
 /// Windows default remains the exact recovery/reference state; it is not a
 /// minimum-improvement opponent. A winner is kept only after a final ETW-backed
 /// runtime ISR placement capture verifies the requested processor.
@@ -80,7 +81,9 @@ public sealed record GpuAutoAffinitySessionResult(
 public sealed class GpuAutoAffinitySession
 {
     private const double MaximumRunToRunPrimaryDrift = 0.05;
-    private const int MaximumFinalistCandidates = 3;
+    private const double CandidateMetricEquivalenceTolerance = 0.01;
+    private const double RareTailEquivalenceTolerance = 0.05;
+    private const int MinimumFinalistCandidates = 3;
     private const string FinalistPhaseName = "screening-finalists";
     private static readonly TimeSpan TransitionWarmupDuration = TimeSpan.FromSeconds(5);
     private readonly IGpuAutoAffinitySessionBackend backend;
@@ -192,7 +195,7 @@ public sealed class GpuAutoAffinitySession
 
             reasons.Add(string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
-                $"CPU {finalist.Candidate.Processor.Number} ranked best by median 1% low ({finalist.MedianLow1Fps:F1} FPS), then AVG ({finalist.MedianAvgFps:F1} FPS) and frame-p99 ({finalist.MedianFrameP99Milliseconds:F2} ms). 0.1% low ({finalist.MedianLow01Fps:F1} FPS) remains rare-tail diagnostic/tie context."));
+                $"CPU {finalist.Candidate.Processor.Number} ranked best with a 1% practical-equivalence margin on 1% low / AVG / frame-p99 and a 5% rare-tail margin on 0.1% low. Medians: 1% low {finalist.MedianLow1Fps:F1} FPS; AVG {finalist.MedianAvgFps:F1} FPS; p99 {finalist.MedianFrameP99Milliseconds:F2} ms; 0.1% low {finalist.MedianLow01Fps:F1} FPS."));
 
             return await VerifyAndKeepFinalistAsync(
                 request,
@@ -274,9 +277,7 @@ public sealed class GpuAutoAffinitySession
         Func<int> nextRunNumber,
         CancellationToken cancellationToken)
     {
-        var shortlist = OrderRankableCandidates(screeningEvaluations)
-            .Take(MaximumFinalistCandidates)
-            .ToArray();
+        var shortlist = CreateAdaptiveShortlist(screeningEvaluations);
         if (shortlist.Length == 0)
         {
             return [];
@@ -753,17 +754,106 @@ public sealed class GpuAutoAffinitySession
             : ordered[ordered.Length / 2];
     }
 
+    private static CandidateEvaluation[] CreateAdaptiveShortlist(
+        IEnumerable<CandidateEvaluation> evaluations)
+    {
+        var primaryOrdered = evaluations
+            .Where(static evaluation => evaluation.IsRankable)
+            .OrderByDescending(static evaluation => evaluation.MedianLow1Fps)
+            .ThenBy(static evaluation => evaluation.Candidate.PhysicalCoreIndex)
+            .ThenBy(static evaluation => evaluation.Candidate.Processor.Number)
+            .ToArray();
+        if (primaryOrdered.Length <= MinimumFinalistCandidates)
+        {
+            return OrderRankableCandidates(primaryOrdered).ToArray();
+        }
+
+        var cutoff = primaryOrdered[MinimumFinalistCandidates - 1].MedianLow1Fps;
+        return OrderRankableCandidates(primaryOrdered
+                .Where((evaluation, index) =>
+                    index < MinimumFinalistCandidates ||
+                    ArePracticallyEquivalent(
+                        evaluation.MedianLow1Fps,
+                        cutoff,
+                        CandidateMetricEquivalenceTolerance)))
+            .ToArray();
+    }
+
     private static IEnumerable<CandidateEvaluation> OrderRankableCandidates(
         IEnumerable<CandidateEvaluation> evaluations) =>
         evaluations
             .Where(static evaluation => evaluation.IsRankable)
-            .OrderByDescending(static evaluation => evaluation.MedianLow1Fps)
-            .ThenByDescending(static evaluation => evaluation.MedianAvgFps)
-            .ThenBy(static evaluation => evaluation.MedianFrameP99Milliseconds)
-            .ThenByDescending(static evaluation => evaluation.MedianLow01Fps)
-            .ThenBy(static evaluation => evaluation.Candidate.ObservedPressureScore)
-            .ThenBy(static evaluation => evaluation.Candidate.PhysicalCoreIndex)
-            .ThenBy(static evaluation => evaluation.Candidate.Processor.Number);
+            .OrderBy(
+                static evaluation => evaluation,
+                Comparer<CandidateEvaluation>.Create(CompareCandidateEvaluations));
+
+    private static int CompareCandidateEvaluations(
+        CandidateEvaluation left,
+        CandidateEvaluation right)
+    {
+        var comparison = CompareHigherIsBetter(
+            left.MedianLow1Fps,
+            right.MedianLow1Fps,
+            CandidateMetricEquivalenceTolerance);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = CompareHigherIsBetter(
+            left.MedianAvgFps,
+            right.MedianAvgFps,
+            CandidateMetricEquivalenceTolerance);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = CompareLowerIsBetter(
+            left.MedianFrameP99Milliseconds,
+            right.MedianFrameP99Milliseconds,
+            CandidateMetricEquivalenceTolerance);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = CompareHigherIsBetter(
+            left.MedianLow01Fps,
+            right.MedianLow01Fps,
+            RareTailEquivalenceTolerance);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = left.Candidate.ObservedPressureScore.CompareTo(right.Candidate.ObservedPressureScore);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = left.Candidate.PhysicalCoreIndex.CompareTo(right.Candidate.PhysicalCoreIndex);
+        return comparison != 0
+            ? comparison
+            : left.Candidate.Processor.Number.CompareTo(right.Candidate.Processor.Number);
+    }
+
+    private static int CompareHigherIsBetter(double left, double right, double tolerance) =>
+        ArePracticallyEquivalent(left, right, tolerance)
+            ? 0
+            : right.CompareTo(left);
+
+    private static int CompareLowerIsBetter(double left, double right, double tolerance) =>
+        ArePracticallyEquivalent(left, right, tolerance)
+            ? 0
+            : left.CompareTo(right);
+
+    private static bool ArePracticallyEquivalent(double left, double right, double tolerance)
+    {
+        var scale = Math.Max(Math.Abs(left), Math.Abs(right));
+        return scale == 0d || Math.Abs(left - right) / scale <= tolerance;
+    }
 
     private static CandidateEvaluation? SelectBestCandidate(
         IEnumerable<CandidateEvaluation> evaluations) =>
