@@ -66,16 +66,17 @@ apply/restart/verify
 → exact rollback
 ```
 
-The best up to three candidates then enter two independent re-test rounds. Each round deterministically shuffles finalist order; every candidate receives a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback. Finalists therefore have three scored observations from three separate affinity activations and are ranked transparently by:
+The best three candidates, plus any additional core whose screening 1% low is within 1% of the third-place cutoff, enter two independent re-test rounds. Each round deterministically shuffles finalist order; every candidate receives a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback. Finalists therefore have three scored observations from three separate affinity activations and are ranked transparently by:
 
-1. higher median **1% low**;
-2. higher median **AVG FPS**;
-3. lower median **frame-p99**;
-4. higher median **0.1% low** only as rare-tail final tie context.
+1. median **1% low**, with <=1% relative differences treated as ties;
+2. median **AVG FPS**, also with a 1% tie margin;
+3. lower median **frame-p99**, also with a 1% tie margin;
+4. median **0.1% low** only when the rare-tail difference exceeds 5%;
+5. deterministic passive fallback only if measured metrics remain practically tied.
 
 There is no fixed “must beat Windows default by 3%” rule, no SMT/hyperthread sibling refinement and no ABBA/BAAB confirmation loop in v1. Windows default is the exact reference/recovery state.
 
-The benchmark process intentionally stays alive for the whole search. After each GPU configuration restart, the D3D12 renderer/device is recreated once. Warm-up and the following scored run reuse that same recreated renderer/device instance, while process identity, frozen workload, seed and worker map remain constant so process-start/JIT/cold-cache effects are not reintroduced for every CPU.
+The benchmark process intentionally stays alive for the whole search. The renderer uses a three-buffer flip chain with two frame contexts, so it no longer waits for the entire GPU after every Present. After each GPU configuration restart, the D3D12 renderer/device is recreated once. Warm-up and the following scored run reuse that same recreated renderer/device instance, while process identity, frozen workload, seed and worker map remain constant so process-start/JIT/cold-cache effects are not reintroduced for every CPU.
 
 The benchmark records its own controlled wall-clock loop periods. They are a deterministic comparison signal for this workload; they are not claimed to be identical to arbitrary game end-to-end frametime.
 
