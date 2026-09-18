@@ -145,10 +145,10 @@ An initial screening candidate has one 30 s scored observation. A finalist has t
 For finalists with repeated observations, 1% low is the primary stability signal. Current v1 bound:
 
 ```text
-relative 1%-low spread = (max - min) / min <= 20%
+relative 1%-low spread = (max - min) / min <= 5%
 ```
 
-Non-finite/non-positive ranking metrics or spread above the bound makes that finalist unrankable. If no finalist remains valid/repeatable, exact Original is retained rather than inventing a winner.
+Non-finite/non-positive ranking metrics or spread above the bound makes that finalist unrankable. A 5% bound is intentionally more tolerant than the ~1% repeatability expected from a very good controlled benchmark, because Windows driver restart/recovery adds real system noise; 20% was too permissive for choosing a supposedly best CPU. If no finalist remains valid/repeatable, exact Original is retained rather than inventing a winner.
 
 ## 7. Screening evidence and external collectors
 
