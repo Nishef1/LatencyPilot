@@ -784,7 +784,7 @@ public sealed class GpuAutoAffinitySession
             evaluation.IsRankable
                 ? string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    $"Median 1% low {evaluation.MedianLow1Fps:F1} FPS; 0.1% low {evaluation.MedianLow01Fps:F1} FPS; AVG {evaluation.MedianAvgFps:F1} FPS; p99 {evaluation.MedianFrameP99Milliseconds:F2} ms.")
+                    $"Median 1% low {evaluation.MedianLow1Fps:F1} FPS; AVG {evaluation.MedianAvgFps:F1} FPS; p99 {evaluation.MedianFrameP99Milliseconds:F2} ms; 0.1% low {evaluation.MedianLow01Fps:F1} FPS (rare-tail context).")
                 : evaluation.Reason);
 
     private static GpuAutoAffinityTrialReport ToTrialReport(
