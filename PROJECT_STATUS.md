@@ -152,3 +152,8 @@ True v1 completion additionally requires physical read-only closure, GPU mutatio
 ### Post-GPU USB/xHCI recommendation
 
 After a verified GPU winner is kept in Gate A, LatencyPilot now stops the benchmark, captures a 10 s quiet kernel-ETW window, resolves Raw Input mouse routes through exact USB hub/port evidence to xHCI, excludes the whole physical core containing the GPU winner, and ranks remaining logical CPUs by total DPC+ISR duration, p99 interrupt tail, then event count. The recommendation is read-only and is persisted in the Gate A report; ambiguous mouse-to-controller routing returns NotReady rather than guessing.
+
+
+### GPU finalist measurement shape
+
+The finalist stage now uses two independent re-test rounds. Each shortlisted CPU is freshly applied/restarted/warmed and scored once per round, with deterministic round-order shuffling. The calibrated benchmark process stays alive across the session while its D3D12 renderer/device is recreated after GPU restarts; this holds process/JIT/workload identity constant while isolating each affinity transition.
