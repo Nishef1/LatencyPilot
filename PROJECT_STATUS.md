@@ -157,3 +157,10 @@ After a verified GPU winner is kept in Gate A, LatencyPilot now stops the benchm
 ### GPU finalist measurement shape
 
 The finalist stage now uses two independent re-test rounds. Each shortlisted CPU is freshly applied/restarted/warmed and scored once per round, with deterministic round-order shuffling. The calibrated benchmark process stays alive across the session while its D3D12 renderer/device is recreated after GPU restarts; this holds process/JIT/workload identity constant while isolating each affinity transition.
+
+
+### Noise-aware GPU selection and buffered renderer
+
+The GPU search now treats <=1% relative differences in 1% low, AVG FPS and frame-p99 as practical ties instead of manufacturing a winner from decimal noise. 0.1% low is allowed to break a remaining tie only when its relative difference exceeds 5%. Screening advances the best three plus every additional candidate within 1% 1%-low of the third-place cutoff.
+
+The controlled D3D12 renderer now uses a three-buffer flip chain and two frame contexts with per-context command allocators/lists, timestamps and fences. At most two benchmark frames are kept in flight; command resources are reused only after the matching fence completes. This removes the previous full GPU drain after every Present while retaining bounded latency and auditable per-frame GPU timestamp evidence.
