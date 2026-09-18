@@ -817,8 +817,6 @@ public sealed class GpuAutoAffinitySession
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Topology);
         ArgumentNullException.ThrowIfNull(request.PressureEvidence);
-        ArgumentNullException.ThrowIfNull(request.Policy);
-        request.Policy.Validate();
         if (request.SessionId == Guid.Empty)
         {
             throw new ArgumentException("GPU auto-affinity session identity is required.", nameof(request));
@@ -829,13 +827,6 @@ public sealed class GpuAutoAffinitySession
             throw new ArgumentOutOfRangeException(
                 nameof(request),
                 "GPU candidate screening duration must be from 15 to 60 seconds.");
-        }
-        if (request.ConfirmationDuration < TimeSpan.FromSeconds(30) ||
-            request.ConfirmationDuration > TimeSpan.FromSeconds(60))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(request),
-                "Legacy confirmation duration must remain from 30 to 60 seconds while older callers migrate to the simplified v1 contract.");
         }
     }
 
