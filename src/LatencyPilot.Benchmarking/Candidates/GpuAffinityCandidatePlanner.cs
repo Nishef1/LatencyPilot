@@ -77,52 +77,6 @@ public static class GpuAffinityCandidatePlanner
         return SelectStratified(ordered, cpuSets, maximumCandidates);
     }
 
-    public static IReadOnlyList<GpuAffinityCandidate> CreateSiblingRefinement(
-        ProcessorTopologySnapshot topology,
-        IEnumerable<ProcessorPressureEvidence> pressureEvidence,
-        GpuAffinityCandidate winningPhysicalCore,
-        ProcessorCpuSetSnapshot? cpuSets = null)
-    {
-        ArgumentNullException.ThrowIfNull(topology);
-        ArgumentNullException.ThrowIfNull(pressureEvidence);
-        ArgumentNullException.ThrowIfNull(winningPhysicalCore);
-
-        if (topology.ProcessorGroupCount != 1)
-        {
-            throw new NotSupportedException(
-                "Automatic GPU interrupt-affinity candidates currently require exactly one processor group.");
-        }
-
-        var core = topology.Cores.SingleOrDefault(candidate =>
-            candidate.Index == winningPhysicalCore.PhysicalCoreIndex)
-            ?? throw new ArgumentException(
-                "The winning GPU affinity candidate does not map to the supplied processor topology.",
-                nameof(winningPhysicalCore));
-        if (!core.IsSmt)
-        {
-            return [winningPhysicalCore];
-        }
-
-        var pressureByProcessor = BuildPressureMap(pressureEvidence);
-        return core.LogicalProcessors
-            .Where(processor => IsEligible(cpuSets, processor))
-            .Select(processor => new RankedGpuAffinityCandidate(
-                new GpuAffinityCandidate(
-                    core.Index,
-                    processor,
-                    core.EfficiencyClass,
-                    true,
-                    pressureByProcessor.TryGetValue(processor, out var score)
-                        ? score
-                        : double.PositiveInfinity),
-                GetAvailabilityRank(cpuSets, processor)))
-            .OrderBy(static ranked => ranked.AvailabilityRank)
-            .ThenBy(static ranked => ranked.Candidate.ObservedPressureScore)
-            .ThenBy(static ranked => ranked.Candidate.Processor.Number)
-            .Select(static ranked => ranked.Candidate)
-            .ToArray();
-    }
-
     private static Dictionary<LogicalProcessorId, double> BuildPressureMap(
         IEnumerable<ProcessorPressureEvidence> pressureEvidence) =>
         pressureEvidence
