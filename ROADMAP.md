@@ -130,7 +130,7 @@ exact original/default GPU affinity
      1 scored 30 s screening run
      exact rollback
 → rank by 1% low ↓ priority, then 0.1% low, AVG FPS, p99 diagnostic fallback
-→ best up to three:
+→ best three + every screening candidate within 1% 1%-low of the third-place cutoff:
      two independent deterministically shuffled re-test rounds
      each candidate gets fresh apply/restart + warm-up + one 30 s score + exact rollback
 → rank finalists from three transition-isolated scored observations; unstable 1% lows are unrankable
@@ -146,9 +146,9 @@ Source checklist:
 - [x] controlled benchmark wall-period AVG / 1% / 0.1% / p99 statistics;
 - [x] physical-core candidates from actual Windows topology, CPU0 allowed;
 - [x] one scored screening run per candidate;
-- [x] best up-to-three receive two additional scored re-tests in separate fresh transition rounds;
+- [x] best three plus any screening candidate inside the 1% primary-noise cutoff receive two additional scored re-tests in separate fresh transition rounds;
 - [x] finalist order is deterministically shuffled in each re-test round to reduce time/thermal ordering bias;
-- [x] ranking order: median 1% low → AVG → p99 → 0.1% low rare-tail tie context;
+- [x] ranking is noise-aware: <=1% differences in 1% low / AVG / p99 are practical ties; 0.1% low only breaks a remaining tie when its relative difference exceeds 5%;
 - [x] no SMT/hyperthread sibling refinement in v1;
 - [x] no ABBA/BAAB confirmation loop;
 - [x] Windows default is recovery/reference state, not a fixed minimum-improvement gate;
