@@ -87,6 +87,9 @@ public sealed class GpuAutoAffinitySession
     private const int MinimumInterruptTailRuns = 3;
     private const int MaximumRejectedRepeatabilityRuns = 1;
     private const int MinimumFinalistCandidates = 3;
+    private const int MaximumFinalistCandidates = 5;
+    private const double MaximumShortlistTolerance = GpuRepeatabilityClusterSelector.RelativeTolerance;
+    private const double MaximumNoiseForFullFinalistConfirmation = 0.15;
     private const string FinalistPhaseName = "screening-finalists";
     private static readonly TimeSpan TransitionWarmupDuration = TimeSpan.FromSeconds(5);
     private readonly IGpuAutoAffinitySessionBackend backend;
@@ -237,6 +240,17 @@ public sealed class GpuAutoAffinitySession
             {
                 reasons.Add(controlReason);
                 reasons.Add("The candidate sweep was discarded because the Original control drifted after screening; the exact original state was retained rather than ranking across a moving environment.");
+                var originalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+                return CreateResult(
+                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
+                    originalVerified, originalVerified, candidateReports, trialReports, reasons);
+            }
+
+            if (original.PrimaryRelativeNoise > MaximumNoiseForFullFinalistConfirmation)
+            {
+                reasons.Add(string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"All eligible logical CPUs were screened once, but Original 1%-low noise was {original.PrimaryRelativeNoise:P2}, above the {MaximumNoiseForFullFinalistConfirmation:P0} exhaustive-confirmation budget. Finalist re-tests were skipped because repeating every noisy candidate would add substantial runtime without producing a trustworthy automatic Keep decision."));
                 var originalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
                 return CreateResult(
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
@@ -1288,7 +1302,9 @@ public sealed class GpuAutoAffinitySession
         }
 
         var cutoff = primaryOrdered[MinimumFinalistCandidates - 1].MedianLow1Fps;
-        var adaptiveTolerance = Math.Max(CandidateMetricEquivalenceTolerance, screeningNoiseFloor);
+        var adaptiveTolerance = Math.Min(
+            MaximumShortlistTolerance,
+            Math.Max(CandidateMetricEquivalenceTolerance, screeningNoiseFloor));
         return OrderRankableCandidates(primaryOrdered
                 .Where((evaluation, index) =>
                     index < MinimumFinalistCandidates ||
@@ -1296,6 +1312,7 @@ public sealed class GpuAutoAffinitySession
                         evaluation.MedianLow1Fps,
                         cutoff,
                         adaptiveTolerance)))
+            .Take(MaximumFinalistCandidates)
             .ToArray();
     }
 
