@@ -157,6 +157,8 @@ public sealed class GpuAutoAffinitySessionTests
         var noWrite = await new GpuAutoAffinitySession(noWriteBackend).RunAsync(request);
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, noWrite.Recommendation,
             "A candidate that is already the original state must be measured without a redundant write and must not be kept as a fake improvement.");
+        Assert.IsNull(noWrite.Finalist);
+        Assert.IsNull(noWrite.Report.FinalProcessor);
         Assert.IsTrue(noWriteBackend.Events.Contains("apply-no-write:0:2"));
         Assert.IsFalse(noWriteBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
     }
@@ -169,7 +171,8 @@ public sealed class GpuAutoAffinitySessionTests
         var missingFinalEtw = new RecordingBackend(finalEtwUnavailable: true);
         var missingFinalResult = await new GpuAutoAffinitySession(missingFinalEtw).RunAsync(request);
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, missingFinalResult.Recommendation);
-        Assert.AreEqual(new LogicalProcessorId(0, 2), missingFinalResult.Finalist?.Processor);
+        Assert.IsNull(missingFinalResult.Finalist);
+        Assert.IsNull(missingFinalResult.Report.FinalProcessor);
         Assert.IsTrue(missingFinalResult.Report.OriginalStateRestored);
         Assert.IsTrue(missingFinalResult.Report.FinalStateVerified);
         Assert.IsFalse(missingFinalEtw.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
