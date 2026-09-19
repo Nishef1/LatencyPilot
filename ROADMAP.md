@@ -134,8 +134,8 @@ exact original/default GPU affinity
 → best three + every screening candidate within max(1%, observed Original noise) of the third-place cutoff:
      two independent deterministically shuffled re-test rounds
      each candidate gets fresh apply/restart + warm-up + one 30 s score + exact rollback
-     one extra replacement score only if a stable 3-run cluster is still missing
-→ rank finalists from stable 3-of-up-to-4 observations with at most one rejected run
+     one extra replacement score only if the preferred ±3% 3-run cluster is still missing
+→ prefer the tightest stable 3-of-up-to-4 cluster; if four valid runs still do not cluster, retain all four and carry observed per-metric noise into ranking/guardrails
 → 5 s Original warm-up → fresh scored Original control after finalist re-tests; reject finalist evidence if 1%/AVG/p99 drift
 → evaluate finalists in rank order against Original + frame/noise-aware interrupt-tail guardrails
 → apply highest-ranked clean winner once
@@ -153,7 +153,7 @@ Source checklist:
 - [x] post-sweep Original warm-up + scored control rejects time/thermal/background drift before shortlist ranking;
 - [x] best three plus any screening candidate inside max(1%, observed Original noise) receive two additional scored re-tests in separate fresh transition rounds;
 - [x] finalist order is deterministically shuffled in each re-test round to reduce time/thermal ordering bias;
-- [x] repeatability is capped at four scores with at most one rejected outlier; an impossible fifth rescue run was removed;
+- [x] repeatability is capped at four scores; a stable three-run cluster is preferred, otherwise all four valid runs remain usable with their observed variance carried into decision thresholds;
 - [x] ranking is noise-aware: <=1% differences in 1% low / AVG / p99 are practical ties; 0.1% low only breaks a remaining tie when its relative difference exceeds 5%;
 - [x] a second post-finalist Original warm-up + scored control rejects drift in 1% low / AVG / frame-p99 before Keep;
 - [x] comparable GPU-driver DPC/ISR p99 tails are per-run, median/noise-aware Keep guardrails; a rejected top finalist falls through to the next ranked clean improvement;
