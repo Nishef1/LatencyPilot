@@ -25,8 +25,10 @@ LatencyPilot v1 is a narrow automatic interrupt-affinity workflow, not a generic
 preflight / quiet check
 → deep ETW baseline
 → GPU physical-core screen
-→ top-3 re-test
-→ select by 1% low → 0.1% low → AVG (p99 context)
+→ post-sweep Original drift control
+→ noise-aware finalist re-test
+→ select by 1% low → AVG → p99 → 0.1% rare-tail context
+→ reject frame/interrupt-tail regressions and fall through to the next clean finalist
 → final ETW GPU ISR placement proof
 → measure free CPU interrupt headroom
 → Raw Input → USB → xHCI resolution
@@ -68,10 +70,12 @@ capture exact original/default state
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored screen
      exact rollback
-→ rank valid screens by higher 1% low, then 0.1% low, AVG, then lower p99 context
-→ re-test best up to three with 2 additional scored runs each
-→ rank finalists from three-run medians; unstable repeated 1% lows are rejected
-→ apply winner once
+→ fresh scored Original control after the sweep; discard the sweep if Original leaves its repeatability band
+→ rank valid screens by higher 1% low, then AVG, lower p99, then 0.1% rare-tail context
+→ re-test the best three plus every additional candidate inside max(1%, observed Original noise)
+→ require stable 3-of-up-to-4 evidence with at most one rejected score
+→ evaluate finalists in rank order against Original + frame and attributable DPC/ISR p99 guardrails
+→ apply the highest-ranked clean winner once
 → final 5 s benchmark-only warm-up → 5 s ETW-backed verification capture
 → Keep only with clean ETW + attributable target-only GPU ISR placement
    otherwise exact RestoreOriginal
@@ -83,7 +87,10 @@ Important current properties:
 - CPU0 is eligible.
 - Physical-core representatives come from actual topology; no even/odd CPU assumption.
 - No active SMT sibling-refinement phase in v1.
-- No ABBA/BAAB confirmation loop.
+- No ABBA/BAAB confirmation loop; the superseded ABBA/BAAB orchestrator, decision engine, confirmation engine and evidence collector were removed from source.
+- The old generic GPU screening/confirmation result models were pruned; the live v1 decision path has one owner: `GpuAutoAffinitySession`.
+- A fresh post-sweep Original control rejects a moving benchmark environment before finalist ranking.
+- System CPU busy is measured from Windows system-time snapshots; material drift is surfaced rather than hard-coded false.
 - Missing PresentMon/ETW during screening is visible context and does not by itself abort benchmark ranking.
 - If healthy ETW proves off-target placement during screening, that candidate is invalid.
 - **Final Keep is stricter:** missing/unhealthy ETW or missing target-only ISR proof restores Original.
@@ -114,12 +121,14 @@ Development convenience and closure evidence are now deliberately separate: a di
 Next physical Gate A must prove on one exact clean green revision:
 
 1. every expected physical core receives one scored screening run;
-2. best up-to-three receive two additional scored runs;
-3. winner is selected by the documented low-FPS order;
-4. rollback succeeds between every candidate block;
-5. final ETW proves target-only GPU ISR placement before Keep;
-6. Stop safely and one supported failure restore exact Original with `unresolved=0`;
-7. a repeated whole search is practically reproducible or reports instability explicitly.
+2. a fresh post-sweep Original control remains inside the Original repeatability band;
+3. the best three plus every candidate inside the measured-noise cutoff receive two additional scored runs;
+4. repeatability never hides more than one rejected score and never exceeds four scored attempts per Original/finalist;
+5. the highest-ranked finalist that clears Original, frame and available GPU-driver DPC/ISR p99 guardrails is selected;
+6. rollback succeeds between every candidate block;
+7. final ETW proves target-only GPU ISR placement before Keep;
+8. Stop safely and one supported failure restore exact Original with `unresolved=0`;
+9. a repeated whole search is practically reproducible or reports instability explicitly.
 
 Product mutation IPC remains unarmed until this physical gate passes.
 
@@ -132,7 +141,7 @@ Product mutation IPC remains unarmed until this physical gate passes.
 | 2 Baseline | **ETW engine exists** | Wire the deep baseline into one-button v1 workflow |
 | 3 GPU search | **Simplified source + source-state UX implemented** | Physical Gate A + repeat on an exact clean green revision |
 | 4 GPU Keep | **Internal verified-keep source implemented** | Physical proof, typed product IPC, arming gates |
-| 5 USB selection | **Read-only topology/evidence exists** | Automatic headroom ranking and controller-selection orchestration |
+| 5 USB selection | **Read-only automatic recommendation implemented** | Physical representative-hardware evidence + later normal-user rendering |
 | 6 USB apply | **Internal reversible substrate implemented / product-gated** | Physical apply/verify/rollback evidence before public arming |
 | 7 Reboot verify | **Recovery/reboot primitives implemented** | Combined GPU+xHCI physical reboot/resume verification |
 | 8 Before/after | **Metric/report primitives exist** | Integrated v1 before/after capture/report |
@@ -165,12 +174,12 @@ The finalist stage now uses two independent re-test rounds. Each shortlisted CPU
 
 ### Noise-aware GPU selection and buffered renderer
 
-The GPU search now treats <=1% relative differences in 1% low, AVG FPS and frame-p99 as practical ties instead of manufacturing a winner from decimal noise. 0.1% low is allowed to break a remaining tie only when its relative difference exceeds 5%. Screening advances the best three plus every additional candidate within 1% 1%-low of the third-place cutoff.
+The GPU search now treats <=1% relative differences in 1% low, AVG FPS and frame-p99 as practical ties instead of manufacturing a winner from decimal noise. 0.1% low is allowed to break a remaining tie only when its relative difference exceeds 5%. Screening advances the best three plus every additional candidate within max(1%, observed Original cluster noise) of the third-place cutoff. One fresh Original control after the full sweep rejects time/thermal/background drift before finalist ranking. Original/finalist robust sampling is capped at four scored attempts with at most one rejected run; a fifth score cannot rescue evidence with two outliers. When enough attributable evidence exists, GPU-driver DPC/ISR p99 tails are Keep guardrails, and a top-ranked finalist that fails them falls through to the next ranked clean improvement.
 
 The controlled D3D12 renderer now uses a three-buffer flip chain and two frame contexts with per-context command allocators/lists, timestamps and fences. At most two benchmark frames are kept in flight; command resources are reused only after the matching fence completes. This removes the previous full GPU drain after every Present while retaining bounded latency and auditable per-frame GPU timestamp evidence.
 
 ## Audit closure status — 2026-09-19
 
-Software/source closure is implemented for F1–F11 plus conservative MSI and reversible xHCI mutation substrate. Critical contracts cover owner-thread rendering, deterministic ranking, Original-vs-finalist decisions, serialized mutation/recovery, optional collector semantics, tri-state runtime placement, full eligible-core enumeration, primary-input USB identity, composite route correlation, capture-quality gating, driver-wide xHCI attribution, reboot-pending states, exact rollback, and fail-closed Gate A source-evidence eligibility.
+Software/source closure is implemented for F1–F11 plus conservative MSI and reversible xHCI mutation substrate. The live GPU decision path is now consolidated on `GpuAutoAffinitySession`; the superseded ABBA/BAAB execution stack was deleted. Critical contracts cover owner-thread rendering, deterministic noise-aware ranking, post-sweep Original drift rejection, next-clean-finalist fallback, DPC/ISR tail guardrails, serialized mutation/recovery, optional collector semantics, tri-state runtime placement, full eligible-core enumeration, primary-input USB identity, composite route correlation, capture-quality gating, driver-wide xHCI attribution, reboot-pending states, exact rollback, and fail-closed Gate A source-evidence eligibility.
 
 **Still not a physical-product completion claim:** public mutation remains disabled until an exact clean green revision passes real Windows hardware validation across the required Intel/AMD and USB/xHCI scenarios. Dirty-development Gate A runs are useful diagnostic evidence but cannot satisfy that gate. Hosted GitHub Actions cannot prove physical interrupt placement, reboot activation, or performance benefit.
