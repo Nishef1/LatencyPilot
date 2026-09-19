@@ -246,6 +246,26 @@ public sealed class SourceRevisionIdentityTests
             benchmarkOwnerControlServerSource.Contains("D3D12BenchmarkRenderer renderer", StringComparison.Ordinal),
             "The async pipe server must not directly own or dispose the renderer/window.");
 
+        var gpuMutationBackendSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.Service",
+            "GpuAffinityMutationBackend.cs"));
+        StringAssert.Contains(
+            gpuMutationBackendSource,
+            "transaction.Prepare(deviceInstanceId, mutationCandidate, expectedOriginal)",
+            "The GPU mutation backend must carry the exact session-original snapshot into transaction preparation.");
+
+        var gpuMutationTransactionSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.Service",
+            "GpuInterruptAffinityMutationTransaction.cs"));
+        StringAssert.Contains(
+            gpuMutationTransactionSource,
+            "MatchesOriginal(original, expectedOriginal)",
+            "Mutation preparation must reject TOCTOU drift from the session-original state before journaling/writing.");
+
         var mutationLockPath = Path.Combine(
             repositoryRoot,
             "src",
@@ -522,6 +542,14 @@ public sealed class SourceRevisionIdentityTests
         var applyCandidateIndex = gateABackendSource.IndexOf(
             "public async Task<Guid> ApplyCandidateAsync",
             StringComparison.Ordinal);
+        StringAssert.Contains(
+            gateABackendSource,
+            "ApplyCandidateRefusedExternalDrift",
+            "Gate A must refuse an affinity write when stored policy drifted outside the active session.");
+        StringAssert.Contains(
+            gateABackendSource,
+            "MatchesOriginal(currentBefore, originalState)",
+            "Gate A must compare current stored policy to the exact session-original snapshot before candidate apply.");
         StringAssert.Contains(
             gateABackendSource,
             "await benchmark.RecreateRendererAsync(cancellationToken).ConfigureAwait(false);",
