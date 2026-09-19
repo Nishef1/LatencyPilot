@@ -224,7 +224,7 @@ internal static class GpuAutoAffinityGateARunner
                 closureEligible
                     ? result.Recommendation == GpuOptimizationRecommendation.KeepCandidate
                         ? "GPU auto-affinity finished with a verified finalist candidate and evidence-ready source state."
-                        : $"GPU auto-affinity finished with the verified original state. {string.Join(" ", finalReport.Reasons.Take(2))}"
+                        : "GPU auto-affinity finished with the verified original state. Ranked results and decision reasons are shown below."
                     : "GPU auto-affinity finished safely as non-closure evidence. It cannot close physical Gate A.").ConfigureAwait(false);
             Console.WriteLine($"recommendation={result.Recommendation}");
             Console.WriteLine($"final-processor={result.Finalist?.Processor.ToString() ?? "original"}");
