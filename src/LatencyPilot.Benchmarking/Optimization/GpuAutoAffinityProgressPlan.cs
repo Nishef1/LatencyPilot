@@ -8,6 +8,7 @@ public sealed class GpuAutoAffinityProgressPlan
     private const int ControlWarmupCount = 1;
     private const int ScoredOriginalUnits = 3;
     private const int PostScreeningControlUnits = 1;
+    private const int PostFinalistControlUnits = 1;
     private const int ScreeningUnitsPerCandidate = 2; // transition warm-up + one scored run
     private const int FinalistUnitsPerCandidate = 4; // two independent transition warm-up + scored re-test rounds
     private const int MaximumFinalistCandidates = 3;
@@ -43,6 +44,7 @@ public sealed class GpuAutoAffinityProgressPlan
         ControlWarmupCount +
         ScoredOriginalUnits +
         PostScreeningControlUnits +
+        PostFinalistControlUnits +
         (PhysicalCandidateCount * ScreeningUnitsPerCandidate) +
         (FinalistCandidateCount * FinalistUnitsPerCandidate) +
         FinalVerificationUnits;
