@@ -179,7 +179,8 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
 
         return message.Contains("render window was closed", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("0x887A0005", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("0x887A0007", StringComparison.OrdinalIgnoreCase);
+               message.Contains("0x887A0007", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("0x887A0020", StringComparison.OrdinalIgnoreCase);
     }
 
     internal async Task StopAsync(CancellationToken cancellationToken = default)
