@@ -209,15 +209,21 @@ internal sealed class GpuGateAProgressFile
             }
 
             lastCompletedCandidateVerdict = recommendation;
+            var terminalCandidate = string.Equals(
+                recommendation,
+                GpuOptimizationRecommendation.KeepCandidate.ToString(),
+                StringComparison.Ordinal)
+                ? candidate
+                : null;
             return WriteAsync(Create(
                 terminalPhase,
-                candidate,
+                terminalCandidate,
                 null,
                 null,
                 null,
                 message,
-                null,
-                null,
+                latestSnapshot?.FrameP99Milliseconds,
+                latestSnapshot?.OnePercentLowFps,
                 finalStateVerified ? "Final state verified" : "Final state not verified",
                 isRestoring: false,
                 isTerminal: true));
