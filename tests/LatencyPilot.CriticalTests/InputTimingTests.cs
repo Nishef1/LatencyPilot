@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Platform.Windows.Devices;
@@ -9,7 +10,7 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class InputTimingTests
 {
-    [TestMethod]
+    [AuditCase]
     public void HostReportTimingPreservesIntervalsAndDetectsGapsAndBursts()
     {
         var stableTicks = Enumerable.Range(0, 101)

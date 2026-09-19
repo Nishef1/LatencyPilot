@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.Observation;
@@ -11,7 +12,7 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class UsbOptimizationTests
 {
-    [TestMethod]
+    [AuditCase]
     public void XhciReadinessRequiresPrimaryIdentityCompositeRouteQualityAndUnambiguousAttribution()
     {
         var controller = new PnPDeviceSnapshot(

@@ -7,6 +7,10 @@ internal static class DeviceInterruptMutationContract
 {
     internal const string MsiKind = "device-msi-enable";
     internal const string XhciAffinityKind = "xhci-interrupt-affinity";
+
+    internal static bool IsSupportedKind(string kind) =>
+        string.Equals(kind, MsiKind, StringComparison.Ordinal) ||
+        string.Equals(kind, XhciAffinityKind, StringComparison.Ordinal);
 }
 
 internal sealed record DeviceInterruptPrepareResult(bool NoWriteRequired, MutationJournalEntry? Entry, DeviceInterruptConfigurationSnapshot Original);
@@ -123,6 +127,20 @@ internal sealed class DeviceInterruptMutationTransaction
         var original = DeviceInterruptMutationJournalCodec.DeserializeOriginal(entry.OriginalStateJson);
         var candidate = DeviceInterruptMutationJournalCodec.DeserializeCandidate(entry.CandidateStateJson);
         if (entry.State is MutationJournalState.Reverted or MutationJournalState.AbortedBeforeApply) return new(entry, null, true);
+
+        var currentBeforeRollback = DeviceInterruptConfigurationStore.Capture(original.DeviceInstanceId);
+        var matchesOriginal = DeviceInterruptConfigurationStore.MatchesOriginal(currentBeforeRollback, original, candidate.Operation);
+        var matchesCandidate = DeviceInterruptConfigurationStore.MatchesCandidate(currentBeforeRollback, original, candidate);
+        if (!matchesOriginal && !matchesCandidate)
+        {
+            throw new InvalidOperationException(
+                "Rollback refused because current interrupt configuration matches neither the captured original nor the LatencyPilot candidate.");
+        }
+        if (entry.State == MutationJournalState.Applying)
+        {
+            entry = journal.Transition(entry.ExperimentId, entry.Revision, entry.State, MutationJournalState.RecoveryRequired,
+                "Recovery entered while apply ownership was incomplete; actual state was re-read before rollback.");
+        }
         var reverting = entry.State == MutationJournalState.Reverting ? entry :
             journal.Transition(entry.ExperimentId, entry.Revision, entry.State, MutationJournalState.Reverting);
         try
@@ -150,13 +168,19 @@ internal sealed class DeviceInterruptMutationTransaction
 
     internal DeviceInterruptMutationStepResult Recover(Guid experimentId)
     {
+        using var guard = MutationOperationLock.Acquire();
         var entry = GetEntry(experimentId);
-        return entry.State switch
+        var inspection = DeviceInterruptRecoveryInspector.Inspect(entry);
+        return inspection.Action switch
         {
-            MutationJournalState.ApplyRebootPending or MutationJournalState.RollbackRebootPending => ResumeAfterReboot(experimentId),
-            MutationJournalState.Prepared or MutationJournalState.Applied or MutationJournalState.Measuring or MutationJournalState.AwaitingDecision or MutationJournalState.Kept or MutationJournalState.RecoveryRequired or MutationJournalState.Reverting => Rollback(experimentId),
-            MutationJournalState.Reverted or MutationJournalState.AbortedBeforeApply => new(entry, null, true),
-            _ => throw new InvalidOperationException($"Unsupported recovery state {entry.State}."),
+            DeviceInterruptRecoveryAction.None => new(entry, null, entry.State == MutationJournalState.Reverted),
+            DeviceInterruptRecoveryAction.AbortPreparedWithoutWrite => Rollback(experimentId),
+            DeviceInterruptRecoveryAction.ResumeAfterReboot => ResumeAfterReboot(experimentId),
+            DeviceInterruptRecoveryAction.RestoreOriginalState => Rollback(experimentId),
+            DeviceInterruptRecoveryAction.FinalizeOriginalState => Rollback(experimentId),
+            DeviceInterruptRecoveryAction.ManualInterventionRequired => throw new InvalidOperationException(
+                $"Automatic device-interrupt recovery refused: {inspection.Reason}"),
+            _ => throw new InvalidOperationException($"Unknown device-interrupt recovery action {inspection.Action}."),
         };
     }
 

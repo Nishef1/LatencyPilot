@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using System.Buffers.Binary;
 using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Benchmarking.Candidates;
@@ -16,7 +17,7 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class GpuAffinityCandidatePlannerTests
 {
-    [TestMethod]
+    [AuditCase]
     public async Task BaselineInterruptSharesDrivePhysicalCoreCandidateRanking()
     {
         var cpu0 = new LogicalProcessorId(0, 0);

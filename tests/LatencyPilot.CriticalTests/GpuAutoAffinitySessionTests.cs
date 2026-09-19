@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Optimization;
@@ -14,7 +15,7 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class GpuAutoAffinitySessionTests
 {
-    [TestMethod]
+    [AuditCase]
     public async Task SessionRanksByLowsScreensOnceRetestsFinalistsAndRequiresFinalPlacement()
     {
         var (topology, pressure, request) = CreateTwoCoreRequest();
@@ -121,7 +122,7 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsFalse(noWriteBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
     }
 
-    [TestMethod]
+    [AuditCase]
     public async Task SessionRestoresOnUnverifiedFinalPlacementAndKeepsRollbackOwnershipOnFailureOrCancel()
     {
         var (_, _, request) = CreateTwoCoreRequest();
@@ -160,7 +161,7 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsFalse(cancelling.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
     }
 
-    [TestMethod]
+    [AuditCase]
     public async Task SessionRestoresOriginalWhenFinalistLowFpsMeasurementsRemainUnstable()
     {
         var (_, _, request) = CreateTwoCoreRequest();

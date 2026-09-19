@@ -106,6 +106,6 @@ The existing read-only USB/xHCI topology and timing work is reused. Product USB 
 
 ## UX direction
 
-The normal-user product should expose a small workflow such as `Optimize Interrupt Affinity`, not internal Gate A/B/C terminology. It should show the selected GPU CPU, selected input/xHCI CPU, relevant before/after numbers, confidence/verification state and a prominent `Restore Windows Defaults` action.
+The normal-user product should expose a small workflow such as `Optimize Interrupt Affinity`, not internal Gate A/B/C terminology. It should show the selected GPU CPU, selected input/xHCI CPU, relevant before/after numbers, confidence/verification state and a prominent `Restore original settings` action.
 
 The development Gate A UI may retain detailed diagnostics, but ranking bars and summaries must reflect the actual decision order: 1% low first, then 0.1% low and AVG, with p99 as context.

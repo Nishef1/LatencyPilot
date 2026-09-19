@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Benchmarking.Statistics;
 using LatencyPilot.Core.Benchmarking;
@@ -10,7 +11,7 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class GpuBenchmarkContractTests
 {
-    [TestMethod]
+    [AuditCase]
     public void FrozenWorkloadAndCandidateIdentityRemainIndependent()
     {
         var workers = new[]
@@ -56,7 +57,7 @@ public sealed class GpuBenchmarkContractTests
                 0x51A7));
     }
 
-    [TestMethod]
+    [AuditCase]
     public void BenchmarkEvidenceUsesRawFramesAndInternalGpuTimestamps()
     {
         var startedAt = DateTimeOffset.UnixEpoch;
@@ -277,7 +278,7 @@ public sealed class GpuBenchmarkContractTests
                 GpuBenchmarkContaminationContext.Clean with { DeviceResetDetected = true }).State);
     }
 
-    [TestMethod]
+    [AuditCase]
     public void ControlledBenchmarkProtocolIsSessionBoundAndTrialBounded()
     {
         var sessionId = Guid.NewGuid();

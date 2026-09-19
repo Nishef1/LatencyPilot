@@ -33,7 +33,7 @@ preflight / quiet check
 → reversible xHCI affinity
 → one reboot when required
 → verify GPU + xHCI placement
-→ before/after + Restore Windows Defaults
+→ before/after + Restore original settings
 ```
 
 NIC/RSS mutation, audio affinity, BIOS/HAGS/MSI/power changes and the cross-subsystem Pareto optimizer are outside the v1 automatic path. Existing source in those areas may remain for future/read-only use.
@@ -164,3 +164,9 @@ The finalist stage now uses two independent re-test rounds. Each shortlisted CPU
 The GPU search now treats <=1% relative differences in 1% low, AVG FPS and frame-p99 as practical ties instead of manufacturing a winner from decimal noise. 0.1% low is allowed to break a remaining tie only when its relative difference exceeds 5%. Screening advances the best three plus every additional candidate within 1% 1%-low of the third-place cutoff.
 
 The controlled D3D12 renderer now uses a three-buffer flip chain and two frame contexts with per-context command allocators/lists, timestamps and fences. At most two benchmark frames are kept in flight; command resources are reused only after the matching fence completes. This removes the previous full GPU drain after every Present while retaining bounded latency and auditable per-frame GPU timestamp evidence.
+
+## Audit closure status — 2026-09-19
+
+Software/source closure is implemented for F1–F11 plus conservative MSI and reversible xHCI mutation substrate. Critical contracts cover owner-thread rendering, deterministic ranking, Original-vs-finalist decisions, serialized mutation/recovery, optional collector semantics, tri-state runtime placement, full eligible-core enumeration, primary-input USB identity, composite route correlation, capture-quality gating, driver-wide xHCI attribution, reboot-pending states, and exact rollback.
+
+**Still not a physical-product completion claim:** public mutation remains disabled until the exact revision passes real Windows hardware validation across the required Intel/AMD and USB/xHCI scenarios. Hosted GitHub Actions cannot prove physical interrupt placement, reboot activation, or performance benefit.

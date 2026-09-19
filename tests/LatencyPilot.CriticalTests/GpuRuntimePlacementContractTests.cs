@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Comparisons;
@@ -15,7 +16,7 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class GpuRuntimePlacementContractTests
 {
-    [TestMethod]
+    [AuditCase]
     public void GateAPlacementAndCaptureContinuityFailClosed()
     {
         var confirmed = new GpuInterruptRuntimePlacementEvidence(

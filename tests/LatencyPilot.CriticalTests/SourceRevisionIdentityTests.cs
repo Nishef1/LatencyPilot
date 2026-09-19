@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using LatencyPilot.Protocol;
 using LatencyPilot.Service;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -7,7 +8,7 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class SourceRevisionIdentityTests
 {
-    [TestMethod]
+    [AuditCase]
     public void SourceRevisionAndGateACompletionMustFailClosed()
     {
         const string expected = "4f06d190ee8c0262c2e73799063bc93a7d9caf71";

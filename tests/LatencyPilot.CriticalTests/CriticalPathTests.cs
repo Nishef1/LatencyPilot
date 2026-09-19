@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
@@ -27,7 +28,7 @@ public sealed class CriticalPathTests
         GuardrailRegressionLimit: 0.05,
         EvaluationPercentile: 0.99);
 
-    [TestMethod]
+    [AuditCase]
     public void ExperimentLifecycleAndDurableJournalRejectUnsafeTransitions()
     {
         ExperimentStateMachine.EnsureTransition(
@@ -134,7 +135,7 @@ public sealed class CriticalPathTests
         }
     }
 
-    [TestMethod]
+    [AuditCase]
     public void BenchmarkVerdictMatrixPreservesPrimaryAndGuardrailSemantics()
     {
         AssertVerdict("insufficient samples", 100, 80, ExperimentVerdict.Inconclusive, count: 5);
@@ -188,7 +189,7 @@ public sealed class CriticalPathTests
         }
     }
 
-    [TestMethod]
+    [AuditCase]
     public void BaselineQualityGateRequiresCleanStableRepeatedWindows()
     {
         BaselineWindowEvidence[] stable =
@@ -275,7 +276,7 @@ public sealed class CriticalPathTests
         Assert.IsTrue(adjustedResult.IsValidForComparison);
     }
 
-    [TestMethod]
+    [AuditCase]
     public void PercentileEstimatorUsesOneDocumentedInterpolationRule()
     {
         double[] samples = [1, 2, 3, 4, 100];
@@ -295,7 +296,7 @@ public sealed class CriticalPathTests
             Percentiles.Calculate(samples, double.NaN));
     }
 
-    [TestMethod]
+    [AuditCase]
     public async Task PipeFramingFailsClosedOnMalformedOrUnknownInput()
     {
         var commands = Enum.GetValues<ObservationCommand>();
@@ -381,7 +382,7 @@ public sealed class CriticalPathTests
         }
     }
 
-    [TestMethod]
+    [AuditCase]
     public void WindowsReadOnlyInventoryCaptureIsInternallyConsistent()
     {
         var topology = ProcessorTopologyReader.Capture();

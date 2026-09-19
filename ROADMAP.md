@@ -20,7 +20,7 @@ preflight / quiet check
 → choose/apply a separate USB/xHCI interrupt CPU
 → reboot once when required
 → verify GPU + xHCI runtime placement
-→ show before/after evidence + Restore Windows Defaults
+→ show before/after evidence + Restore original settings
 ```
 
 The manual inspiration is AutoGpuAffinity + LatencyMon/ETW + Interrupt Affinity Policy Tool, but LatencyPilot replaces manual device matching and unsafe guesswork with Windows topology, ETW verification, journal-owned rollback and explicit uncertainty.
@@ -37,7 +37,7 @@ The manual inspiration is AutoGpuAffinity + LatencyMon/ETW + Interrupt Affinity 
 - per-CPU interrupt-headroom analysis for input/xHCI placement;
 - reversible xHCI/controller affinity after the shared mutation substrate is physically proven;
 - one-reboot post-apply verification;
-- before/after evidence and Restore Windows Defaults;
+- before/after evidence and Restore original settings;
 - non-elevated App with a narrow privileged boundary.
 
 ### Not in the v1 automatic path
@@ -279,7 +279,7 @@ Optimize Interrupt Affinity
 ✓ Input/xHCI CPU selected and verified
 ↻ Restart if required
 
-Restore Windows Defaults
+Restore original settings
 ```
 
 - [x] non-elevated WinUI shell;
@@ -288,7 +288,7 @@ Restore Windows Defaults
 - [x] install/upgrade/uninstall recovery checks and signing hooks;
 - [ ] integrated normal-user `Optimize Interrupt Affinity` orchestration;
 - [ ] concise before/after result UI;
-- [ ] prominent Restore Windows Defaults;
+- [ ] prominent Restore original settings;
 - [ ] physical accessibility/keyboard/text-scale/high-contrast pass;
 - [ ] signed package, clean-machine install, upgrade/uninstall and recovery validation.
 
@@ -323,3 +323,9 @@ Every v1 source outcome above is implemented or explicitly blocked by its docume
 ### True v1 / 100%
 
 Only after the physical read-only closure, GPU mutation gates, automatic USB/xHCI apply/verify, combined reboot/recovery, final before/after UX, accessibility/runtime validation and signed package/install/upgrade/uninstall checks are recorded may LatencyPilot be described as v1 complete.
+
+## Audit closure milestone — 2026-09-19
+
+- Source/CI: close F1–F11, MSI/xHCI reversible transactions, reboot resume, retained restore, and the internal Optimize sequence.
+- Physical gate: run exact-revision Intel 16-LP, Intel >16-LP, AMD, primary-input/xHCI, MSI, reboot/resume, before/after, and restore validation before enabling public mutation.
+- Out of scope for this milestone: NIC/RSS mutation, audio tuning, BIOS, HPET, broad power-plan tweaking, and arbitrary registry packs.

@@ -112,7 +112,7 @@ exact-head green CI
 → automatic USB CPU selection
 → reversible xHCI mutation + physical proof
 → combined one-reboot GPU+xHCI verification
-→ before/after UX + Restore Windows Defaults
+→ before/after UX + Restore original settings
 → release/accessibility/recovery closure
 ```
 

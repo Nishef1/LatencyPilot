@@ -44,6 +44,13 @@ internal static class PhysicalValidationProgram
                 "rollback" => Rollback(args),
                 "recover" => Recover(args),
                 "restore-original-settings" => RestoreOriginalSettings(args),
+                "prepare-msi" => PrepareMsi(args),
+                "prepare-xhci-affinity" => PrepareXhciAffinity(args),
+                "apply-device-interrupt" => ApplyDeviceInterrupt(args),
+                "resume-device-interrupt" => ResumeDeviceInterrupt(args),
+                "keep-device-interrupt" => KeepDeviceInterrupt(args),
+                "rollback-device-interrupt" => RollbackDeviceInterrupt(args),
+                "recover-device-interrupt" => RecoverDeviceInterrupt(args),
                 "--help" or "-h" or "help" => Help(args),
                 _ => throw new ArgumentException($"Unknown command '{args[0]}'."),
             };
@@ -412,6 +419,103 @@ internal static class PhysicalValidationProgram
         return result.JournalEntry.IsTerminal ? 0 : 3;
     }
 
+
+    private static int PrepareMsi(string[] args)
+    {
+        var options = ParseOptions(args, "--device");
+        RequirePhysicalMutationAuthority(options);
+        var result = new DeviceInterruptMutationTransaction(OpenJournal()).PrepareMsi(options.GetRequiredValue("--device"));
+        Console.WriteLine(result.NoWriteRequired ? "MSI already enabled; no write required." : "Prepared bounded MSI experiment; no device write was attempted.");
+        if (result.Entry is { } entry) PrintJournalEntry(entry);
+        return 0;
+    }
+
+    private static int PrepareXhciAffinity(string[] args)
+    {
+        var options = ParseOptions(args, "--device", "--processor");
+        RequirePhysicalMutationAuthority(options);
+        if (!byte.TryParse(options.GetRequiredValue("--processor"), NumberStyles.None, CultureInfo.InvariantCulture, out var processorNumber) || processorNumber >= 64)
+            throw new ArgumentException("--processor must identify a group-0 logical processor from 0 through 63.");
+        var topology = ProcessorTopologyReader.Capture();
+        var validated = GpuInterruptAffinityCandidate.Create(topology, new LogicalProcessorId(0, processorNumber));
+        var candidate = new DeviceInterruptAffinityCandidate(validated.ProcessorGroup, validated.ProcessorNumber, validated.AffinityMask);
+        var result = new DeviceInterruptMutationTransaction(OpenJournal()).PrepareXhciAffinity(options.GetRequiredValue("--device"), candidate);
+        Console.WriteLine(result.NoWriteRequired ? "xHCI affinity already matches the candidate; no write required." : "Prepared bounded xHCI affinity experiment; no device write was attempted.");
+        if (result.Entry is { } entry) PrintJournalEntry(entry);
+        return 0;
+    }
+
+    private static int ApplyDeviceInterrupt(string[] args)
+    {
+        var options = ParseOptions(args, "--experiment");
+        RequirePhysicalMutationAuthority(options);
+        var result = new DeviceInterruptMutationTransaction(OpenJournal()).Apply(ParseExperimentId(options.GetRequiredValue("--experiment")));
+        PrintDeviceMutationStep(result);
+        return result.Entry.State == MutationJournalState.Applied ? 0 : 3;
+    }
+
+    private static int ResumeDeviceInterrupt(string[] args)
+    {
+        var options = ParseOptions(args, "--experiment");
+        RequirePhysicalMutationAuthority(options);
+        var result = new DeviceInterruptMutationTransaction(OpenJournal()).ResumeAfterReboot(ParseExperimentId(options.GetRequiredValue("--experiment")));
+        PrintDeviceMutationStep(result);
+        return result.Entry.State is MutationJournalState.Applied or MutationJournalState.Reverted ? 0 : 3;
+    }
+
+    private static int KeepDeviceInterrupt(string[] args)
+    {
+        var options = ParseOptions(args, "--experiment", "--measurement-verified");
+        RequirePhysicalMutationAuthority(options);
+        if (!bool.TryParse(options.GetRequiredValue("--measurement-verified"), out var verified) || !verified)
+            throw new InvalidOperationException("keep-device-interrupt requires --measurement-verified true after scored before/after evidence has been reviewed.");
+        var entry = new DeviceInterruptMutationTransaction(OpenJournal()).KeepVerified(
+            ParseExperimentId(options.GetRequiredValue("--experiment")), verified);
+        PrintJournalEntry(entry);
+        return entry.State == MutationJournalState.Kept ? 0 : 3;
+    }
+
+    private static int RollbackDeviceInterrupt(string[] args)
+    {
+        var options = ParseOptions(args, "--experiment");
+        RequirePhysicalMutationAuthority(options);
+        var result = new DeviceInterruptMutationTransaction(OpenJournal()).Rollback(ParseExperimentId(options.GetRequiredValue("--experiment")));
+        PrintDeviceMutationStep(result);
+        return result.Entry.State == MutationJournalState.Reverted ? 0 : 3;
+    }
+
+    private static int RecoverDeviceInterrupt(string[] args)
+    {
+        var options = ParseOptions(args, "--experiment");
+        RequirePhysicalMutationAuthority(options);
+        var experimentId = ParseExperimentId(options.GetRequiredValue("--experiment"));
+        var journal = OpenJournal();
+        var entry = journal.TryGet(experimentId) ?? throw new InvalidOperationException($"Mutation journal entry {experimentId:D} was not found.");
+        var inspection = DeviceInterruptRecoveryInspector.Inspect(entry);
+        Console.WriteLine($"recovery-action={inspection.Action} relation={inspection.StoredStateRelation}");
+        Console.WriteLine($"recovery-reason={inspection.Reason}");
+        var result = new DeviceInterruptMutationTransaction(journal).Recover(experimentId);
+        PrintDeviceMutationStep(result);
+        return result.Entry.IsTerminal ? 0 : 3;
+    }
+
+    private static void PrintDeviceMutationStep(DeviceInterruptMutationStepResult result)
+    {
+        PrintJournalEntry(result.Entry);
+        if (result.Restart is null)
+        {
+            Console.WriteLine("restart=not-attempted");
+        }
+        else
+        {
+            Console.WriteLine($"restart-in-place={result.Restart.RestartedInPlace}");
+            Console.WriteLine($"system-restart-required={result.Restart.SystemRestartRequired}");
+            Console.WriteLine($"device-started={result.Restart.DeviceStarted}");
+            Console.WriteLine($"device-has-problem={result.Restart.DeviceHasProblem}");
+        }
+        Console.WriteLine($"original-state-restored={result.OriginalStateRestored}");
+    }
+
     private static int RestoreOriginalSettings(string[] args)
     {
         var options = ParseOptions(args);
@@ -603,6 +707,13 @@ internal static class PhysicalValidationProgram
         Console.WriteLine("  rollback --experiment <guid> --confirm-physical-mutation");
         Console.WriteLine("  recover --experiment <guid> --confirm-physical-mutation");
         Console.WriteLine("  restore-original-settings --confirm-physical-mutation");
+        Console.WriteLine("  prepare-msi --device <display-instance-id> --confirm-physical-mutation");
+        Console.WriteLine("  prepare-xhci-affinity --device <xhci-instance-id> --processor <group-0-cpu> --confirm-physical-mutation");
+        Console.WriteLine("  apply-device-interrupt --experiment <guid> --confirm-physical-mutation");
+        Console.WriteLine("  resume-device-interrupt --experiment <guid> --confirm-physical-mutation");
+        Console.WriteLine("  keep-device-interrupt --experiment <guid> --measurement-verified true --confirm-physical-mutation");
+        Console.WriteLine("  rollback-device-interrupt --experiment <guid> --confirm-physical-mutation");
+        Console.WriteLine("  recover-device-interrupt --experiment <guid> --confirm-physical-mutation");
     }
 
     private sealed record ParsedOptions(

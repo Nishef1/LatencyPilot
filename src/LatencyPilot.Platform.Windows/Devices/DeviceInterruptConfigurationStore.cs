@@ -85,6 +85,12 @@ public static class DeviceInterruptConfigurationStore
 
     public static void RestoreMsi(DeviceInterruptConfigurationSnapshot original)
     {
+        var before = Capture(original.DeviceInstanceId);
+        if (!string.Equals(before.DriverVersion, original.DriverVersion, StringComparison.OrdinalIgnoreCase) ||
+            !ValuesEqual(before.MessageNumberLimit, original.MessageNumberLimit))
+        {
+            throw new InvalidOperationException("MSI restore refused because driver identity or MessageNumberLimit changed after the captured original state.");
+        }
         using var tx = TransactionalRegistry.Begin("LatencyPilot MSI exact restore");
         using (var key = tx.CreateOrOpenKey(RegistryHive.LocalMachine, HardwareSubPath(original.DeviceInstanceId, MsiSubKey)))
             RestoreValue(key, MsiSupportedValue, original.MsiSupported);
@@ -96,6 +102,11 @@ public static class DeviceInterruptConfigurationStore
 
     public static void RestoreXhciAffinity(DeviceInterruptConfigurationSnapshot original)
     {
+        var before = Capture(original.DeviceInstanceId);
+        if (!string.Equals(before.DriverVersion, original.DriverVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("xHCI affinity restore refused because driver identity changed after the captured original state.");
+        }
         using var tx = TransactionalRegistry.Begin("LatencyPilot xHCI affinity exact restore");
         if (original.AffinityPolicyKeyExisted)
         {
@@ -126,6 +137,22 @@ public static class DeviceInterruptConfigurationStore
         ValidateCandidate(candidate);
         return TryDword(snapshot.DevicePolicy, out var policy) && policy == IrqPolicySpecifiedProcessors &&
             TryMask(snapshot.AssignmentSetOverride, out var mask) && mask == candidate.AffinityMask;
+    }
+
+    public static bool MatchesCandidate(
+        DeviceInterruptConfigurationSnapshot current,
+        DeviceInterruptConfigurationSnapshot original,
+        DeviceInterruptMutationCandidate candidate)
+    {
+        if (!string.Equals(current.DriverVersion, original.DriverVersion, StringComparison.OrdinalIgnoreCase) ||
+            !ValuesEqual(current.MessageNumberLimit, original.MessageNumberLimit))
+        {
+            return false;
+        }
+
+        return candidate.Operation == DeviceInterruptMutationOperation.EnableMsi
+            ? IsMsiEnabled(current)
+            : IsXhciAffinityStored(current, candidate.ToAffinityCandidate());
     }
 
     public static bool MatchesOriginal(DeviceInterruptConfigurationSnapshot current, DeviceInterruptConfigurationSnapshot original, DeviceInterruptMutationOperation operation)

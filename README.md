@@ -26,7 +26,7 @@ preflight / quiet check
 → reboot once when required
 → verify GPU + xHCI runtime placement
 → show before/after evidence
-→ Restore Windows Defaults
+→ Restore original settings
 ```
 
 The workflow is inspired by the manual combination of AutoGpuAffinity, LatencyMon/ETW and Interrupt Affinity Policy Tool, but LatencyPilot replaces manual device matching and blind affinity guesses with Windows topology, controlled measurement, explicit verification and journal-owned rollback.
@@ -250,3 +250,11 @@ Repository/source completion and true v1 completion are separate claims. True v1
 ## Contributing / license / security
 
 Read [`AGENTS.md`](AGENTS.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), [`CLA.md`](CLA.md), [`LICENSE`](LICENSE) and [`SECURITY.md`](SECURITY.md) before making changes.
+
+## 2026-09-19 audit-closure semantics
+
+LatencyPilot now treats automatic optimization as a one-at-a-time experiment pipeline: **Original measurement → GPU affinity → conservative MSI → primary-input/xHCI → final verification → report**. A stage that is NotReady, inconclusive, or requires reboot stops the pipeline; intent is never treated as activation proof.
+
+MSI mutation is deliberately narrow: `MSISupported` may be enabled only when authoritative stored state makes the target applicable. `MessageNumberLimit` and interrupt priority are preserved/observed, not tuned automatically. xHCI affinity requires one explicit primary Raw Input identity, one exact USB route, clean capture evidence, and reversible journal ownership.
+
+`Restore original settings` replays retained LatencyPilot changes newest-first from exact snapshots. It does **not** claim to restore Windows defaults. Public mutation remains fail-closed (`MutationAvailable = false`) until exact-revision physical GPU/MSI/xHCI validation is recorded; hosted CI proves source contracts only.

@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Service;
@@ -9,7 +10,7 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class DeviceInterruptMutationTests
 {
-    [TestMethod]
+    [AuditCase]
     public void DeviceMutationContractIsJournaledRebootResumableAndDoesNotTuneMessageCount()
     {
         Assert.IsTrue(MutationJournalStateMachine.CanTransition(MutationJournalState.Applying, MutationJournalState.ApplyRebootPending));

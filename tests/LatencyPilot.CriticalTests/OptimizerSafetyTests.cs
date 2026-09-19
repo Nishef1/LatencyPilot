@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Benchmarking.Comparisons;
@@ -40,7 +41,7 @@ public sealed class OptimizerSafetyTests
     private static readonly double[] ExpectedDisplayLatency = [7d, 8d];
     private static readonly double[] ExpectedDroppedFrameRatio = [0.01d, 0.02d];
 
-    [TestMethod]
+    [AuditCase]
     public void GoDecisionContractRejectsTradeoffsAndBalancesFinalConfirmation()
     {
         var original = Measurement(100, 10);

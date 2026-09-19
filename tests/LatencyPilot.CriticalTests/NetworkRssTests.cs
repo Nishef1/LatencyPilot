@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using System.Net.NetworkInformation;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
@@ -14,7 +15,7 @@ public sealed class NetworkRssTests
 {
     private static readonly string[] ExpectedRssProcessors = ["0:2", "0:4", "0:6", "0:8"];
 
-    [TestMethod]
+    [AuditCase]
     public void RssProviderMappingPreservesAuthoritativeFieldsAndPnpCorrelation()
     {
         var mapped = NetworkRssPropertyMapper.Map(new Dictionary<string, object?>

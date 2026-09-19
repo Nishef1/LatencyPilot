@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using LatencyPilot.Benchmarking.Baselines;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Results;
@@ -15,7 +16,7 @@ public sealed class OptimizationProfileTests
         "network-jitter-p99",
     ];
 
-    [TestMethod]
+    [AuditCase]
     public void ProfilesAndParetoPolicyRemainTransparentAndFailClosed()
     {
         var competitive = OptimizationProfiles.Get(OptimizationProfileKind.CompetitiveGaming);

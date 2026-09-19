@@ -24,7 +24,7 @@ preflight / quiet check
 → reversible xHCI/controller affinity
 → one reboot when required
 → runtime verification
-→ before/after evidence + Restore Windows Defaults
+→ before/after evidence + Restore original settings
 ```
 
 A mutation feature is incomplete unless it snapshots exact original state, journals ownership, applies one allowlisted change, verifies stored and runtime state, and can restore the exact baseline after cancellation/failure.
@@ -186,7 +186,7 @@ Privileged boundary. Public v6 is observation-only. Future product mutations mus
 
 ### `LatencyPilot.App`
 
-Normal-user orchestration and presentation. A development checkout may expose `Run GPU Gate A`; normal-user v1 ultimately exposes `Optimize Interrupt Affinity` and `Restore Windows Defaults` after arming gates pass.
+Normal-user orchestration and presentation. A development checkout may expose `Run GPU Gate A`; normal-user v1 ultimately exposes `Optimize Interrupt Affinity` and `Restore original settings` after arming gates pass.
 
 ## 6. Evidence semantics
 
@@ -342,3 +342,11 @@ NIC/RSS mutation, audio affinity, profile/Pareto and multi-subsystem automatic o
 Hosted Tests prove only deterministic/source contracts and compile referenced source. They do not prove physical device restart/interrupt placement, LocalSystem behavior, rendered accessibility, PresentMon runtime on owner hardware, installer/signing or reboot recovery.
 
 Physical progression is owned by `ROADMAP.md` / `PROJECT_STATUS.md`: exact-head CI → GPU Gate A → product mutation boundary → automatic USB/xHCI mutation/verification → combined reboot/before-after UX → release/accessibility closure.
+
+## Audit-closure optimizer transaction model (2026-09-19)
+
+LatencyPilot now treats automatic optimization as a one-at-a-time experiment pipeline: **Original measurement → GPU affinity → conservative MSI → primary-input/xHCI → final verification → report**. A stage that is NotReady, inconclusive, or requires reboot stops the pipeline; intent is never treated as activation proof.
+
+MSI mutation is deliberately narrow: `MSISupported` may be enabled only when authoritative stored state makes the target applicable. `MessageNumberLimit` and interrupt priority are preserved/observed, not tuned automatically. xHCI affinity requires one explicit primary Raw Input identity, one exact USB route, clean capture evidence, and reversible journal ownership.
+
+`Restore original settings` replays retained LatencyPilot changes newest-first from exact snapshots. It does **not** claim to restore Windows defaults. Public mutation remains fail-closed (`MutationAvailable = false`) until exact-revision physical GPU/MSI/xHCI validation is recorded; hosted CI proves source contracts only.

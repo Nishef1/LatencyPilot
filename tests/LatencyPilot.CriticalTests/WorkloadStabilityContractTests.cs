@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using System.Diagnostics;
 using System.Text.Json;
 using LatencyPilot.Benchmarking.Baselines;
@@ -9,7 +10,7 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class WorkloadStabilityContractTests
 {
-    [TestMethod]
+    [AuditCase]
     public void CpuActivityDriftBlocksExperimentReadinessEvenWhenInterruptRatesAreStable()
     {
         var windows = Enumerable.Range(1, 5)

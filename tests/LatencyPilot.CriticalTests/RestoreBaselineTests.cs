@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using LatencyPilot.Persistence;
 using LatencyPilot.Service;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -7,7 +8,7 @@ namespace LatencyPilot.CriticalTests;
 [TestClass]
 public sealed class RestoreBaselineTests
 {
-    [TestMethod]
+    [AuditCase]
     public void KeptChangesRestoreNewestFirstAndUnknownKindsFailClosed()
     {
         Assert.IsTrue(MutationJournalStateMachine.CanTransition(
