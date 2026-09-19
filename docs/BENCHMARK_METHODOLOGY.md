@@ -234,8 +234,9 @@ For a single-adapter WDDM system, display-KMD attribution is preferred; a labell
 
 ## 9. Failure, cancellation and rollback
 
-Mutation ownership starts before state is changed and remains owned until exact Keep or Revert terminalization.
+Mutation ownership starts before state is changed and remains owned until exact Keep or Revert terminalization. Before every candidate write, stored affinity and display-driver version must still match the exact session-original snapshot. Transaction preparation repeats that same comparison inside the mutation lock, and the existing immediate-prewrite reread rejects any later TOCTOU drift before registry write.
 
+- External affinity/driver drift before apply → refuse before write.
 - Candidate failure after apply → exact rollback + original verification.
 - Cancellation before Keep → exact rollback + original verification.
 - Final placement failure → exact rollback + original verification.
