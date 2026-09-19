@@ -235,11 +235,26 @@ public sealed class GpuAutoAffinitySession
                 trialReports,
                 () => ++nextRunNumber,
                 cancellationToken).ConfigureAwait(false);
-            var finalist = SelectBestCandidate(finalists);
+            var rankedFinalists = OrderRankableCandidates(finalists).ToArray();
+            CandidateEvaluation? finalist = null;
+            foreach (var candidate in rankedFinalists)
+            {
+                if (IsMeasurablyBetterThanOriginal(original, candidate, out var comparisonReason))
+                {
+                    finalist = candidate;
+                    break;
+                }
+
+                reasons.Add(
+                    $"CPU {candidate.Candidate.Processor.Number} was rejected after finalist ranking: {comparisonReason}");
+            }
+
             if (finalist is null)
             {
                 reasons.Add(
-                    "No GPU-affinity candidate remained valid and repeatable after the bounded top-candidate re-test; the exact original state was retained rather than guessing.");
+                    rankedFinalists.Length == 0
+                        ? "No GPU-affinity candidate remained valid and repeatable after the bounded top-candidate re-test; the exact original state was retained rather than guessing."
+                        : "No repeatable finalist cleared the Original/noise and guardrail checks; the exact original state was retained rather than keeping a worse tradeoff.");
                 reasons.AddRange(candidateReports
                     .Where(static report => string.Equals(report.Verdict, "Inconclusive", StringComparison.Ordinal))
                     .Select(static report => $"CPU {report.Processor.Number}: {report.Reason}"));
@@ -248,7 +263,7 @@ public sealed class GpuAutoAffinitySession
                     request,
                     startedAtUtc,
                     GpuOptimizationRecommendation.RestoreOriginal,
-                    null,
+                    rankedFinalists.FirstOrDefault()?.Candidate,
                     restored,
                     restored,
                     candidateReports,
@@ -256,19 +271,9 @@ public sealed class GpuAutoAffinitySession
                     reasons);
             }
 
-            if (!IsMeasurablyBetterThanOriginal(original, finalist, out var comparisonReason))
-            {
-                reasons.Add(comparisonReason);
-                reasons.Add("The exact original state is the successful outcome because the best forced affinity did not demonstrate a repeatable net improvement.");
-                var originalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
-                return CreateResult(
-                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, finalist.Candidate,
-                    originalVerified, originalVerified, candidateReports, trialReports, reasons);
-            }
-
             reasons.Add(string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
-                $"CPU {finalist.Candidate.Processor.Number} ranked best using fixed-reference practical-equivalence bands. Medians: 1% low {finalist.MedianLow1Fps:F1} FPS; AVG {finalist.MedianAvgFps:F1} FPS; p99 {finalist.MedianFrameP99Milliseconds:F2} ms; 0.1% low {finalist.MedianLow01Fps:F1} FPS."));
+                $"CPU {finalist.Candidate.Processor.Number} is the highest-ranked finalist that clears Original/noise and guardrail checks. Medians: 1% low {finalist.MedianLow1Fps:F1} FPS; AVG {finalist.MedianAvgFps:F1} FPS; p99 {finalist.MedianFrameP99Milliseconds:F2} ms; 0.1% low {finalist.MedianLow01Fps:F1} FPS."));
 
             return await VerifyAndKeepFinalistAsync(
                 request,
