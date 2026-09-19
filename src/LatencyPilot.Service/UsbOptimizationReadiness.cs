@@ -70,6 +70,14 @@ internal static class UsbOptimizationReadiness
                 "Host-observable input timing evidence is insufficient for comparison.");
         }
 
+        if (!attribution.ControllerOwnershipUnambiguous)
+        {
+            return Result(
+                UsbOptimizationReadinessStatus.Inconclusive,
+                routeController,
+                "The xHCI service/module attribution is driver-wide and is shared by multiple or unknown controllers; controller-specific ownership is not proven.");
+        }
+
         if (!attribution.CaptureIntegrityValid)
         {
             return Result(

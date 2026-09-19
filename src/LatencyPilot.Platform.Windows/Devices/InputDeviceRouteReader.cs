@@ -50,54 +50,35 @@ public static partial class InputDeviceRouteReader
         DeviceRelationshipGraph graph,
         UsbTopologySnapshot usbTopology)
     {
-        if (!route.IsUsbBacked || route.RawInputDevice.PnPInstanceId is null)
-        {
-            return route;
-        }
-
+        if (!route.IsUsbBacked || route.RawInputDevice.PnPInstanceId is null) return route;
         var device = graph.TryGetDevice(route.RawInputDevice.PnPInstanceId);
-        if (device is null)
+        if (device is null) return route;
+
+        var chain = new[] { device }.Concat(graph.GetKnownAncestors(device.InstanceId))
+            .TakeWhile(static candidate => !string.Equals(candidate.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase))
+            .Where(static candidate => !candidate.InstanceId.StartsWith("USB\\ROOT_HUB", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var candidates = new List<UsbDriverKeyCandidate>(chain.Length);
+        foreach (var candidate in chain)
         {
-            return route;
-        }
-
-        var chain = new[] { device }.Concat(graph.GetKnownAncestors(device.InstanceId)).ToArray();
-        var usbDevice = chain.FirstOrDefault(static candidate =>
-            candidate.InstanceId.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(candidate.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase) &&
-            !candidate.InstanceId.StartsWith("USB\\ROOT_HUB", StringComparison.OrdinalIgnoreCase));
-        var driverKeyTarget = usbDevice ?? device;
-
-        try
-        {
-            var driverKey = UsbTopologyReader.TryReadDriverKeyName(driverKeyTarget.InstanceId, out var driverKeyError);
-            var portRoute = driverKey is null && driverKeyError is not null
-                ? new UsbPortRouteEvidence(
-                    UsbPortRouteResolutionStatus.DriverKeyUnavailable,
-                    null,
-                    driverKeyError)
-                : UsbPortRouteCorrelator.Resolve(
-                    driverKey,
-                    route.UsbHostControllerInstanceId,
-                    usbTopology.Ports);
-
-            return route with
+            try
             {
-                UsbDeviceInstanceId = usbDevice?.InstanceId,
-                UsbPortRoute = portRoute,
-            };
-        }
-        catch (Exception exception) when (IsRecoverableUsbMetadataException(exception))
-        {
-            return route with
+                var key = UsbTopologyReader.TryReadDriverKeyName(candidate.InstanceId, out var error);
+                candidates.Add(new UsbDriverKeyCandidate(candidate.InstanceId, key, error));
+            }
+            catch (Exception exception) when (IsRecoverableUsbMetadataException(exception))
             {
-                UsbDeviceInstanceId = usbDevice?.InstanceId,
-                UsbPortRoute = new UsbPortRouteEvidence(
-                    UsbPortRouteResolutionStatus.DriverKeyUnavailable,
-                    null,
-                    $"Unable to read the exact USB transport driver-key identity: {exception.Message}"),
-            };
+                candidates.Add(new UsbDriverKeyCandidate(candidate.InstanceId, null, exception.Message));
+            }
         }
+
+        var resolved = UsbPortRouteCorrelator.ResolveFromCandidates(
+            candidates, route.UsbHostControllerInstanceId, usbTopology.Ports);
+        return route with
+        {
+            UsbDeviceInstanceId = resolved.MatchedDeviceInstanceId,
+            UsbPortRoute = resolved.Evidence,
+        };
     }
 
     private static InputDeviceRouteSnapshot BuildRoute(
