@@ -238,7 +238,8 @@ one adaptive calibration
      fresh apply/restart/warm-up + 1 scored 30 s run + exact rollback per round
      at most one adaptive replacement score
 → accept only stable 3-of-up-to-4 evidence with at most one rejected run
-→ walk finalists in rank order through Original/frame/DPC/ISR guardrails
+→ fresh scored Original control after finalist re-tests; stop if 1%/AVG/p99 drift
+→ walk finalists in rank order through Original/frame/noise-aware DPC/ISR guardrails
 → apply highest-ranked clean winner
 → final benchmark-only warm-up → ETW placement-verification capture
 → Keep only with clean target-only GPU ISR proof
@@ -256,7 +257,7 @@ Screening prioritizes completing the bounded comparison safely:
 - ETW is a best-effort screening guardrail when unavailable;
 - healthy ETW proving wrong/off-target placement invalidates that candidate;
 - system CPU-busy drift is measured from Windows system-time snapshots and surfaced as trial context;
-- when Original and finalist both have enough attributable GPU-driver samples, DPC/ISR p99 tails are Keep guardrails rather than ranking inputs.
+- when Original and finalist each have at least three usable attributable GPU-driver runs, DPC/ISR p99 tails are evaluated per run and compared by median against a noise-aware Keep threshold rather than used as ranking inputs.
 
 Final Keep is stricter. It requires:
 
