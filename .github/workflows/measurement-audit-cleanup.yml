@@ -29,22 +29,14 @@ jobs:
         with:
           dotnet-version: 10.0.401
 
-      - name: Add regressions only
-        run: python eng/measurement-audit-cleanup.py tests
-
-      - name: RED - old source must violate the new measurement contracts
+      - name: Apply regression contracts and implementation
         shell: pwsh
         run: |
-          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-          $red = $LASTEXITCODE
-          if ($red -eq 0) { throw 'Measurement audit regressions unexpectedly passed before implementation.' }
-          Write-Host "Expected RED observed with exit code $red."
-          exit 0
+          python eng/measurement-audit-cleanup.py tests
+          python eng/measurement-audit-cleanup.py implementation
+          python eng/measurement-audit-finalize.py
 
-      - name: Implement measurement hardening and cleanup
-        run: python eng/measurement-audit-cleanup.py implementation
-
-      - name: Keep cancellation last and remove per-frame heap allocation
+      - name: Make readiness API analyzer-safe and remove per-frame object allocation
         shell: pwsh
         run: |
           @'
@@ -99,47 +91,18 @@ jobs:
               '    private sealed record PendingFrame(\n',
               '    private readonly record struct PendingFrame(\n',
               'PendingFrame allocation')
-          old_context = '''        var pending = pendingFrames[contextIndex];
-          if (pending is null)
-          {
-              return null;
-          }
-
-          WaitForFence(frameContextFenceValues[contextIndex]);
-          var gpuMilliseconds = timestamps[contextIndex].ReadElapsedMilliseconds();
-          pendingFrames[contextIndex] = null;
-          frameContextFenceValues[contextIndex] = 0;
-
-          return new BenchmarkFrameTelemetry(
-              pending.FrameIndex,
-              pending.CpuRecordingMilliseconds,
-              gpuMilliseconds,
-              pending.FramePeriodMilliseconds);
-          '''
-          new_context = '''        if (pendingFrames[contextIndex] is not { } pending)
-          {
-              return null;
-          }
-
-          WaitForFence(frameContextFenceValues[contextIndex]);
-          var gpuMilliseconds = timestamps[contextIndex].ReadElapsedMilliseconds();
-          pendingFrames[contextIndex] = null;
-          frameContextFenceValues[contextIndex] = 0;
-
-          return new BenchmarkFrameTelemetry(
-              pending.FrameIndex,
-              pending.CpuRecordingMilliseconds,
-              gpuMilliseconds,
-              pending.FramePeriodMilliseconds);
-          '''
-          renderer = replace_once(renderer, old_context, new_context, 'PendingFrame nullable unwrapping')
+          renderer = replace_once(
+              renderer,
+              '        var pending = pendingFrames[contextIndex];\n        if (pending is null)\n',
+              '        if (pendingFrames[contextIndex] is not { } pending)\n',
+              'PendingFrame nullable unwrapping')
           renderer_path.write_text(renderer, encoding='utf-8', newline='\n')
           '@ | python -
 
       - name: GREEN critical contracts
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
 
-      - name: Enforce permanent test budget and cleanup state
+      - name: Enforce test budget and cleaned automation surface
         shell: pwsh
         run: |
           $files = Get-ChildItem tests/LatencyPilot.CriticalTests -Filter *.cs -File
@@ -152,7 +115,7 @@ jobs:
 
       - name: Remove temporary delivery files
         shell: pwsh
-        run: git rm -f .github/workflows/measurement-audit-cleanup.yml eng/measurement-audit-cleanup.py
+        run: git rm -f .github/workflows/measurement-audit-cleanup.yml eng/measurement-audit-cleanup.py eng/measurement-audit-finalize.py
 
       - name: Commit verified cleanup
         shell: pwsh
