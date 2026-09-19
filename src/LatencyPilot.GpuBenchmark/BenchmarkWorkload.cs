@@ -17,7 +17,6 @@ internal sealed class BenchmarkWorkload
     private const int MinimumCommandBatches = 1;
     private const int MaximumCommandBatches = 4096;
     private const int MinimumSimulationIterations = 1_000;
-    private const int MaximumSimulationIterations = 4_000_000;
     private static readonly TimeSpan WarmupDuration = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan CalibrationProgressInterval = TimeSpan.FromMilliseconds(250);
     private readonly BenchmarkOptions options;
@@ -39,10 +38,9 @@ internal sealed class BenchmarkWorkload
         CancellationToken cancellationToken = default)
     {
         var commandBatches = 8;
-        var simulationIterations = 20_000;
+        var simulationIterations = MinimumSimulationIterations;
         var started = Stopwatch.StartNew();
         var intervalStarted = Stopwatch.StartNew();
-        var cpuSum = 0d;
         var gpuSum = 0d;
         var intervalFrames = 0;
         var lastProgress = TimeSpan.Zero;
@@ -54,20 +52,15 @@ internal sealed class BenchmarkWorkload
             if (renderer.RenderFrame(simulationIterations, commandBatches) is { } frame)
             {
                 ValidateFrame(frame);
-                cpuSum += frame.CpuRecordingMilliseconds;
                 gpuSum += frame.GpuWorkMilliseconds;
                 intervalFrames++;
             }
 
             if (intervalStarted.Elapsed >= TimeSpan.FromSeconds(1) && intervalFrames > 0)
             {
-                simulationIterations = TuneSimulationIterations(
-                    simulationIterations,
-                    cpuSum / intervalFrames);
                 commandBatches = TuneCommandBatches(
                     commandBatches,
                     gpuSum / intervalFrames);
-                cpuSum = 0;
                 gpuSum = 0;
                 intervalFrames = 0;
                 intervalStarted.Restart();
@@ -85,7 +78,7 @@ internal sealed class BenchmarkWorkload
                         WarmupDuration.TotalMilliseconds,
                         0d,
                         1d),
-                    $"Calibrating fixed workload: {commandBatches} command batches, {simulationIterations} simulation iterations.");
+                    $"Calibrating GPU-dominant workload: {commandBatches} command batches, {simulationIterations} fixed simulation iterations.");
             }
         }
 
@@ -212,25 +205,6 @@ internal sealed class BenchmarkWorkload
             throw new InvalidDataException(
                 "Benchmark trial produced invalid frame timing.");
         }
-    }
-
-    private static int TuneSimulationIterations(
-        int current,
-        double averageCpuMilliseconds)
-    {
-        if (averageCpuMilliseconds < 2d)
-        {
-            return Math.Min(
-                MaximumSimulationIterations,
-                checked(current * 2));
-        }
-
-        if (averageCpuMilliseconds > 12d)
-        {
-            return Math.Max(MinimumSimulationIterations, current / 2);
-        }
-
-        return current;
     }
 
     private static int TuneCommandBatches(
