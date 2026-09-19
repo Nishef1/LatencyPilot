@@ -246,11 +246,6 @@ public static class GpuAffinityCandidatePlanner
         return cpuSet.Allocated ? 1 : 0;
     }
 
-    private readonly record struct RankedLogicalProcessor(
-        LogicalProcessorId Processor,
-        int AvailabilityRank,
-        double Pressure);
-
     private readonly record struct RankedGpuAffinityCandidate(
         GpuAffinityCandidate Candidate,
         int AvailabilityRank);
