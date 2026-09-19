@@ -178,7 +178,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             return Guid.Empty;
         }
 
-        var experimentId = mutation.ApplyCandidate(deviceInstanceId, candidate);
+        var experimentId = mutation.ApplyCandidate(deviceInstanceId, candidate, originalState);
         ownedCandidates[experimentId] = candidate;
 
         try
