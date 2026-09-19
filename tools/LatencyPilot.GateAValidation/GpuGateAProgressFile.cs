@@ -3,6 +3,7 @@ using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
+using LatencyPilot.Core.System;
 
 namespace LatencyPilot.GateAValidation;
 
@@ -10,7 +11,7 @@ internal sealed class GpuGateAProgressFile
 {
     private const int MaximumWriteAttempts = 8;
     private const int RequiredRepeatabilityRuns = 3;
-    private const int MaximumRepeatabilityAttempts = 5;
+    private const int MaximumRepeatabilityAttempts = 4;
     private static readonly TimeSpan WriteRetryDelay = TimeSpan.FromMilliseconds(25);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -20,8 +21,8 @@ internal sealed class GpuGateAProgressFile
     private readonly string path;
     private readonly Stopwatch stopwatch = Stopwatch.StartNew();
     private readonly GpuAutoAffinityProgressPlan progressPlan;
-    private readonly Dictionary<int, int> screeningCandidates = [];
-    private readonly Dictionary<int, int> finalistCandidates = [];
+    private readonly Dictionary<LogicalProcessorId, int> screeningCandidates = [];
+    private readonly Dictionary<LogicalProcessorId, int> finalistCandidates = [];
     private readonly Dictionary<string, int> candidatePassesStarted = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> finalistWarmupsStarted = new(StringComparer.Ordinal);
     private readonly object writeLock = new();
@@ -37,9 +38,9 @@ internal sealed class GpuGateAProgressFile
         GpuAutoAffinityProgressPlan progressPlan)
     {
         ArgumentNullException.ThrowIfNull(progressPlan);
-        if (sessionId == Guid.Empty || progressPlan.PhysicalCandidateCount <= 0)
+        if (sessionId == Guid.Empty || progressPlan.CandidateCount <= 0)
         {
-            throw new ArgumentException("Progress identity and physical candidate plan are required.");
+            throw new ArgumentException("Progress identity and logical-CPU candidate plan are required.");
         }
 
         this.sessionId = sessionId;
@@ -318,21 +319,21 @@ internal sealed class GpuGateAProgressFile
         if (string.Equals(phase, "screening", StringComparison.Ordinal) ||
             string.Equals(phase, "screening-warmup", StringComparison.Ordinal))
         {
-            if (!screeningCandidates.TryGetValue(candidate.PhysicalCoreIndex, out var index))
+            if (!screeningCandidates.TryGetValue(candidate.Processor, out var index))
             {
                 index = screeningCandidates.Count + 1;
-                screeningCandidates.Add(candidate.PhysicalCoreIndex, index);
+                screeningCandidates.Add(candidate.Processor, index);
             }
-            return (index, progressPlan.PhysicalCandidateCount);
+            return (index, progressPlan.CandidateCount);
         }
 
         if (string.Equals(phase, "screening-finalists", StringComparison.Ordinal) ||
             string.Equals(phase, "screening-finalists-warmup", StringComparison.Ordinal))
         {
-            if (!finalistCandidates.TryGetValue(candidate.PhysicalCoreIndex, out var index))
+            if (!finalistCandidates.TryGetValue(candidate.Processor, out var index))
             {
                 index = finalistCandidates.Count + 1;
-                finalistCandidates.Add(candidate.PhysicalCoreIndex, index);
+                finalistCandidates.Add(candidate.Processor, index);
                 if (finalistCandidates.Count > progressPlan.FinalistCandidateCount)
                 {
                     totalUnits = checked(
