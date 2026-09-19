@@ -184,7 +184,13 @@ public sealed class GpuAutoAffinitySession
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
                     originalVerified, originalVerified, candidateReports, trialReports, reasons);
             }
-            if (original.TotalObservationCount > original.ValidObservationCount)
+            if (original.UsedNoiseAwareFallback)
+            {
+                reasons.Add(string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"Original did not form the preferred ±{GpuRepeatabilityClusterSelector.RelativeTolerance:P0} 1%-low cluster after {original.TotalObservationCount} scored runs. The search continued with all valid Original runs instead of aborting; observed 1%-low noise is {original.PrimaryRelativeNoise:P2} and is carried into shortlist and Keep thresholds."));
+            }
+            else if (original.TotalObservationCount > original.ValidObservationCount)
             {
                 reasons.Add(string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
@@ -933,39 +939,62 @@ public sealed class GpuAutoAffinitySession
 
         GpuBenchmarkVideoStats[] selectedValues;
         GpuAutoAffinityTrialObservation[] selectedObservations;
-        double primaryRelativeNoise;
+        var usedNoiseAwareFallback = false;
         if (observations.Length == 1)
         {
             selectedValues = values;
             selectedObservations = observations;
-            primaryRelativeNoise = 0d;
         }
         else
         {
             var cluster = GpuRepeatabilityClusterSelector.Select(values.Select(static item => item.Low1PctFps).ToArray());
             if (cluster is null)
             {
-                return CandidateEvaluation.Unrankable(candidate, BuildNoStableClusterReason(observations.Length), observations.Length);
+                if (observations.Length < GpuRepeatabilityClusterSelector.MaximumAttemptCount)
+                {
+                    return CandidateEvaluation.Unrankable(candidate, BuildNoStableClusterReason(observations.Length), observations.Length);
+                }
+
+                // Four valid scored runs are evidence, even when they do not fit
+                // the preferred ±3% cluster. Keep them all and make the observed
+                // variance part of the decision threshold instead of aborting.
+                selectedValues = values;
+                selectedObservations = observations;
+                usedNoiseAwareFallback = true;
             }
-            if (observations.Length - cluster.Indexes.Length > MaximumRejectedRepeatabilityRuns)
+            else
             {
-                return CandidateEvaluation.Unrankable(
-                    candidate,
-                    $"Repeatability rejected {observations.Length - cluster.Indexes.Length} of {observations.Length} scored observations; automatic ranking allows at most {MaximumRejectedRepeatabilityRuns} rejected run.",
-                    observations.Length);
+                if (observations.Length - cluster.Indexes.Length > MaximumRejectedRepeatabilityRuns)
+                {
+                    return CandidateEvaluation.Unrankable(
+                        candidate,
+                        $"Repeatability rejected {observations.Length - cluster.Indexes.Length} of {observations.Length} scored observations; automatic ranking allows at most {MaximumRejectedRepeatabilityRuns} rejected run.",
+                        observations.Length);
+                }
+                selectedValues = cluster.Indexes.Select(index => values[index]).ToArray();
+                selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
             }
-            selectedValues = cluster.Indexes.Select(index => values[index]).ToArray();
-            selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
-            primaryRelativeNoise = cluster.MaximumRelativeDeviation;
         }
 
+        var medianLow1 = Median(selectedValues.Select(static item => item.Low1PctFps));
+        var medianLow01 = Median(selectedValues.Select(static item => item.Low01PctFps));
+        var medianAvg = Median(selectedValues.Select(static item => item.AvgFps));
+        var medianP99 = Median(selectedValues.Select(static item => item.P99Milliseconds));
         return new CandidateEvaluation(
             candidate, selectedObservations,
-            Median(selectedValues.Select(static item => item.Low1PctFps)),
-            Median(selectedValues.Select(static item => item.Low01PctFps)),
-            Median(selectedValues.Select(static item => item.AvgFps)),
-            Median(selectedValues.Select(static item => item.P99Milliseconds)),
-            primaryRelativeNoise, selectedObservations.Length, observations.Length, true, null);
+            medianLow1,
+            medianLow01,
+            medianAvg,
+            medianP99,
+            RelativeNoise(selectedValues.Select(static item => item.Low1PctFps), medianLow1),
+            RelativeNoise(selectedValues.Select(static item => item.Low01PctFps), medianLow01),
+            RelativeNoise(selectedValues.Select(static item => item.AvgFps), medianAvg),
+            RelativeNoise(selectedValues.Select(static item => item.P99Milliseconds), medianP99),
+            selectedObservations.Length,
+            observations.Length,
+            true,
+            usedNoiseAwareFallback,
+            null);
     }
 
     private static OriginalEvaluation CreateOriginalEvaluation(GpuAutoAffinityTrialObservation[] observations)
@@ -987,25 +1016,51 @@ public sealed class GpuAutoAffinitySession
             return OriginalEvaluation.Unrankable("Original benchmark ranking statistics are missing or non-finite.", observations.Length);
         }
         var cluster = GpuRepeatabilityClusterSelector.Select(values.Select(static item => item.Low1PctFps).ToArray());
+        GpuBenchmarkVideoStats[] selected;
+        GpuAutoAffinityTrialObservation[] selectedObservations;
+        var usedNoiseAwareFallback = false;
         if (cluster is null)
         {
-            return OriginalEvaluation.Unrankable(BuildNoStableClusterReason(observations.Length), observations.Length);
+            if (observations.Length < GpuRepeatabilityClusterSelector.MaximumAttemptCount)
+            {
+                return OriginalEvaluation.Unrankable(BuildNoStableClusterReason(observations.Length), observations.Length);
+            }
+
+            selected = values;
+            selectedObservations = observations;
+            usedNoiseAwareFallback = true;
         }
-        if (observations.Length - cluster.Indexes.Length > MaximumRejectedRepeatabilityRuns)
+        else
         {
-            return OriginalEvaluation.Unrankable(
-                $"Repeatability rejected {observations.Length - cluster.Indexes.Length} of {observations.Length} Original observations; automatic ranking allows at most {MaximumRejectedRepeatabilityRuns} rejected run.",
-                observations.Length);
+            if (observations.Length - cluster.Indexes.Length > MaximumRejectedRepeatabilityRuns)
+            {
+                return OriginalEvaluation.Unrankable(
+                    $"Repeatability rejected {observations.Length - cluster.Indexes.Length} of {observations.Length} Original observations; automatic ranking allows at most {MaximumRejectedRepeatabilityRuns} rejected run.",
+                    observations.Length);
+            }
+            selected = cluster.Indexes.Select(index => values[index]).ToArray();
+            selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
         }
-        var selected = cluster.Indexes.Select(index => values[index]).ToArray();
-        var selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
+
+        var medianLow1 = Median(selected.Select(static item => item.Low1PctFps));
+        var medianLow01 = Median(selected.Select(static item => item.Low01PctFps));
+        var medianAvg = Median(selected.Select(static item => item.AvgFps));
+        var medianP99 = Median(selected.Select(static item => item.P99Milliseconds));
         return new OriginalEvaluation(
             selectedObservations,
-            Median(selected.Select(static item => item.Low1PctFps)),
-            Median(selected.Select(static item => item.Low01PctFps)),
-            Median(selected.Select(static item => item.AvgFps)),
-            Median(selected.Select(static item => item.P99Milliseconds)),
-            cluster.MaximumRelativeDeviation, cluster.Indexes.Length, observations.Length, true, null);
+            medianLow1,
+            medianLow01,
+            medianAvg,
+            medianP99,
+            RelativeNoise(selected.Select(static item => item.Low1PctFps), medianLow1),
+            RelativeNoise(selected.Select(static item => item.Low01PctFps), medianLow01),
+            RelativeNoise(selected.Select(static item => item.AvgFps), medianAvg),
+            RelativeNoise(selected.Select(static item => item.P99Milliseconds), medianP99),
+            selectedObservations.Length,
+            observations.Length,
+            true,
+            usedNoiseAwareFallback,
+            null);
     }
 
     private static bool HasFiniteRankingStatistics(IEnumerable<GpuBenchmarkVideoStats> values) =>
@@ -1036,22 +1091,28 @@ public sealed class GpuAutoAffinitySession
         var allowedPrimaryDrift = Math.Max(
             GpuRepeatabilityClusterSelector.RelativeTolerance,
             original.PrimaryRelativeNoise);
+        var allowedAvgDrift = Math.Max(
+            GpuRepeatabilityClusterSelector.RelativeTolerance,
+            original.AvgRelativeNoise);
+        var allowedFrameP99Drift = Math.Max(
+            GpuRepeatabilityClusterSelector.RelativeTolerance,
+            original.FrameP99RelativeNoise);
         var low1Drift = RelativeDifference(video.Low1PctFps, original.MedianLow1Fps);
         var avgDrift = RelativeDifference(video.AvgFps, original.MedianAvgFps);
         var frameP99Drift = RelativeDifference(video.P99Milliseconds, original.MedianFrameP99Milliseconds);
         if (low1Drift > allowedPrimaryDrift ||
-            avgDrift > GpuRepeatabilityClusterSelector.RelativeTolerance ||
-            frameP99Drift > GpuRepeatabilityClusterSelector.RelativeTolerance)
+            avgDrift > allowedAvgDrift ||
+            frameP99Drift > allowedFrameP99Drift)
         {
             reason = string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
-                $"Original control drifted {phase}: 1% low {low1Drift:P2} (allowed {allowedPrimaryDrift:P2}), AVG {avgDrift:P2}, frame-p99 {frameP99Drift:P2} (allowed {GpuRepeatabilityClusterSelector.RelativeTolerance:P2}).");
+                $"Original control drifted {phase}: 1% low {low1Drift:P2} (allowed {allowedPrimaryDrift:P2}), AVG {avgDrift:P2} (allowed {allowedAvgDrift:P2}), frame-p99 {frameP99Drift:P2} (allowed {allowedFrameP99Drift:P2}).");
             return false;
         }
 
         reason = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
-            $"Original control remained comparable {phase}: 1% low {low1Drift:P2}, AVG {avgDrift:P2}, frame-p99 {frameP99Drift:P2}.");
+            $"Original control remained comparable {phase}: 1% low {low1Drift:P2}/{allowedPrimaryDrift:P2}, AVG {avgDrift:P2}/{allowedAvgDrift:P2}, frame-p99 {frameP99Drift:P2}/{allowedFrameP99Drift:P2}.");
         return true;
     }
 
@@ -1078,13 +1139,22 @@ public sealed class GpuAutoAffinitySession
         var avgRegression = (original.MedianAvgFps - candidate.MedianAvgFps) / original.MedianAvgFps;
         var frameP99Regression = (candidate.MedianFrameP99Milliseconds - original.MedianFrameP99Milliseconds) / original.MedianFrameP99Milliseconds;
         var rareTailRegression = (original.MedianLow01Fps - candidate.MedianLow01Fps) / original.MedianLow01Fps;
-        if (avgRegression > CandidateMetricEquivalenceTolerance ||
-            frameP99Regression > CandidateMetricEquivalenceTolerance ||
-            rareTailRegression > RareTailEquivalenceTolerance)
+        var allowedAvgRegression = Math.Max(
+            CandidateMetricEquivalenceTolerance,
+            Math.Max(original.AvgRelativeNoise, candidate.AvgRelativeNoise));
+        var allowedFrameP99Regression = Math.Max(
+            CandidateMetricEquivalenceTolerance,
+            Math.Max(original.FrameP99RelativeNoise, candidate.FrameP99RelativeNoise));
+        var allowedRareTailRegression = Math.Max(
+            RareTailEquivalenceTolerance,
+            Math.Max(original.Low01RelativeNoise, candidate.Low01RelativeNoise));
+        if (avgRegression > allowedAvgRegression ||
+            frameP99Regression > allowedFrameP99Regression ||
+            rareTailRegression > allowedRareTailRegression)
         {
             reason = string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
-                $"Best forced affinity improves 1% low but regresses a guardrail beyond tolerance (AVG {avgRegression:P2}, frame-p99 {frameP99Regression:P2}, 0.1% low {rareTailRegression:P2}).");
+                $"Best forced affinity improves 1% low but regresses a noise-aware guardrail (AVG {avgRegression:P2}/{allowedAvgRegression:P2}, frame-p99 {frameP99Regression:P2}/{allowedFrameP99Regression:P2}, 0.1% low {rareTailRegression:P2}/{allowedRareTailRegression:P2}).");
             return false;
         }
 
@@ -1180,6 +1250,11 @@ public sealed class GpuAutoAffinitySession
 
     private static double MaximumRelativeDeviation(IEnumerable<double> values, double median) =>
         values.Max(value => Math.Abs(value - median) / Math.Abs(median));
+
+    private static double RelativeNoise(IEnumerable<double> values, double median) =>
+        !double.IsFinite(median) || median <= 0d
+            ? double.PositiveInfinity
+            : MaximumRelativeDeviation(values, median);
 
     private static double Median(IEnumerable<double> source)
     {
@@ -1281,8 +1356,11 @@ public sealed class GpuAutoAffinitySession
             RegressedGuardrails: [],
             evaluation.IsRankable
                 ? evaluation.TotalObservationCount >= GpuRepeatabilityClusterSelector.RequiredRunCount
-                    ? string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                        $"Stable 1%-low cluster {evaluation.ValidObservationCount}/{evaluation.TotalObservationCount}; max median-centered deviation {evaluation.PrimaryRelativeNoise:P2}. Median 1% low {evaluation.MedianLow1Fps:F1} FPS; AVG {evaluation.MedianAvgFps:F1} FPS; p99 {evaluation.MedianFrameP99Milliseconds:F2} ms; 0.1% low {evaluation.MedianLow01Fps:F1} FPS (rare-tail context).")
+                    ? evaluation.UsedNoiseAwareFallback
+                        ? string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                            $"Noise-aware {evaluation.TotalObservationCount}-run fallback: no preferred ±{GpuRepeatabilityClusterSelector.RelativeTolerance:P0} 1%-low cluster; all valid runs retained. Observed 1%-low noise {evaluation.PrimaryRelativeNoise:P2}. Median 1% low {evaluation.MedianLow1Fps:F1} FPS; AVG {evaluation.MedianAvgFps:F1} FPS; p99 {evaluation.MedianFrameP99Milliseconds:F2} ms; 0.1% low {evaluation.MedianLow01Fps:F1} FPS.")
+                        : string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                            $"Stable 1%-low cluster {evaluation.ValidObservationCount}/{evaluation.TotalObservationCount}; max median-centered deviation {evaluation.PrimaryRelativeNoise:P2}. Median 1% low {evaluation.MedianLow1Fps:F1} FPS; AVG {evaluation.MedianAvgFps:F1} FPS; p99 {evaluation.MedianFrameP99Milliseconds:F2} ms; 0.1% low {evaluation.MedianLow01Fps:F1} FPS (rare-tail context).")
                     : string.Create(System.Globalization.CultureInfo.InvariantCulture,
                         $"Single-pass screen. 1% low {evaluation.MedianLow1Fps:F1} FPS; AVG {evaluation.MedianAvgFps:F1} FPS; p99 {evaluation.MedianFrameP99Milliseconds:F2} ms; 0.1% low {evaluation.MedianLow01Fps:F1} FPS (rare-tail context).")
                 : evaluation.Reason);
@@ -1378,14 +1456,19 @@ public sealed class GpuAutoAffinitySession
         double MedianAvgFps,
         double MedianFrameP99Milliseconds,
         double PrimaryRelativeNoise,
+        double Low01RelativeNoise,
+        double AvgRelativeNoise,
+        double FrameP99RelativeNoise,
         int ValidObservationCount,
         int TotalObservationCount,
         bool IsRankable,
+        bool UsedNoiseAwareFallback,
         string? Reason)
     {
         internal static CandidateEvaluation Unrankable(GpuAffinityCandidate candidate, string reason, int totalObservationCount = 0) =>
             new(candidate, [], double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity,
-                double.PositiveInfinity, double.PositiveInfinity, 0, totalObservationCount, false, reason);
+                double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity,
+                double.PositiveInfinity, 0, totalObservationCount, false, false, reason);
     }
 
     private sealed record OriginalEvaluation(
@@ -1395,14 +1478,19 @@ public sealed class GpuAutoAffinitySession
         double MedianAvgFps,
         double MedianFrameP99Milliseconds,
         double PrimaryRelativeNoise,
+        double Low01RelativeNoise,
+        double AvgRelativeNoise,
+        double FrameP99RelativeNoise,
         int ValidObservationCount,
         int TotalObservationCount,
         bool IsRankable,
+        bool UsedNoiseAwareFallback,
         string? Reason)
     {
         internal static OriginalEvaluation Unrankable(string reason, int totalObservationCount = 0) =>
             new([], double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity,
-                double.PositiveInfinity, double.PositiveInfinity, 0, totalObservationCount, false, reason);
+                double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity,
+                double.PositiveInfinity, 0, totalObservationCount, false, false, reason);
     }
 
     private enum PlacementEvidenceState
