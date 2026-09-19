@@ -96,6 +96,34 @@ public sealed class GpuAutoAffinitySessionTests
             toleranceBackend.Events.Count(static item => item == "apply:0:6"),
             "A fourth-place screen within the 1% primary-noise margin of the third-place cutoff must receive both finalist re-test rounds.");
 
+        var (_, _, noiseAwareRequest) = CreateFourCoreRequest();
+        var noiseAwareBackend = new RecordingBackend(
+            noisyOriginalCluster: true,
+            noiseAwareShortlistCase: true);
+        var noiseAwareResult = await new GpuAutoAffinitySession(noiseAwareBackend).RunAsync(noiseAwareRequest);
+        Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, noiseAwareResult.Recommendation);
+        Assert.AreEqual(
+            3,
+            noiseAwareBackend.Events.Count(static item => item == "apply:0:6"),
+            "A fourth-place candidate outside the fixed 1% band but inside measured Original noise must receive both finalist rounds.");
+
+        var controlDriftBackend = new RecordingBackend(postScreeningControlDrift: true);
+        var controlDrift = await new GpuAutoAffinitySession(controlDriftBackend).RunAsync(request);
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, controlDrift.Recommendation);
+        Assert.IsTrue(controlDrift.Report.Reasons.Any(static reason =>
+            reason.Contains("control drifted", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsFalse(controlDriftBackend.Events.Any(static item =>
+            item.Contains("screening-finalists", StringComparison.Ordinal)));
+
+        var interruptFallbackBackend = new RecordingBackend(interruptGuardrailFallbackCase: true);
+        var interruptFallback = await new GpuAutoAffinitySession(interruptFallbackBackend).RunAsync(request);
+        Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, interruptFallback.Recommendation);
+        Assert.AreEqual(new LogicalProcessorId(0, 0), interruptFallback.Finalist?.Processor,
+            "A faster finalist with a material GPU-driver interrupt-tail regression must be skipped in favor of the next clean improvement.");
+        Assert.IsTrue(interruptFallback.Report.Reasons.Any(static reason =>
+            reason.Contains("CPU 2 was rejected", StringComparison.OrdinalIgnoreCase) &&
+            reason.Contains("interrupt-tail", StringComparison.OrdinalIgnoreCase)));
+
         var originalWinsBackend = new RecordingBackend(originalBeatsCandidates: true);
         var originalWins = await new GpuAutoAffinitySession(originalWinsBackend).RunAsync(request);
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, originalWins.Recommendation);
@@ -304,6 +332,10 @@ public sealed class GpuAutoAffinitySessionTests
         bool comparisonToleranceCase = false,
         bool originalBeatsCandidates = false,
         bool unknownScreeningPlacement = false,
+        bool noisyOriginalCluster = false,
+        bool noiseAwareShortlistCase = false,
+        bool postScreeningControlDrift = false,
+        bool interruptGuardrailFallbackCase = false,
         byte? noWriteProcessorNumber = null) : IGpuAutoAffinitySessionBackend
     {
         private readonly Dictionary<Guid, GpuAffinityCandidate> active = [];
@@ -323,13 +355,25 @@ public sealed class GpuAutoAffinitySessionTests
             Events.Add($"original:{request.Phase}:{request.RunNumber}");
             double[] periods;
             if (string.Equals(request.Phase, "screening-original", StringComparison.Ordinal) &&
-                (recoverableOriginalOutlier || persistentlyNoisyOriginal))
+                (recoverableOriginalOutlier || persistentlyNoisyOriginal || noisyOriginalCluster))
             {
                 var sequence = Interlocked.Increment(ref originalScoredSequence);
                 var period = recoverableOriginalOutlier
                     ? sequence == 2 ? 18d : 12d
-                    : 10d + (sequence * 3d);
+                    : persistentlyNoisyOriginal
+                        ? 10d + (sequence * 3d)
+                        : sequence switch
+                        {
+                            1 => 12d,
+                            2 => 12.2d,
+                            _ => 11.8d,
+                        };
                 periods = Enumerable.Repeat(period, 100).ToArray();
+            }
+            else if (postScreeningControlDrift &&
+                     string.Equals(request.Phase, "screening-control", StringComparison.Ordinal))
+            {
+                periods = Enumerable.Repeat(16d, 100).ToArray();
             }
             else
             {
@@ -376,7 +420,23 @@ public sealed class GpuAutoAffinitySessionTests
                 throw new OperationCanceledException("synthetic safe-stop request");
             }
 
-            var periods = comparisonToleranceCase
+            var periods = noiseAwareShortlistCase
+                ? candidate.Processor.Number switch
+                {
+                    0 => Enumerable.Repeat(6d, 99).Append(10d).ToArray(),
+                    2 => Enumerable.Repeat(6d, 99).Append(10.204d).ToArray(),
+                    4 => Enumerable.Repeat(6d, 99).Append(10.417d).ToArray(),
+                    6 => Enumerable.Repeat(6d, 99).Append(10.582d).ToArray(),
+                    _ => throw new InvalidOperationException("Unexpected synthetic noise-aware candidate."),
+                }
+                : interruptGuardrailFallbackCase
+                    ? candidate.Processor.Number switch
+                    {
+                        0 => Enumerable.Repeat(6d, 99).Append(10.5d).ToArray(),
+                        2 => Enumerable.Repeat(6d, 99).Append(10d).ToArray(),
+                        _ => throw new InvalidOperationException("Unexpected synthetic interrupt-guardrail candidate."),
+                    }
+                : comparisonToleranceCase
                 ? candidate.Processor.Number switch
                 {
                     0 => Enumerable.Repeat(5d, 99).Append(10d).ToArray(),
@@ -525,8 +585,9 @@ public sealed class GpuAutoAffinitySessionTests
                 [],
                 FramePeriodMilliseconds: framePeriods);
 
-            if (!etwHealthy || candidate is null ||
-                (unknownScreeningPlacement && string.Equals(request.Phase, "screening", StringComparison.Ordinal)))
+            if (!etwHealthy ||
+                (unknownScreeningPlacement && candidate is not null &&
+                 string.Equals(request.Phase, "screening", StringComparison.Ordinal)))
             {
                 return new GpuAutoAffinityTrialObservation(
                     evidence,
@@ -536,6 +597,19 @@ public sealed class GpuAutoAffinitySessionTests
                     Placement: null,
                     GpuDriverDpcDurationMicroseconds: [],
                     GpuDriverIsrDurationMicroseconds: [],
+                    InterruptEvidence: null);
+            }
+
+            if (candidate is null)
+            {
+                return new GpuAutoAffinityTrialObservation(
+                    evidence,
+                    GpuBenchmarkContaminationContext.Clean,
+                    true,
+                    true,
+                    Placement: null,
+                    GpuDriverDpcDurationMicroseconds: Enumerable.Repeat(20d, frameCount).ToArray(),
+                    GpuDriverIsrDurationMicroseconds: Enumerable.Repeat(5d, frameCount).ToArray(),
                     InterruptEvidence: null);
             }
 
@@ -564,14 +638,17 @@ public sealed class GpuAutoAffinitySessionTests
                 new KernelLatencyCaptureResult(started, request.Duration, request.Duration, events, 0, 0, 0, false),
                 target.InstanceId,
                 [target]);
+            var interruptMultiplier = interruptGuardrailFallbackCase && candidate.Processor.Number == 2
+                ? 2d
+                : 1d;
             return new GpuAutoAffinityTrialObservation(
                 evidence,
                 GpuBenchmarkContaminationContext.Clean,
                 true,
                 true,
                 new GpuAutoAffinityPlacementProof(candidate.Processor, attribution.Events.Count, 0),
-                Enumerable.Repeat(20d, frameCount).ToArray(),
-                attribution.Events.Select(static item => item.DurationMicroseconds).ToArray(),
+                Enumerable.Repeat(20d * interruptMultiplier, frameCount).ToArray(),
+                attribution.Events.Select(item => item.DurationMicroseconds * interruptMultiplier).ToArray(),
                 new GpuAutoAffinityInterruptEvidence(
                     attribution.ModuleName,
                     attribution.Mode,
