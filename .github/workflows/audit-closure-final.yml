@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/audit-closure-final.yml'
       - 'eng/audit-closure-task6-final.py'
+      - 'eng/audit-closure-task6-fix.py'
 
 permissions:
   contents: write
@@ -36,7 +37,10 @@ jobs:
           exit 0
 
       - name: Implement final integration and docs
-        run: python eng/audit-closure-task6-final.py implementation
+        shell: pwsh
+        run: |
+          python eng/audit-closure-task6-final.py implementation
+          python eng/audit-closure-task6-fix.py
 
       - name: GREEN before consolidation
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
