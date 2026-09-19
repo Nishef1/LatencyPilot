@@ -1,0 +1,52 @@
+name: Audit closure device mutations
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/audit-closure-device-mutations.yml'
+      - 'eng/audit-closure-task5-device-mutations.py'
+
+permissions:
+  contents: write
+
+jobs:
+  tdd-device-mutations:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.401
+      - name: Device mutation regressions only
+        run: python eng/audit-closure-task5-device-mutations.py tests
+      - name: RED device mutations
+        shell: pwsh
+        run: |
+          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+          $red = $LASTEXITCODE
+          if ($red -eq 0) { throw 'Device mutation regressions unexpectedly passed before implementation.' }
+          Write-Host "Expected device-mutation RED observed with exit code $red."
+          exit 0
+      - name: Implement journaled MSI and xHCI mutations
+        run: python eng/audit-closure-task5-device-mutations.py implementation
+      - name: GREEN device mutations
+        run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+      - name: Build solution
+        run: dotnet build LatencyPilot.slnx --configuration Release --no-restore
+      - name: Commit verified device mutations
+        shell: pwsh
+        run: |
+          git add src tests
+          git diff --cached --check
+          if (-not (git diff --cached --quiet)) {
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'feat: add reversible MSI and xHCI mutation transactions'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          }
