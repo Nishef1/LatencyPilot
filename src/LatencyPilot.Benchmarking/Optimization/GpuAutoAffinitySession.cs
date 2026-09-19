@@ -1080,7 +1080,7 @@ public sealed class GpuAutoAffinitySession
         string label,
         IEnumerable<double> original,
         IEnumerable<double> candidate,
-        ICollection<string> regressions)
+        List<string> regressions)
     {
         var originalSamples = original.Where(static value => double.IsFinite(value) && value >= 0d).ToArray();
         var candidateSamples = candidate.Where(static value => double.IsFinite(value) && value >= 0d).ToArray();
