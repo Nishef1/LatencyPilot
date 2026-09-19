@@ -22,7 +22,7 @@ public sealed class GpuAutoAffinitySessionTests
         var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets: null);
         Assert.AreEqual(2, progressPlan.PhysicalCandidateCount);
         Assert.AreEqual(2, progressPlan.FinalistCandidateCount);
-        Assert.AreEqual(18, progressPlan.InitialTotalUnits);
+        Assert.AreEqual(19, progressPlan.InitialTotalUnits);
 
         var nonSmtTopology = new ProcessorTopologySnapshot(
             [new ProcessorPackageSnapshot(0, [new LogicalProcessorId(0, 0)])],
@@ -33,7 +33,7 @@ public sealed class GpuAutoAffinitySessionTests
             [new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0d)],
             cpuSets: null);
         Assert.AreEqual(1, nonSmtPlan.FinalistCandidateCount);
-        Assert.AreEqual(12, nonSmtPlan.InitialTotalUnits);
+        Assert.AreEqual(13, nonSmtPlan.InitialTotalUnits);
 
         var backend = new RecordingBackend();
         var observer = new RecordingObserver();
@@ -162,7 +162,7 @@ public sealed class GpuAutoAffinitySessionTests
     }
 
     [AuditCase]
-    public async Task SessionUsesRobustThreeOfFiveSamplingAndRestoresWhenNoisePersists()
+    public async Task SessionUsesRobustThreeOfFourSamplingAndRestoresWhenNoisePersists()
     {
         var (_, _, request) = CreateTwoCoreRequest();
 
@@ -186,7 +186,7 @@ public sealed class GpuAutoAffinitySessionTests
             5,
             persistentOriginalBackend.Events.Count(static item =>
                 item.StartsWith("original:screening-original:", StringComparison.Ordinal)),
-            "Original sampling must stop after five scored attempts when no stable 3-run cluster exists.");
+            "Original sampling must stop after four scored attempts when no stable 3-run cluster exists.");
         Assert.IsFalse(persistentOriginalBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)));
         Assert.IsTrue(persistentOriginal.Report.Reasons.Any(static reason =>
             reason.Contains("stable 3-run", StringComparison.OrdinalIgnoreCase)));
@@ -220,7 +220,7 @@ public sealed class GpuAutoAffinitySessionTests
             .Where(static item => item.Phase == "screening-finalists")
             .ToArray();
         Assert.IsTrue(unstableReports.All(static item => item.Verdict == "Inconclusive"));
-        Assert.IsTrue(unstableReports.All(static item => item.TrialCount == 4));
+        Assert.IsTrue(unstableReports.All(static item => item.TrialCount == 3));
         Assert.IsTrue(unstableReports.Any(static item =>
             item.Reason is { } reason &&
             reason.Contains("stable 3-run", StringComparison.OrdinalIgnoreCase)));
