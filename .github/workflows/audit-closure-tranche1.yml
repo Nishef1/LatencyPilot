@@ -1,4 +1,4 @@
-name: Audit closure tranche 1
+name: Audit closure F1 owner thread
 
 on:
   workflow_dispatch:
@@ -6,14 +6,13 @@ on:
     branches: [ main ]
     paths:
       - '.github/workflows/audit-closure-tranche1.yml'
-      - 'eng/audit-closure-tranche1.py'
-      - 'eng/audit-closure-tranche1-fix.py'
+      - 'eng/audit-closure-f1-thread.py'
 
 permissions:
   contents: write
 
 jobs:
-  tdd-gpu-core:
+  tdd-benchmark-owner:
     runs-on: windows-latest
     timeout-minutes: 35
     steps:
@@ -23,33 +22,31 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.401
-      - name: Apply regression tests only
+      - name: Apply F1 regression assertions only
         shell: pwsh
-        run: python eng/audit-closure-tranche1.py tests
-      - name: RED - regressions must fail against old implementation
+        run: python eng/audit-closure-f1-thread.py tests
+      - name: RED - owner-thread contract must fail before implementation
         shell: pwsh
         run: |
           dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
           $red = $LASTEXITCODE
-          if ($red -eq 0) { throw 'Audit regressions unexpectedly passed before implementation.' }
-          Write-Host "Expected RED observed with exit code $red."
+          if ($red -eq 0) { throw 'F1 regression unexpectedly passed before implementation.' }
+          Write-Host "Expected F1 RED observed with exit code $red."
           exit 0
-      - name: Apply implementation
+      - name: Apply F1 implementation
         shell: pwsh
-        run: |
-          python eng/audit-closure-tranche1.py implementation
-          python eng/audit-closure-tranche1-fix.py
+        run: python eng/audit-closure-f1-thread.py implementation
       - name: GREEN - critical suite
         shell: pwsh
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-      - name: Validate diff and commit verified tranche
+      - name: Validate diff and commit verified F1
         shell: pwsh
         run: |
-          git add src tools tests
+          git add src tests
           git diff --cached --check
           if (-not (git diff --cached --quiet)) {
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'fix: harden gpu affinity decision path'
+            git commit -m 'fix: keep benchmark window on owner thread'
             git push origin HEAD:main
           }
