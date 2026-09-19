@@ -137,7 +137,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 trial.Processor.HasValue &&
                 string.Equals(
                     trial.ReadinessState,
-                    GpuBenchmarkReadinessState.Ready.ToString(),
+                    "Ready",
                     StringComparison.Ordinal))
             .GroupBy(static trial => trial.Processor!.Value)
             .Select(group =>
