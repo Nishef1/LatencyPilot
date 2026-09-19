@@ -43,15 +43,17 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
    - run a 5 s non-scored warm-up (benchmark only; no PresentMon/ETW);
    - run **one** scored screening measurement;
    - restore and verify the exact original state.
-4. Rank with explicit practical-equivalence margins rather than false precision:
+4. After the full physical-core sweep, capture one fresh scored Original control. If its 1% low leaves the Original ±3% repeatability band, discard the sweep and retain exact Original rather than ranking across time/thermal/background drift.
+5. Rank with explicit practical-equivalence margins rather than false precision:
    1. 1% low, treating <=1% relative difference as tied;
    2. AVG FPS, treating <=1% as tied;
    3. lower frame-p99, treating <=1% as tied;
    4. 0.1% low only when the relative difference exceeds 5%;
    5. deterministic passive topology/pressure fallback only if the measured metrics remain tied.
-5. Re-test the best three candidates **plus every additional screening candidate within 1% 1%-low of the third-place cutoff** in two independent rounds. In each round the finalist order is deterministically shuffled and every candidate gets a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback.
-6. Rank finalists from the median of all three scored observations captured across three separate affinity activations. A finalist with materially unstable repeated 1% lows is not rankable.
-7. SMT/hyperthread siblings are intentionally neither benchmarked nor substituted dynamically; one canonical lowest-numbered logical processor per physical core is the permanent v1 search shape. There is no ABBA/BAAB confirmation loop.
+6. Re-test the best three candidates **plus every additional screening candidate within max(1%, observed Original cluster noise) of the third-place 1%-low cutoff** in two independent rounds. In each round the finalist order is deterministically shuffled and every candidate gets a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback.
+7. Rank finalists from a stable three-run cluster. At most one scored run may be rejected, so Original/finalist sampling is capped at four scored attempts; a fifth run cannot rescue a 3-of-5 pattern with two rejected observations.
+8. Evaluate finalists in ranking order against exact Original. AVG, frame-p99 and 0.1% low remain guardrails; when both sides have enough attributable samples, GPU-driver DPC/ISR p99 tails are also guardrails and a >10% tail regression rejects that finalist. A rejected first-place finalist does not prevent the next ranked clean improvement from being considered.
+9. SMT/hyperthread siblings are intentionally neither benchmarked nor substituted dynamically; one canonical lowest-numbered logical processor per physical core remains the v1 search unit. There is no ABBA/BAAB confirmation loop.
 
 Windows default is the exact recovery/reference state, not an opponent that every forced CPU must beat by a fixed percentage.
 
@@ -67,8 +69,10 @@ Screening must remain resilient:
 
 - PresentMon is a best-effort independent frame-cadence cross-check.
 - Kernel ETW is a best-effort ISR/DPC guardrail during screening.
+- System CPU busy is measured from the existing Windows system-time snapshots and reported when it drifts materially from the Original trials.
 - Missing PresentMon or missing ETW is recorded visibly and does not by itself abort ranking when the controlled benchmark artifact, stored state and continuity are valid.
 - If ETW is healthy and proves wrong/off-target ISR placement, that candidate is invalid.
+- Comparable GPU-driver DPC/ISR p99 evidence participates only as a Keep guardrail; sparse/missing samples are not manufactured into a regression claim.
 
 **Keep is stricter than screening.** After selecting the ranked winner, LatencyPilot applies it once more and performs a fresh 5 s benchmark-only warm-up and then a final kernel-ETW verification capture. Keep is allowed only when:
 
