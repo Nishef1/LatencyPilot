@@ -27,14 +27,23 @@ internal sealed class GpuInterruptAffinityMutationTransaction
 
     internal MutationJournalEntry Prepare(
         string deviceInstanceId,
-        GpuInterruptAffinityCandidate candidate)
+        GpuInterruptAffinityCandidate candidate,
+        GpuInterruptAffinitySnapshot expectedOriginal)
     {
         using var operationLock = MutationOperationLock.Acquire();
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
         ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(expectedOriginal);
         ValidateCandidateAgainstCurrentTopology(candidate);
 
         var original = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        if (!GpuInterruptAffinityStateComparer.MatchesOriginal(original, expectedOriginal) ||
+            !DriverVersionMatches(original, expectedOriginal))
+        {
+            throw new InvalidOperationException(
+                "GPU affinity state or display-driver version changed outside the optimization session before mutation preparation; no write was attempted.");
+        }
+
         GpuInterruptAffinityApplicability.EnsureSupportedOriginalState(original);
         if (GpuInterruptAffinityStateComparer.MatchesCandidate(original, candidate))
         {
