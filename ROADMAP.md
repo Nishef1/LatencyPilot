@@ -129,12 +129,15 @@ exact original/default GPU affinity
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored 30 s screening run
      exact rollback
-→ rank by 1% low ↓ priority, then 0.1% low, AVG FPS, p99 diagnostic fallback
-→ best three + every screening candidate within 1% 1%-low of the third-place cutoff:
+→ fresh scored Original control after the full sweep; abort ranking if it leaves the Original repeatability band
+→ rank by 1% low → AVG → p99 → 0.1% low rare-tail context
+→ best three + every screening candidate within max(1%, observed Original noise) of the third-place cutoff:
      two independent deterministically shuffled re-test rounds
      each candidate gets fresh apply/restart + warm-up + one 30 s score + exact rollback
-→ rank finalists from three transition-isolated scored observations; unstable 1% lows are unrankable
-→ apply winner once
+     one extra replacement score only if a stable 3-run cluster is still missing
+→ rank finalists from stable 3-of-up-to-4 observations with at most one rejected run
+→ evaluate finalists in rank order against Original + frame/interrupt guardrails
+→ apply highest-ranked clean winner once
 → final benchmark-only warm-up → ETW verification capture
 → Keep only with clean target-only runtime GPU ISR placement
    otherwise exact RestoreOriginal
@@ -146,9 +149,12 @@ Source checklist:
 - [x] controlled benchmark wall-period AVG / 1% / 0.1% / p99 statistics;
 - [x] physical-core candidates from actual Windows topology, CPU0 allowed;
 - [x] one scored screening run per candidate;
-- [x] best three plus any screening candidate inside the 1% primary-noise cutoff receive two additional scored re-tests in separate fresh transition rounds;
+- [x] fresh post-sweep Original control rejects time/thermal/background drift before shortlist ranking;
+- [x] best three plus any screening candidate inside max(1%, observed Original noise) receive two additional scored re-tests in separate fresh transition rounds;
 - [x] finalist order is deterministically shuffled in each re-test round to reduce time/thermal ordering bias;
+- [x] repeatability is capped at four scores with at most one rejected outlier; an impossible fifth rescue run was removed;
 - [x] ranking is noise-aware: <=1% differences in 1% low / AVG / p99 are practical ties; 0.1% low only breaks a remaining tie when its relative difference exceeds 5%;
+- [x] comparable GPU-driver DPC/ISR p99 tails are Keep guardrails; a rejected top finalist falls through to the next ranked clean improvement;
 - [x] no SMT/hyperthread sibling refinement in v1;
 - [x] no ABBA/BAAB confirmation loop;
 - [x] Windows default is recovery/reference state, not a fixed minimum-improvement gate;
