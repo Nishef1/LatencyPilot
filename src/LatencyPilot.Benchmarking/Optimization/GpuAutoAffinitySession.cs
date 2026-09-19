@@ -84,6 +84,7 @@ public sealed class GpuAutoAffinitySession
     private const double RareTailEquivalenceTolerance = 0.05;
     private const double InterruptTailRegressionTolerance = 0.10;
     private const int MinimumInterruptTailSamples = 20;
+    private const int MinimumInterruptTailRuns = 3;
     private const int MaximumRejectedRepeatabilityRuns = 1;
     private const int MinimumFinalistCandidates = 3;
     private const string FinalistPhaseName = "screening-finalists";
@@ -216,7 +217,7 @@ public sealed class GpuAutoAffinitySession
                 experimentId: null,
                 trialReports,
                 cancellationToken).ConfigureAwait(false);
-            if (!IsControlComparableToOriginal(original, screeningControl, out var controlReason))
+            if (!IsControlComparableToOriginal(original, screeningControl, "after the candidate sweep", out var controlReason))
             {
                 reasons.Add(controlReason);
                 reasons.Add("The candidate sweep was discarded because the Original control drifted after screening; the exact original state was retained rather than ranking across a moving environment.");
@@ -235,6 +236,27 @@ public sealed class GpuAutoAffinitySession
                 trialReports,
                 () => ++nextRunNumber,
                 cancellationToken).ConfigureAwait(false);
+
+            var finalistControl = await CaptureAcceptedAsync(
+                () => ++nextRunNumber,
+                "finalist-control",
+                GpuConfirmationOrder.Original,
+                null,
+                request.ScreeningDuration,
+                reference,
+                experimentId: null,
+                trialReports,
+                cancellationToken).ConfigureAwait(false);
+            if (!IsControlComparableToOriginal(original, finalistControl, "after finalist re-tests", out var finalistControlReason))
+            {
+                reasons.Add(finalistControlReason);
+                reasons.Add("Finalist evidence was discarded because Original drifted during re-testing; the exact original state was retained rather than keeping a result from a moving environment.");
+                var originalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+                return CreateResult(
+                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
+                    originalVerified, originalVerified, candidateReports, trialReports, reasons);
+            }
+
             var rankedFinalists = OrderRankableCandidates(finalists).ToArray();
             CandidateEvaluation? finalist = null;
             foreach (var candidate in rankedFinalists)
@@ -913,7 +935,7 @@ public sealed class GpuAutoAffinitySession
                     observations.Length);
             }
             selectedValues = cluster.Indexes.Select(index => values[index]).ToArray();
-            selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
+            selectedObservations = observations;
             primaryRelativeNoise = cluster.MaximumRelativeDeviation;
         }
 
@@ -956,9 +978,8 @@ public sealed class GpuAutoAffinitySession
                 observations.Length);
         }
         var selected = cluster.Indexes.Select(index => values[index]).ToArray();
-        var selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
         return new OriginalEvaluation(
-            selectedObservations,
+            observations,
             Median(selected.Select(static item => item.Low1PctFps)),
             Median(selected.Select(static item => item.Low01PctFps)),
             Median(selected.Select(static item => item.AvgFps)),
@@ -981,30 +1002,40 @@ public sealed class GpuAutoAffinitySession
     private static bool IsControlComparableToOriginal(
         OriginalEvaluation original,
         GpuAutoAffinityTrialObservation control,
+        string phase,
         out string reason)
     {
         var video = GpuBenchmarkEvidenceInterpreter.Interpret(control.Evidence).VideoStats;
-        if (video is null || !double.IsFinite(video.Low1PctFps) || video.Low1PctFps <= 0d)
+        if (video is null || !HasFiniteRankingStatistics([video]))
         {
-            reason = "The post-screening Original control did not provide a valid 1% low.";
+            reason = $"The Original control {phase} did not provide complete valid ranking statistics.";
             return false;
         }
 
-        var relativeDrift = Math.Abs(video.Low1PctFps - original.MedianLow1Fps) / original.MedianLow1Fps;
-        var allowedDrift = Math.Max(GpuRepeatabilityClusterSelector.RelativeTolerance, original.PrimaryRelativeNoise);
-        if (relativeDrift > allowedDrift)
+        var allowedPrimaryDrift = Math.Max(
+            GpuRepeatabilityClusterSelector.RelativeTolerance,
+            original.PrimaryRelativeNoise);
+        var low1Drift = RelativeDifference(video.Low1PctFps, original.MedianLow1Fps);
+        var avgDrift = RelativeDifference(video.AvgFps, original.MedianAvgFps);
+        var frameP99Drift = RelativeDifference(video.P99Milliseconds, original.MedianFrameP99Milliseconds);
+        if (low1Drift > allowedPrimaryDrift ||
+            avgDrift > GpuRepeatabilityClusterSelector.RelativeTolerance ||
+            frameP99Drift > GpuRepeatabilityClusterSelector.RelativeTolerance)
         {
             reason = string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
-                $"Original control drifted {relativeDrift:P2} after the candidate sweep, exceeding the {allowedDrift:P2} repeatability band.");
+                $"Original control drifted {phase}: 1% low {low1Drift:P2} (allowed {allowedPrimaryDrift:P2}), AVG {avgDrift:P2}, frame-p99 {frameP99Drift:P2} (allowed {GpuRepeatabilityClusterSelector.RelativeTolerance:P2}).");
             return false;
         }
 
         reason = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
-            $"Post-screening Original control remained comparable ({relativeDrift:P2} 1%-low drift within {allowedDrift:P2}).");
+            $"Original control remained comparable {phase}: 1% low {low1Drift:P2}, AVG {avgDrift:P2}, frame-p99 {frameP99Drift:P2}.");
         return true;
     }
+
+    private static double RelativeDifference(double left, double right) =>
+        Math.Abs(left - right) / Math.Max(Math.Abs(right), double.Epsilon);
 
     private static bool IsMeasurablyBetterThanOriginal(
         OriginalEvaluation original,
@@ -1056,13 +1087,15 @@ public sealed class GpuAutoAffinitySession
         var regressions = new List<string>(2);
         CompareInterruptTail(
             "GPU-driver DPC p99",
-            original.Observations.SelectMany(static observation => observation.GpuDriverDpcDurationMicroseconds),
-            candidate.Observations.SelectMany(static observation => observation.GpuDriverDpcDurationMicroseconds),
+            original.Observations,
+            candidate.Observations,
+            static observation => observation.GpuDriverDpcDurationMicroseconds,
             regressions);
         CompareInterruptTail(
             "GPU-driver ISR p99",
-            original.Observations.SelectMany(static observation => observation.GpuDriverIsrDurationMicroseconds),
-            candidate.Observations.SelectMany(static observation => observation.GpuDriverIsrDurationMicroseconds),
+            original.Observations,
+            candidate.Observations,
+            static observation => observation.GpuDriverIsrDurationMicroseconds,
             regressions);
 
         if (regressions.Count == 0)
@@ -1078,33 +1111,54 @@ public sealed class GpuAutoAffinitySession
 
     private static void CompareInterruptTail(
         string label,
-        IEnumerable<double> original,
-        IEnumerable<double> candidate,
+        IReadOnlyList<GpuAutoAffinityTrialObservation> original,
+        IReadOnlyList<GpuAutoAffinityTrialObservation> candidate,
+        Func<GpuAutoAffinityTrialObservation, IReadOnlyList<double>> selector,
         List<string> regressions)
     {
-        var originalSamples = original.Where(static value => double.IsFinite(value) && value >= 0d).ToArray();
-        var candidateSamples = candidate.Where(static value => double.IsFinite(value) && value >= 0d).ToArray();
-        if (originalSamples.Length < MinimumInterruptTailSamples ||
-            candidateSamples.Length < MinimumInterruptTailSamples)
+        var originalRuns = BuildInterruptTailRunSeries(original, selector);
+        var candidateRuns = BuildInterruptTailRunSeries(candidate, selector);
+        if (originalRuns.Length < MinimumInterruptTailRuns ||
+            candidateRuns.Length < MinimumInterruptTailRuns)
         {
             return;
         }
 
-        var originalP99 = Percentiles.Calculate(originalSamples, 0.99);
-        var candidateP99 = Percentiles.Calculate(candidateSamples, 0.99);
-        if (!double.IsFinite(originalP99) || !double.IsFinite(candidateP99) || originalP99 <= 0d)
+        var originalMedian = Median(originalRuns);
+        var candidateMedian = Median(candidateRuns);
+        if (!double.IsFinite(originalMedian) || !double.IsFinite(candidateMedian) || originalMedian <= 0d)
         {
             return;
         }
 
-        var regression = (candidateP99 - originalP99) / originalP99;
-        if (regression > InterruptTailRegressionTolerance)
+        var originalNoise = MaximumRelativeDeviation(originalRuns, originalMedian);
+        var candidateNoise = MaximumRelativeDeviation(candidateRuns, candidateMedian);
+        var allowedRegression = Math.Max(
+            InterruptTailRegressionTolerance,
+            Math.Max(originalNoise, candidateNoise));
+        var regression = (candidateMedian - originalMedian) / originalMedian;
+        if (regression > allowedRegression)
         {
             regressions.Add(string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
-                $"{label} {originalP99:F2} → {candidateP99:F2} µs ({regression:P1})"));
+                $"{label} median {originalMedian:F2} → {candidateMedian:F2} µs ({regression:P1}; noise-aware limit {allowedRegression:P1})"));
         }
     }
+
+    private static double[] BuildInterruptTailRunSeries(
+        IEnumerable<GpuAutoAffinityTrialObservation> observations,
+        Func<GpuAutoAffinityTrialObservation, IReadOnlyList<double>> selector) =>
+        observations
+            .Select(selector)
+            .Where(static samples =>
+                samples.Count >= MinimumInterruptTailSamples &&
+                samples.All(static value => double.IsFinite(value) && value >= 0d))
+            .Select(static samples => Percentiles.Calculate(samples, 0.99))
+            .Where(static value => double.IsFinite(value) && value > 0d)
+            .ToArray();
+
+    private static double MaximumRelativeDeviation(IEnumerable<double> values, double median) =>
+        values.Max(value => Math.Abs(value - median) / Math.Abs(median));
 
     private static double Median(IEnumerable<double> source)
     {
@@ -1194,10 +1248,6 @@ public sealed class GpuAutoAffinitySession
         var scale = Math.Max(Math.Abs(left), Math.Abs(right));
         return scale == 0d || Math.Abs(left - right) / scale <= tolerance;
     }
-
-    private static CandidateEvaluation? SelectBestCandidate(
-        IEnumerable<CandidateEvaluation> evaluations) =>
-        OrderRankableCandidates(evaluations).FirstOrDefault();
 
     private static GpuAutoAffinityCandidateReport ToReport(
         string phase,
