@@ -71,7 +71,8 @@ public sealed record GpuAutoAffinitySessionResult(
 
 /// <summary>
 /// Measurement-first GPU interrupt-affinity search. Every eligible logical CPU in
-/// the supported processor group receives a scored screen. Original is scored with
+/// the supported processor group receives a scored screen unless a time-local
+/// Original control proves that the environment has drifted. Original is scored with
 /// the same workload and duration, and a forced candidate is retained only when its
 /// repeatable improvement clears the measured/practical noise floor without material
 /// guardrail regression. Ranking applies tolerances against fixed best references,
@@ -88,6 +89,7 @@ public sealed class GpuAutoAffinitySession
     private const int MaximumRejectedRepeatabilityRuns = 1;
     private const int MinimumFinalistCandidates = 3;
     private const int MaximumFinalistCandidates = 5;
+    private const int ScreeningCandidatesPerControlBlock = 4;
     private const double MaximumShortlistTolerance = GpuRepeatabilityClusterSelector.RelativeTolerance;
     private const double MaximumNoiseForFullFinalistConfirmation = 0.15;
     private const string FinalistPhaseName = "screening-finalists";
@@ -201,9 +203,10 @@ public sealed class GpuAutoAffinitySession
             }
 
             var screeningEvaluations = new List<CandidateEvaluation>(candidates.Length);
-            foreach (var candidate in candidates)
+            for (var candidateIndex = 0; candidateIndex < candidates.Length; candidateIndex++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                var candidate = candidates[candidateIndex];
                 screeningEvaluations.Add(await EvaluateCandidateBlockAsync(
                     candidate,
                     "screening",
@@ -214,6 +217,58 @@ public sealed class GpuAutoAffinitySession
                     candidateReports,
                     trialReports,
                     cancellationToken).ConfigureAwait(false));
+
+                var completedCandidates = candidateIndex + 1;
+                var hasRemainingCandidates = completedCandidates < candidates.Length;
+                if (!hasRemainingCandidates || completedCandidates % ScreeningCandidatesPerControlBlock != 0)
+                {
+                    continue;
+                }
+
+                var blockNumber = completedCandidates / ScreeningCandidatesPerControlBlock;
+                await CaptureAcceptedAsync(
+                    () => ++nextRunNumber,
+                    "screening-block-control-warmup",
+                    GpuConfirmationOrder.Original,
+                    null,
+                    TransitionWarmupDuration,
+                    reference: null,
+                    experimentId: null,
+                    trialReports,
+                    cancellationToken).ConfigureAwait(false);
+                var blockControl = await CaptureAcceptedAsync(
+                    () => ++nextRunNumber,
+                    "screening-block-control",
+                    GpuConfirmationOrder.Original,
+                    null,
+                    request.ScreeningDuration,
+                    reference,
+                    experimentId: null,
+                    trialReports,
+                    cancellationToken).ConfigureAwait(false);
+                if (IsControlComparableToOriginal(
+                        original,
+                        blockControl,
+                        $"after screening block {blockNumber}",
+                        out var blockControlReason))
+                {
+                    continue;
+                }
+
+                reasons.Add(blockControlReason);
+                reasons.Add(
+                    $"Screening block {blockNumber} was invalidated by Original drift; remaining candidates were not started and the exact original state was retained rather than ranking across a moving environment.");
+                var originalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+                return CreateResult(
+                    request,
+                    startedAtUtc,
+                    GpuOptimizationRecommendation.RestoreOriginal,
+                    null,
+                    originalVerified,
+                    originalVerified,
+                    candidateReports,
+                    trialReports,
+                    reasons);
             }
 
             await CaptureAcceptedAsync(
