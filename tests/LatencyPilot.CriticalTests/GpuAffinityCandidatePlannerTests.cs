@@ -44,14 +44,20 @@ public sealed class GpuAffinityCandidatePlannerTests
         var pressure = ProcessorPressureEvidenceBuilder.Create(topology, windows);
         Assert.AreEqual(1d, pressure.Sum(static item => item.PressureScore), 0.000001d);
 
-        var candidates = GpuAffinityCandidatePlanner.Create(topology, pressure, maximumCandidates: 2);
-        Assert.AreEqual(2, candidates.Count);
-        Assert.AreEqual(cpu2, candidates[0].Processor,
-            "Physical core 1 must use its canonical lowest-numbered logical CPU rather than the quieter SMT sibling.");
-        Assert.AreEqual(cpu0, candidates[1].Processor,
-            "Physical core 0 must use its canonical lowest-numbered logical CPU rather than the quieter SMT sibling.");
-        Assert.IsTrue(candidates[0].ObservedPressureScore < candidates[1].ObservedPressureScore,
-            "Physical-core pressure may rank cores, but it must never select a different SMT sibling.");
+        var allCandidates = GpuAffinityCandidatePlanner.Create(topology, pressure);
+        CollectionAssert.AreEqual(
+            new[] { cpu3, cpu1, cpu2, cpu0 },
+            allCandidates.Select(static candidate => candidate.Processor).ToArray(),
+            "The automatic search must cover every eligible logical processor and rank using logical-CPU pressure.");
+
+        var cappedCandidates = GpuAffinityCandidatePlanner.Create(topology, pressure, maximumCandidates: 2);
+        Assert.AreEqual(2, cappedCandidates.Count);
+        Assert.AreEqual(cpu3, cappedCandidates[0].Processor);
+        Assert.AreEqual(cpu1, cappedCandidates[1].Processor,
+            "An explicit cap must preserve physical-core diversity before spending budget on SMT siblings.");
+        Assert.AreNotEqual(
+            cappedCandidates[0].PhysicalCoreIndex,
+            cappedCandidates[1].PhysicalCoreIndex);
 
         var manyProcessors = Enumerable.Range(0, 24)
             .Select(static index => new LogicalProcessorId(0, checked((byte)index)))
@@ -65,7 +71,7 @@ public sealed class GpuAffinityCandidatePlannerTests
             .Select((processor, index) => new ProcessorPressureEvidence(processor, index / 100d))
             .ToArray();
         Assert.AreEqual(24, GpuAffinityCandidatePlanner.Create(manyTopology, manyPressure).Count,
-            "The default automatic search must cover every eligible physical core in the supported single processor group, not silently stop at 16.");
+            "The default automatic search must cover every eligible logical CPU in the supported single processor group, not silently stop at 16.");
 
         Span<byte> descriptor = stackalloc byte[AllocatedIrqDescriptorParser.Descriptor64Size];
         BinaryPrimitives.WriteUInt32LittleEndian(descriptor[0..4], 0);
