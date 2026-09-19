@@ -107,8 +107,8 @@ exact original/default state
 → collect 3 scored 30 s Original runs
    if no stable 3-run 1%-low cluster exists within ±3% of its median:
      collect one replacement run 4
-   if no stable 3-of-up-to-4 cluster exists:
-     RestoreOriginal and report an environment/workload repeatability failure
+   if four valid runs still do not form that preferred cluster:
+     retain all four runs and use their observed per-metric variance as the noise floor; do not abort before CPU screening
 → each eligible logical CPU:
      journaled apply/restart + stored-state verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
@@ -124,8 +124,9 @@ exact original/default state
      two independent re-test rounds are mandatory
      each finalist gets fresh apply/restart + stored-state verify, warm-up, scored run, exact rollback
      only finalists still lacking a stable 3-run cluster receive one replacement round
-→ rank each finalist from a stable 3-run cluster selected from at most 4 scored observations
-   at most one scored observation may be rejected as an outlier
+→ prefer the tightest stable 3-run cluster selected from at most 4 scored observations
+   at most one scored observation is excluded when such a cluster exists
+   if four valid runs still do not cluster, retain all four and use their observed variance in ranking/guardrail thresholds
 → 5 s non-scored Original warm-up
 → collect one fresh scored Original control after finalist re-tests
    if 1% low, AVG or frame-p99 leaves the Original repeatability band:
@@ -166,15 +167,17 @@ LatencyPilot uses bounded robust sampling instead:
 - 1% low is the primary repeatability signal.
 - Start with three scored observations.
 - Evaluate every 3-observation combination and select the **tightest** cluster whose members are each within **±3% of that cluster's median 1% low**.
-- If no cluster exists, collect one replacement observation and re-evaluate. No fifth score is collected.
-- Three valid runs are required; four scored attempts are the hard maximum.
-- At most one scored observation may be rejected. A 3-of-5 recovery is intentionally impossible because two rejected runs are evidence of instability rather than something a fifth sample should hide.
-- Samples outside the selected cluster remain in the audit trail but do not contribute to ranking medians.
+- If no preferred cluster exists, collect one replacement observation and re-evaluate. No fifth score is collected.
+- Three valid runs are sufficient for a preferred cluster; four scored attempts are the hard maximum.
+- If a preferred cluster exists, at most one scored observation may be excluded and the excluded sample remains in the audit trail.
+- If four valid runs still do not form a ±3% 1%-low cluster, **do not discard the benchmark evidence**. Median 1% low / 0.1% low / AVG / frame-p99 are computed from all four runs, and each metric's maximum median-relative deviation becomes observed noise for later comparisons.
 - AVG FPS and frame-p99 remain decision guardrails; 0.1% low remains rare-tail diagnostic/regression context rather than the outlier detector.
+- Original-control drift bands are noise-aware per metric: each allowed band is `max(3%, observed Original noise for that metric)`.
+- Final AVG / frame-p99 / 0.1%-low regression guardrails are also noise-aware, using the larger of the documented minimum margin and observed Original/finalist run-to-run noise.
 - When both Original and finalist provide at least three scored runs with enough attributable samples, GPU-driver DPC/ISR p99 is computed per run. Median tail regression is compared against a noise-aware limit of `max(10%, Original run-to-run tail noise, finalist run-to-run tail noise)`; a regression beyond that limit rejects that finalist without preventing the next ranked finalist from being considered.
-- The final winner must beat `max(1%, observed Original cluster noise, observed finalist cluster noise)` on the primary 1% low before guardrails and final ETW placement verification are considered.
+- The final winner must beat `max(1%, observed Original 1%-low noise, observed finalist 1%-low noise)` before guardrails and final ETW placement verification are considered.
 
-The ±3% band is a versioned methodology default, not a claim that every Windows system has exactly 3% variance. A persistent inability to produce a stable 3-run cluster is an environment/workload repeatability failure and retains exact Original. Screening remains one scored run per eligible logical CPU; robust replacement sampling is applied only to Original and finalists where evidence drives Keep/Restore.
+The ±3% band is a **preferred-cluster rule**, not a universal claim about Windows variance and no longer a pre-screen abort gate. A noisy but otherwise valid Original baseline can therefore continue into CPU screening; its instability makes the Keep threshold harder to clear rather than preventing the optimizer from testing candidates at all. Screening remains one scored run per eligible logical CPU; robust replacement sampling is applied only to Original and finalists where evidence drives Keep/Restore.
 
 ### 6.3 Adaptive finalist cutoff
 
