@@ -109,16 +109,22 @@ exact original/default state
      collect one replacement run 4
    if four valid runs still do not form that preferred cluster:
      retain all four runs and use their observed per-metric variance as the noise floor; do not abort before CPU screening
-→ each eligible logical CPU:
-     journaled apply/restart + stored-state verify
-     5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
-     1 scored 30 s screening run
-     exact rollback
+→ screen eligible logical CPUs in bounded blocks of at most four candidates:
+     for each candidate:
+       journaled apply/restart + stored-state verify
+       5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
+       1 scored 30 s screening run
+       exact rollback + Original-state verification
+     after every full four-candidate block when candidates remain:
+       5 s non-scored Original warm-up
+       collect one fresh scored Original block control
+       if 1% low, AVG or frame-p99 leaves the Original repeatability band:
+         invalidate the screening evidence collected so far, do not start remaining candidates, RestoreOriginal
 → 5 s non-scored Original warm-up
-→ collect one fresh scored Original control after the full sweep
-   if its 1% low leaves the Original repeatability band:
+→ collect one fresh scored Original control after the completed sweep
+   if 1% low, AVG or frame-p99 leaves the Original repeatability band:
      discard the sweep and RestoreOriginal
-→ if observed Original 1%-low noise exceeds 15% after the full sweep and control remains comparable: keep the screening table, skip exhaustive finalist confirmation, RestoreOriginal and report that the environment is too noisy for an automatic Keep decision
+→ if observed Original 1%-low noise exceeds 15% after the completed sweep and control remains comparable: keep the screening table, skip exhaustive finalist confirmation, RestoreOriginal and report that the environment is too noisy for an automatic Keep decision
 → rank valid screening candidates
 → shortlist the best three plus candidates within min(3%, max(1%, observed Original cluster noise)) of the third-place cutoff, capped at five finalists
 → shortlisted candidates:
@@ -138,6 +144,8 @@ exact original/default state
 → Keep only when measured improvement clears the observed cluster-noise floor, comparable GPU-driver DPC/ISR p99 does not materially regress, and final runtime ISR placement is proved
    otherwise exact RestoreOriginal
 ```
+
+The intermediate Original controls exist to detect temporal drift before an entire long CPU sweep is spent in a moving environment. Their comparison uses the same per-metric noise-aware Original bands as the final sweep control. Candidate measurements from an invalidated block remain diagnostic audit evidence but are not a valid ranking and must not be presented as a winner.
 
 There is no separate SMT/hyperthread refinement phase in v1 because eligible siblings are screened directly, and there is no ABBA/BAAB finalist loop.
 
@@ -178,15 +186,15 @@ LatencyPilot uses bounded robust sampling instead:
 - When both Original and finalist provide at least three scored runs with enough attributable samples, GPU-driver DPC/ISR p99 is computed per run. Median tail regression is compared against a noise-aware limit of `max(10%, Original run-to-run tail noise, finalist run-to-run tail noise)`; a regression beyond that limit rejects that finalist without preventing the next ranked finalist from being considered.
 - The final winner must beat `max(1%, observed Original 1%-low noise, observed finalist 1%-low noise)` before guardrails and final ETW placement verification are considered.
 
-The ±3% band is a **preferred-cluster rule**, not a universal claim about Windows variance and no longer a pre-screen abort gate. A noisy but otherwise valid Original baseline can therefore continue into CPU screening; its instability makes the Keep threshold harder to clear rather than preventing the optimizer from testing candidates at all. Screening remains one scored run per eligible logical CPU; robust replacement sampling is applied only to Original and finalists where evidence drives Keep/Restore.
+The ±3% band is a **preferred-cluster rule**, not a universal claim about Windows variance and no longer a pre-screen abort gate. A noisy but otherwise valid Original baseline can therefore continue into CPU screening; its instability makes the Keep threshold harder to clear rather than preventing the optimizer from testing candidates at all. Screening uses one scored run per candidate while the environment remains comparable; the time-local Original controls may terminate the remaining screen early when temporal drift invalidates comparison. Robust replacement sampling is applied only to Original and finalists where evidence drives Keep/Restore.
 
 ### 6.3 Adaptive finalist cutoff
 
-The initial screen always advances at least the best three rankable logical CPUs. The finalist equivalence band is **min(3%, max(1%, observed Original 1%-low noise))** and the shortlist is capped at five candidates. Original noise still raises the eventual Keep threshold without being allowed to turn every screened CPU into a finalist. A fresh Original warm-up precedes the scored control after the sweep; if the scored control leaves the Original repeatability band, the sweep is discarded. If the control is comparable but Original 1%-low noise exceeds 15%, LatencyPilot retains the complete screening ranking and restores Original without expensive finalist re-tests because the environment is too noisy for a trustworthy automatic Keep decision. A second fresh Original warm-up precedes the scored control after finalist re-tests when that phase runs.
+The initial screen always advances at least the best three rankable logical CPUs only when the complete screening evidence remains temporally valid. The finalist equivalence band is **min(3%, max(1%, observed Original 1%-low noise))** and the shortlist is capped at five candidates. Original noise still raises the eventual Keep threshold without being allowed to turn every screened CPU into a finalist. During the screen, a fresh Original block control is taken after each group of four candidates when more candidates remain; a drifted block control stops the remaining screen and prevents ranking. A fresh Original warm-up also precedes the scored control after the completed sweep; if that scored control leaves the Original repeatability band, the sweep is discarded. If the control is comparable but Original 1%-low noise exceeds 15%, LatencyPilot retains the complete screening ranking and restores Original without expensive finalist re-tests because the environment is too noisy for a trustworthy automatic Keep decision. A second fresh Original warm-up precedes the scored control after finalist re-tests when that phase runs.
 
 ## 7. Screening evidence and external collectors
 
-Screening must remain robust enough to complete the bounded CPU search.
+Screening must remain robust enough to complete the bounded CPU search while the environment remains comparable.
 
 ### Controlled benchmark evidence — required
 
@@ -206,6 +214,8 @@ PresentMon's documented timing fields are not interchangeable:
 - `MsBetweenAppStart` = start of the current frame until CPU work begins for the next frame.
 
 Therefore the console CSV parser accepts the current `FrameTime` field or legacy `MsBetweenPresents` for present cadence; it does **not** substitute `MsBetweenAppStart` as the same metric. Failed raw CSV may be retained for owner diagnosis, but retention is bounded.
+
+When PresentMon returns `NoSwapChains` or otherwise provides no usable target frames, that state remains explicit diagnostic evidence. It does not fabricate guardrail samples and does not invalidate an otherwise valid scored trial when benchmark-owned controlled frame periods are present. Without benchmark-owned frame periods, the legacy PresentMon-dependent path remains fail-closed.
 
 PresentMon GPU-active/busy metrics remain context; D3D12 timestamps are the direct GPU-work timing source for the built-in DX12 workload.
 
@@ -240,6 +250,7 @@ Mutation ownership starts before state is changed and remains owned until exact 
 - External affinity/driver drift before apply → refuse before write.
 - Candidate failure after apply → exact rollback + original verification.
 - Cancellation before Keep → exact rollback + original verification.
+- Time-local Original-control drift → stop future candidates, retain diagnostic evidence only, verify exact Original.
 - Final placement failure → exact rollback + original verification.
 - Keep failure → rollback is attempted and both failures are preserved if rollback also fails.
 - Unknown/diverged state stays recovery-owned; the journal is never edited away to make validation pass.
@@ -277,7 +288,7 @@ Do not label a proxy as network latency, click-to-photon latency or another quan
 
 ## 12. Future/non-v1 methods
 
-NIC/RSS automatic mutation, audio affinity and cross-subsystem/Pareto automatic optimization are future work and do not gate v1. Existing read-only or policy source may remain but cannot silently enter the v1 decision path.
+MSI-mode mutation, NIC/RSS automatic mutation, audio affinity, power-plan mutation and cross-subsystem/Pareto automatic optimization are future/non-v1 work and do not enter the automatic v1 decision path. Existing conservative source/recovery code may remain where it supports exact restoration or future experiments, but it cannot silently enter v1 automation.
 
 ## 13. Auditability and observer effect
 
@@ -291,8 +302,10 @@ The permanent suite is behavior-focused and must not grow one test per implement
 
 ## Audit-closure one-at-a-time workflow (2026-09-19)
 
-LatencyPilot now treats automatic optimization as a one-at-a-time experiment pipeline: **Original measurement → GPU affinity → conservative MSI → primary-input/xHCI → final verification → report**. A stage that is NotReady, inconclusive, or requires reboot stops the pipeline; intent is never treated as activation proof.
+LatencyPilot treats v1 automatic optimization as a one-at-a-time experiment pipeline: **Original measurement → GPU affinity → primary-input/xHCI → final verification → report**. A stage that is NotReady, inconclusive, drift-invalidated, or requires reboot stops the pipeline; intent is never treated as activation proof.
 
-MSI mutation is deliberately narrow: `MSISupported` may be enabled only when authoritative stored state makes the target applicable. `MessageNumberLimit` and interrupt priority are preserved/observed, not tuned automatically. xHCI affinity requires one explicit primary Raw Input identity, one exact USB route, clean capture evidence, and reversible journal ownership.
+MSI-mode mutation remains outside the v1 automatic path under ADR 0006. Existing MSI inspection/recovery code is not proof of automatic applicability and must not be inserted into v1 ordering without a new accepted authority change.
 
-`Restore original settings` replays retained LatencyPilot changes newest-first from exact snapshots. It does **not** claim to restore Windows defaults. Public mutation remains fail-closed (`MutationAvailable = false`) until exact-revision physical GPU/MSI/xHCI validation is recorded; hosted CI proves source contracts only.
+xHCI affinity requires one explicit primary Raw Input identity, one exact USB route, clean capture evidence, and reversible journal ownership.
+
+`Restore original settings` replays retained LatencyPilot changes newest-first from exact snapshots. It does **not** claim to restore Windows defaults. Public mutation remains fail-closed (`MutationAvailable = false`) until exact-revision physical GPU/xHCI validation is recorded; hosted CI proves source contracts only.
