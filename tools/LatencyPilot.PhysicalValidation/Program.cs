@@ -367,7 +367,8 @@ internal static class PhysicalValidationProgram
 
         var journal = OpenJournal();
         var transaction = new GpuInterruptAffinityMutationTransaction(journal);
-        var prepared = transaction.Prepare(deviceInstanceId, candidate);
+        var expectedOriginal = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        var prepared = transaction.Prepare(deviceInstanceId, candidate, expectedOriginal);
 
         Console.WriteLine("Prepared GPU interrupt-affinity experiment; no device policy write was attempted.");
         PrintJournalEntry(prepared);
