@@ -125,6 +125,9 @@ exact original/default state
      only finalists still lacking a stable 3-run cluster receive one replacement round
 → rank each finalist from a stable 3-run cluster selected from at most 4 scored observations
    at most one scored observation may be rejected as an outlier
+→ collect one fresh scored Original control after finalist re-tests
+   if 1% low, AVG or frame-p99 leaves the Original repeatability band:
+     discard finalist evidence and RestoreOriginal
 → test finalists in ranking order against Original/noise and guardrails; if the first fails, try the next clean finalist
 → apply the highest-ranked clean winner once
 → final benchmark-only warm-up → ETW placement-verification capture
@@ -161,19 +164,19 @@ LatencyPilot uses bounded robust sampling instead:
 - 1% low is the primary repeatability signal.
 - Start with three scored observations.
 - Evaluate every 3-observation combination and select the **tightest** cluster whose members are each within **±3% of that cluster's median 1% low**.
-- If no cluster exists, collect one replacement observation and re-evaluate; collect a fifth only if still needed.
+- If no cluster exists, collect one replacement observation and re-evaluate. No fifth score is collected.
 - Three valid runs are required; four scored attempts are the hard maximum.
 - At most one scored observation may be rejected. A 3-of-5 recovery is intentionally impossible because two rejected runs are evidence of instability rather than something a fifth sample should hide.
 - Samples outside the selected cluster remain in the audit trail but do not contribute to ranking medians.
 - AVG FPS and frame-p99 remain decision guardrails; 0.1% low remains rare-tail diagnostic/regression context rather than the outlier detector.
-- When both Original and finalist provide enough attributable samples, GPU-driver DPC/ISR p99 tails are Keep guardrails; a >10% tail regression rejects that finalist without preventing the next ranked finalist from being considered.
+- When both Original and finalist provide at least three scored runs with enough attributable samples, GPU-driver DPC/ISR p99 is computed per run. Median tail regression is compared against a noise-aware limit of `max(10%, Original run-to-run tail noise, finalist run-to-run tail noise)`; a regression beyond that limit rejects that finalist without preventing the next ranked finalist from being considered.
 - The final winner must beat `max(1%, observed Original cluster noise, observed finalist cluster noise)` on the primary 1% low before guardrails and final ETW placement verification are considered.
 
 The ±3% band is a versioned methodology default, not a claim that every Windows system has exactly 3% variance. A persistent inability to produce a stable 3-run cluster is an environment/workload repeatability failure and retains exact Original. Screening remains one scored run per physical core for bounded runtime; robust replacement sampling is applied to Original and finalists where evidence drives Keep/Restore.
 
 ### 6.3 Adaptive finalist cutoff
 
-The initial screen always advances at least the best three rankable physical cores. It also advances every additional core whose **screening 1% low is within max(1%, observed Original cluster noise) of the third-place screening value**. A fresh Original control is captured after the sweep; if it leaves the Original repeatability band, the sweep is discarded rather than ranking measurements taken across a moving environment. The shortlist is intentionally uncapped; if many physical cores are effectively tied, extra re-tests are preferable to manufacturing a winner from noise.
+The initial screen always advances at least the best three rankable physical cores. It also advances every additional core whose **screening 1% low is within max(1%, observed Original cluster noise) of the third-place screening value**. A fresh Original control is captured after the sweep; if it leaves the Original repeatability band, the sweep is discarded rather than ranking measurements taken across a moving environment. A second fresh Original control is captured after finalist re-tests and must remain comparable in 1% low, AVG and frame-p99 before any finalist is eligible for Keep. The shortlist is intentionally uncapped; if many physical cores are effectively tied, extra re-tests are preferable to manufacturing a winner from noise.
 
 ## 7. Screening evidence and external collectors
 
