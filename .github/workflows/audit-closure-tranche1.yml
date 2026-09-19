@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/audit-closure-tranche1.yml'
       - 'eng/audit-closure-f1-thread.py'
+      - 'eng/audit-closure-f1-fix.py'
       - 'eng/audit-closure-f3-lock-restore.py'
 
 permissions:
@@ -25,7 +26,9 @@ jobs:
           dotnet-version: 10.0.401
       - name: F1 tests only
         shell: pwsh
-        run: python eng/audit-closure-f1-thread.py tests
+        run: |
+          python eng/audit-closure-f1-thread.py tests
+          python eng/audit-closure-f1-fix.py tests
       - name: RED F1
         shell: pwsh
         run: |
@@ -36,7 +39,9 @@ jobs:
           exit 0
       - name: Implement F1
         shell: pwsh
-        run: python eng/audit-closure-f1-thread.py implementation
+        run: |
+          python eng/audit-closure-f1-thread.py implementation
+          python eng/audit-closure-f1-fix.py implementation
       - name: GREEN F1
         shell: pwsh
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
