@@ -1,7 +1,7 @@
 # LatencyPilot Product Roadmap
 
 Status: **Authoritative completion plan**  
-Last updated: 2026-09-18
+Last updated: 2026-09-19
 
 `PROJECT_STATUS.md` owns current execution/evidence state. This file owns the required product outcomes. Source-complete and physically validated are different claims.
 
@@ -42,7 +42,7 @@ The manual inspiration is AutoGpuAffinity + LatencyMon/ETW + Interrupt Affinity 
 
 ### Not in the v1 automatic path
 
-NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, power-plan tuning, generic debloating and a generic cross-subsystem/Pareto auto-optimizer. Existing read-only/future source may remain, but it must not complicate the v1 critical path.
+NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, power-plan tuning, generic debloating and a generic cross-subsystem/Pareto auto-optimizer. Existing read-only/future or internal safety source may remain, but it must not complicate or silently expand the v1 automatic path.
 
 Canonical current decision: `docs/adr/0006-simple-auto-interrupt-affinity-v1.md`.
 
@@ -85,7 +85,7 @@ Remaining v1 wiring:
 
 - [ ] one integrated **Optimize Interrupt Affinity** preflight;
 - [ ] quiet/background-load check with actionable warning rather than killing user apps;
-- [ ] combined GPU + future xHCI baseline snapshot owned by one session;
+- [ ] combined GPU + xHCI baseline snapshot owned by one product session;
 - [ ] explicit pending-reboot/multi-GPU/unsupported-topology user-facing stop reason.
 
 ---
@@ -161,8 +161,9 @@ Source checklist:
 - [x] PresentMon frame-cadence parsing distinguishes `MsBetweenPresents` from `MsBetweenAppStart`;
 - [x] failed PresentMon raw diagnostics use bounded retention;
 - [x] progress/result UI ranks by 1% low and displays 0.1%/AVG/p99 context;
-- [x] exact-final-HEAD hosted Tests green for this simplified revision;
-- [ ] physical Gate A rerun on the owner machine;
+- [x] Gate A distinguishes exact-clean **EvidenceReady** runs from dirty-main **DevelopmentOnly** runs; dirty reports are explicitly non-closure evidence;
+- [x] hosted Tests green for the source-state behavior before final documentation reconciliation;
+- [ ] physical Gate A rerun on the owner machine using one exact clean green revision;
 - [ ] repeat whole search to establish practical reproducibility;
 - [ ] Stop safely + supported failure/recovery physical exercise;
 - [ ] rendered/taskbar/keyboard/accessibility inspection.
@@ -179,7 +180,9 @@ Gate A closes only when the exact clean green revision proves on supported hardw
 6. final ETW proves GPU ISR target-only placement before Keep;
 7. Stop/failure paths restore and verify the original state with zero unresolved journal state.
 
-Product mutation IPC remains unarmed until this physical substrate passes.
+A dirty `main` checkout may run the same hardware workflow only as explicitly development-only evidence. It can validate behavior during development but cannot close Gate A or arm product mutation, even when the machine-state outcome is otherwise verified.
+
+Product mutation IPC remains unarmed until the authoritative physical substrate gate passes.
 
 ---
 
@@ -222,29 +225,31 @@ V1 selection work after GPU winner is fixed:
 
 ## Phase 6 — USB/xHCI apply and safety check
 
-**State: MUTATION OPEN; BLOCKED UNTIL GPU SHARED-SUBSTRATE GATE PASSES**
+**State: INTERNAL REVERSIBLE MUTATION SUBSTRATE IMPLEMENTED; PRODUCT/PHYSICAL GATED**
 
-- [ ] supported reversible xHCI/controller-affinity mutation;
-- [ ] exact stored-state snapshot and journal integration;
-- [ ] short post-apply ETW runtime-placement verification;
-- [ ] Raw Input timing sanity check;
-- [ ] rollback USB/xHCI while preserving the proven GPU winner if USB verification fails;
+- [x] bounded reversible xHCI/controller-affinity mutation source;
+- [x] exact stored-state snapshot and durable journal integration;
+- [x] restart-required/reboot-pending state plus exact rollback/recovery source;
+- [ ] short post-apply controller-specific ETW runtime-placement verification in the integrated product flow;
+- [ ] Raw Input timing sanity check after apply;
+- [ ] integrated rollback of USB/xHCI while preserving the proven GPU winner if USB verification fails;
 - [ ] representative high-polling hardware physical evidence.
 
-This is sequencing, not scope deferral: automatic USB/xHCI is part of v1, but it reuses the same privileged mutation/recovery substrate only after that substrate is proven safely with GPU Gate A.
+The internal mutation substrate existing in source does **not** mean the product path is armed. Automatic USB/xHCI remains gated on the shared physical safety proof and the missing integrated runtime verification above.
 
 ---
 
 ## Phase 7 — One reboot and post-login verification
 
-**State: RECOVERY/REBOOT PRIMITIVES EXIST; COMBINED WORKFLOW OPEN**
+**State: DEVICE-INTERRUPT REBOOT/RECOVERY PRIMITIVES IMPLEMENTED; COMBINED PRODUCT WORKFLOW OPEN**
 
 - [x] durable journal survives interruption/restart;
 - [x] recovery re-reads actual machine state;
 - [x] GPU restart/reboot-required detection primitives;
-- [ ] persist a combined GPU+xHCI pending-verification session;
-- [ ] request one reboot when required;
-- [ ] post-login verify stored GPU/xHCI policies;
+- [x] generic device-interrupt `ApplyRebootPending` / `RollbackRebootPending` + resume source for MSI/xHCI substrate;
+- [ ] persist one combined GPU+xHCI product pending-verification session;
+- [ ] request one product-level reboot when required;
+- [ ] post-login verify stored GPU/xHCI policies as one session;
 - [ ] prove runtime GPU and xHCI interrupt placement;
 - [ ] restore baseline if either managed state cannot be verified.
 
@@ -284,6 +289,7 @@ Restore original settings
 
 - [x] non-elevated WinUI shell;
 - [x] development GPU Gate A progress and safe-stop experience;
+- [x] Gate A source-state UX shows Evidence-ready / Development only / Blocked before launch and keeps dirty-run evidence visibly non-authoritative;
 - [x] self-contained Windows 11 x64 App/Service release source;
 - [x] install/upgrade/uninstall recovery checks and signing hooks;
 - [ ] integrated normal-user `Optimize Interrupt Affinity` orchestration;
@@ -310,9 +316,10 @@ Any future mutation must independently satisfy the same evidence, attribution an
 ## Permanent-test policy
 
 - Keep the permanent suite small and behavior-focused; do not add one test per implementation detail.
-- Owner-authorized historical ceiling remains 20 methods; the repository is already above that legacy target, so new direction work must consolidate or replace tests rather than grow the suite.
-- Temporary TDD characterization tests must be removed once their behavior is represented in the canonical tests.
-- Hardware validation and benchmark repetitions are evidence, not automated unit tests.
+- The current critical suite is consolidated behind one MSTest entrypoint that invokes the durable `AuditCase` contracts; do not confuse internal audit cases with separate permanent test-method count.
+- The repository default remains 10 permanent automated test methods total; owner-authorized growth to at most 20 remains an exception for genuinely necessary durable boundaries, not a target.
+- Temporary TDD characterization logic must be merged into the canonical contracts or removed once the behavior is represented.
+- Hardware validation and benchmark repetitions are evidence, not automated tests.
 
 ## Definition of done
 
@@ -326,6 +333,6 @@ Only after the physical read-only closure, GPU mutation gates, automatic USB/xHC
 
 ## Audit closure milestone — 2026-09-19
 
-- Source/CI: close F1–F11, MSI/xHCI reversible transactions, reboot resume, retained restore, and the internal Optimize sequence.
+- Source/CI: F1–F11, conservative MSI/xHCI reversible transactions, reboot resume, retained restore, internal Optimize sequence, and fail-closed Gate A source-evidence eligibility are implemented in source; exact-final-HEAD hosted Tests still govern software closure.
 - Physical gate: run exact-revision Intel 16-LP, Intel >16-LP, AMD, primary-input/xHCI, MSI, reboot/resume, before/after, and restore validation before enabling public mutation.
 - Out of scope for this milestone: NIC/RSS mutation, audio tuning, BIOS, HPET, broad power-plan tweaking, and arbitrary registry packs.
