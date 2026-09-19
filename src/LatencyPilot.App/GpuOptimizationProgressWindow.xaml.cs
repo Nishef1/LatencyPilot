@@ -175,7 +175,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         var best = rows[0];
         var keptWinner = string.Equals(
             report.FinalRecommendation,
-            GpuOptimizationRecommendation.KeepCandidate.ToString(),
+            "KeepCandidate",
             StringComparison.Ordinal) &&
             report.FinalProcessor is not null;
         RankedSummaryText.Text = string.Format(
