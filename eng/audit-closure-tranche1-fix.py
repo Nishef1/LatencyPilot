@@ -7,10 +7,12 @@ replacements = {
         "private static CandidateEvaluation[] SelectNearBestHigher(",
     "private static IReadOnlyList<CandidateEvaluation> SelectNearBestLower(":
         "private static CandidateEvaluation[] SelectNearBestLower(",
+    "Runtime ISR placement is Unknown for this screening trial; absence of attributable ISR samples is not treated as proof of off-target placement.":
+        "Runtime ISR placement is Unknown for this screening trial because resolved single-adapter ISR placement evidence is unavailable; absence of attributable ISR samples is not treated as proof of off-target placement.",
 }
 for old, new in replacements.items():
     if session.count(old) != 1:
-        raise RuntimeError(f"Expected one generated signature for {old!r}")
+        raise RuntimeError(f"Expected one generated signature/diagnostic for {old!r}")
     session = session.replace(old, new, 1)
 session_path.write_text(session, encoding="utf-8", newline="\n")
 
