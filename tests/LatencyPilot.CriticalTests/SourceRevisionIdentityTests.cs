@@ -290,12 +290,20 @@ public sealed class SourceRevisionIdentityTests
             "GPU benchmark control streams must not be created before the named pipe is connected.");
         StringAssert.Contains(
             benchmarkControlClientSource,
-            "IsClosedRenderWindowFailure",
-            "A transient renderer-window loss after GPU affinity change must have one bounded recovery path.");
+            "IsRecoverableRendererFailure",
+            "A transient renderer/window/device-loss after GPU affinity change must have one bounded recovery path.");
+        StringAssert.Contains(
+            benchmarkControlClientSource,
+            "0x887A0005",
+            "DXGI_ERROR_DEVICE_REMOVED must be recognized as one bounded renderer-recreation retry.");
+        StringAssert.Contains(
+            benchmarkControlClientSource,
+            "0x887A0007",
+            "DXGI_ERROR_DEVICE_RESET must be recognized as one bounded renderer-recreation retry.");
         StringAssert.Contains(
             benchmarkControlClientSource,
             "await RecreateRendererAsync(cancellationToken)",
-            "The benchmark client must recreate the renderer before retrying a closed-window trial.");
+            "The benchmark client must recreate the renderer before retrying a recoverable renderer trial.");
 
         var gateARunnerSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
@@ -497,7 +505,11 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(
             gateABackendSource,
             "await benchmark.RecreateRendererAsync(cancellationToken).ConfigureAwait(false);",
-            "The D3D12 renderer must be recreated exactly after GPU affinity activation so warm-up and score can share the warmed renderer.");
+            "The D3D12 renderer must be recreated after GPU affinity activation so warm-up and score can share the warmed renderer.");
+        StringAssert.Contains(
+            gateABackendSource,
+            "RecreateBenchmarkRendererAfterRollback",
+            "Rollback activation must recreate the benchmark renderer before the next Original/candidate block.");
 
         var postApplyRollbackIndex = gateABackendSource.IndexOf(
             "RollbackCandidateAfterPostApplyFailure",
