@@ -72,7 +72,8 @@ capture exact original/default state
      exact rollback
 → 5 s Original warm-up → fresh scored Original control after the sweep; discard the sweep if Original leaves its repeatability band
 → rank valid screens by higher 1% low, then AVG, lower p99, then 0.1% rare-tail context
-→ re-test the best three plus every additional candidate inside max(1%, observed Original noise)
+→ if Original 1%-low noise >15% after sweep/control, keep screening results but skip exhaustive finalist confirmation and RestoreOriginal
+→ otherwise re-test the best three plus candidates inside min(3%, max(1%, observed Original noise)), capped at five finalists
 → prefer stable 3-of-up-to-4 evidence; if four valid runs do not cluster, keep all four and carry their measured variance into decision thresholds
 → 5 s Original warm-up → fresh scored Original control after finalist re-tests; reject finalist evidence if 1%/AVG/p99 drift
 → evaluate finalists in rank order against Original + frame and noise-aware attributable DPC/ISR p99 guardrails
@@ -91,6 +92,7 @@ Important current properties:
 - No ABBA/BAAB confirmation loop; the superseded ABBA/BAAB orchestrator, decision engine, confirmation engine and evidence collector were removed from source.
 - The old generic GPU screening/confirmation result models were pruned; the live v1 decision path has one owner: `GpuAutoAffinitySession`.
 - A fresh post-sweep Original warm-up + scored control rejects a moving benchmark environment before finalist ranking.
+- Excessive (>15%) Original 1%-low noise no longer explodes runtime: every logical CPU is still screened once, but exhaustive finalist confirmation is skipped and Original is retained.
 - A second post-finalist Original warm-up + scored control rejects drift in 1% low, AVG or frame-p99 before any Keep decision.
 - System CPU busy is measured from Windows system-time snapshots; material drift is surfaced rather than hard-coded false.
 - Missing PresentMon/ETW during screening is visible context and does not by itself abort benchmark ranking.
