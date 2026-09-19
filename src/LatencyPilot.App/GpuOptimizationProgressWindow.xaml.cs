@@ -127,14 +127,18 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 : finite[finite.Length / 2];
         }
 
-        // Top candidates have one screening run plus one fresh score in each
-        // of two independent re-test rounds. Use all scored v1 ranking runs so
-        // the UI mirrors the decision engine.
+        // Use only decision-grade scored observations. Retryable/inconclusive
+        // attempts remain in the JSON audit trail but must not change the medians
+        // displayed as the basis for ranking.
         var rows = report.Trials
             .Where(static trial =>
                 (string.Equals(trial.Phase, "screening", StringComparison.Ordinal) ||
                  string.Equals(trial.Phase, "screening-finalists", StringComparison.Ordinal)) &&
-                trial.Processor.HasValue)
+                trial.Processor.HasValue &&
+                string.Equals(
+                    trial.ReadinessState,
+                    GpuBenchmarkReadinessState.Ready.ToString(),
+                    StringComparison.Ordinal))
             .GroupBy(static trial => trial.Processor!.Value)
             .Select(group =>
             {
