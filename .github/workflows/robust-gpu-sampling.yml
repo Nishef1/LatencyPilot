@@ -6,6 +6,7 @@ on:
       - tmp-robust-sampling-final
     paths:
       - eng/robust-gpu-sampling-v2.py
+      - eng/robust-gpu-sampling-fix-v3.py
       - .github/workflows/robust-gpu-sampling.yml
 
 permissions:
@@ -46,7 +47,9 @@ jobs:
 
       - name: Apply robust sampling implementation
         shell: pwsh
-        run: python eng/robust-gpu-sampling-v2.py implementation
+        run: |
+          python eng/robust-gpu-sampling-v2.py implementation
+          python eng/robust-gpu-sampling-fix-v3.py
 
       - name: GREEN — critical suite
         shell: pwsh
