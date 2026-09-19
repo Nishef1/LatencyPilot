@@ -73,7 +73,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         var journal = new MutationJournal(MutationJournal.GetDefaultDatabasePath());
         journal.Initialize();
         mutation = new GpuAffinityMutationBackend(journal);
-        originalState = mutation.CaptureOriginal(deviceInstanceId);
+        originalState = GpuAffinityMutationBackend.CaptureOriginal(deviceInstanceId);
         mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
             DateTimeOffset.UtcNow,
             "CaptureOriginalState",
