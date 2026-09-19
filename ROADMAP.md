@@ -131,7 +131,8 @@ exact original/default GPU affinity
      exact rollback
 → 5 s Original warm-up → fresh scored Original control after the full sweep; abort ranking if it leaves the Original repeatability band
 → rank by 1% low → AVG → p99 → 0.1% low rare-tail context
-→ best three + every screening candidate within max(1%, observed Original noise) of the third-place cutoff:
+→ if Original 1%-low noise >15% after the sweep/control: keep full screening results, skip exhaustive finalist re-tests, RestoreOriginal
+→ otherwise best three + candidates within min(3%, max(1%, observed Original noise)) of the third-place cutoff, capped at five:
      two independent deterministically shuffled re-test rounds
      each candidate gets fresh apply/restart + warm-up + one 30 s score + exact rollback
      one extra replacement score only if the preferred ±3% 3-run cluster is still missing
@@ -151,7 +152,8 @@ Source checklist:
 - [x] all eligible logical-CPU candidates from actual Windows topology, including SMT siblings and CPU0;
 - [x] one scored screening run per candidate;
 - [x] post-sweep Original warm-up + scored control rejects time/thermal/background drift before shortlist ranking;
-- [x] best three plus any screening candidate inside max(1%, observed Original noise) receive two additional scored re-tests in separate fresh transition rounds;
+- [x] extreme (>15%) Original 1%-low noise stops after full screening/control instead of expanding into exhaustive finalist work;
+- [x] finalist confirmation is bounded to at most five candidates inside min(3%, max(1%, observed Original noise)) of the third-place cutoff;
 - [x] finalist order is deterministically shuffled in each re-test round to reduce time/thermal ordering bias;
 - [x] repeatability is capped at four scores; a stable three-run cluster is preferred, otherwise all four valid runs remain usable with their observed variance carried into decision thresholds;
 - [x] ranking is noise-aware: <=1% differences in 1% low / AVG / p99 are practical ties; 0.1% low only breaks a remaining tie when its relative difference exceeds 5%;
