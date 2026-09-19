@@ -1,0 +1,79 @@
+name: Measurement audit cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/measurement-audit-cleanup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: measurement-audit-cleanup
+  cancel-in-progress: false
+
+jobs:
+  audit-cleanup:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: 10.0.401
+
+      - name: Add regressions only
+        run: python eng/measurement-audit-cleanup.py tests
+
+      - name: RED - old source must violate the new measurement contracts
+        shell: pwsh
+        run: |
+          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+          $red = $LASTEXITCODE
+          if ($red -eq 0) { throw 'Measurement audit regressions unexpectedly passed before implementation.' }
+          Write-Host "Expected RED observed with exit code $red."
+          exit 0
+
+      - name: Implement measurement hardening and cleanup
+        run: python eng/measurement-audit-cleanup.py implementation
+
+      - name: GREEN critical contracts
+        run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+
+      - name: Enforce permanent test budget and cleanup state
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem tests/LatencyPilot.CriticalTests -Filter *.cs -File
+          $count = ($files | Select-String -Pattern '\[(TestMethod|DataTestMethod)\]').Count
+          Write-Host "Permanent MSTest entrypoints: $count"
+          if ($count -gt 10) { throw "Permanent test budget exceeded: $count > 10." }
+          $stale = Get-ChildItem .github/workflows -Filter 'audit-closure-*.yml' -File
+          if ($stale) { $stale | ForEach-Object { Write-Host $_.FullName }; throw 'Stale audit workflows remain.' }
+          if (-not (Test-Path .github/workflows/ci.yml)) { throw 'Canonical Tests workflow is missing.' }
+
+      - name: Remove temporary delivery files
+        shell: pwsh
+        run: git rm -f .github/workflows/measurement-audit-cleanup.yml eng/measurement-audit-cleanup.py
+
+      - name: Commit verified cleanup
+        shell: pwsh
+        run: |
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if (git diff --cached --quiet) { throw 'Measurement audit produced no source changes.' }
+          git commit -m 'fix: harden benchmark measurement boundaries'
+          git pull --rebase origin main
+
+          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'Post-rebase critical tests failed.' }
+          git diff --check
+          git push origin HEAD:main
