@@ -203,6 +203,22 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(rendererOwnerSource, "new Thread(ThreadMain)");
         StringAssert.Contains(rendererOwnerSource, "PumpMessages");
         StringAssert.Contains(rendererOwnerSource, "RecreateRendererAsync");
+        var recreateRendererIndex = rendererOwnerSource.IndexOf(
+            "internal Task RecreateRendererAsync",
+            StringComparison.Ordinal);
+        var disposeOldRendererIndex = rendererOwnerSource.IndexOf(
+            "active?.Dispose();",
+            recreateRendererIndex,
+            StringComparison.Ordinal);
+        var createReplacementRendererIndex = rendererOwnerSource.IndexOf(
+            "renderer = rendererFactory();",
+            recreateRendererIndex,
+            StringComparison.Ordinal);
+        Assert.IsTrue(
+            recreateRendererIndex >= 0 &&
+            disposeOldRendererIndex > recreateRendererIndex &&
+            createReplacementRendererIndex > disposeOldRendererIndex,
+            "D3D12 recovery must release the removed device/resources before creating the replacement renderer.");
 
         var benchmarkWindowSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
