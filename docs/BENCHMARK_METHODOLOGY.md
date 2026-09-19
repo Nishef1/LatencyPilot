@@ -108,7 +108,7 @@ exact original/default state
    if no stable 3-run 1%-low cluster exists within ±3% of its median:
      collect replacement run 4, then run 5 only if still needed
    if no stable 3-of-up-to-5 cluster exists:
-     RestoreOriginal and report EnvironmentTooNoisy
+     RestoreOriginal and report an environment/workload repeatability failure
 → each eligible physical core:
      journaled apply/restart + stored-state verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
