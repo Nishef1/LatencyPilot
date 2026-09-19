@@ -23,6 +23,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
     private const int KernelMaximumEvents = 2_000_000;
     private const double MinimumOverlapRatio = 0.95;
+    private const double MinimumCpuBusyAbsoluteDriftPercent = 10d;
+    private const double MaximumCpuBusyRelativeDrift = 0.25d;
     private static readonly TimeSpan CollectorTailSlack = TimeSpan.FromSeconds(2);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -38,6 +40,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private readonly HashSet<Guid> measuringExperiments = [];
     private readonly Dictionary<Guid, GpuAffinityCandidate> ownedCandidates = [];
     private readonly List<GpuAutoAffinityMutationAuditEntry> mutationAudit = [];
+    private readonly List<double> originalCpuBusyPercent = [];
     private GpuAutoAffinityReportProvenance? reportProvenance;
     private string? referenceIsrModuleName;
 
@@ -529,6 +532,33 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             storedBefore,
             storedAfter);
 
+        var systemCpuBusyDrifted = false;
+        if (!isWarmup &&
+            continuity.SystemCpuBusyPercent is { } cpuBusy &&
+            double.IsFinite(cpuBusy))
+        {
+            if (request.Role == GpuConfirmationOrder.Original &&
+                string.Equals(request.Phase, "screening-original", StringComparison.Ordinal))
+            {
+                originalCpuBusyPercent.Add(cpuBusy);
+            }
+            else if (originalCpuBusyPercent.Count >= GpuRepeatabilityClusterSelector.RequiredRunCount)
+            {
+                var originalMedian = Percentiles.Calculate(originalCpuBusyPercent, 0.50);
+                var allowedAbsoluteDrift = Math.Max(
+                    MinimumCpuBusyAbsoluteDriftPercent,
+                    originalMedian * MaximumCpuBusyRelativeDrift);
+                var absoluteDrift = Math.Abs(cpuBusy - originalMedian);
+                systemCpuBusyDrifted = absoluteDrift > allowedAbsoluteDrift;
+                if (systemCpuBusyDrifted)
+                {
+                    softNotes.Add(string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"System CPU busy changed from an Original median of {originalMedian:F1}% to {cpuBusy:F1}% during this trial; allowed drift is {allowedAbsoluteDrift:F1} percentage points."));
+                }
+            }
+        }
+
         GpuInterruptRuntimePlacementEvidence? runtimePlacement = null;
         GpuAutoAffinityPlacementProof? placement = null;
         GpuInterruptIsrAttribution? isrAttribution = null;
@@ -636,7 +666,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 $"Standalone PresentMon evidence is unavailable for this trial [{presentMon.Status}]; ranking uses benchmark frame periods.");
         }
         var contamination = new GpuBenchmarkContaminationContext(
-            SystemCpuBusyDrifted: false,
+            SystemCpuBusyDrifted: systemCpuBusyDrifted,
             ControlTrialDrifted: false,
             SleepOrResumeDetected: continuity.Reasons.Any(static reason =>
                 reason.Contains("sleep", StringComparison.OrdinalIgnoreCase) ||
