@@ -452,12 +452,19 @@ public sealed class SourceRevisionIdentityTests
 
         StringAssert.Contains(gateASessionSource, "\"final-verification-warmup\"");
         StringAssert.Contains(gateASessionSource, "\"final-verification\"");
+        StringAssert.Contains(
+            gateASessionSource,
+            ""screening-control"",
+            "The v1 GPU session must retain a post-screening Original drift control.");
+        StringAssert.Contains(
+            gateASessionSource,
+            ""finalist-control"",
+            "The v1 GPU session must retain a post-finalist Original drift control.");
         Assert.IsFalse(
-            gateASessionSource.Contains("screening-control", StringComparison.Ordinal) ||
             gateASessionSource.Contains("smt-refinement", StringComparison.Ordinal) ||
             gateASessionSource.Contains("ABBA", StringComparison.Ordinal) ||
             gateASessionSource.Contains("BAAB", StringComparison.Ordinal),
-            "The simplified v1 GPU session must not regress to legacy control/SMT/ABBA paths.");
+            "The simplified v1 GPU session must not regress to legacy SMT-refinement or ABBA/BAAB paths.");
         var keepStartIndex = gateABackendSource.IndexOf(
             "public Task KeepAsync",
             StringComparison.Ordinal);
