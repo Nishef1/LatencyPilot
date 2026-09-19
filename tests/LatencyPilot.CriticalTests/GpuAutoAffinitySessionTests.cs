@@ -201,7 +201,7 @@ public sealed class GpuAutoAffinitySessionTests
     }
 
     [AuditCase]
-    public async Task SessionUsesRobustThreeOfFourSamplingAndRestoresWhenNoisePersists()
+    public async Task SessionUsesPreferredClustersAndCarriesFourRunNoiseIntoDecisions()
     {
         var (_, _, request) = CreateTwoCoreRequest();
 
@@ -226,9 +226,15 @@ public sealed class GpuAutoAffinitySessionTests
             persistentOriginalBackend.Events.Count(static item =>
                 item.StartsWith("original:screening-original:", StringComparison.Ordinal)),
             "Original sampling must stop after four scored attempts when no stable 3-run cluster exists.");
-        Assert.IsFalse(persistentOriginalBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)));
+        Assert.IsTrue(persistentOriginalBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)),
+            "A noisy but valid four-run Original baseline must no longer abort before any CPU candidate is tested.");
         Assert.IsTrue(persistentOriginal.Report.Reasons.Any(static reason =>
-            reason.Contains("stable 3-run", StringComparison.OrdinalIgnoreCase)));
+            reason.Contains("search continued", StringComparison.OrdinalIgnoreCase) &&
+            reason.Contains("noise", StringComparison.OrdinalIgnoreCase)),
+            "The report must disclose that the strict cluster was unavailable and that observed noise was carried into the decision.");
+        Assert.IsTrue(persistentOriginal.Report.Reasons.Any(static reason =>
+            reason.Contains("control drifted", StringComparison.OrdinalIgnoreCase)),
+            "The later Original control still has authority to stop a moving environment safely.");
 
         var recoverableFinalistBackend = new RecordingBackend(recoverableFinalistOutlier: true);
         var recoverableFinalist = await new GpuAutoAffinitySession(recoverableFinalistBackend).RunAsync(request);
@@ -249,7 +255,7 @@ public sealed class GpuAutoAffinitySessionTests
         var result = await new GpuAutoAffinitySession(backend).RunAsync(request);
 
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, result.Recommendation);
-        Assert.IsNull(result.Finalist);
+        Assert.IsNotNull(result.Finalist);
         Assert.IsTrue(result.Report.FinalStateVerified);
         Assert.IsTrue(result.Report.OriginalStateRestored);
         Assert.IsFalse(backend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
@@ -258,11 +264,12 @@ public sealed class GpuAutoAffinitySessionTests
         var unstableReports = result.Report.Candidates
             .Where(static item => item.Phase == "screening-finalists")
             .ToArray();
-        Assert.IsTrue(unstableReports.All(static item => item.Verdict == "Inconclusive"));
+        Assert.IsTrue(unstableReports.All(static item => item.Verdict == "Ranked"));
         Assert.IsTrue(unstableReports.All(static item => item.TrialCount == 3));
-        Assert.IsTrue(unstableReports.Any(static item =>
+        Assert.IsTrue(unstableReports.All(static item =>
             item.Reason is { } reason &&
-            reason.Contains("stable 3-run", StringComparison.OrdinalIgnoreCase)));
+            reason.Contains("Noise-aware 4-run fallback", StringComparison.OrdinalIgnoreCase)),
+            "Four valid but noisy finalist runs must remain visible/rankable with their observed noise instead of becoming Inconclusive.");
     }
 
     private static (ProcessorTopologySnapshot Topology, ProcessorPressureEvidence[] Pressure, GpuAutoAffinitySessionRequest Request)
