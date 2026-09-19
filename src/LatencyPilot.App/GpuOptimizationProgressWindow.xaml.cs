@@ -110,6 +110,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
     {
         ArgumentNullException.ThrowIfNull(report);
         RankedCandidatesPanel.Children.Clear();
+        var screeningInvalidated = IsScreeningInvalidated(report);
 
         static double? Median(IEnumerable<double?> values)
         {
@@ -129,7 +130,9 @@ public sealed partial class GpuOptimizationProgressWindow : Window
 
         // Use only decision-grade scored observations. Retryable/inconclusive
         // attempts remain in the JSON audit trail but must not change the medians
-        // displayed as the basis for ranking.
+        // displayed as the basis for ranking. A later time-local Original control
+        // can invalidate the whole comparison even though those individual captures
+        // were internally valid when recorded.
         var rows = report.Trials
             .Where(static trial =>
                 (string.Equals(trial.Phase, "screening", StringComparison.Ordinal) ||
@@ -166,8 +169,12 @@ public sealed partial class GpuOptimizationProgressWindow : Window
 
         if (rows.Length == 0)
         {
-            RankedSummaryText.Text = "No ranked candidates. The search restored the original state or ended Inconclusive; open the JSON report for trial reasons.";
-            AutomationProperties.SetName(RankedSummaryText, "Ranked candidates: none");
+            RankedSummaryText.Text = screeningInvalidated
+                ? "Measurements invalidated by drift — no valid winner. Original/default was restored; open the JSON report for diagnostic trial evidence."
+                : "No ranked candidates. The search restored the original state or ended Inconclusive; open the JSON report for trial reasons.";
+            AutomationProperties.SetName(
+                RankedSummaryText,
+                screeningInvalidated ? "Candidate measurements invalidated by drift" : "Ranked candidates: none");
             return;
         }
 
@@ -182,23 +189,35 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             "KeepCandidate",
             StringComparison.Ordinal) &&
             report.FinalProcessor is not null;
-        RankedSummaryText.Text = string.Format(
-            CultureInfo.InvariantCulture,
-            keptWinner
-                ? "Selected and kept: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}). Sub-1% differences in 1% low / AVG / p99 are treated as practical ties; 0.1% low uses a wider rare-tail margin."
-                : "Top measured candidate: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}) — not kept; Original/default was restored. Noise and guardrails remain part of the decision.",
-            best.Processor.Number,
-            best.Low1PctFps!.Value,
-            rows.Length,
-            inconclusive > 0 ? $", {inconclusive} inconclusive" : string.Empty);
-        AutomationProperties.SetName(RankedSummaryText, $"Ranked candidates. {RankedSummaryText.Text}");
+        if (screeningInvalidated)
+        {
+            RankedSummaryText.Text =
+                "Measurements invalidated by drift — no valid winner. Original/default was restored; candidate measurements below are diagnostic only and are not a valid ranking.";
+            AutomationProperties.SetName(RankedSummaryText, "Candidate measurements invalidated by drift; no valid winner");
+        }
+        else
+        {
+            RankedSummaryText.Text = string.Format(
+                CultureInfo.InvariantCulture,
+                keptWinner
+                    ? "Selected and kept: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}). Sub-1% differences in 1% low / AVG / p99 are treated as practical ties; 0.1% low uses a wider rare-tail margin."
+                    : "Top measured candidate: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}) — not kept; Original/default was restored. Noise and guardrails remain part of the decision.",
+                best.Processor.Number,
+                best.Low1PctFps!.Value,
+                rows.Length,
+                inconclusive > 0 ? $", {inconclusive} inconclusive" : string.Empty);
+            AutomationProperties.SetName(RankedSummaryText, $"Ranked candidates. {RankedSummaryText.Text}");
+        }
 
         var minimumLow = rows.Min(static row => row.Low1PctFps!.Value);
         var maximumLow = rows.Max(static row => row.Low1PctFps!.Value);
         var span = maximumLow - minimumLow;
         foreach (var row in rows)
         {
-            var isFinalist = report.FinalProcessor is not null && report.FinalProcessor.Equals(row.Processor);
+            var isFinalist = !screeningInvalidated &&
+                report.FinalProcessor is not null &&
+                report.FinalProcessor.Equals(row.Processor);
+            var displayedVerdict = screeningInvalidated ? "Measured · invalidated" : row.Verdict;
             var label = new TextBlock
             {
                 Text = string.Format(
@@ -210,7 +229,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                     FormatFps(row.Low01PctFps),
                     FormatFps(row.AvgFps),
                     row.MedianP99 is { } p99 ? p99.ToString("F2", CultureInfo.InvariantCulture) : "—",
-                    row.Verdict,
+                    displayedVerdict,
                     isFinalist ? " · finalist" : string.Empty),
                 Style = (Style)Application.Current.Resources["BodyTextStyle"],
                 TextWrapping = TextWrapping.Wrap,
@@ -231,6 +250,21 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             container.Children.Add(bar);
             RankedCandidatesPanel.Children.Add(container);
         }
+    }
+
+    private static bool IsScreeningInvalidated(GpuAutoAffinityReport report)
+    {
+        if (string.Equals(report.FinalRecommendation, "KeepCandidate", StringComparison.Ordinal) ||
+            report.FinalProcessor is not null)
+        {
+            return false;
+        }
+
+        return report.Reasons.Any(static reason =>
+            reason.Contains("drift", StringComparison.OrdinalIgnoreCase) &&
+            (reason.Contains("invalidated", StringComparison.OrdinalIgnoreCase) ||
+             reason.Contains("discarded", StringComparison.OrdinalIgnoreCase) ||
+             reason.Contains("moving environment", StringComparison.OrdinalIgnoreCase)));
     }
 
     internal void ShowStartupFailure(string message)
@@ -447,6 +481,8 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         "initializing" => "Initializing",
         "screening-warmup" => "Benchmark warm-up",
         "screening" => "Physical-core screening",
+        "screening-block-control-warmup" => "Screening drift-control warm-up",
+        "screening-block-control" => "Screening drift control",
         "screening-finalists" => "Top-candidate re-test",
         "final-verification" => "Winner placement verification",
         "stopping-safely" => "Stopping safely",
