@@ -70,7 +70,7 @@ public sealed record GpuAutoAffinitySessionResult(
     GpuAutoAffinityReport Report);
 
 /// <summary>
-/// Measurement-first GPU interrupt-affinity search. Every eligible physical core in
+/// Measurement-first GPU interrupt-affinity search. Every eligible logical CPU in
 /// the supported processor group receives a scored screen. Original is scored with
 /// the same workload and duration, and a forced candidate is retained only when its
 /// repeatable improvement clears the measured/practical noise floor without material
@@ -118,7 +118,7 @@ public sealed class GpuAutoAffinitySession
 
         if (physicalCandidates.Length == 0)
         {
-            reasons.Add("No eligible physical-core GPU interrupt-affinity candidate is available.");
+            reasons.Add("No eligible logical-CPU GPU interrupt-affinity candidate is available.");
             var originalVerified = await backend.VerifyOriginalStateAsync(cancellationToken).ConfigureAwait(false);
             return CreateResult(
                 request,
