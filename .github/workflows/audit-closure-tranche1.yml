@@ -1,0 +1,52 @@
+name: Audit closure tranche 1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/audit-closure-tranche1.yml'
+      - 'eng/audit-closure-tranche1.py'
+
+permissions:
+  contents: write
+
+jobs:
+  tdd-gpu-core:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.401
+      - name: Apply regression tests only
+        shell: pwsh
+        run: python eng/audit-closure-tranche1.py tests
+      - name: RED - regressions must fail against old implementation
+        shell: pwsh
+        run: |
+          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+          $red = $LASTEXITCODE
+          if ($red -eq 0) { throw 'Audit regressions unexpectedly passed before implementation.' }
+          Write-Host "Expected RED observed with exit code $red."
+          exit 0
+      - name: Apply implementation
+        shell: pwsh
+        run: python eng/audit-closure-tranche1.py implementation
+      - name: GREEN - critical suite
+        shell: pwsh
+        run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+      - name: Validate diff and commit verified tranche
+        shell: pwsh
+        run: |
+          git add src tools tests
+          git diff --cached --check
+          if (-not (git diff --cached --quiet)) {
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'fix: harden gpu affinity decision path'
+            git push origin HEAD:main
+          }
