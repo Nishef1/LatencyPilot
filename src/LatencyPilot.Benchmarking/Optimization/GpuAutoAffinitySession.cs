@@ -112,11 +112,11 @@ public sealed class GpuAutoAffinitySession
         var reasons = new List<string>();
         var nextRunNumber = 0;
         var pressure = request.PressureEvidence.ToArray();
-        var physicalCandidates = GpuAffinityCandidatePlanner
+        var candidates = GpuAffinityCandidatePlanner
             .Create(request.Topology, pressure, request.CpuSets)
             .ToArray();
 
-        if (physicalCandidates.Length == 0)
+        if (candidates.Length == 0)
         {
             reasons.Add("No eligible logical-CPU GPU interrupt-affinity candidate is available.");
             var originalVerified = await backend.VerifyOriginalStateAsync(cancellationToken).ConfigureAwait(false);
@@ -132,7 +132,7 @@ public sealed class GpuAutoAffinitySession
                 reasons);
         }
 
-        ShuffleDeterministically(physicalCandidates, request.ShuffleSeed);
+        ShuffleDeterministically(candidates, request.ShuffleSeed);
 
         try
         {
@@ -191,8 +191,8 @@ public sealed class GpuAutoAffinitySession
                     $"Original repeatability recovered {original.ValidObservationCount} valid runs from {original.TotalObservationCount} attempts; {original.TotalObservationCount - original.ValidObservationCount} outlier sample(s) were excluded from ranking. Max valid 1%-low deviation from the cluster median was {original.PrimaryRelativeNoise:P2}."));
             }
 
-            var screeningEvaluations = new List<CandidateEvaluation>(physicalCandidates.Length);
-            foreach (var candidate in physicalCandidates)
+            var screeningEvaluations = new List<CandidateEvaluation>(candidates.Length);
+            foreach (var candidate in candidates)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 screeningEvaluations.Add(await EvaluateCandidateBlockAsync(
