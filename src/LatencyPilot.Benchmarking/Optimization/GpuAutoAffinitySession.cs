@@ -311,7 +311,7 @@ public sealed class GpuAutoAffinitySession
                     request,
                     startedAtUtc,
                     GpuOptimizationRecommendation.RestoreOriginal,
-                    rankedFinalists.FirstOrDefault()?.Candidate,
+                    null,
                     restored,
                     restored,
                     candidateReports,
