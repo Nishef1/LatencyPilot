@@ -231,12 +231,15 @@ one adaptive calibration
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored run
      exact rollback
+→ fresh scored Original control after the sweep; stop if Original drift exceeds its repeatability band
 → rank by 1% low → AVG → p99 → 0.1% low rare-tail context
-→ best three + all candidates within 1% 1%-low of the third-place screening cutoff:
+→ best three + all candidates within max(1%, observed Original noise) of the third-place screening cutoff:
      two independent deterministically shuffled re-test rounds
      fresh apply/restart/warm-up + 1 scored 30 s run + exact rollback per round
-→ reject materially unstable repeated 1% lows
-→ apply winner
+     at most one adaptive replacement score
+→ accept only stable 3-of-up-to-4 evidence with at most one rejected run
+→ walk finalists in rank order through Original/frame/DPC/ISR guardrails
+→ apply highest-ranked clean winner
 → final benchmark-only warm-up → ETW placement-verification capture
 → Keep only with clean target-only GPU ISR proof
    else exact RestoreOriginal
@@ -251,7 +254,9 @@ Screening prioritizes completing the bounded comparison safely:
 - controlled benchmark artifact + frozen-workload/stored-state continuity are required;
 - PresentMon is an independent best-effort cadence cross-check;
 - ETW is a best-effort screening guardrail when unavailable;
-- healthy ETW proving wrong/off-target placement invalidates that candidate.
+- healthy ETW proving wrong/off-target placement invalidates that candidate;
+- system CPU-busy drift is measured from Windows system-time snapshots and surfaced as trial context;
+- when Original and finalist both have enough attributable GPU-driver samples, DPC/ISR p99 tails are Keep guardrails rather than ranking inputs.
 
 Final Keep is stricter. It requires:
 
