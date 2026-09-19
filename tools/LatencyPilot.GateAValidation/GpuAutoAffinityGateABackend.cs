@@ -33,7 +33,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private readonly Guid sessionId;
     private readonly uint benchmarkProcessId;
     private readonly GpuBenchmarkControlClient benchmark;
-    private readonly GpuOptimizationExecutionBackend mutation;
+    private readonly GpuAffinityMutationBackend mutation;
     private readonly GpuInterruptAffinitySnapshot originalState;
     private readonly string topologyIdentity;
     private readonly string driverServiceName;
@@ -72,7 +72,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
 
         var journal = new MutationJournal(MutationJournal.GetDefaultDatabasePath());
         journal.Initialize();
-        mutation = new GpuOptimizationExecutionBackend(journal);
+        mutation = new GpuAffinityMutationBackend(journal);
         originalState = mutation.CaptureOriginal(deviceInstanceId);
         mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
             DateTimeOffset.UtcNow,
