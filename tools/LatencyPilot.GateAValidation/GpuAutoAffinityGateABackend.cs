@@ -256,7 +256,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         return CaptureAsync(request, experimentId, request.Candidate, cancellationToken);
     }
 
-    public Task RollbackAsync(Guid experimentId, CancellationToken cancellationToken)
+    public async Task RollbackAsync(Guid experimentId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (experimentId == Guid.Empty)
@@ -270,12 +270,15 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             {
                 throw new InvalidOperationException("No-write candidate no longer matches the exact original stored state.");
             }
-            return Task.CompletedTask;
+            return;
         }
 
         ownedCandidates.TryGetValue(experimentId, out var candidate);
         try
         {
+            // RollbackAndActivate restarts the display adapter. Any D3D12 device,
+            // swap chain, fence, queue or resource created before that restart is
+            // no longer a valid renderer for the next Original/candidate block.
             mutation.Rollback(experimentId);
             var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
             var verified = string.Equals(
@@ -295,14 +298,21 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 throw new InvalidOperationException(
                     "GPU candidate rollback completed, but the exact original stored state could not be verified.");
             }
+
+            await benchmark.RecreateRendererAsync(cancellationToken).ConfigureAwait(false);
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow,
+                "RecreateBenchmarkRendererAfterRollback",
+                experimentId,
+                candidate?.Processor,
+                StoredStateVerified: true,
+                ToStoredStateReport(current)));
         }
         finally
         {
             measuringExperiments.Remove(experimentId);
             ownedCandidates.Remove(experimentId);
         }
-
-        return Task.CompletedTask;
     }
 
     public Task KeepAsync(Guid experimentId, CancellationToken cancellationToken)
