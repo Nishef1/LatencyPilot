@@ -66,7 +66,7 @@ apply/restart/verify
 → exact rollback
 ```
 
-The best three candidates, plus any additional core whose screening 1% low is within 1% of the third-place cutoff, enter two independent re-test rounds. Each round deterministically shuffles finalist order; every candidate receives a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback. Finalists therefore have three scored observations from three separate affinity activations and are ranked transparently by:
+After the full physical-core sweep, one fresh Original control must remain inside the Original repeatability band or the sweep is discarded. The best three candidates, plus any additional core whose screening 1% low is within max(1%, observed Original noise) of the third-place cutoff, enter two independent re-test rounds. Each round deterministically shuffles finalist order; every candidate receives a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback. A single replacement score is allowed only when needed to form a stable 3-of-up-to-4 cluster; at most one score may be rejected. Finalists are ranked transparently by:
 
 1. median **1% low**, with <=1% relative differences treated as ties;
 2. median **AVG FPS**, also with a 1% tie margin;
@@ -74,7 +74,7 @@ The best three candidates, plus any additional core whose screening 1% low is wi
 4. median **0.1% low** only when the rare-tail difference exceeds 5%;
 5. deterministic passive fallback only if measured metrics remain practically tied.
 
-There is no fixed “must beat Windows default by 3%” rule, no SMT/hyperthread sibling refinement and no ABBA/BAAB confirmation loop in v1. Windows default is the exact reference/recovery state.
+There is no fixed “must beat Windows default by 3%” rule, no SMT/hyperthread sibling refinement and no ABBA/BAAB confirmation loop in v1. Windows default is the exact reference/recovery state. Before Keep, the ranked finalists are checked in order against Original, frame guardrails and—when enough attributable samples exist—GPU-driver DPC/ISR p99 tails, so a bad top finalist can fall through to the next clean improvement.
 
 The benchmark process intentionally stays alive for the whole search. The renderer uses a three-buffer flip chain with two frame contexts, so it no longer waits for the entire GPU after every Present. After each GPU configuration restart, the D3D12 renderer/device is recreated once. Warm-up and the following scored run reuse that same recreated renderer/device instance, while process identity, frozen workload, seed and worker map remain constant so process-start/JIT/cold-cache effects are not reintroduced for every CPU.
 
