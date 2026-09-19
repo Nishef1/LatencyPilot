@@ -454,11 +454,11 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(gateASessionSource, "\"final-verification\"");
         StringAssert.Contains(
             gateASessionSource,
-            ""screening-control"",
+            "\"screening-control\"",
             "The v1 GPU session must retain a post-screening Original drift control.");
         StringAssert.Contains(
             gateASessionSource,
-            ""finalist-control"",
+            "\"finalist-control\"",
             "The v1 GPU session must retain a post-finalist Original drift control.");
         Assert.IsFalse(
             gateASessionSource.Contains("smt-refinement", StringComparison.Ordinal) ||
