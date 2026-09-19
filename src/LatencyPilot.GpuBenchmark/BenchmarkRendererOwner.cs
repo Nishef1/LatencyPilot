@@ -73,21 +73,18 @@ internal sealed class BenchmarkRendererOwner : IAsyncDisposable
     }
 
     internal Task RecreateRendererAsync(CancellationToken cancellationToken = default) =>
-        InvokeAsync(
-            active =>
+        InvokeOwnerAsync(
+            () =>
             {
-                var next = rendererFactory();
-                try
-                {
-                    active.Dispose();
-                }
-                catch
-                {
-                    next.Dispose();
-                    throw;
-                }
-
-                renderer = next;
+                // Microsoft documents that D3D12CreateDevice can fail when the
+                // process still owns a removed device for the same adapter.
+                // Release every old device-dependent resource first, then create
+                // the replacement. Keep renderer null if creation fails so the
+                // server's bounded recreation retry can try again cleanly.
+                var active = renderer;
+                renderer = null;
+                active?.Dispose();
+                renderer = rendererFactory();
                 return true;
             },
             cancellationToken);
@@ -101,6 +98,56 @@ internal sealed class BenchmarkRendererOwner : IAsyncDisposable
 
         await completed.Task.ConfigureAwait(false);
         workQueue.Dispose();
+    }
+
+    private Task<T> InvokeOwnerAsync<T>(
+        Func<T> action,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposeRequested) != 0, this);
+
+        if (terminalFailure is { } failure)
+        {
+            return Task.FromException<T>(new InvalidOperationException(
+                "The benchmark renderer owner thread is no longer available.",
+                failure));
+        }
+
+        var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            workQueue.Add(
+                () =>
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        completion.TrySetCanceled(cancellationToken);
+                        return;
+                    }
+
+                    try
+                    {
+                        completion.TrySetResult(action());
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        completion.TrySetCanceled(cancellationToken);
+                    }
+                    catch (Exception exception)
+                    {
+                        completion.TrySetException(exception);
+                    }
+                },
+                cancellationToken);
+        }
+        catch (InvalidOperationException) when (workQueue.IsAddingCompleted)
+        {
+            completion.TrySetException(new ObjectDisposedException(nameof(BenchmarkRendererOwner)));
+        }
+
+        return completion.Task;
     }
 
     private Task<T> InvokeAsync<T>(
