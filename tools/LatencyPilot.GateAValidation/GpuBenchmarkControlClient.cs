@@ -147,12 +147,13 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
         {
             response = await ReadResponseAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidDataException exception) when (IsClosedRenderWindowFailure(exception.Message))
+        catch (InvalidDataException exception) when (IsRecoverableRendererFailure(exception.Message))
         {
-            // A GPU affinity change can close the old D3D12 window while the
-            // authenticated benchmark process remains healthy. The server
-            // removes the failed run number before sending this response, so
-            // recreate the renderer once and retry the same evidence slot.
+            // A GPU affinity activation/rollback restarts the display adapter.
+            // The benchmark process can survive while its old D3D12 device,
+            // swap chain or HWND becomes invalid. Recreate exactly once and
+            // retry the same evidence slot; the server removes failed run
+            // numbers before replying, so evidence identity remains stable.
             await RecreateRendererAsync(cancellationToken).ConfigureAwait(false);
             await WriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
             response = await ReadResponseAsync(cancellationToken).ConfigureAwait(false);
@@ -169,9 +170,17 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
         return Path.GetFullPath(response.ArtifactPath);
     }
 
-    private static bool IsClosedRenderWindowFailure(string message) =>
-        message.Contains("Benchmark trial failed:", StringComparison.OrdinalIgnoreCase) &&
-        message.Contains("render window was closed", StringComparison.OrdinalIgnoreCase);
+    private static bool IsRecoverableRendererFailure(string message)
+    {
+        if (!message.Contains("Benchmark trial failed:", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return message.Contains("render window was closed", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("0x887A0005", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("0x887A0007", StringComparison.OrdinalIgnoreCase);
+    }
 
     internal async Task StopAsync(CancellationToken cancellationToken = default)
     {
