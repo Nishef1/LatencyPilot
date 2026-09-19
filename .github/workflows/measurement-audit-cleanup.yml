@@ -44,6 +44,58 @@ jobs:
       - name: Implement measurement hardening and cleanup
         run: python eng/measurement-audit-cleanup.py implementation
 
+      - name: Keep cancellation last and remove per-frame heap allocation
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          kernel_path = Path('src/LatencyPilot.Platform.Windows/Etw/KernelLatencyCapture.cs')
+          kernel = kernel_path.read_text(encoding='utf-8')
+          old = '''    public static KernelLatencyCaptureResult Capture(
+              KernelLatencyCaptureOptions options,
+              CancellationToken cancellationToken = default,
+              Action? onSessionReady = null)
+          {
+          '''
+          new = '''    public static KernelLatencyCaptureResult Capture(
+              KernelLatencyCaptureOptions options,
+              CancellationToken cancellationToken = default) =>
+              Capture(options, onSessionReady: null, cancellationToken);
+
+              public static KernelLatencyCaptureResult Capture(
+              KernelLatencyCaptureOptions options,
+              Action? onSessionReady,
+              CancellationToken cancellationToken = default)
+          {
+          '''
+          if kernel.count(old) != 1:
+              raise RuntimeError('KernelLatencyCapture readiness signature anchor mismatch')
+          kernel_path.write_text(kernel.replace(old, new, 1), encoding='utf-8', newline='\n')
+
+          backend_path = Path('tools/LatencyPilot.GateAValidation/GpuAutoAffinityGateABackend.cs')
+          backend = backend_path.read_text(encoding='utf-8')
+          old_call = '''                    new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),
+                      deadline.Token,
+                      () => kernelReady.TrySetResult(true)),
+          '''
+          new_call = '''                    new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),
+                      () => kernelReady.TrySetResult(true),
+                      deadline.Token),
+          '''
+          if backend.count(old_call) != 1:
+              raise RuntimeError('Gate A readiness call anchor mismatch')
+          backend_path.write_text(backend.replace(old_call, new_call, 1), encoding='utf-8', newline='\n')
+
+          renderer_path = Path('src/LatencyPilot.GpuBenchmark/D3D12BenchmarkRenderer.cs')
+          renderer = renderer_path.read_text(encoding='utf-8')
+          old_pending = '    private sealed record PendingFrame(\n'
+          new_pending = '    private readonly record struct PendingFrame(\n'
+          if renderer.count(old_pending) != 1:
+              raise RuntimeError('PendingFrame allocation anchor mismatch')
+          renderer_path.write_text(renderer.replace(old_pending, new_pending, 1), encoding='utf-8', newline='\n')
+          '@ | python -
+
       - name: GREEN critical contracts
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
 
