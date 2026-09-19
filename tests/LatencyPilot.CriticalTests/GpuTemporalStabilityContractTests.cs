@@ -32,6 +32,12 @@ public sealed class GpuTemporalStabilityContractTests
             null,
             0x51A7,
             TimeSpan.FromSeconds(15));
+        var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets: null);
+        Assert.AreEqual(6, progressPlan.CandidateCount);
+        Assert.AreEqual(5, progressPlan.FinalistCandidateCount,
+            "The progress budget must reserve the same five-candidate finalist ceiling used by the optimizer.");
+        Assert.AreEqual(1, progressPlan.IntermediateScreeningControlCount,
+            "Six screening candidates require one time-local Original control after the first four candidates.");
         var backend = new TemporalDriftBackend(driftAfterScreeningCandidates: 4);
 
         var result = await new GpuAutoAffinitySession(backend).RunAsync(request);
