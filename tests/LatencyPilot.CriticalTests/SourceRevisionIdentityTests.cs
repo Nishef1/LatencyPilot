@@ -260,6 +260,19 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(physicalValidationSource, "\"restore-original-settings\" => RestoreOriginalSettings(args)");
         StringAssert.Contains(physicalValidationSource, "Restore original settings completed");
 
+        var collectorBackendSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "LatencyPilot.GateAValidation",
+            "GpuAutoAffinityGateABackend.cs"));
+        StringAssert.Contains(collectorBackendSource, "TryStartOptionalPresentMonAsync");
+        StringAssert.Contains(collectorBackendSource, "CollectorTailSlack");
+        StringAssert.Contains(collectorBackendSource, "PresentMon startup unavailable");
+        Assert.IsFalse(
+            collectorBackendSource.Contains("request.Duration + TimeSpan.FromSeconds(8)", StringComparison.Ordinal),
+            "Scored ETW capture must not add an unconditional eight-second tail to every benchmark block.");
+        StringAssert.Contains(collectorBackendSource, "GPU ISR attribution is unavailable for this trial");
+
         var benchmarkControlClientSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "tools",

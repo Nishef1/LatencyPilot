@@ -23,6 +23,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
     private const int KernelMaximumEvents = 2_000_000;
     private const double MinimumOverlapRatio = 0.95;
+    private static readonly TimeSpan CollectorTailSlack = TimeSpan.FromSeconds(2);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly string deviceInstanceId;
@@ -457,12 +458,12 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             // recreation after a GPU restart; CSV rows are cropped to the exact
             // benchmark artifact interval during parsing.
             var presentMonWindow = request.Duration;
-            await using var presentMonSession = await PresentMonConsoleFrameMetricsReader.StartAsync(
+            var presentMonStart = await TryStartOptionalPresentMonAsync(
                 benchmarkProcessId,
                 presentMonWindow,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
 
-            var kernelDuration = request.Duration + TimeSpan.FromSeconds(8);
+            var kernelDuration = request.Duration + CollectorTailSlack;
             var kernelTask = Task.Run(
                 () => KernelLatencyCapture.Capture(
                     new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),
@@ -479,10 +480,24 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             kernel = await kernelTask.ConfigureAwait(false);
             var artifactPath = await artifactPathTask.ConfigureAwait(false);
             artifact = await ReadArtifactAsync(artifactPath, deadline.Token).ConfigureAwait(false);
-            presentMon = await presentMonSession.CompleteAsync(
-                artifact.StartedAtUtc,
-                artifact.EndedAtUtc,
-                deadline.Token).ConfigureAwait(false);
+
+            if (presentMonStart.Session is null)
+            {
+                presentMon = CreateUnavailablePresentMon(
+                    benchmarkProcessId,
+                    presentMonWindow,
+                    artifact.StartedAtUtc,
+                    artifact.EndedAtUtc,
+                    presentMonStart.Error ?? "PresentMon startup unavailable.");
+            }
+            else
+            {
+                await using var presentMonSession = presentMonStart.Session;
+                presentMon = await presentMonSession.CompleteAsync(
+                    artifact.StartedAtUtc,
+                    artifact.EndedAtUtc,
+                    deadline.Token).ConfigureAwait(false);
+            }
         }
 
         if (!GpuOptimizationCaptureContinuity.TryCapture(
@@ -559,8 +574,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 NotSupportedException or
                 System.ComponentModel.Win32Exception)
             {
-                reasons.Add(
-                    $"GPU ISR attribution failed: {exception.GetType().Name}: {exception.Message}");
+                softNotes.Add(
+                    $"GPU ISR attribution is unavailable for this trial: {exception.GetType().Name}: {exception.Message}. Placement remains Unknown; final Keep still requires positive target-only proof.");
             }
         }
         else if (candidate is not null)
@@ -643,6 +658,72 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 isrAttribution.ModuleName, isrAttribution.Mode,
                 driverDpc.Length, driverIsr.Length, isrAttribution.UnresolvedIsrEventCount));
     }
+
+    private static async Task<(PresentMonConsoleFrameMetricsReader.PresentMonConsoleCaptureSession? Session, string? Error)> TryStartOptionalPresentMonAsync(
+        uint processId,
+        TimeSpan requestedWindow,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var session = await PresentMonConsoleFrameMetricsReader.StartAsync(
+                processId,
+                requestedWindow,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            return (session, null);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return (null, "PresentMon startup unavailable: provisioning/startup exceeded its own bounded deadline.");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (InvalidDataException)
+        {
+            // A pinned-binary integrity failure is not optional evidence loss.
+            throw;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw;
+        }
+        catch (System.Security.SecurityException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is FileNotFoundException or
+            DirectoryNotFoundException or
+            System.Net.Http.HttpRequestException or
+            InvalidOperationException or
+            System.ComponentModel.Win32Exception or
+            IOException)
+        {
+            return (null, $"PresentMon startup unavailable: {exception.GetType().Name}: {exception.Message}");
+        }
+    }
+
+    private static PresentMonFrameCaptureSnapshot CreateUnavailablePresentMon(
+        uint processId,
+        TimeSpan requestedWindow,
+        DateTimeOffset benchmarkStartedAtUtc,
+        DateTimeOffset benchmarkEndedAtUtc,
+        string error) =>
+        new(
+            PresentMonWorkloadCaptureStatus.TrackingFailed,
+            processId,
+            requestedWindow.TotalMilliseconds,
+            Math.Max(0d, (benchmarkEndedAtUtc - benchmarkStartedAtUtc).TotalMilliseconds),
+            ApiVersion: null,
+            Frames: [],
+            UnavailableOptionalMetrics: [],
+            ApiPath: null,
+            NativeStatusCode: null,
+            Error: error,
+            StartedAtUtc: benchmarkStartedAtUtc,
+            EndedAtUtc: benchmarkEndedAtUtc);
 
     private static async Task<GpuBenchmarkTrialArtifact> ReadArtifactAsync(
         string artifactPath,
