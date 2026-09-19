@@ -46,7 +46,10 @@ jobs:
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
 
       - name: Consolidate permanent tests and CI
-        run: python eng/audit-closure-task6-final.py consolidate
+        shell: pwsh
+        run: |
+          python eng/audit-closure-task6-final.py consolidate
+          python eng/audit-closure-task6-fix.py consolidate
 
       - name: Enforce permanent test budget
         shell: pwsh
