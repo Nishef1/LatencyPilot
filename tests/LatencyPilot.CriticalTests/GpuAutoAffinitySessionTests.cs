@@ -20,7 +20,7 @@ public sealed class GpuAutoAffinitySessionTests
     {
         var (topology, pressure, request) = CreateTwoCoreRequest();
         var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets: null);
-        Assert.AreEqual(2, progressPlan.PhysicalCandidateCount);
+        Assert.AreEqual(2, progressPlan.CandidateCount);
         Assert.AreEqual(2, progressPlan.FinalistCandidateCount);
         Assert.AreEqual(20, progressPlan.InitialTotalUnits);
 
