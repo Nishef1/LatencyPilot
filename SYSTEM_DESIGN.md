@@ -18,7 +18,7 @@ The normal-user v1 workflow is:
 ```text
 preflight / quiet check
 → baseline DPC/ISR evidence
-→ GPU physical-core benchmark search
+→ GPU logical-CPU benchmark search
 → final runtime GPU placement proof
 → input/xHCI CPU-headroom selection
 → reversible xHCI/controller affinity
@@ -132,7 +132,7 @@ median 1% low (<=1% relative difference = tie)
 → deterministic passive fallback
 ```
 
-No weighted score, active SMT-refinement phase or ABBA/BAAB confirmation exists in the v1 GPU session.
+No weighted score or ABBA/BAAB confirmation exists in the v1 GPU session. SMT siblings are screened directly as logical-CPU candidates, so there is no separate SMT-refinement phase.
 
 ### `LatencyPilot.Protocol`
 
@@ -226,7 +226,7 @@ The benchmark process remains stable across the complete search. The D3D12 rende
 one adaptive calibration
 → frozen workload
 → 5 s original non-scored warm-up/reference (benchmark only; no PresentMon/ETW)
-→ each physical-core representative:
+→ each eligible logical CPU:
      apply/restart/verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored run
