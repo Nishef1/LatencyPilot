@@ -76,13 +76,15 @@ jobs:
           $paths = @('README.md','SYSTEM_DESIGN.md','PROJECT_STATUS.md','ROADMAP.md','docs','src','tools')
           foreach ($path in $paths) {
             if (Test-Path $path) {
-              $matches = Get-ChildItem $path -Recurse -File -ErrorAction SilentlyContinue | Select-String -SimpleMatch 'Restore Windows Defaults'
+              $files = Get-ChildItem $path -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -notmatch '\\docs\\superpowers\\' }
+              $matches = $files | Select-String -SimpleMatch -CaseSensitive 'Restore Windows Defaults'
               if ($matches) { $stale += $matches }
             }
           }
           if ($stale.Count -gt 0) {
             $stale | ForEach-Object { Write-Host $_ }
-            throw 'Stale Restore Windows Defaults wording remains.'
+            throw 'Stale user-facing Restore Windows Defaults wording remains.'
           }
 
       - name: Remove temporary audit runners
