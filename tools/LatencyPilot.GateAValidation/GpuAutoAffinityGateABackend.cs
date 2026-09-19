@@ -25,6 +25,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private const double MinimumOverlapRatio = 0.95;
     private const double MinimumCpuBusyAbsoluteDriftPercent = 10d;
     private const double MaximumCpuBusyRelativeDrift = 0.25d;
+    private const int MinimumOriginalCpuBusySamples = 3;
     private static readonly TimeSpan CollectorTailSlack = TimeSpan.FromSeconds(2);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -542,7 +543,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             {
                 originalCpuBusyPercent.Add(cpuBusy);
             }
-            else if (originalCpuBusyPercent.Count >= GpuRepeatabilityClusterSelector.RequiredRunCount)
+            else if (originalCpuBusyPercent.Count >= MinimumOriginalCpuBusySamples)
             {
                 var originalMedian = Percentiles.Calculate(originalCpuBusyPercent, 0.50);
                 var allowedAbsoluteDrift = Math.Max(
