@@ -1403,6 +1403,12 @@ public sealed class GpuAutoAffinitySession
         List<GpuAutoAffinityTrialReport> trialReports,
         List<string> reasons)
     {
+        // Finalist/FinalProcessor means the processor that is actually kept in
+        // terminal machine state. Ranked-but-rejected candidates remain in the
+        // candidate reports; RestoreOriginal must never advertise one as final.
+        var terminalFinalist = recommendation == GpuOptimizationRecommendation.KeepCandidate
+            ? finalist
+            : null;
         var report = new GpuAutoAffinityReport(
             GpuAutoAffinityReport.SchemaId,
             request.SessionId,
@@ -1412,11 +1418,11 @@ public sealed class GpuAutoAffinitySession
             candidateReports.AsReadOnly(),
             trialReports.AsReadOnly(),
             recommendation.ToString(),
-            finalist?.Processor,
+            terminalFinalist?.Processor,
             finalStateVerified,
             originalStateRestored,
             reasons.AsReadOnly());
-        return new GpuAutoAffinitySessionResult(recommendation, finalist, report);
+        return new GpuAutoAffinitySessionResult(recommendation, terminalFinalist, report);
     }
 
     private static void ShuffleDeterministically(GpuAffinityCandidate[] candidates, int seed)
