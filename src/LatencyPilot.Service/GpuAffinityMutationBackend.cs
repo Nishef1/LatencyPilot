@@ -22,10 +22,14 @@ internal sealed class GpuAffinityMutationBackend
     internal static GpuInterruptAffinitySnapshot CaptureOriginal(string deviceInstanceId) =>
         GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
 
-    internal Guid ApplyCandidate(string deviceInstanceId, GpuAffinityCandidate candidate)
+    internal Guid ApplyCandidate(
+        string deviceInstanceId,
+        GpuAffinityCandidate candidate,
+        GpuInterruptAffinitySnapshot expectedOriginal)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
         ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(expectedOriginal);
         var processor = candidate.Processor;
         if (processor.Group != 0 || processor.Number >= 64)
         {
@@ -37,7 +41,7 @@ internal sealed class GpuAffinityMutationBackend
             processor.Group,
             processor.Number,
             1UL << processor.Number);
-        var prepared = transaction.Prepare(deviceInstanceId, mutationCandidate);
+        var prepared = transaction.Prepare(deviceInstanceId, mutationCandidate, expectedOriginal);
         var applied = transaction.ApplyAndActivate(prepared.ExperimentId);
         if (applied.JournalEntry.State != MutationJournalState.Applied)
         {
