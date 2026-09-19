@@ -291,6 +291,8 @@ apply failure / capture failure / cancel / failed final proof
 → terminalize journal
 ```
 
+Before candidate apply, Gate A requires current stored affinity + driver version to equal the exact session-original snapshot; transaction preparation repeats that invariant under the mutation lock and immediate-prewrite verification closes later drift. External changes are therefore refused before LatencyPilot writes.
+
 Unknown/diverged state stays recovery-owned. A failed rollback verification is never hidden behind the original failure.
 
 ## 11. USB/xHCI v1 architecture
