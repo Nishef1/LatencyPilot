@@ -9,6 +9,8 @@ namespace LatencyPilot.GateAValidation;
 internal sealed class GpuGateAProgressFile
 {
     private const int MaximumWriteAttempts = 8;
+    private const int RequiredRepeatabilityRuns = 3;
+    private const int MaximumRepeatabilityAttempts = 5;
     private static readonly TimeSpan WriteRetryDelay = TimeSpan.FromMilliseconds(25);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -21,7 +23,9 @@ internal sealed class GpuGateAProgressFile
     private readonly Dictionary<int, int> screeningCandidates = [];
     private readonly Dictionary<int, int> finalistCandidates = [];
     private readonly Dictionary<string, int> candidatePassesStarted = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> finalistWarmupsStarted = new(StringComparer.Ordinal);
     private readonly object writeLock = new();
+    private int originalScoredPassesStarted;
     private int totalUnits;
     private int completedUnits;
     private string lastCompletedCandidateVerdict = "None yet";
@@ -56,6 +60,25 @@ internal sealed class GpuGateAProgressFile
             if (request.RetryAttempt > 0)
             {
                 totalUnits = checked(totalUnits + 1);
+            }
+            else if (string.Equals(request.Phase, "screening-original", StringComparison.Ordinal))
+            {
+                originalScoredPassesStarted++;
+                if (originalScoredPassesStarted > RequiredRepeatabilityRuns)
+                {
+                    totalUnits = checked(totalUnits + 1);
+                }
+            }
+            else if (string.Equals(request.Phase, "screening-finalists-warmup", StringComparison.Ordinal) && request.Candidate is not null)
+            {
+                var key = request.Candidate.Processor.ToString();
+                finalistWarmupsStarted.TryGetValue(key, out var pass);
+                pass++;
+                finalistWarmupsStarted[key] = pass;
+                if (pass > 2)
+                {
+                    totalUnits = checked(totalUnits + 2);
+                }
             }
 
             var (candidateIndex, candidateCount) = GetCandidateOrdinal(request.Phase, request.Candidate);
@@ -207,6 +230,11 @@ internal sealed class GpuGateAProgressFile
             return "Retrying this benchmark block once after transient contamination.";
         }
 
+        if (string.Equals(request.Phase, "screening-original", StringComparison.Ordinal))
+        {
+            return $"Original repeatability sample {originalScoredPassesStarted}; target {RequiredRepeatabilityRuns} stable samples, maximum {MaximumRepeatabilityAttempts} attempts.";
+        }
+
         if (request.Phase.EndsWith("-warmup", StringComparison.Ordinal))
         {
             return request.Candidate is null
@@ -227,8 +255,13 @@ internal sealed class GpuGateAProgressFile
             candidatePassesStarted.TryGetValue(key, out var pass);
             pass++;
             candidatePassesStarted[key] = pass;
-            var total = string.Equals(request.Phase, "screening", StringComparison.Ordinal) ? 1 : 2;
-            return $"Scored pass {pass} / {total}.";
+            if (string.Equals(request.Phase, "screening", StringComparison.Ordinal))
+            {
+                return "Scored screening pass 1 / 1.";
+            }
+            return pass <= 2
+                ? $"Scored finalist re-test {pass} / 2."
+                : $"Adaptive replacement re-test {pass}; maximum 4 finalist re-tests.";
         }
 
         return "Measuring benchmark trial.";

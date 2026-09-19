@@ -1,7 +1,7 @@
 # Benchmark Methodology
 
-Status: **V0.9 benchmark contract**  
-Last updated: 2026-09-18
+Status: **V0.10 benchmark contract**  
+Last updated: 2026-09-19
 
 LatencyPilot exists to distinguish measurable effects from placebo, ordinary run-to-run variation, workload drift and unsafe/unverified state. It is not a generic Windows tweak collection.
 
@@ -104,6 +104,11 @@ Current v1 sequence:
 ```text
 exact original/default state
 → 5 s non-scored original warm-up/reference (benchmark only; no PresentMon/ETW)
+→ collect 3 scored 30 s Original runs
+   if no stable 3-run 1%-low cluster exists within ±3% of its median:
+     collect replacement run 4, then run 5 only if still needed
+   if no stable 3-of-up-to-5 cluster exists:
+     RestoreOriginal and report EnvironmentTooNoisy
 → each eligible physical core:
      journaled apply/restart + stored-state verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
@@ -112,16 +117,13 @@ exact original/default state
 → rank valid screening candidates
 → shortlist the best three plus every additional candidate whose screening 1% low is within 1% of the third-place cutoff
 → shortlisted candidates:
-     two independent re-test rounds
-     each round deterministically shuffles finalist order
-     each finalist gets fresh apply/restart + stored-state verify
-     5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
-     1 scored 30 s run
-     exact rollback
-→ rank finalists from three scored observations captured across three separate affinity activations
+     two independent re-test rounds are mandatory
+     each finalist gets fresh apply/restart + stored-state verify, warm-up, scored run, exact rollback
+     only finalists still lacking a stable 3-run cluster receive up to two additional replacement rounds
+→ rank each finalist from the tightest stable 3-run cluster selected from at most 5 scored observations
 → apply winner once
 → final benchmark-only warm-up → ETW placement-verification capture
-→ Keep only when final runtime ISR placement is proved
+→ Keep only when measured improvement clears the observed cluster-noise floor and final runtime ISR placement is proved
    otherwise exact RestoreOriginal
 ```
 
@@ -147,13 +149,20 @@ An initial screening candidate has one 30 s scored observation. A finalist has t
 
 ### 6.2 Repeatability
 
-For finalists with repeated observations, 1% low is the primary stability signal. Current v1 bound:
+Repeatability no longer uses raw `(max - min) / min` spread. A single multitasking spike can invalidate that statistic and its `min` denominator biases the reported variation toward the worst run.
 
-```text
-relative 1%-low spread = (max - min) / min <= 5%
-```
+LatencyPilot uses bounded robust sampling instead:
 
-Non-finite/non-positive ranking metrics or spread above the bound makes that finalist unrankable. A 5% bound is intentionally more tolerant than the ~1% repeatability expected from a very good controlled benchmark, because Windows driver restart/recovery adds real system noise; 20% was too permissive for choosing a supposedly best CPU. If no finalist remains valid/repeatable, exact Original is retained rather than inventing a winner.
+- 1% low is the primary repeatability signal.
+- Start with three scored observations.
+- Evaluate every 3-observation combination and select the **tightest** cluster whose members are each within **±3% of that cluster's median 1% low**.
+- If no cluster exists, collect one replacement observation and re-evaluate; collect a fifth only if still needed.
+- Three valid runs are required; five scored attempts are the hard maximum.
+- Samples outside the selected cluster remain in the audit trail but do not contribute to ranking medians.
+- AVG FPS and frame-p99 remain decision guardrails; 0.1% low remains rare-tail diagnostic/regression context rather than the outlier detector.
+- The final winner must beat `max(1%, observed Original cluster noise, observed finalist cluster noise)` on the primary 1% low before guardrails and final ETW placement verification are considered.
+
+The ±3% band is a versioned methodology default, not a claim that every Windows system has exactly 3% variance. A persistent inability to produce a stable 3-run cluster is an environment/workload repeatability failure and retains exact Original. Screening remains one scored run per physical core for bounded runtime; robust replacement sampling is applied to Original and finalists where evidence drives Keep/Restore.
 
 ### 6.3 Adaptive finalist cutoff
 
