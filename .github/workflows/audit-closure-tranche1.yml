@@ -1,4 +1,4 @@
-name: Audit closure F1 owner thread
+name: Audit closure F1 F3
 
 on:
   workflow_dispatch:
@@ -7,14 +7,15 @@ on:
     paths:
       - '.github/workflows/audit-closure-tranche1.yml'
       - 'eng/audit-closure-f1-thread.py'
+      - 'eng/audit-closure-f3-lock-restore.py'
 
 permissions:
   contents: write
 
 jobs:
-  tdd-benchmark-owner:
+  tdd-f1-f3:
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,10 +23,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.401
-      - name: Apply F1 regression assertions only
+      - name: F1 tests only
         shell: pwsh
         run: python eng/audit-closure-f1-thread.py tests
-      - name: RED - owner-thread contract must fail before implementation
+      - name: RED F1
         shell: pwsh
         run: |
           dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
@@ -33,20 +34,38 @@ jobs:
           if ($red -eq 0) { throw 'F1 regression unexpectedly passed before implementation.' }
           Write-Host "Expected F1 RED observed with exit code $red."
           exit 0
-      - name: Apply F1 implementation
+      - name: Implement F1
         shell: pwsh
         run: python eng/audit-closure-f1-thread.py implementation
-      - name: GREEN - critical suite
+      - name: GREEN F1
         shell: pwsh
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-      - name: Validate diff and commit verified F1
+      - name: F3 tests only
+        shell: pwsh
+        run: python eng/audit-closure-f3-lock-restore.py tests
+      - name: RED F3
         shell: pwsh
         run: |
-          git add src tests
+          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+          $red = $LASTEXITCODE
+          if ($red -eq 0) { throw 'F3 regression unexpectedly passed before implementation.' }
+          Write-Host "Expected F3 RED observed with exit code $red."
+          exit 0
+      - name: Implement F3 and retained restore command
+        shell: pwsh
+        run: python eng/audit-closure-f3-lock-restore.py implementation
+      - name: GREEN F1 F3
+        shell: pwsh
+        run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+      - name: Validate and commit verified F1 F3
+        shell: pwsh
+        run: |
+          git add src tools tests
           git diff --cached --check
           if (-not (git diff --cached --quiet)) {
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'fix: keep benchmark window on owner thread'
+            git commit -m 'fix: serialize mutation and benchmark ownership'
             git push origin HEAD:main
           }
+          git push origin --delete __unused_do_not_create_2 2>$null || Write-Host 'Temporary branch already absent.'
