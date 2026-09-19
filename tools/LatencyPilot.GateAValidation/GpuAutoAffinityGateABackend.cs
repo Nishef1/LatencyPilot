@@ -140,6 +140,21 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(candidate);
+        var currentBefore = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        var expected = ToMutationCandidate(candidate);
+        if (string.Equals(currentBefore.DriverVersion, originalState.DriverVersion, StringComparison.OrdinalIgnoreCase) &&
+            GpuInterruptAffinityStateComparer.MatchesCandidate(currentBefore, expected))
+        {
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow,
+                "MeasureExistingCandidateNoWrite",
+                Guid.Empty,
+                candidate.Processor,
+                StoredStateVerified: true,
+                ToStoredStateReport(currentBefore)));
+            return Guid.Empty;
+        }
+
         var experimentId = mutation.ApplyCandidate(deviceInstanceId, candidate);
         ownedCandidates[experimentId] = candidate;
 
@@ -239,6 +254,20 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     public Task RollbackAsync(Guid experimentId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (experimentId == Guid.Empty)
+        {
+            var currentNoWrite = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+            var verifiedNoWrite = string.Equals(currentNoWrite.DriverVersion, originalState.DriverVersion, StringComparison.OrdinalIgnoreCase) &&
+                GpuInterruptAffinityStateComparer.MatchesOriginal(currentNoWrite, originalState);
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow, "RollbackNoWrite", Guid.Empty, null, verifiedNoWrite, ToStoredStateReport(currentNoWrite)));
+            if (!verifiedNoWrite)
+            {
+                throw new InvalidOperationException("No-write candidate no longer matches the exact original stored state.");
+            }
+            return Task.CompletedTask;
+        }
+
         ownedCandidates.TryGetValue(experimentId, out var candidate);
         try
         {
@@ -336,8 +365,10 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         ArgumentNullException.ThrowIfNull(candidate);
         var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
         var expected = ToMutationCandidate(candidate);
+        var ownershipValid = experimentId == Guid.Empty ||
+            (ownedCandidates.TryGetValue(experimentId, out var owned) && owned == candidate);
         return Task.FromResult(
-            experimentId != Guid.Empty &&
+            ownershipValid &&
             string.Equals(current.DriverVersion, originalState.DriverVersion, StringComparison.OrdinalIgnoreCase) &&
             GpuInterruptAffinityStateComparer.MatchesCandidate(current, expected));
     }
@@ -370,9 +401,10 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         var storedBefore = candidate is null
             ? await VerifyOriginalStateAsync(cancellationToken).ConfigureAwait(false)
             : await VerifyCandidateStateAsync(experimentId!.Value, candidate, cancellationToken).ConfigureAwait(false);
-        if (candidate is not null && measuringExperiments.Add(experimentId!.Value))
+        if (candidate is not null && experimentId is { } ownedExperiment && ownedExperiment != Guid.Empty &&
+            measuringExperiments.Add(ownedExperiment))
         {
-            mutation.BeginMeasurement(experimentId.Value);
+            mutation.BeginMeasurement(ownedExperiment);
         }
 
         var isWarmup = request.Phase.EndsWith("-warmup", StringComparison.Ordinal);
@@ -424,7 +456,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             // or final-verification evidence. The timer includes D3D12 device
             // recreation after a GPU restart; CSV rows are cropped to the exact
             // benchmark artifact interval during parsing.
-            var presentMonWindow = request.Duration + TimeSpan.FromSeconds(12);
+            var presentMonWindow = request.Duration;
             await using var presentMonSession = await PresentMonConsoleFrameMetricsReader.StartAsync(
                 benchmarkProcessId,
                 presentMonWindow,
@@ -511,9 +543,14 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                         candidate.Processor,
                         runtimePlacement.TargetProcessorIsrEventCount,
                         runtimePlacement.OffTargetIsrEventCount);
-                    if (!runtimePlacement.ConfirmsRequestedPlacement)
+                    if (runtimePlacement.OffTargetIsrEventCount > 0 ||
+                        runtimePlacement.TargetProcessorNumber != candidate.Processor.Number)
                     {
-                        reasons.Add("Resolved single-adapter ISR placement was not confined to the requested logical processor.");
+                        reasons.Add("Resolved single-adapter ISR evidence contradicts the requested logical processor.");
+                    }
+                    else if (runtimePlacement.TargetProcessorIsrEventCount == 0)
+                    {
+                        softNotes.Add("No attributable GPU ISR sample was observed in this screening window; placement remains Unknown rather than contradicted.");
                     }
                 }
             }

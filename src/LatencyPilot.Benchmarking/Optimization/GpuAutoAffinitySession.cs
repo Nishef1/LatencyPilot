@@ -69,14 +69,13 @@ public sealed record GpuAutoAffinitySessionResult(
     GpuAutoAffinityReport Report);
 
 /// <summary>
-/// Bounded v1 GPU interrupt-affinity search. Every eligible physical core gets
-/// one scored screen. The best three plus any candidate inside the practical
-/// primary-metric noise margin of the third-place cutoff get two fresh,
-/// transition-isolated re-tests. Final ranking treats sub-margin metric
-/// differences as ties instead of manufacturing false precision.
-/// Windows default remains the exact recovery/reference state; it is not a
-/// minimum-improvement opponent. A winner is kept only after a final ETW-backed
-/// runtime ISR placement capture verifies the requested processor.
+/// Measurement-first GPU interrupt-affinity search. Every eligible physical core in
+/// the supported processor group receives a scored screen. Original is scored with
+/// the same workload and duration, and a forced candidate is retained only when its
+/// repeatable improvement clears the measured/practical noise floor without material
+/// guardrail regression. Ranking applies tolerances against fixed best references,
+/// never a pairwise fuzzy comparer. Final Keep additionally requires ETW-backed
+/// target-only runtime ISR placement proof.
 /// </summary>
 public sealed class GpuAutoAffinitySession
 {
@@ -133,9 +132,8 @@ public sealed class GpuAutoAffinitySession
 
         try
         {
-            // One non-scored original-state block establishes frozen-workload,
-            // process, driver and topology continuity. The default state is a
-            // safety/reference anchor, not a candidate that must be beaten.
+            // Establish continuity once, then score the exact original state three
+            // times under the same frozen workload/duration used for candidates.
             var referenceObservation = await CaptureAcceptedAsync(
                 () => ++nextRunNumber,
                 "screening-warmup",
@@ -147,6 +145,30 @@ public sealed class GpuAutoAffinitySession
                 trialReports,
                 cancellationToken).ConfigureAwait(false);
             var reference = referenceObservation.Evidence;
+            var originalObservations = new GpuAutoAffinityTrialObservation[3];
+            for (var pass = 0; pass < originalObservations.Length; pass++)
+            {
+                originalObservations[pass] = await CaptureAcceptedAsync(
+                    () => ++nextRunNumber,
+                    "screening-original",
+                    GpuConfirmationOrder.Original,
+                    null,
+                    request.ScreeningDuration,
+                    reference,
+                    experimentId: null,
+                    trialReports,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            var original = CreateOriginalEvaluation(originalObservations);
+            if (!original.IsRankable)
+            {
+                reasons.Add($"Original-state benchmark is not repeatable enough for an automatic Keep decision: {original.Reason}");
+                var originalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+                return CreateResult(
+                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
+                    originalVerified, originalVerified, candidateReports, trialReports, reasons);
+            }
 
             var screeningEvaluations = new List<CandidateEvaluation>(physicalCandidates.Length);
             foreach (var candidate in physicalCandidates)
@@ -193,9 +215,19 @@ public sealed class GpuAutoAffinitySession
                     reasons);
             }
 
+            if (!IsMeasurablyBetterThanOriginal(original, finalist, out var comparisonReason))
+            {
+                reasons.Add(comparisonReason);
+                reasons.Add("The exact original state is the successful outcome because the best forced affinity did not demonstrate a repeatable net improvement.");
+                var originalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+                return CreateResult(
+                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, finalist.Candidate,
+                    originalVerified, originalVerified, candidateReports, trialReports, reasons);
+            }
+
             reasons.Add(string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
-                $"CPU {finalist.Candidate.Processor.Number} ranked best with a 1% practical-equivalence margin on 1% low / AVG / frame-p99 and a 5% rare-tail margin on 0.1% low. Medians: 1% low {finalist.MedianLow1Fps:F1} FPS; AVG {finalist.MedianAvgFps:F1} FPS; p99 {finalist.MedianFrameP99Milliseconds:F2} ms; 0.1% low {finalist.MedianLow01Fps:F1} FPS."));
+                $"CPU {finalist.Candidate.Processor.Number} ranked best using fixed-reference practical-equivalence bands. Medians: 1% low {finalist.MedianLow1Fps:F1} FPS; AVG {finalist.MedianAvgFps:F1} FPS; p99 {finalist.MedianFrameP99Milliseconds:F2} ms; 0.1% low {finalist.MedianLow01Fps:F1} FPS."));
 
             return await VerifyAndKeepFinalistAsync(
                 request,
@@ -372,8 +404,7 @@ public sealed class GpuAutoAffinitySession
         try
         {
             activeExperiment = await backend.ApplyCandidateAsync(finalist, cancellationToken).ConfigureAwait(false);
-            if (activeExperiment == Guid.Empty ||
-                !await backend.VerifyCandidateStateAsync(activeExperiment.Value, finalist, cancellationToken).ConfigureAwait(false))
+            if (!await backend.VerifyCandidateStateAsync(activeExperiment.Value, finalist, cancellationToken).ConfigureAwait(false))
             {
                 throw new SessionAbortException(
                     $"Final GPU winner CPU {finalist.Processor.Number} could not verify its stored affinity state before runtime placement verification.");
@@ -422,6 +453,16 @@ public sealed class GpuAutoAffinitySession
 
             cancellationToken.ThrowIfCancellationRequested();
             var keptId = activeExperiment.Value;
+            if (keptId == Guid.Empty)
+            {
+                activeExperiment = null;
+                var originalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+                reasons.Add("The selected processor already represented the exact original stored policy, so no write or Keep terminalization was necessary.");
+                return CreateResult(
+                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, finalist,
+                    originalVerified, originalVerified, candidateReports, trialReports, reasons);
+            }
+
             await backend.KeepAsync(keptId, CancellationToken.None).ConfigureAwait(false);
             activeExperiment = null;
             reasons.Add(
@@ -485,10 +526,7 @@ public sealed class GpuAutoAffinitySession
         CancellationToken cancellationToken)
     {
         var experimentId = await backend.ApplyCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
-        if (experimentId == Guid.Empty)
-        {
-            throw new SessionAbortException($"{phase}: candidate {candidate.Processor} returned an empty experiment identity.");
-        }
+        var ownsMutation = experimentId != Guid.Empty;
 
         try
         {
@@ -524,14 +562,28 @@ public sealed class GpuAutoAffinitySession
                     cancellationToken).ConfigureAwait(false);
             }
 
-            await RollbackAndVerifyOriginalAsync(experimentId, phase, candidate).ConfigureAwait(false);
+            if (ownsMutation)
+            {
+                await RollbackAndVerifyOriginalAsync(experimentId, phase, candidate).ConfigureAwait(false);
+            }
+            else if (!await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException($"{phase}: a no-write candidate no longer matches the captured original state.");
+            }
             return observations;
         }
         catch (Exception failure)
         {
             try
             {
-                await RollbackAndVerifyOriginalAsync(experimentId, phase, candidate).ConfigureAwait(false);
+                if (ownsMutation)
+                {
+                    await RollbackAndVerifyOriginalAsync(experimentId, phase, candidate).ConfigureAwait(false);
+                }
+                else if (!await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException($"{phase}: a no-write candidate failed and the captured original state is no longer present.");
+                }
             }
             catch (Exception rollbackFailure)
             {
@@ -636,18 +688,16 @@ public sealed class GpuAutoAffinitySession
             reasons.Add("Expected stored GPU affinity state was not verified before and after the trial.");
         }
 
-        if (candidate is not null &&
-            (observation.Placement is null ||
-             observation.Placement.TargetProcessor != candidate.Processor ||
-             !observation.Placement.ConfirmsRequestedPlacement))
+        if (candidate is not null)
         {
-            if (observation.Evidence.EtwIntegrityComplete)
+            switch (ClassifyPlacement(observation, candidate))
             {
-                reasons.Add("Candidate trial lacks resolved single-adapter ISR placement confined to the requested logical processor.");
-            }
-            else
-            {
-                context.Add("Runtime ISR placement is unverified for this screening trial (kernel ETW unavailable); ranking continues from benchmark frame periods under verified stored state.");
+                case PlacementEvidenceState.Contradicted:
+                    reasons.Add("Kernel ETW contradicts the requested GPU ISR placement: attributable ISR work was observed on a different processor.");
+                    break;
+                case PlacementEvidenceState.Unknown:
+                    context.Add("Runtime ISR placement is Unknown for this screening trial because resolved single-adapter ISR placement evidence is unavailable; absence of attributable ISR samples is not treated as proof of off-target placement.");
+                    break;
             }
         }
 
@@ -678,6 +728,27 @@ public sealed class GpuAutoAffinitySession
         var contamination = observation.Contamination with { RetryAttempt = retryAttempt };
         var readiness = GpuBenchmarkReadiness.Evaluate(reference, observation.Evidence, contamination);
         return readiness with { Context = readiness.Context.Concat(context).ToArray() };
+    }
+
+    private static PlacementEvidenceState ClassifyPlacement(
+        GpuAutoAffinityTrialObservation observation,
+        GpuAffinityCandidate candidate)
+    {
+        if (!observation.Evidence.EtwIntegrityComplete || observation.Evidence.EtwLostEventCount != 0 ||
+            observation.Placement is null)
+        {
+            return PlacementEvidenceState.Unknown;
+        }
+
+        var placement = observation.Placement;
+        if (placement.TargetProcessor != candidate.Processor || placement.OffTargetIsrEventCount > 0)
+        {
+            return PlacementEvidenceState.Contradicted;
+        }
+
+        return placement.TargetIsrEventCount > 0
+            ? PlacementEvidenceState.Verified
+            : PlacementEvidenceState.Unknown;
     }
 
     private static CandidateEvaluation CreateEvaluation(
@@ -722,24 +793,108 @@ public sealed class GpuAutoAffinitySession
             Median(values.Select(static item => item.Low01PctFps)),
             Median(values.Select(static item => item.AvgFps)),
             Median(values.Select(static item => item.P99Milliseconds)),
+            CalculatePrimaryRelativeSpread(values),
             IsRankable: true,
             Reason: null);
     }
 
     private static string? EvaluatePrimaryStability(GpuBenchmarkVideoStats[] stats)
     {
+        var relativeSpread = CalculatePrimaryRelativeSpread(stats);
+        return double.IsFinite(relativeSpread) && relativeSpread <= MaximumRunToRunPrimaryDrift
+            ? null
+            : $"Repeated 1% low drift is {relativeSpread:P1}, exceeding the {MaximumRunToRunPrimaryDrift:P0} repeatability bound.";
+    }
+
+    private static double CalculatePrimaryRelativeSpread(GpuBenchmarkVideoStats[] stats)
+    {
         if (stats.Length < 2)
         {
-            return null;
+            return 0d;
         }
 
         var lows = stats.Select(static item => item.Low1PctFps).ToArray();
         var minimum = lows.Min();
         var maximum = lows.Max();
-        var relativeSpread = (maximum - minimum) / minimum;
-        return double.IsFinite(relativeSpread) && relativeSpread <= MaximumRunToRunPrimaryDrift
-            ? null
-            : $"Candidate repeated 1% low drift is {relativeSpread:P1}, exceeding the {MaximumRunToRunPrimaryDrift:P0} repeatability bound.";
+        return minimum > 0d ? (maximum - minimum) / minimum : double.PositiveInfinity;
+    }
+
+    private static OriginalEvaluation CreateOriginalEvaluation(
+        GpuAutoAffinityTrialObservation[] observations)
+    {
+        if (observations.Length == 0)
+        {
+            return OriginalEvaluation.Unrankable("No scored Original observations were captured.");
+        }
+
+        var stats = observations
+            .Select(static observation => GpuBenchmarkEvidenceInterpreter.Interpret(observation.Evidence).VideoStats)
+            .ToArray();
+        if (stats.Any(static item => item is null))
+        {
+            return OriginalEvaluation.Unrankable("Original benchmark lacks complete frame-period statistics.");
+        }
+
+        var values = stats.Select(static item => item!).ToArray();
+        if (values.Any(static item =>
+                !double.IsFinite(item.Low1PctFps) || item.Low1PctFps <= 0 ||
+                !double.IsFinite(item.Low01PctFps) || item.Low01PctFps <= 0 ||
+                !double.IsFinite(item.AvgFps) || item.AvgFps <= 0 ||
+                !double.IsFinite(item.P99Milliseconds) || item.P99Milliseconds <= 0))
+        {
+            return OriginalEvaluation.Unrankable("Original benchmark ranking statistics are missing or non-finite.");
+        }
+
+        var stabilityReason = EvaluatePrimaryStability(values);
+        if (stabilityReason is not null)
+        {
+            return OriginalEvaluation.Unrankable(stabilityReason);
+        }
+
+        return new OriginalEvaluation(
+            Median(values.Select(static item => item.Low1PctFps)),
+            Median(values.Select(static item => item.Low01PctFps)),
+            Median(values.Select(static item => item.AvgFps)),
+            Median(values.Select(static item => item.P99Milliseconds)),
+            CalculatePrimaryRelativeSpread(values),
+            true,
+            null);
+    }
+
+    private static bool IsMeasurablyBetterThanOriginal(
+        OriginalEvaluation original,
+        CandidateEvaluation candidate,
+        out string reason)
+    {
+        var noiseFloor = Math.Max(
+            CandidateMetricEquivalenceTolerance,
+            Math.Max(original.PrimaryRelativeSpread, candidate.PrimaryRelativeSpread));
+        var primaryGain = (candidate.MedianLow1Fps - original.MedianLow1Fps) / original.MedianLow1Fps;
+        if (!double.IsFinite(primaryGain) || primaryGain <= noiseFloor)
+        {
+            reason = string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"No measurable improvement over Original: best 1% low gain {primaryGain:P2} does not clear the {noiseFloor:P2} repeatability/noise floor.");
+            return false;
+        }
+
+        var avgRegression = (original.MedianAvgFps - candidate.MedianAvgFps) / original.MedianAvgFps;
+        var frameP99Regression = (candidate.MedianFrameP99Milliseconds - original.MedianFrameP99Milliseconds) / original.MedianFrameP99Milliseconds;
+        var rareTailRegression = (original.MedianLow01Fps - candidate.MedianLow01Fps) / original.MedianLow01Fps;
+        if (avgRegression > CandidateMetricEquivalenceTolerance ||
+            frameP99Regression > CandidateMetricEquivalenceTolerance ||
+            rareTailRegression > RareTailEquivalenceTolerance)
+        {
+            reason = string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"Best forced affinity improves 1% low but regresses a guardrail beyond tolerance (AVG {avgRegression:P2}, frame-p99 {frameP99Regression:P2}, 0.1% low {rareTailRegression:P2}).");
+            return false;
+        }
+
+        reason = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"Measured 1% low improvement {primaryGain:P2} clears the {noiseFloor:P2} repeatability/noise floor without a material guardrail regression.");
+        return true;
     }
 
     private static double Median(IEnumerable<double> source)
@@ -780,74 +935,44 @@ public sealed class GpuAutoAffinitySession
     }
 
     private static IEnumerable<CandidateEvaluation> OrderRankableCandidates(
-        IEnumerable<CandidateEvaluation> evaluations) =>
-        evaluations
-            .Where(static evaluation => evaluation.IsRankable)
-            .OrderBy(
-                static evaluation => evaluation,
-                Comparer<CandidateEvaluation>.Create(CompareCandidateEvaluations));
-
-    private static int CompareCandidateEvaluations(
-        CandidateEvaluation left,
-        CandidateEvaluation right)
+        IEnumerable<CandidateEvaluation> evaluations)
     {
-        var comparison = CompareHigherIsBetter(
-            left.MedianLow1Fps,
-            right.MedianLow1Fps,
-            CandidateMetricEquivalenceTolerance);
-        if (comparison != 0)
+        var remaining = evaluations.Where(static evaluation => evaluation.IsRankable).ToList();
+        while (remaining.Count > 0)
         {
-            return comparison;
-        }
+            IReadOnlyList<CandidateEvaluation> pool = SelectNearBestHigher(
+                remaining, static item => item.MedianLow1Fps, CandidateMetricEquivalenceTolerance);
+            pool = SelectNearBestHigher(pool, static item => item.MedianAvgFps, CandidateMetricEquivalenceTolerance);
+            pool = SelectNearBestLower(pool, static item => item.MedianFrameP99Milliseconds, CandidateMetricEquivalenceTolerance);
+            pool = SelectNearBestHigher(pool, static item => item.MedianLow01Fps, RareTailEquivalenceTolerance);
 
-        comparison = CompareHigherIsBetter(
-            left.MedianAvgFps,
-            right.MedianAvgFps,
-            CandidateMetricEquivalenceTolerance);
-        if (comparison != 0)
-        {
-            return comparison;
+            var winner = pool
+                .OrderBy(static item => item.Candidate.ObservedPressureScore)
+                .ThenBy(static item => item.Candidate.PhysicalCoreIndex)
+                .ThenBy(static item => item.Candidate.Processor.Number)
+                .First();
+            yield return winner;
+            remaining.Remove(winner);
         }
-
-        comparison = CompareLowerIsBetter(
-            left.MedianFrameP99Milliseconds,
-            right.MedianFrameP99Milliseconds,
-            CandidateMetricEquivalenceTolerance);
-        if (comparison != 0)
-        {
-            return comparison;
-        }
-
-        comparison = CompareHigherIsBetter(
-            left.MedianLow01Fps,
-            right.MedianLow01Fps,
-            RareTailEquivalenceTolerance);
-        if (comparison != 0)
-        {
-            return comparison;
-        }
-
-        comparison = left.Candidate.ObservedPressureScore.CompareTo(right.Candidate.ObservedPressureScore);
-        if (comparison != 0)
-        {
-            return comparison;
-        }
-
-        comparison = left.Candidate.PhysicalCoreIndex.CompareTo(right.Candidate.PhysicalCoreIndex);
-        return comparison != 0
-            ? comparison
-            : left.Candidate.Processor.Number.CompareTo(right.Candidate.Processor.Number);
     }
 
-    private static int CompareHigherIsBetter(double left, double right, double tolerance) =>
-        ArePracticallyEquivalent(left, right, tolerance)
-            ? 0
-            : right.CompareTo(left);
+    private static CandidateEvaluation[] SelectNearBestHigher(
+        IReadOnlyList<CandidateEvaluation> source,
+        Func<CandidateEvaluation, double> selector,
+        double tolerance)
+    {
+        var best = source.Max(selector);
+        return source.Where(item => ArePracticallyEquivalent(selector(item), best, tolerance)).ToArray();
+    }
 
-    private static int CompareLowerIsBetter(double left, double right, double tolerance) =>
-        ArePracticallyEquivalent(left, right, tolerance)
-            ? 0
-            : left.CompareTo(right);
+    private static CandidateEvaluation[] SelectNearBestLower(
+        IReadOnlyList<CandidateEvaluation> source,
+        Func<CandidateEvaluation, double> selector,
+        double tolerance)
+    {
+        var best = source.Min(selector);
+        return source.Where(item => ArePracticallyEquivalent(selector(item), best, tolerance)).ToArray();
+    }
 
     private static bool ArePracticallyEquivalent(double left, double right, double tolerance)
     {
@@ -967,11 +1092,32 @@ public sealed class GpuAutoAffinitySession
         double MedianLow01Fps,
         double MedianAvgFps,
         double MedianFrameP99Milliseconds,
+        double PrimaryRelativeSpread,
         bool IsRankable,
         string? Reason)
     {
         internal static CandidateEvaluation Unrankable(GpuAffinityCandidate candidate, string reason) =>
-            new(candidate, [], double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity, double.PositiveInfinity, false, reason);
+            new(candidate, [], double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity, double.PositiveInfinity, double.PositiveInfinity, false, reason);
+    }
+
+    private sealed record OriginalEvaluation(
+        double MedianLow1Fps,
+        double MedianLow01Fps,
+        double MedianAvgFps,
+        double MedianFrameP99Milliseconds,
+        double PrimaryRelativeSpread,
+        bool IsRankable,
+        string? Reason)
+    {
+        internal static OriginalEvaluation Unrankable(string reason) =>
+            new(double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity, double.PositiveInfinity, double.PositiveInfinity, false, reason);
+    }
+
+    private enum PlacementEvidenceState
+    {
+        Unknown,
+        Verified,
+        Contradicted,
     }
 
     private sealed class SessionAbortException(string message) : Exception(message);

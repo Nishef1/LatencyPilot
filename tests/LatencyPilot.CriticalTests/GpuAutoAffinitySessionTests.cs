@@ -21,7 +21,7 @@ public sealed class GpuAutoAffinitySessionTests
         var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets: null);
         Assert.AreEqual(2, progressPlan.PhysicalCandidateCount);
         Assert.AreEqual(2, progressPlan.FinalistCandidateCount);
-        Assert.AreEqual(15, progressPlan.InitialTotalUnits);
+        Assert.AreEqual(18, progressPlan.InitialTotalUnits);
 
         var nonSmtTopology = new ProcessorTopologySnapshot(
             [new ProcessorPackageSnapshot(0, [new LogicalProcessorId(0, 0)])],
@@ -32,7 +32,7 @@ public sealed class GpuAutoAffinitySessionTests
             [new ProcessorPressureEvidence(new LogicalProcessorId(0, 0), 0d)],
             cpuSets: null);
         Assert.AreEqual(1, nonSmtPlan.FinalistCandidateCount);
-        Assert.AreEqual(9, nonSmtPlan.InitialTotalUnits);
+        Assert.AreEqual(12, nonSmtPlan.InitialTotalUnits);
 
         var backend = new RecordingBackend();
         var observer = new RecordingObserver();
@@ -94,6 +94,31 @@ public sealed class GpuAutoAffinitySessionTests
             3,
             toleranceBackend.Events.Count(static item => item == "apply:0:6"),
             "A fourth-place screen within the 1% primary-noise margin of the third-place cutoff must receive both finalist re-test rounds.");
+
+        var originalWinsBackend = new RecordingBackend(originalBeatsCandidates: true);
+        var originalWins = await new GpuAutoAffinitySession(originalWinsBackend).RunAsync(request);
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, originalWins.Recommendation);
+        Assert.IsTrue(originalWins.Report.OriginalStateRestored);
+        Assert.IsFalse(originalWinsBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
+        Assert.IsTrue(originalWins.Report.Reasons.Any(static reason =>
+            reason.Contains("measurable", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("original", StringComparison.OrdinalIgnoreCase)));
+
+        var unknownPlacementBackend = new RecordingBackend(unknownScreeningPlacement: true);
+        var unknownPlacement = await new GpuAutoAffinitySession(unknownPlacementBackend).RunAsync(request);
+        Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, unknownPlacement.Recommendation,
+            "Missing attributable ISR samples during screening is Unknown evidence, not proof that placement is wrong.");
+        Assert.AreEqual(new LogicalProcessorId(0, 2), unknownPlacement.Finalist?.Processor);
+        Assert.IsTrue(unknownPlacement.Report.Trials
+            .Where(static trial => trial.Phase == "screening")
+            .All(static trial => trial.ReadinessState == GpuBenchmarkReadinessState.Ready.ToString()));
+
+        var noWriteBackend = new RecordingBackend(noWriteProcessorNumber: 2);
+        var noWrite = await new GpuAutoAffinitySession(noWriteBackend).RunAsync(request);
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, noWrite.Recommendation,
+            "A candidate that is already the original state must be measured without a redundant write and must not be kept as a fake improvement.");
+        Assert.IsTrue(noWriteBackend.Events.Contains("apply-no-write:0:2"));
+        Assert.IsFalse(noWriteBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -231,7 +256,10 @@ public sealed class GpuAutoAffinitySessionTests
         bool failRecoveryVerification = false,
         bool cancelDuringFirstScoredCandidate = false,
         bool unstableFinalists = false,
-        bool comparisonToleranceCase = false) : IGpuAutoAffinitySessionBackend
+        bool comparisonToleranceCase = false,
+        bool originalBeatsCandidates = false,
+        bool unknownScreeningPlacement = false,
+        byte? noWriteProcessorNumber = null) : IGpuAutoAffinitySessionBackend
     {
         private readonly Dictionary<Guid, GpuAffinityCandidate> active = [];
         private int captureSequence;
@@ -247,12 +275,23 @@ public sealed class GpuAutoAffinitySessionTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Events.Add($"original:{request.Phase}:{request.RunNumber}");
-            return Task.FromResult(CreateObservation(request, null, Enumerable.Repeat(8d, 100).ToArray(), etwHealthy: true));
+            var periods = originalBeatsCandidates
+                ? Enumerable.Repeat(4d, 100).ToArray()
+                : noWriteProcessorNumber == 2
+                    ? Enumerable.Repeat(6d, 99).Append(10d).ToArray()
+                    : Enumerable.Repeat(12d, 100).ToArray();
+            return Task.FromResult(CreateObservation(request, null, periods, etwHealthy: true));
         }
 
         public Task<Guid> ApplyCandidateAsync(GpuAffinityCandidate candidate, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (noWriteProcessorNumber == candidate.Processor.Number)
+            {
+                Events.Add($"apply-no-write:{candidate.Processor}");
+                return Task.FromResult(Guid.Empty);
+            }
+
             var id = Guid.NewGuid();
             active.Add(id, candidate);
             Events.Add($"apply:{candidate.Processor}");
@@ -265,7 +304,9 @@ public sealed class GpuAutoAffinitySessionTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var candidate = active[experimentId];
+            var candidate = experimentId == Guid.Empty
+                ? request.Candidate ?? throw new InvalidOperationException("No-write candidate request is missing its candidate identity.")
+                : active[experimentId];
             Events.Add($"candidate:{request.Phase}:{request.RunNumber}:{candidate.Processor}");
 
             if (cancelDuringFirstScoredCandidate &&
@@ -302,6 +343,12 @@ public sealed class GpuAutoAffinitySessionTests
 
         public Task RollbackAsync(Guid experimentId, CancellationToken cancellationToken)
         {
+            if (experimentId == Guid.Empty)
+            {
+                Events.Add("rollback-no-write");
+                return Task.CompletedTask;
+            }
+
             var candidate = active[experimentId];
             Events.Add($"rollback:{candidate.Processor}");
             active.Remove(experimentId);
@@ -343,7 +390,9 @@ public sealed class GpuAutoAffinitySessionTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var verified = active.TryGetValue(experimentId, out var current) && current == candidate;
+            var verified = experimentId == Guid.Empty
+                ? noWriteProcessorNumber == candidate.Processor.Number
+                : active.TryGetValue(experimentId, out var current) && current == candidate;
             Events.Add($"verify-candidate:{candidate.Processor}:{verified}");
             return Task.FromResult(verified);
         }
@@ -405,7 +454,8 @@ public sealed class GpuAutoAffinitySessionTests
                 [],
                 FramePeriodMilliseconds: framePeriods);
 
-            if (!etwHealthy || candidate is null)
+            if (!etwHealthy || candidate is null ||
+                (unknownScreeningPlacement && string.Equals(request.Phase, "screening", StringComparison.Ordinal)))
             {
                 return new GpuAutoAffinityTrialObservation(
                     evidence,

@@ -59,6 +59,20 @@ public sealed class GpuAffinityCandidatePlannerTests
         Assert.IsTrue(candidates[0].ObservedPressureScore < candidates[1].ObservedPressureScore,
             "Physical-core pressure may rank cores, but it must never select a different SMT sibling.");
 
+        var manyProcessors = Enumerable.Range(0, 24)
+            .Select(static index => new LogicalProcessorId(0, checked((byte)index)))
+            .ToArray();
+        var manyTopology = new ProcessorTopologySnapshot(
+            [new ProcessorPackageSnapshot(0, manyProcessors)],
+            manyProcessors.Select((processor, index) =>
+                new ProcessorCoreSnapshot(index, 0, [processor])).ToArray(),
+            DateTimeOffset.UnixEpoch);
+        var manyPressure = manyProcessors
+            .Select((processor, index) => new ProcessorPressureEvidence(processor, index / 100d))
+            .ToArray();
+        Assert.AreEqual(24, GpuAffinityCandidatePlanner.Create(manyTopology, manyPressure).Count,
+            "The default automatic search must cover every eligible physical core in the supported single processor group, not silently stop at 16.");
+
         Span<byte> descriptor = stackalloc byte[AllocatedIrqDescriptorParser.Descriptor64Size];
         BinaryPrimitives.WriteUInt32LittleEndian(descriptor[0..4], 0);
         BinaryPrimitives.WriteUInt32LittleEndian(descriptor[4..8], AllocatedIrqDescriptorParser.IrqTypeRange);

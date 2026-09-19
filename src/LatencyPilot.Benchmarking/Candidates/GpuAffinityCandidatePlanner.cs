@@ -29,8 +29,11 @@ public sealed record GpuAffinityCandidate(
 
 public static class GpuAffinityCandidatePlanner
 {
-    public const int DefaultMaximumCandidates = 16;
-    public const int MaximumCandidates = 16;
+    // A supported single Windows processor group contains at most 64 logical processors.
+    // The automatic path therefore covers every eligible physical-core representative;
+    // an explicit lower caller cap remains possible and visible at the call site.
+    public const int DefaultMaximumCandidates = 64;
+    public const int MaximumCandidates = 64;
 
     public static IReadOnlyList<GpuAffinityCandidate> Create(
         ProcessorTopologySnapshot topology,
