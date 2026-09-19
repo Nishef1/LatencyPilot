@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/audit-closure-tranche1.yml'
       - 'eng/audit-closure-tranche1.py'
+      - 'eng/audit-closure-tranche1-fix.py'
 
 permissions:
   contents: write
@@ -35,7 +36,9 @@ jobs:
           exit 0
       - name: Apply implementation
         shell: pwsh
-        run: python eng/audit-closure-tranche1.py implementation
+        run: |
+          python eng/audit-closure-tranche1.py implementation
+          python eng/audit-closure-tranche1-fix.py
       - name: GREEN - critical suite
         shell: pwsh
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
