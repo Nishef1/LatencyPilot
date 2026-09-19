@@ -220,7 +220,7 @@ Unavailable evidence remains unavailable.
 
 ### Automatic GPU search
 
-The benchmark process remains stable across the complete search. The D3D12 renderer uses a three-buffer flip chain with two frame contexts/fences, avoiding the old full GPU wait after every Present while bounding queue depth. After each GPU configuration restart only the D3D12 renderer/device is recreated; workload calibration, process identity, seed and worker map remain frozen.
+The benchmark process remains stable across the complete search. The D3D12 renderer uses a three-buffer flip chain with two frame contexts/fences, avoiding the old full GPU wait after every Present while bounding queue depth. Every GPU configuration restart—candidate activation **and rollback to Original**—is followed by renderer/device recreation before the next measurement block. A `DXGI_ERROR_DEVICE_REMOVED`/RESET trial has one bounded recreate-and-retry path; repeated failure remains terminal. Workload calibration, process identity, seed and worker map remain frozen.
 
 ```text
 one adaptive calibration
