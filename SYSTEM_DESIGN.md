@@ -231,14 +231,14 @@ one adaptive calibration
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored run
      exact rollback
-→ fresh scored Original control after the sweep; stop if Original drift exceeds its repeatability band
+→ 5 s Original warm-up → fresh scored Original control after the sweep; stop if Original drift exceeds its repeatability band
 → rank by 1% low → AVG → p99 → 0.1% low rare-tail context
 → best three + all candidates within max(1%, observed Original noise) of the third-place screening cutoff:
      two independent deterministically shuffled re-test rounds
      fresh apply/restart/warm-up + 1 scored 30 s run + exact rollback per round
      at most one adaptive replacement score
 → accept only stable 3-of-up-to-4 evidence with at most one rejected run
-→ fresh scored Original control after finalist re-tests; stop if 1%/AVG/p99 drift
+→ 5 s Original warm-up → fresh scored Original control after finalist re-tests; stop if 1%/AVG/p99 drift
 → walk finalists in rank order through Original/frame/noise-aware DPC/ISR guardrails
 → apply highest-ranked clean winner
 → final benchmark-only warm-up → ETW placement-verification capture
