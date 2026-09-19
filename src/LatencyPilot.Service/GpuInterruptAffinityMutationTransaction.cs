@@ -29,6 +29,7 @@ internal sealed class GpuInterruptAffinityMutationTransaction
         string deviceInstanceId,
         GpuInterruptAffinityCandidate candidate)
     {
+        using var operationLock = MutationOperationLock.Acquire();
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
         ArgumentNullException.ThrowIfNull(candidate);
         ValidateCandidateAgainstCurrentTopology(candidate);
@@ -51,6 +52,7 @@ internal sealed class GpuInterruptAffinityMutationTransaction
 
     internal GpuInterruptAffinityMutationStepResult ApplyAndActivate(Guid experimentId)
     {
+        using var operationLock = MutationOperationLock.Acquire();
         var prepared = GetRequiredGpuEntry(experimentId, MutationJournalState.Prepared);
         var original = DeserializeOriginal(prepared);
         var candidate = GpuInterruptAffinityJournalCodec.DeserializeCandidate(prepared.CandidateStateJson);
@@ -182,6 +184,7 @@ internal sealed class GpuInterruptAffinityMutationTransaction
 
     internal GpuInterruptAffinityMutationStepResult RollbackAndActivate(Guid experimentId)
     {
+        using var operationLock = MutationOperationLock.Acquire();
         var entry = GetRequiredGpuEntry(experimentId);
         var original = DeserializeOriginal(entry);
         var candidate = GpuInterruptAffinityJournalCodec.DeserializeCandidate(entry.CandidateStateJson);

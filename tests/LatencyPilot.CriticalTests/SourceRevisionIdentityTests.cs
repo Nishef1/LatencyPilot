@@ -190,6 +190,76 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(placementVerifierSource, "wddm-graphics-kernel-dispatch");
         StringAssert.Contains(placementVerifierSource, "exactly one present display adapter");
 
+        var rendererOwnerPath = Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.GpuBenchmark",
+            "BenchmarkRendererOwner.cs");
+        Assert.IsTrue(
+            File.Exists(rendererOwnerPath),
+            "F1 requires one dedicated renderer owner thread rather than touching HWND/D3D12 state from pipe continuations.");
+        var rendererOwnerSource = File.ReadAllText(rendererOwnerPath);
+        StringAssert.Contains(rendererOwnerSource, "new Thread(ThreadMain)");
+        StringAssert.Contains(rendererOwnerSource, "PumpMessages");
+        StringAssert.Contains(rendererOwnerSource, "RecreateRendererAsync");
+
+        var benchmarkWindowSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.GpuBenchmark",
+            "BenchmarkWindow.cs"));
+        StringAssert.Contains(benchmarkWindowSource, "ownerThreadId");
+        StringAssert.Contains(benchmarkWindowSource, "EnsureOwnerThread();");
+        StringAssert.Contains(benchmarkWindowSource, "DestroyWindow failed on the benchmark-window owner thread");
+
+        var benchmarkProgramSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.GpuBenchmark",
+            "Program.cs"));
+        StringAssert.Contains(benchmarkProgramSource, "BenchmarkRendererOwner.CreateAsync");
+
+        var benchmarkOwnerControlServerSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.GpuBenchmark",
+            "BenchmarkControlServer.cs"));
+        StringAssert.Contains(benchmarkOwnerControlServerSource, "BenchmarkRendererOwner rendererOwner");
+        Assert.IsFalse(
+            benchmarkOwnerControlServerSource.Contains("D3D12BenchmarkRenderer renderer", StringComparison.Ordinal),
+            "The async pipe server must not directly own or dispose the renderer/window.");
+
+        var mutationLockPath = Path.Combine(
+            repositoryRoot,
+            "src",
+            "LatencyPilot.Service",
+            "MutationOperationLock.cs");
+        Assert.IsTrue(
+            File.Exists(mutationLockPath),
+            "F3 requires one shared crash-released named mutex for mutation/recovery/restore entry points.");
+        var mutationLockSource = File.ReadAllText(mutationLockPath);
+        StringAssert.Contains(mutationLockSource, "Global\\LatencyPilot.MutationOperation.v1");
+        StringAssert.Contains(mutationLockSource, "AbandonedMutexException");
+
+        var gpuMutationSource = File.ReadAllText(Path.Combine(
+            repositoryRoot, "src", "LatencyPilot.Service", "GpuInterruptAffinityMutationTransaction.cs"));
+        Assert.IsTrue(
+            CountOccurrences(gpuMutationSource, "MutationOperationLock.Acquire()") >= 3,
+            "Prepare/apply/rollback must all participate in the shared mutation lock.");
+
+        var recoveryExecutorSource = File.ReadAllText(Path.Combine(
+            repositoryRoot, "src", "LatencyPilot.Service", "MutationRecoveryExecutor.cs"));
+        StringAssert.Contains(recoveryExecutorSource, "MutationOperationLock.Acquire()");
+
+        var restoreSource = File.ReadAllText(Path.Combine(
+            repositoryRoot, "src", "LatencyPilot.Service", "GlobalRestoreBaseline.cs"));
+        StringAssert.Contains(restoreSource, "MutationOperationLock.Acquire()");
+
+        var physicalValidationSource = File.ReadAllText(Path.Combine(
+            repositoryRoot, "tools", "LatencyPilot.PhysicalValidation", "Program.cs"));
+        StringAssert.Contains(physicalValidationSource, "\"restore-original-settings\" => RestoreOriginalSettings(args)");
+        StringAssert.Contains(physicalValidationSource, "Restore original settings completed");
+
         var benchmarkControlClientSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "tools",

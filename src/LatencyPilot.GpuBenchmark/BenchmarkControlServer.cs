@@ -10,9 +10,8 @@ namespace LatencyPilot.GpuBenchmark;
 internal sealed class BenchmarkControlServer(
     BenchmarkOptions options,
     BenchmarkWorkload benchmark,
-    D3D12BenchmarkRenderer renderer,
-    FrozenBenchmarkWorkload frozenWorkload,
-    Func<D3D12BenchmarkRenderer> rendererFactory)
+    BenchmarkRendererOwner rendererOwner,
+    FrozenBenchmarkWorkload frozenWorkload)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HashSet<int> completedRuns = [];
@@ -27,42 +26,28 @@ internal sealed class BenchmarkControlServer(
             throw new InvalidOperationException("Benchmark control server requires controlled-session options.");
         }
 
-        ArgumentNullException.ThrowIfNull(rendererFactory);
+        ArgumentNullException.ThrowIfNull(rendererOwner);
         Directory.CreateDirectory(outputDirectory);
-        var activeRenderer = renderer;
-        try
+        using var pipe = CreatePipe(pipeName);
+        await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var reader = new StreamReader(
+            pipe, new UTF8Encoding(false), detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+        using var writer = new StreamWriter(
+            pipe, new UTF8Encoding(false), bufferSize: 4096, leaveOpen: true)
         {
-            using var pipe = CreatePipe(pipeName);
-            await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
-            using var reader = new StreamReader(
-                pipe,
-                new UTF8Encoding(false),
-                detectEncodingFromByteOrderMarks: false,
-                bufferSize: 4096,
-                leaveOpen: true);
-            using var writer = new StreamWriter(
-                pipe,
-                new UTF8Encoding(false),
-                bufferSize: 4096,
-                leaveOpen: true)
-            {
-                AutoFlush = true,
-            };
+            AutoFlush = true,
+        };
 
-            await WriteResponseAsync(
+        await WriteResponseAsync(
             writer,
             new GpuBenchmarkControlResponse(
-                GpuBenchmarkControlResponse.SchemaId,
-                options.SessionId,
-                GpuBenchmarkControlResponseStatus.Ready,
-                0,
-                checked((uint)Environment.ProcessId),
-                null,
+                GpuBenchmarkControlResponse.SchemaId, options.SessionId, GpuBenchmarkControlResponseStatus.Ready,
+                0, checked((uint)Environment.ProcessId), null,
                 "Benchmark calibrated once; frozen workload is ready for controlled trials."),
             cancellationToken).ConfigureAwait(false);
 
-            while (true)
-            {
+        while (true)
+        {
             cancellationToken.ThrowIfCancellationRequested();
             var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
             if (line is null)
@@ -94,12 +79,8 @@ internal sealed class BenchmarkControlServer(
                 await WriteResponseAsync(
                     writer,
                     new GpuBenchmarkControlResponse(
-                        GpuBenchmarkControlResponse.SchemaId,
-                        options.SessionId,
-                        GpuBenchmarkControlResponseStatus.Stopped,
-                        0,
-                        checked((uint)Environment.ProcessId),
-                        null,
+                        GpuBenchmarkControlResponse.SchemaId, options.SessionId, GpuBenchmarkControlResponseStatus.Stopped,
+                        0, checked((uint)Environment.ProcessId), null,
                         "Controlled benchmark session stopped cleanly."),
                     cancellationToken).ConfigureAwait(false);
                 return;
@@ -109,38 +90,23 @@ internal sealed class BenchmarkControlServer(
             {
                 try
                 {
-                    var nextRenderer = await RecreateRendererWithRetryAsync(
-                        rendererFactory,
-                        cancellationToken).ConfigureAwait(false);
-                    var previousRenderer = activeRenderer;
-                    activeRenderer = nextRenderer;
-                    previousRenderer.Dispose();
-
+                    await RecreateRendererWithRetryAsync(rendererOwner, cancellationToken).ConfigureAwait(false);
                     await WriteResponseAsync(
                         writer,
                         new GpuBenchmarkControlResponse(
-                            GpuBenchmarkControlResponse.SchemaId,
-                            options.SessionId,
-                            GpuBenchmarkControlResponseStatus.RendererReady,
-                            0,
-                            checked((uint)Environment.ProcessId),
-                            null,
-                            "D3D12 renderer recreated after the GPU configuration change."),
+                            GpuBenchmarkControlResponse.SchemaId, options.SessionId, GpuBenchmarkControlResponseStatus.RendererReady,
+                            0, checked((uint)Environment.ProcessId), null,
+                            "D3D12 renderer recreated on its owner thread after the GPU configuration change."),
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception exception) when (
-                    exception is not OperationCanceledException ||
-                    !cancellationToken.IsCancellationRequested)
+                    exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                 {
                     await WriteResponseAsync(
                         writer,
                         new GpuBenchmarkControlResponse(
-                            GpuBenchmarkControlResponse.SchemaId,
-                            options.SessionId,
-                            GpuBenchmarkControlResponseStatus.Failed,
-                            0,
-                            checked((uint)Environment.ProcessId),
-                            null,
+                            GpuBenchmarkControlResponse.SchemaId, options.SessionId, GpuBenchmarkControlResponseStatus.Failed,
+                            0, checked((uint)Environment.ProcessId), null,
                             $"Benchmark renderer recreation failed: {exception.GetType().Name}: {exception.Message}"),
                         cancellationToken).ConfigureAwait(false);
                 }
@@ -151,83 +117,59 @@ internal sealed class BenchmarkControlServer(
             if (!completedRuns.Add(command.RunNumber))
             {
                 await WriteRejectedAsync(
-                    writer,
-                    command.RunNumber,
-                    "Benchmark trial run number was already completed in this session.",
-                    cancellationToken).ConfigureAwait(false);
+                    writer, command.RunNumber,
+                    "Benchmark trial run number was already completed in this session.", cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
             var artifactPath = Path.Combine(
-                outputDirectory,
-                $"gpu-benchmark-{options.SessionId:N}-trial-{command.RunNumber:D4}.json");
+                outputDirectory, $"gpu-benchmark-{options.SessionId:N}-trial-{command.RunNumber:D4}.json");
             if (File.Exists(artifactPath))
             {
                 completedRuns.Remove(command.RunNumber);
                 await WriteRejectedAsync(
-                    writer,
-                    command.RunNumber,
-                    "Benchmark trial artifact already exists; refusing to overwrite evidence.",
-                    cancellationToken).ConfigureAwait(false);
+                    writer, command.RunNumber,
+                    "Benchmark trial artifact already exists; refusing to overwrite evidence.", cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-                try
-                {
-                    // The controller explicitly recreates the D3D12 renderer
-                    // once after each GPU configuration-change restart. Warm-up
-                    // and its following scored trial intentionally reuse that
-                    // same renderer so the warm-up is not discarded by another
-                    // cold device/window recreation.
-                    var artifact = await benchmark.RunTrialAsync(
-                        activeRenderer,
-                        frozenWorkload,
-                        TimeSpan.FromMilliseconds(command.DurationMilliseconds),
-                        cancellationToken).ConfigureAwait(false);
-                await File.WriteAllTextAsync(
-                    artifactPath,
-                    JsonSerializer.Serialize(artifact, JsonOptions),
-                    new UTF8Encoding(false),
+            try
+            {
+                // Warm-up and score reuse one renderer, but every renderer/window call
+                // is marshalled onto BenchmarkRendererOwner's fixed thread.
+                var artifact = await rendererOwner.RunTrialAsync(
+                    benchmark,
+                    frozenWorkload,
+                    TimeSpan.FromMilliseconds(command.DurationMilliseconds),
                     cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(
+                    artifactPath, JsonSerializer.Serialize(artifact, JsonOptions),
+                    new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
                 await WriteResponseAsync(
                     writer,
                     new GpuBenchmarkControlResponse(
-                        GpuBenchmarkControlResponse.SchemaId,
-                        options.SessionId,
-                        GpuBenchmarkControlResponseStatus.TrialCompleted,
-                        command.RunNumber,
-                        checked((uint)Environment.ProcessId),
-                        artifactPath,
+                        GpuBenchmarkControlResponse.SchemaId, options.SessionId, GpuBenchmarkControlResponseStatus.TrialCompleted,
+                        command.RunNumber, checked((uint)Environment.ProcessId), artifactPath,
                         "Frozen benchmark trial completed."),
                     cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception exception) when (
-                    exception is not OperationCanceledException ||
-                    !cancellationToken.IsCancellationRequested)
-                {
+            }
+            catch (Exception exception) when (
+                exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
                 completedRuns.Remove(command.RunNumber);
                 await WriteResponseAsync(
                     writer,
                     new GpuBenchmarkControlResponse(
-                        GpuBenchmarkControlResponse.SchemaId,
-                        options.SessionId,
-                        GpuBenchmarkControlResponseStatus.Failed,
-                        command.RunNumber,
-                        checked((uint)Environment.ProcessId),
-                        null,
+                        GpuBenchmarkControlResponse.SchemaId, options.SessionId, GpuBenchmarkControlResponseStatus.Failed,
+                        command.RunNumber, checked((uint)Environment.ProcessId), null,
                         $"Benchmark trial failed: {exception.GetType().Name}: {exception.Message}"),
                     cancellationToken).ConfigureAwait(false);
-                }
             }
-        }
-        finally
-        {
-            activeRenderer.Dispose();
         }
     }
 
-    private static async Task<D3D12BenchmarkRenderer> RecreateRendererWithRetryAsync(
-        Func<D3D12BenchmarkRenderer> rendererFactory,
+    private static async Task RecreateRendererWithRetryAsync(
+        BenchmarkRendererOwner rendererOwner,
         CancellationToken cancellationToken)
     {
         var deadline = TimeSpan.FromSeconds(30);
@@ -239,7 +181,8 @@ internal sealed class BenchmarkControlServer(
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                return rendererFactory();
+                await rendererOwner.RecreateRendererAsync(cancellationToken).ConfigureAwait(false);
+                return;
             }
             catch (Exception exception) when (exception is
                 InvalidOperationException or
@@ -272,36 +215,21 @@ internal sealed class BenchmarkControlServer(
         security.SetOwner(userSid);
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         security.AddAccessRule(new PipeAccessRule(
-            userSid,
-            PipeAccessRights.FullControl,
-            AccessControlType.Allow));
+            userSid, PipeAccessRights.FullControl, AccessControlType.Allow));
 
         return NamedPipeServerStreamAcl.Create(
-            pipeName,
-            PipeDirection.InOut,
-            maxNumberOfServerInstances: 1,
-            PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous,
-            inBufferSize: 4096,
-            outBufferSize: 4096,
-            security);
+            pipeName, PipeDirection.InOut, maxNumberOfServerInstances: 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous,
+            inBufferSize: 4096, outBufferSize: 4096, security);
     }
 
     private Task WriteRejectedAsync(
-        TextWriter writer,
-        int runNumber,
-        string message,
-        CancellationToken cancellationToken) =>
+        TextWriter writer, int runNumber, string message, CancellationToken cancellationToken) =>
         WriteResponseAsync(
             writer,
             new GpuBenchmarkControlResponse(
-                GpuBenchmarkControlResponse.SchemaId,
-                options.SessionId,
-                GpuBenchmarkControlResponseStatus.Rejected,
-                runNumber,
-                checked((uint)Environment.ProcessId),
-                null,
-                message),
+                GpuBenchmarkControlResponse.SchemaId, options.SessionId, GpuBenchmarkControlResponseStatus.Rejected,
+                runNumber, checked((uint)Environment.ProcessId), null, message),
             cancellationToken);
 
     private static async Task WriteResponseAsync(

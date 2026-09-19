@@ -572,6 +572,7 @@ internal sealed class GpuOptimizationExecutionBackend : IGpuOptimizationExecutio
 
     public void BeginMeasurement(Guid experimentId)
     {
+        using var operationLock = MutationOperationLock.Acquire();
         var entry = GetRequiredEntry(experimentId, MutationJournalState.Applied);
         _ = journal.Transition(
             entry.ExperimentId,
@@ -595,6 +596,7 @@ internal sealed class GpuOptimizationExecutionBackend : IGpuOptimizationExecutio
 
     public void AwaitDecision(Guid experimentId)
     {
+        using var operationLock = MutationOperationLock.Acquire();
         var entry = GetRequiredEntry(experimentId, MutationJournalState.Measuring);
         _ = journal.Transition(
             entry.ExperimentId,
@@ -605,6 +607,7 @@ internal sealed class GpuOptimizationExecutionBackend : IGpuOptimizationExecutio
 
     public void KeepCandidate(Guid experimentId)
     {
+        using var operationLock = MutationOperationLock.Acquire();
         var entry = GetRequiredEntry(experimentId, MutationJournalState.AwaitingDecision);
         var original = GpuInterruptAffinityJournalCodec.DeserializeOriginal(entry.OriginalStateJson);
         var candidate = GpuInterruptAffinityJournalCodec.DeserializeCandidate(entry.CandidateStateJson);

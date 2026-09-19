@@ -20,6 +20,7 @@ internal sealed class MutationRecoveryExecutor
 
     internal MutationRecoveryExecutionResult Execute(Guid experimentId)
     {
+        using var operationLock = MutationOperationLock.Acquire();
         if (experimentId == Guid.Empty)
         {
             throw new ArgumentException("ExperimentId must not be empty.", nameof(experimentId));

@@ -88,6 +88,7 @@ internal sealed class GlobalRestoreBaselineExecutor
 
     internal GlobalRestoreBaselineResult Restore()
     {
+        using var operationLock = MutationOperationLock.Acquire();
         var unresolved = journal.GetUnresolved();
         if (unresolved.Count != 0)
         {

@@ -41,9 +41,10 @@ try
         0d,
         $"Initializing D3D12 benchmark at {options.Width}x{options.Height} with {workerMap.Length} physical-core workers.");
 
-    using var renderer = new D3D12BenchmarkRenderer(options.Width, options.Height, workerMap, options.Seed);
     var benchmark = new BenchmarkWorkload(options, Console.Out, workerMap);
-    var frozen = await benchmark.CalibrateAsync(renderer);
+    await using var rendererOwner = await BenchmarkRendererOwner.CreateAsync(
+        () => new D3D12BenchmarkRenderer(options.Width, options.Height, workerMap, options.Seed));
+    var frozen = await rendererOwner.CalibrateAsync(benchmark);
     BenchmarkProtocol.WriteProgress(
         Console.Out,
         options.SessionId,
@@ -62,9 +63,8 @@ try
         var server = new BenchmarkControlServer(
             options,
             benchmark,
-            renderer,
-            frozen,
-            () => new D3D12BenchmarkRenderer(options.Width, options.Height, workerMap, options.Seed));
+            rendererOwner,
+            frozen);
         await server.RunAsync();
         BenchmarkProtocol.WriteProgress(
             Console.Out,
@@ -78,7 +78,7 @@ try
     var outputPath = options.OutputPath
         ?? throw new InvalidOperationException("Single-trial benchmark output path is missing.");
     Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-    var artifact = await benchmark.RunTrialAsync(renderer, frozen);
+    var artifact = await rendererOwner.RunTrialAsync(benchmark, frozen, options.Duration);
     var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
     File.WriteAllText(outputPath, JsonSerializer.Serialize(artifact, jsonOptions), new UTF8Encoding(false));
     BenchmarkProtocol.WriteProgress(Console.Out, options.SessionId, "complete", 1d, $"Benchmark artifact written to {outputPath}.");

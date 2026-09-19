@@ -334,6 +334,12 @@ internal sealed class D3D12BenchmarkRenderer : IDisposable
             .ToArray();
     }
 
+    internal bool PumpMessages()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        return window.PumpMessages();
+    }
+
     internal IReadOnlyList<ulong> CaptureWorkerChecksums() =>
         workers.Select(static worker => worker.SimulationChecksum).ToArray();
 

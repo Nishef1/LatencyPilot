@@ -43,6 +43,7 @@ internal static class PhysicalValidationProgram
                 "apply" => Apply(args),
                 "rollback" => Rollback(args),
                 "recover" => Recover(args),
+                "restore-original-settings" => RestoreOriginalSettings(args),
                 "--help" or "-h" or "help" => Help(args),
                 _ => throw new ArgumentException($"Unknown command '{args[0]}'."),
             };
@@ -411,6 +412,21 @@ internal static class PhysicalValidationProgram
         return result.JournalEntry.IsTerminal ? 0 : 3;
     }
 
+    private static int RestoreOriginalSettings(string[] args)
+    {
+        var options = ParseOptions(args);
+        RequirePhysicalMutationAuthority(options);
+
+        var result = new GlobalRestoreBaselineExecutor(OpenJournal()).Restore();
+        Console.WriteLine(
+            $"Restore original settings completed; restored={result.RestoredCount.ToString(CultureInfo.InvariantCulture)}");
+        foreach (var experimentId in result.RestoredExperimentIds)
+        {
+            Console.WriteLine($"restored-experiment={experimentId:D}");
+        }
+        return 0;
+    }
+
     private static MutationJournal OpenJournal()
     {
         var journal = new MutationJournal(MutationJournal.GetDefaultDatabasePath());
@@ -586,6 +602,7 @@ internal static class PhysicalValidationProgram
         Console.WriteLine("  apply --experiment <guid> --confirm-physical-mutation");
         Console.WriteLine("  rollback --experiment <guid> --confirm-physical-mutation");
         Console.WriteLine("  recover --experiment <guid> --confirm-physical-mutation");
+        Console.WriteLine("  restore-original-settings --confirm-physical-mutation");
     }
 
     private sealed record ParsedOptions(

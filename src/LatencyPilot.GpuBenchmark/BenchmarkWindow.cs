@@ -15,12 +15,14 @@ internal sealed class BenchmarkWindow : IDisposable
 
     private readonly WindowProc windowProc;
     private readonly string className;
+    private readonly int ownerThreadId;
     private bool disposed;
 
     internal BenchmarkWindow(int width, int height)
     {
         Width = width;
         Height = height;
+        ownerThreadId = Environment.CurrentManagedThreadId;
         windowProc = WindowProcedure;
         className = $"LatencyPilotGpuBenchmark_{Environment.ProcessId}_{Guid.NewGuid():N}";
 
@@ -70,6 +72,7 @@ internal sealed class BenchmarkWindow : IDisposable
 
     internal bool PumpMessages()
     {
+        EnsureOwnerThread();
         while (PeekMessageW(out var message, IntPtr.Zero, 0, 0, PmRemove))
         {
             if (message.MessageId == WmQuit) return false;
@@ -81,11 +84,33 @@ internal sealed class BenchmarkWindow : IDisposable
 
     public void Dispose()
     {
+        EnsureOwnerThread();
         if (disposed) return;
         disposed = true;
-        if (Handle != IntPtr.Zero) DestroyWindow(Handle);
+
+        Exception? destroyFailure = null;
+        if (Handle != IntPtr.Zero && IsWindow(Handle) && !DestroyWindow(Handle))
+        {
+            destroyFailure = new Win32Exception(
+                Marshal.GetLastPInvokeError(),
+                "DestroyWindow failed on the benchmark-window owner thread.");
+        }
+
         UnregisterClassW(className, GetModuleHandleW(null));
         GC.KeepAlive(windowProc);
+        if (destroyFailure is not null)
+        {
+            throw destroyFailure;
+        }
+    }
+
+    private void EnsureOwnerThread()
+    {
+        if (Environment.CurrentManagedThreadId != ownerThreadId)
+        {
+            throw new InvalidOperationException(
+                $"BenchmarkWindow belongs to managed thread {ownerThreadId}, but thread {Environment.CurrentManagedThreadId} attempted a Win32 window operation.");
+        }
     }
 
     private static IntPtr WindowProcedure(IntPtr window, uint message, IntPtr wParam, IntPtr lParam)
