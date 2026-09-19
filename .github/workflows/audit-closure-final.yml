@@ -87,19 +87,26 @@ jobs:
             throw 'Stale user-facing Restore Windows Defaults wording remains.'
           }
 
-      - name: Keep workflow changes out of source delivery
+      - name: Isolate source delivery from workflows
         shell: pwsh
         run: |
-          git checkout -- .github/workflows/ci.yml
+          git restore --source=HEAD --staged --worktree -- .github/workflows
           git rm -f --ignore-unmatch eng/audit-closure-*.py
-          if (-not (git diff --quiet -- .github/workflows)) {
-            throw 'Source-delivery commit must not modify workflow files; workflow cleanup is delivered separately.'
+          $workflowStatus = git status --porcelain -- .github/workflows
+          if ($workflowStatus) {
+            $workflowStatus | ForEach-Object { Write-Host $_ }
+            throw 'Source-delivery commit still contains workflow state after full restore.'
           }
 
       - name: Commit verified final closure source
         shell: pwsh
         run: |
           git add -A
+          $workflowStatus = git diff --cached --name-only -- .github/workflows
+          if ($workflowStatus) {
+            $workflowStatus | ForEach-Object { Write-Host $_ }
+            throw 'Source-delivery staging unexpectedly includes workflow files.'
+          }
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
