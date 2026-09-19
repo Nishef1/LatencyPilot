@@ -359,8 +359,10 @@ public sealed class GpuAutoAffinitySession
 
         // The screen contributes observation #1. Every finalist always receives
         // two independent fresh apply/restart/warm-up/score/rollback rounds first.
-        // Only finalists that still lack a stable 3-run cluster receive at most
-        // two more adaptive replacement rounds.
+        // Only finalists that still lack a stable 3-run cluster receive one
+        // adaptive replacement round. A fifth score cannot satisfy the
+        // at-most-one-rejected-run policy, so collecting it would add time
+        // without changing the decision.
         var freshByProcessor = shortlist.ToDictionary(
             static item => item.Candidate.Processor,
             static _ => new List<GpuAutoAffinityTrialObservation>(capacity: 4));
@@ -416,7 +418,7 @@ public sealed class GpuAutoAffinitySession
             }
         }
 
-        for (var replacementRound = 0; replacementRound < 2; replacementRound++)
+        for (var replacementRound = 0; replacementRound < 1; replacementRound++)
         {
             var roundCandidates = shortlist
                 .Where(item =>
