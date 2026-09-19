@@ -255,7 +255,9 @@ public sealed class GpuAutoAffinitySessionTests
         var result = await new GpuAutoAffinitySession(backend).RunAsync(request);
 
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, result.Recommendation);
-        Assert.IsNotNull(result.Finalist);
+        Assert.IsNull(result.Finalist,
+            "RestoreOriginal must not expose a rejected ranked candidate as the final processor.");
+        Assert.IsNull(result.Report.FinalProcessor);
         Assert.IsTrue(result.Report.FinalStateVerified);
         Assert.IsTrue(result.Report.OriginalStateRestored);
         Assert.IsFalse(backend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
