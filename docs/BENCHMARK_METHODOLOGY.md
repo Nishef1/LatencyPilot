@@ -106,24 +106,29 @@ exact original/default state
 → 5 s non-scored original warm-up/reference (benchmark only; no PresentMon/ETW)
 → collect 3 scored 30 s Original runs
    if no stable 3-run 1%-low cluster exists within ±3% of its median:
-     collect replacement run 4, then run 5 only if still needed
-   if no stable 3-of-up-to-5 cluster exists:
+     collect one replacement run 4
+   if no stable 3-of-up-to-4 cluster exists:
      RestoreOriginal and report an environment/workload repeatability failure
 → each eligible physical core:
      journaled apply/restart + stored-state verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored 30 s screening run
      exact rollback
+→ collect one fresh scored Original control after the full sweep
+   if its 1% low leaves the Original repeatability band:
+     discard the sweep and RestoreOriginal
 → rank valid screening candidates
-→ shortlist the best three plus every additional candidate whose screening 1% low is within 1% of the third-place cutoff
+→ shortlist the best three plus every additional candidate whose screening 1% low is within max(1%, observed Original cluster noise) of the third-place cutoff
 → shortlisted candidates:
      two independent re-test rounds are mandatory
      each finalist gets fresh apply/restart + stored-state verify, warm-up, scored run, exact rollback
-     only finalists still lacking a stable 3-run cluster receive up to two additional replacement rounds
-→ rank each finalist from the tightest stable 3-run cluster selected from at most 5 scored observations
-→ apply winner once
+     only finalists still lacking a stable 3-run cluster receive one replacement round
+→ rank each finalist from a stable 3-run cluster selected from at most 4 scored observations
+   at most one scored observation may be rejected as an outlier
+→ test finalists in ranking order against Original/noise and guardrails; if the first fails, try the next clean finalist
+→ apply the highest-ranked clean winner once
 → final benchmark-only warm-up → ETW placement-verification capture
-→ Keep only when measured improvement clears the observed cluster-noise floor and final runtime ISR placement is proved
+→ Keep only when measured improvement clears the observed cluster-noise floor, comparable GPU-driver DPC/ISR p99 does not materially regress, and final runtime ISR placement is proved
    otherwise exact RestoreOriginal
 ```
 
@@ -157,16 +162,18 @@ LatencyPilot uses bounded robust sampling instead:
 - Start with three scored observations.
 - Evaluate every 3-observation combination and select the **tightest** cluster whose members are each within **±3% of that cluster's median 1% low**.
 - If no cluster exists, collect one replacement observation and re-evaluate; collect a fifth only if still needed.
-- Three valid runs are required; five scored attempts are the hard maximum.
+- Three valid runs are required; four scored attempts are the hard maximum.
+- At most one scored observation may be rejected. A 3-of-5 recovery is intentionally impossible because two rejected runs are evidence of instability rather than something a fifth sample should hide.
 - Samples outside the selected cluster remain in the audit trail but do not contribute to ranking medians.
 - AVG FPS and frame-p99 remain decision guardrails; 0.1% low remains rare-tail diagnostic/regression context rather than the outlier detector.
+- When both Original and finalist provide enough attributable samples, GPU-driver DPC/ISR p99 tails are Keep guardrails; a >10% tail regression rejects that finalist without preventing the next ranked finalist from being considered.
 - The final winner must beat `max(1%, observed Original cluster noise, observed finalist cluster noise)` on the primary 1% low before guardrails and final ETW placement verification are considered.
 
 The ±3% band is a versioned methodology default, not a claim that every Windows system has exactly 3% variance. A persistent inability to produce a stable 3-run cluster is an environment/workload repeatability failure and retains exact Original. Screening remains one scored run per physical core for bounded runtime; robust replacement sampling is applied to Original and finalists where evidence drives Keep/Restore.
 
 ### 6.3 Adaptive finalist cutoff
 
-The initial screen always advances at least the best three rankable physical cores. It also advances every additional core whose **screening 1% low is within 1% of the third-place screening value**. This prevents one noisy first-pass spike from permanently eliminating a statistically indistinguishable fourth/fifth candidate. The shortlist is intentionally uncapped; if many physical cores are effectively tied, extra re-tests are preferable to manufacturing a winner from noise.
+The initial screen always advances at least the best three rankable physical cores. It also advances every additional core whose **screening 1% low is within max(1%, observed Original cluster noise) of the third-place screening value**. A fresh Original control is captured after the sweep; if it leaves the Original repeatability band, the sweep is discarded rather than ranking measurements taken across a moving environment. The shortlist is intentionally uncapped; if many physical cores are effectively tied, extra re-tests are preferable to manufacturing a winner from noise.
 
 ## 7. Screening evidence and external collectors
 
