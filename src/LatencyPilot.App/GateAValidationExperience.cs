@@ -700,7 +700,12 @@ public sealed partial class MainWindow
             : string.Equals(report.SourceState, GpuOptimizationSourceState.DevelopmentOnly.ToString(), StringComparison.Ordinal)
                 ? " Development-only source: this report cannot close physical Gate A."
                 : " Source evidence is not eligible for physical Gate A closure.";
-        var reasons = string.Join(" ", report.Reasons.Take(2));
+        var reasons = string.Join(
+            " ",
+            report.Reasons
+                .Where(static reason => !string.IsNullOrWhiteSpace(reason))
+                .Distinct(StringComparer.Ordinal)
+                .Take(2));
         return $"{headline}{metrics}{placement}{source} {reasons}".TrimEnd();
     }
 
