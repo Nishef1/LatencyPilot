@@ -43,7 +43,7 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
    - run a 5 s non-scored warm-up (benchmark only; no PresentMon/ETW);
    - run **one** scored screening measurement;
    - restore and verify the exact original state.
-4. After the full logical-CPU sweep, capture one fresh scored Original control. If its 1% low leaves the Original ±3% repeatability band, discard the sweep and retain exact Original rather than ranking across time/thermal/background drift.
+4. After the full logical-CPU sweep, run one fresh 5 s non-scored Original warm-up, then capture one fresh scored Original control. If its 1% low leaves the Original ±3% repeatability band, discard the sweep and retain exact Original rather than ranking across time/thermal/background drift.
 5. Rank with explicit practical-equivalence margins rather than false precision:
    1. 1% low, treating <=1% relative difference as tied;
    2. AVG FPS, treating <=1% as tied;
@@ -52,7 +52,7 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
    5. deterministic passive topology/pressure fallback only if the measured metrics remain tied.
 6. Re-test the best three candidates **plus every additional screening candidate within max(1%, observed Original cluster noise) of the third-place 1%-low cutoff** in two independent rounds. In each round the finalist order is deterministically shuffled and every candidate gets a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback.
 7. Rank finalists from a stable three-run cluster. At most one scored run may be rejected, so Original/finalist sampling is capped at four scored attempts; a fifth run cannot rescue a 3-of-5 pattern with two rejected observations.
-8. Capture a second scored Original control after finalist re-tests. Its 1% low, AVG and frame-p99 must remain inside the Original repeatability band or finalist evidence is discarded and exact Original is retained.
+8. Run a second 5 s non-scored Original warm-up after finalist re-tests, then capture a second scored Original control. Its 1% low, AVG and frame-p99 must remain inside the Original repeatability band or finalist evidence is discarded and exact Original is retained.
 9. Evaluate finalists in ranking order against exact Original. AVG, frame-p99 and 0.1% low remain guardrails. When both sides provide at least three usable interrupt-tail runs, GPU-driver DPC/ISR p99 is evaluated per run and the median regression must remain within max(10%, observed Original tail noise, observed finalist tail noise). A rejected first-place finalist does not prevent the next ranked clean improvement from being considered.
 10. Eligible SMT/hyperthread siblings are first-class logical-CPU candidates in the main sweep. There is no separate SMT-refinement phase and no ABBA/BAAB confirmation loop.
 
