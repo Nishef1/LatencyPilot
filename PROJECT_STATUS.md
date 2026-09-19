@@ -74,7 +74,8 @@ capture exact original/default state
 → rank valid screens by higher 1% low, then AVG, lower p99, then 0.1% rare-tail context
 → re-test the best three plus every additional candidate inside max(1%, observed Original noise)
 → require stable 3-of-up-to-4 evidence with at most one rejected score
-→ evaluate finalists in rank order against Original + frame and attributable DPC/ISR p99 guardrails
+→ fresh scored Original control after finalist re-tests; reject finalist evidence if 1%/AVG/p99 drift
+→ evaluate finalists in rank order against Original + frame and noise-aware attributable DPC/ISR p99 guardrails
 → apply the highest-ranked clean winner once
 → final 5 s benchmark-only warm-up → 5 s ETW-backed verification capture
 → Keep only with clean ETW + attributable target-only GPU ISR placement
@@ -90,6 +91,7 @@ Important current properties:
 - No ABBA/BAAB confirmation loop; the superseded ABBA/BAAB orchestrator, decision engine, confirmation engine and evidence collector were removed from source.
 - The old generic GPU screening/confirmation result models were pruned; the live v1 decision path has one owner: `GpuAutoAffinitySession`.
 - A fresh post-sweep Original control rejects a moving benchmark environment before finalist ranking.
+- A second post-finalist Original control rejects drift in 1% low, AVG or frame-p99 before any Keep decision.
 - System CPU busy is measured from Windows system-time snapshots; material drift is surfaced rather than hard-coded false.
 - Missing PresentMon/ETW during screening is visible context and does not by itself abort benchmark ranking.
 - If healthy ETW proves off-target placement during screening, that candidate is invalid.
@@ -174,7 +176,7 @@ The finalist stage now uses two independent re-test rounds. Each shortlisted CPU
 
 ### Noise-aware GPU selection and buffered renderer
 
-The GPU search now treats <=1% relative differences in 1% low, AVG FPS and frame-p99 as practical ties instead of manufacturing a winner from decimal noise. 0.1% low is allowed to break a remaining tie only when its relative difference exceeds 5%. Screening advances the best three plus every additional candidate within max(1%, observed Original cluster noise) of the third-place cutoff. One fresh Original control after the full sweep rejects time/thermal/background drift before finalist ranking. Original/finalist robust sampling is capped at four scored attempts with at most one rejected run; a fifth score cannot rescue evidence with two outliers. When enough attributable evidence exists, GPU-driver DPC/ISR p99 tails are Keep guardrails, and a top-ranked finalist that fails them falls through to the next ranked clean improvement.
+The GPU search now treats <=1% relative differences in 1% low, AVG FPS and frame-p99 as practical ties instead of manufacturing a winner from decimal noise. 0.1% low is allowed to break a remaining tie only when its relative difference exceeds 5%. Screening advances the best three plus every additional candidate within max(1%, observed Original cluster noise) of the third-place cutoff. One fresh Original control after the full sweep rejects time/thermal/background drift before finalist ranking, and a second Original control after finalist re-tests must remain comparable in 1% low, AVG and frame-p99 before Keep. Original/finalist robust sampling is capped at four scored attempts with at most one rejected run; a fifth score cannot rescue evidence with two outliers. When each side has at least three usable attributable runs, GPU-driver DPC/ISR p99 tails are compared per run by median with a noise-aware threshold, and a top-ranked finalist that fails them falls through to the next ranked clean improvement.
 
 The controlled D3D12 renderer now uses a three-buffer flip chain and two frame contexts with per-context command allocators/lists, timestamps and fences. At most two benchmark frames are kept in flight; command resources are reused only after the matching fence completes. This removes the previous full GPU drain after every Present while retaining bounded latency and auditable per-frame GPU timestamp evidence.
 
