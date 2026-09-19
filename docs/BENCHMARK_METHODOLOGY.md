@@ -114,6 +114,7 @@ exact original/default state
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored 30 s screening run
      exact rollback
+→ 5 s non-scored Original warm-up
 → collect one fresh scored Original control after the full sweep
    if its 1% low leaves the Original repeatability band:
      discard the sweep and RestoreOriginal
@@ -125,6 +126,7 @@ exact original/default state
      only finalists still lacking a stable 3-run cluster receive one replacement round
 → rank each finalist from a stable 3-run cluster selected from at most 4 scored observations
    at most one scored observation may be rejected as an outlier
+→ 5 s non-scored Original warm-up
 → collect one fresh scored Original control after finalist re-tests
    if 1% low, AVG or frame-p99 leaves the Original repeatability band:
      discard finalist evidence and RestoreOriginal
@@ -176,7 +178,7 @@ The ±3% band is a versioned methodology default, not a claim that every Windows
 
 ### 6.3 Adaptive finalist cutoff
 
-The initial screen always advances at least the best three rankable logical CPUs. It also advances every additional core whose **screening 1% low is within max(1%, observed Original cluster noise) of the third-place screening value**. A fresh Original control is captured after the sweep; if it leaves the Original repeatability band, the sweep is discarded rather than ranking measurements taken across a moving environment. A second fresh Original control is captured after finalist re-tests and must remain comparable in 1% low, AVG and frame-p99 before any finalist is eligible for Keep. The shortlist is intentionally uncapped; if many logical CPUs are effectively tied, extra re-tests are preferable to manufacturing a winner from noise.
+The initial screen always advances at least the best three rankable logical CPUs. It also advances every additional core whose **screening 1% low is within max(1%, observed Original cluster noise) of the third-place screening value**. A fresh Original warm-up precedes the scored control after the sweep; if the scored control leaves the Original repeatability band, the sweep is discarded rather than ranking measurements taken across a moving environment. A second fresh Original warm-up precedes the scored control after finalist re-tests; that scored control must remain comparable in 1% low, AVG and frame-p99 before any finalist is eligible for Keep. The shortlist is intentionally uncapped; if many logical CPUs are effectively tied, extra re-tests are preferable to manufacturing a winner from noise.
 
 ## 7. Screening evidence and external collectors
 
