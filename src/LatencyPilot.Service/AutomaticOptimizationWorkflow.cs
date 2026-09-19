@@ -43,8 +43,9 @@ public interface IAutomaticOptimizationStageRunner
 }
 
 /// <summary>
-/// Internal sequencing contract for one-at-a-time optimization. It deliberately
-/// does not arm public mutation; ServiceBoundary.MutationAvailable remains the
+/// Internal sequencing contract for the ADR 0006 automatic v1 path. It
+/// deliberately excludes non-v1 mutation domains such as MSI mode and does
+/// not arm public mutation; ServiceBoundary.MutationAvailable remains the
 /// exact-revision physical-validation gate.
 /// </summary>
 public sealed class AutomaticOptimizationWorkflow
@@ -53,7 +54,6 @@ public sealed class AutomaticOptimizationWorkflow
     [
         AutomaticOptimizationStage.OriginalMeasurement,
         AutomaticOptimizationStage.GpuAffinity,
-        AutomaticOptimizationStage.Msi,
         AutomaticOptimizationStage.PrimaryInputUsbXhci,
         AutomaticOptimizationStage.FinalVerification,
         AutomaticOptimizationStage.Report,
