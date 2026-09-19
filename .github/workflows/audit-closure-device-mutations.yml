@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/audit-closure-device-mutations.yml'
       - 'eng/audit-closure-task5-device-mutations.py'
+      - 'eng/audit-closure-task5-fix.py'
 
 permissions:
   contents: write
@@ -33,7 +34,9 @@ jobs:
           Write-Host "Expected device-mutation RED observed with exit code $red."
           exit 0
       - name: Implement journaled MSI and xHCI mutations
-        run: python eng/audit-closure-task5-device-mutations.py implementation
+        run: |
+          python eng/audit-closure-task5-device-mutations.py implementation
+          python eng/audit-closure-task5-fix.py
       - name: GREEN device mutations
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
       - name: Build solution
