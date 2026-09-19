@@ -17,6 +17,8 @@ public enum MutationJournalState
     Kept = 8,
     RecoveryRequired = 9,
     AbortedBeforeApply = 10,
+    ApplyRebootPending = 11,
+    RollbackRebootPending = 12,
 }
 
 public sealed record MutationJournalEntry(
@@ -42,7 +44,11 @@ public static class MutationJournalStateMachine
         (MutationJournalState.Prepared, MutationJournalState.AbortedBeforeApply) => true,
         (MutationJournalState.Applying, MutationJournalState.AbortedBeforeApply) => true,
         (MutationJournalState.Applying, MutationJournalState.Applied) => true,
+        (MutationJournalState.Applying, MutationJournalState.ApplyRebootPending) => true,
         (MutationJournalState.Applying, MutationJournalState.RecoveryRequired) => true,
+        (MutationJournalState.ApplyRebootPending, MutationJournalState.Applied) => true,
+        (MutationJournalState.ApplyRebootPending, MutationJournalState.Reverting) => true,
+        (MutationJournalState.ApplyRebootPending, MutationJournalState.RecoveryRequired) => true,
         (MutationJournalState.Applied, MutationJournalState.Measuring) => true,
         (MutationJournalState.Applied, MutationJournalState.Reverting) => true,
         (MutationJournalState.Applied, MutationJournalState.RecoveryRequired) => true,
@@ -56,7 +62,10 @@ public static class MutationJournalStateMachine
         // global Restore Baseline action is allowed to unwind it through verified rollback.
         (MutationJournalState.Kept, MutationJournalState.Reverting) => true,
         (MutationJournalState.Reverting, MutationJournalState.Reverted) => true,
+        (MutationJournalState.Reverting, MutationJournalState.RollbackRebootPending) => true,
         (MutationJournalState.Reverting, MutationJournalState.RecoveryRequired) => true,
+        (MutationJournalState.RollbackRebootPending, MutationJournalState.Reverted) => true,
+        (MutationJournalState.RollbackRebootPending, MutationJournalState.RecoveryRequired) => true,
         // Recovery deliberately resumes only through rollback in v1. A future
         // version may add verified resume semantics after re-reading machine state.
         (MutationJournalState.RecoveryRequired, MutationJournalState.Reverting) => true,
