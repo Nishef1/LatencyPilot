@@ -215,6 +215,9 @@ internal sealed class GpuGateAProgressFile
                 StringComparison.Ordinal)
                 ? candidate
                 : null;
+            var terminalUsesLatestMetrics =
+                terminalCandidate is not null ||
+                latestSnapshot?.Processor is null;
             return WriteAsync(Create(
                 terminalPhase,
                 terminalCandidate,
@@ -222,8 +225,8 @@ internal sealed class GpuGateAProgressFile
                 null,
                 null,
                 message,
-                latestSnapshot?.FrameP99Milliseconds,
-                latestSnapshot?.OnePercentLowFps,
+                terminalUsesLatestMetrics ? latestSnapshot?.FrameP99Milliseconds : null,
+                terminalUsesLatestMetrics ? latestSnapshot?.OnePercentLowFps : null,
                 finalStateVerified ? "Final state verified" : "Final state not verified",
                 isRestoring: false,
                 isTerminal: true));
