@@ -5,7 +5,7 @@ on:
     branches:
       - tmp-robust-sampling-final
     paths:
-      - eng/robust-gpu-sampling.py
+      - eng/robust-gpu-sampling-v2.py
       - .github/workflows/robust-gpu-sampling.yml
 
 permissions:
@@ -29,20 +29,24 @@ jobs:
         with:
           dotnet-version: 10.0.401
 
-      - name: RED — robust sampling contract must fail first
+      - name: RED — robust sampling contract must fail behaviorally
         shell: pwsh
         run: |
-          python eng/robust-gpu-sampling.py test
-          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+          python eng/robust-gpu-sampling-v2.py test
+          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release 2>&1 | Tee-Object -Variable testOutput
           if ($LASTEXITCODE -eq 0) {
             throw 'RED unexpectedly passed before robust sampling implementation.'
           }
-          Write-Host 'RED confirmed: current fixed-spread logic does not satisfy the robust 3-of-up-to-5 contract.'
+          $joined = $testOutput -join "`n"
+          if ($joined -match 'error CS\d+' -or $joined -match 'Build failed') {
+            throw 'RED failed to compile instead of failing the intended behavior contract.'
+          }
+          Write-Host 'RED confirmed behaviorally: current fixed-spread logic does not satisfy robust 3-of-up-to-5 sampling.'
           exit 0
 
       - name: Apply robust sampling implementation
         shell: pwsh
-        run: python eng/robust-gpu-sampling.py implementation
+        run: python eng/robust-gpu-sampling-v2.py implementation
 
       - name: GREEN — critical suite
         shell: pwsh
@@ -57,7 +61,7 @@ jobs:
         run: |
           git diff --check
           git status --short
-          $testMethods = (Get-ChildItem tests/LatencyPilot.CriticalTests -Filter *.cs | Select-String -Pattern '\[TestMethod\]' -SimpleMatch).Count
+          $testMethods = (Get-ChildItem tests/LatencyPilot.CriticalTests -Filter *.cs | Select-String -Pattern '[TestMethod]' -SimpleMatch).Count
           if ($testMethods -gt 10) {
             throw "Permanent MSTest entrypoints exceeded budget: $testMethods"
           }
@@ -68,11 +72,6 @@ jobs:
         run: |
           git config user.name 'LatencyPilot CI'
           git config user.email 'actions@users.noreply.github.com'
-          git add -- \
-            src/LatencyPilot.Benchmarking/Optimization/GpuAutoAffinitySession.cs \
-            src/LatencyPilot.Benchmarking/Optimization/GpuRepeatabilityClusterSelector.cs \
-            tools/LatencyPilot.GateAValidation/GpuGateAProgressFile.cs \
-            tests/LatencyPilot.CriticalTests/GpuAutoAffinitySessionTests.cs \
-            docs/BENCHMARK_METHODOLOGY.md
+          git add -- src/LatencyPilot.Benchmarking/Optimization/GpuAutoAffinitySession.cs src/LatencyPilot.Benchmarking/Optimization/GpuRepeatabilityClusterSelector.cs tools/LatencyPilot.GateAValidation/GpuGateAProgressFile.cs tests/LatencyPilot.CriticalTests/GpuAutoAffinitySessionTests.cs docs/BENCHMARK_METHODOLOGY.md
           git commit -m 'fix: make gpu repeatability sampling robust'
           git push origin HEAD:tmp-robust-sampling-final
