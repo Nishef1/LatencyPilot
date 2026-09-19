@@ -24,7 +24,7 @@ LatencyPilot v1 is a narrow automatic interrupt-affinity workflow, not a generic
 ```text
 preflight / quiet check
 → deep ETW baseline
-→ GPU physical-core screen
+→ GPU logical-CPU screen
 → post-sweep Original drift control
 → noise-aware finalist re-test
 → select by 1% low → AVG → p99 → 0.1% rare-tail context
@@ -65,7 +65,7 @@ The current source now follows ADR 0006:
 capture exact original/default state
 → deterministic D3D12 calibration / frozen workload
 → 5 s original non-scored warm-up/reference (benchmark only; no PresentMon/ETW)
-→ each eligible physical core:
+→ each eligible logical CPU:
      apply/restart/verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored screen
@@ -86,8 +86,8 @@ Important current properties:
 
 - Windows default is reference/recovery, not a fixed 3% winner gate.
 - CPU0 is eligible.
-- Physical-core representatives come from actual topology; no even/odd CPU assumption.
-- No active SMT sibling-refinement phase in v1.
+- Every eligible logical CPU from actual Windows topology is screened; no even/odd CPU assumption and no silent SMT sibling omission.
+- No separate SMT sibling-refinement phase is needed because eligible siblings are first-class candidates.
 - No ABBA/BAAB confirmation loop; the superseded ABBA/BAAB orchestrator, decision engine, confirmation engine and evidence collector were removed from source.
 - The old generic GPU screening/confirmation result models were pruned; the live v1 decision path has one owner: `GpuAutoAffinitySession`.
 - A fresh post-sweep Original control rejects a moving benchmark environment before finalist ranking.
@@ -122,7 +122,7 @@ Development convenience and closure evidence are now deliberately separate: a di
 
 Next physical Gate A must prove on one exact clean green revision:
 
-1. every expected physical core receives one scored screening run;
+1. every expected eligible logical CPU receives one scored screening run;
 2. a fresh post-sweep Original control remains inside the Original repeatability band;
 3. the best three plus every candidate inside the measured-noise cutoff receive two additional scored runs;
 4. repeatability never hides more than one rejected score and never exceeds four scored attempts per Original/finalist;
@@ -182,6 +182,6 @@ The controlled D3D12 renderer now uses a three-buffer flip chain and two frame c
 
 ## Audit closure status — 2026-09-19
 
-Software/source closure is implemented for F1–F11 plus conservative MSI and reversible xHCI mutation substrate. The live GPU decision path is now consolidated on `GpuAutoAffinitySession`; the superseded ABBA/BAAB execution stack was deleted. Critical contracts cover owner-thread rendering, deterministic noise-aware ranking, post-sweep Original drift rejection, next-clean-finalist fallback, DPC/ISR tail guardrails, serialized mutation/recovery, optional collector semantics, tri-state runtime placement, full eligible-core enumeration, primary-input USB identity, composite route correlation, capture-quality gating, driver-wide xHCI attribution, reboot-pending states, exact rollback, and fail-closed Gate A source-evidence eligibility.
+Software/source closure is implemented for F1–F11 plus conservative MSI and reversible xHCI mutation substrate. The live GPU decision path is now consolidated on `GpuAutoAffinitySession`; the superseded ABBA/BAAB execution stack was deleted. Critical contracts cover owner-thread rendering, deterministic noise-aware ranking, post-sweep Original drift rejection, next-clean-finalist fallback, DPC/ISR tail guardrails, serialized mutation/recovery, optional collector semantics, tri-state runtime placement, full eligible-logical-CPU enumeration, primary-input USB identity, composite route correlation, capture-quality gating, driver-wide xHCI attribution, reboot-pending states, exact rollback, and fail-closed Gate A source-evidence eligibility.
 
 **Still not a physical-product completion claim:** public mutation remains disabled until an exact clean green revision passes real Windows hardware validation across the required Intel/AMD and USB/xHCI scenarios. Dirty-development Gate A runs are useful diagnostic evidence but cannot satisfy that gate. Hosted GitHub Actions cannot prove physical interrupt placement, reboot activation, or performance benefit.
