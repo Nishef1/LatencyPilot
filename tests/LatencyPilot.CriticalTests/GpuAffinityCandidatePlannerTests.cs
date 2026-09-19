@@ -59,6 +59,20 @@ public sealed class GpuAffinityCandidatePlannerTests
             cappedCandidates[0].PhysicalCoreIndex,
             cappedCandidates[1].PhysicalCoreIndex);
 
+        var cpuSets = new ProcessorCpuSetSnapshot(
+            [
+                new ProcessorCpuSetEntry(0, cpu0, 0, 0, 0, 0, 0, false, false, false, true, 0),
+                new ProcessorCpuSetEntry(1, cpu1, 0, 0, 0, 0, 0, false, false, false, false, 0),
+                new ProcessorCpuSetEntry(2, cpu2, 1, 0, 0, 0, 0, false, false, false, false, 0),
+                new ProcessorCpuSetEntry(3, cpu3, 1, 0, 0, 0, 0, false, false, false, false, 0),
+            ],
+            DateTimeOffset.UnixEpoch);
+        var eligibleCandidates = GpuAffinityCandidatePlanner.Create(topology, pressure, cpuSets);
+        Assert.IsFalse(eligibleCandidates.Any(candidate => candidate.Processor == cpu0),
+            "A realtime logical CPU must remain excluded.");
+        Assert.IsTrue(eligibleCandidates.Any(candidate => candidate.Processor == cpu1),
+            "An eligible SMT sibling must remain searchable even when the lower-numbered sibling is ineligible.");
+
         var manyProcessors = Enumerable.Range(0, 24)
             .Select(static index => new LogicalProcessorId(0, checked((byte)index)))
             .ToArray();
