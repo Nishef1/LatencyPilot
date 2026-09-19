@@ -12,7 +12,7 @@ LatencyPilot v1 automates one narrow, reversible Windows 11 workflow:
 ```text
 preflight / quiet check
 → baseline DPC/ISR evidence
-→ benchmark GPU interrupt affinity across eligible physical cores
+→ benchmark GPU interrupt affinity across every eligible logical CPU
 → re-test the best up to three and select the best repeatable core
 → final runtime GPU ISR-placement verification
 → measure remaining per-CPU interrupt headroom
@@ -58,7 +58,7 @@ Canonical current decision: `docs/adr/0006-simple-auto-interrupt-affinity-v1.md`
 - [x] typed observation protocol with public mutation still unarmed;
 - [x] durable SQLite mutation journal and recovery ownership;
 - [x] exact original-state snapshot/restore semantics;
-- [x] current v1 scope removes ABBA/BAAB, active SMT refinement and Original-vs-candidate winner thresholds;
+- [x] current v1 scope removes ABBA/BAAB and Original-vs-candidate fixed winner thresholds; SMT siblings are screened directly rather than handled by a separate refinement phase;
 - [x] NIC/audio/cross-subsystem automatic tuning removed from the v1 critical path.
 
 ### Exit gate
@@ -124,7 +124,7 @@ exact original/default GPU affinity
 → normal-user deterministic D3D12 calibration
 → frozen worker map/workload/seed
 → 5 s non-scored original warm-up/reference (benchmark only; no PresentMon/ETW)
-→ every eligible physical core:
+→ every eligible logical CPU:
      journaled apply/restart + stored-state verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored 30 s screening run
@@ -148,7 +148,7 @@ Source checklist:
 
 - [x] D3D12 benchmark and GPU timestamp evidence;
 - [x] controlled benchmark wall-period AVG / 1% / 0.1% / p99 statistics;
-- [x] physical-core candidates from actual Windows topology, CPU0 allowed;
+- [x] all eligible logical-CPU candidates from actual Windows topology, including SMT siblings and CPU0;
 - [x] one scored screening run per candidate;
 - [x] fresh post-sweep Original control rejects time/thermal/background drift before shortlist ranking;
 - [x] best three plus any screening candidate inside max(1%, observed Original noise) receive two additional scored re-tests in separate fresh transition rounds;
@@ -157,7 +157,7 @@ Source checklist:
 - [x] ranking is noise-aware: <=1% differences in 1% low / AVG / p99 are practical ties; 0.1% low only breaks a remaining tie when its relative difference exceeds 5%;
 - [x] a second post-finalist Original control rejects drift in 1% low / AVG / frame-p99 before Keep;
 - [x] comparable GPU-driver DPC/ISR p99 tails are per-run, median/noise-aware Keep guardrails; a rejected top finalist falls through to the next ranked clean improvement;
-- [x] no SMT/hyperthread sibling refinement in v1;
+- [x] no separate SMT/hyperthread refinement phase because eligible siblings are first-class candidates;
 - [x] no ABBA/BAAB confirmation loop;
 - [x] Windows default is recovery/reference state, not a fixed minimum-improvement gate;
 - [x] 5 s non-scored post-transition warm-up;
@@ -180,7 +180,7 @@ Source checklist:
 
 Gate A closes only when the exact clean green revision proves on supported hardware:
 
-1. all expected physical cores are screened;
+1. all expected eligible logical CPUs are screened;
 2. top candidates receive two additional scored runs;
 3. a stable finalist is selected by the documented low-FPS order;
 4. exact rollback occurs between candidate blocks;
