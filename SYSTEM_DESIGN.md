@@ -117,7 +117,7 @@ Hardware-independent interpretation/orchestration:
 - steady `baseline-quality-v2` / `workload-stability-v1`;
 - GPU candidate generation from actual topology;
 - `gpu-affinity-benchmark-v1` evidence interpretation/readiness;
-- v1 GPU search policy: one scored screen/core, top-three re-test, low-FPS ranking and repeatability;
+- v1 GPU search policy: one scored screen/logical CPU, noise-aware finalist re-test, low-FPS ranking and bounded repeatability;
 - progress planning;
 - input/xHCI timing/headroom interpretation;
 - future read-only/policy components that do not enter the v1 critical path.
@@ -237,7 +237,7 @@ one adaptive calibration
      two independent deterministically shuffled re-test rounds
      fresh apply/restart/warm-up + 1 scored 30 s run + exact rollback per round
      at most one adaptive replacement score
-→ accept only stable 3-of-up-to-4 evidence with at most one rejected run
+→ prefer stable 3-of-up-to-4 evidence; otherwise retain all four valid runs and make their measured variance part of ranking/guardrail thresholds
 → 5 s Original warm-up → fresh scored Original control after finalist re-tests; stop if 1%/AVG/p99 drift
 → walk finalists in rank order through Original/frame/noise-aware DPC/ISR guardrails
 → apply highest-ranked clean winner
