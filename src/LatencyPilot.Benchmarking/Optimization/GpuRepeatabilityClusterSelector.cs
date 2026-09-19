@@ -9,7 +9,7 @@ internal sealed record GpuRepeatabilityClusterSelection(
 internal static class GpuRepeatabilityClusterSelector
 {
     internal const int RequiredRunCount = 3;
-    internal const int MaximumAttemptCount = 5;
+    internal const int MaximumAttemptCount = 4;
     internal const double RelativeTolerance = 0.03d;
 
     internal static GpuRepeatabilityClusterSelection? Select(double[] values)
