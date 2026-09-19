@@ -218,7 +218,7 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, persistentOriginal.Recommendation);
         Assert.IsTrue(persistentOriginal.Report.OriginalStateRestored);
         Assert.AreEqual(
-            5,
+            4,
             persistentOriginalBackend.Events.Count(static item =>
                 item.StartsWith("original:screening-original:", StringComparison.Ordinal)),
             "Original sampling must stop after four scored attempts when no stable 3-run cluster exists.");
