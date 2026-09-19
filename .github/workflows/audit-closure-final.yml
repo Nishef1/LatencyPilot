@@ -1,0 +1,108 @@
+name: Audit closure final
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/audit-closure-final.yml'
+      - 'eng/audit-closure-task6-final.py'
+
+permissions:
+  contents: write
+
+jobs:
+  final-closure:
+    runs-on: windows-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.401
+
+      - name: Final integration regressions only
+        run: python eng/audit-closure-task6-final.py tests
+
+      - name: RED final integration
+        shell: pwsh
+        run: |
+          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+          $red = $LASTEXITCODE
+          if ($red -eq 0) { throw 'Final audit integration regressions unexpectedly passed before implementation.' }
+          Write-Host "Expected final-integration RED observed with exit code $red."
+          exit 0
+
+      - name: Implement final integration and docs
+        run: python eng/audit-closure-task6-final.py implementation
+
+      - name: GREEN before consolidation
+        run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+
+      - name: Consolidate permanent tests and CI
+        run: python eng/audit-closure-task6-final.py consolidate
+
+      - name: Enforce permanent test budget
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem tests/LatencyPilot.CriticalTests -Filter *.cs -File
+          $count = ($files | Select-String -Pattern '\[(TestMethod|DataTestMethod)\]').Count
+          Write-Host "Permanent MSTest entrypoints: $count"
+          if ($count -gt 10) { throw "Permanent test budget exceeded: $count > 10." }
+
+      - name: GREEN consolidated CriticalTests
+        run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+
+      - name: Full solution build
+        run: dotnet build LatencyPilot.slnx --configuration Release --no-restore
+
+      - name: Source safety reconciliation
+        shell: pwsh
+        run: |
+          $boundary = Get-Content src/LatencyPilot.Service/ServiceBoundary.cs -Raw
+          if ($boundary -notmatch 'MutationAvailable\s*=\s*false') {
+            throw 'Public mutation must remain fail-closed until exact-revision physical validation exists.'
+          }
+          $stale = @()
+          $paths = @('README.md','SYSTEM_DESIGN.md','PROJECT_STATUS.md','ROADMAP.md','docs','src','tools')
+          foreach ($path in $paths) {
+            if (Test-Path $path) {
+              $matches = Get-ChildItem $path -Recurse -File -ErrorAction SilentlyContinue | Select-String -SimpleMatch 'Restore Windows Defaults'
+              if ($matches) { $stale += $matches }
+            }
+          }
+          if ($stale.Count -gt 0) {
+            $stale | ForEach-Object { Write-Host $_ }
+            throw 'Stale Restore Windows Defaults wording remains.'
+          }
+
+      - name: Remove temporary audit runners
+        shell: pwsh
+        run: |
+          git rm -f --ignore-unmatch .github/workflows/audit-closure-*.yml
+          git rm -f --ignore-unmatch eng/audit-closure-*.py
+
+      - name: Commit verified final closure
+        shell: pwsh
+        run: |
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if (git diff --cached --quiet) { throw 'Final closure produced no tracked changes.' }
+          git commit -m 'feat: complete audit-closure source workflow'
+          git pull --rebase origin main
+
+          $files = Get-ChildItem tests/LatencyPilot.CriticalTests -Filter *.cs -File
+          $count = ($files | Select-String -Pattern '\[(TestMethod|DataTestMethod)\]').Count
+          Write-Host "Post-rebase permanent MSTest entrypoints: $count"
+          if ($count -gt 10) { throw "Permanent test budget exceeded after rebase: $count > 10." }
+
+          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'Post-rebase CriticalTests failed.' }
+          dotnet build LatencyPilot.slnx --configuration Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Post-rebase solution build failed.' }
+          git diff --check
+          git push origin HEAD:main
