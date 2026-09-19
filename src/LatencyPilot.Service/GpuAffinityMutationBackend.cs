@@ -19,7 +19,7 @@ internal sealed class GpuAffinityMutationBackend
         transaction = new GpuInterruptAffinityMutationTransaction(journal);
     }
 
-    internal GpuInterruptAffinitySnapshot CaptureOriginal(string deviceInstanceId) =>
+    internal static GpuInterruptAffinitySnapshot CaptureOriginal(string deviceInstanceId) =>
         GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
 
     internal Guid ApplyCandidate(string deviceInstanceId, GpuAffinityCandidate candidate)
