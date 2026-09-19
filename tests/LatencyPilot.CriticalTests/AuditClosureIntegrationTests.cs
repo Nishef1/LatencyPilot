@@ -15,7 +15,6 @@ public sealed class AuditClosureIntegrationTests
         {
             AutomaticOptimizationStage.OriginalMeasurement,
             AutomaticOptimizationStage.GpuAffinity,
-            AutomaticOptimizationStage.Msi,
             AutomaticOptimizationStage.PrimaryInputUsbXhci,
             AutomaticOptimizationStage.FinalVerification,
             AutomaticOptimizationStage.Report,
@@ -35,13 +34,13 @@ public sealed class AuditClosureIntegrationTests
         Assert.AreEqual(AutomaticOptimizationStage.Report, success.TerminalStage);
 
         var rebootRunner = new RecordingStageRunner(static stage =>
-            stage == AutomaticOptimizationStage.Msi
+            stage == AutomaticOptimizationStage.PrimaryInputUsbXhci
                 ? new AutomaticOptimizationStageResult(
                     stage,
                     AutomaticOptimizationStageDisposition.RebootPending,
                     "Windows restart required",
-                    "before:msi",
-                    "stored:msi")
+                    "before:xhci",
+                    "stored:xhci")
                 : new AutomaticOptimizationStageResult(
                     stage,
                     AutomaticOptimizationStageDisposition.Completed,
@@ -50,9 +49,9 @@ public sealed class AuditClosureIntegrationTests
                     $"after:{stage}"));
         var reboot = await AutomaticOptimizationWorkflow.RunAsync(rebootRunner);
         Assert.IsFalse(reboot.Completed);
-        Assert.AreEqual(AutomaticOptimizationStage.Msi, reboot.TerminalStage);
+        Assert.AreEqual(AutomaticOptimizationStage.PrimaryInputUsbXhci, reboot.TerminalStage);
         Assert.AreEqual(3, rebootRunner.Calls.Count);
-        Assert.IsFalse(rebootRunner.Calls.Contains(AutomaticOptimizationStage.PrimaryInputUsbXhci));
+        Assert.IsFalse(rebootRunner.Calls.Contains(AutomaticOptimizationStage.FinalVerification));
 
         const string revision = "4f06d190ee8c0262c2e73799063bc93a7d9caf71";
         var assessSource = typeof(GpuOptimizationSourceRevisionPolicy).GetMethod(
@@ -105,6 +104,16 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(gateARunner, "AllowDirtyDevelopmentSource");
         StringAssert.Contains(gateARunner, "GateAClosureEligible");
         StringAssert.Contains(gateARunner, "DevelopmentOnly");
+
+        var timestampCollector = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.GpuBenchmark", "GpuTimestampCollector.cs"));
+        var resolveStart = timestampCollector.IndexOf("internal void RecordEndAndResolve", StringComparison.Ordinal);
+        var readStart = timestampCollector.IndexOf("internal double ReadElapsedMilliseconds", StringComparison.Ordinal);
+        Assert.IsTrue(resolveStart >= 0 && readStart > resolveStart, "GPU timestamp collector shape changed; audit the per-resolve frequency contract.");
+        var resolveBlock = timestampCollector[resolveStart..readStart];
+        StringAssert.Contains(resolveBlock, "GetTimestampFrequency");
+        Assert.IsFalse(
+            timestampCollector.Contains("private readonly ulong frequency", StringComparison.Ordinal),
+            "GPU timestamp frequency must not be cached for the collector lifetime.");
 
         var reportContract = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Core", "Benchmarking", "GpuAutoAffinityReport.cs"));
         StringAssert.Contains(reportContract, "GateAClosureEligible");
