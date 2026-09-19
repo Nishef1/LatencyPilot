@@ -111,6 +111,19 @@ public sealed class GpuAutoAffinitySessionTests
             noiseAwareBackend.Events.Count(static item => item == "apply:0:6"),
             "A fourth-place candidate outside the fixed 1% band but inside measured Original noise must receive both finalist rounds.");
 
+        var (_, _, sixCoreRequest) = CreateSixCoreRequest();
+        var cappedShortlistBackend = new RecordingBackend();
+        _ = await new GpuAutoAffinitySession(cappedShortlistBackend).RunAsync(sixCoreRequest);
+        var processorsWithFinalistRetests = cappedShortlistBackend.Events
+            .Where(static item => item.StartsWith("candidate:screening-finalists:", StringComparison.Ordinal))
+            .Select(static item => item[(item.LastIndexOf(':') + 1)..])
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        Assert.AreEqual(
+            5,
+            processorsWithFinalistRetests,
+            "The finalist shortlist must stay bounded even when more logical CPUs screen as practical ties.");
+
         var controlDriftBackend = new RecordingBackend(postScreeningControlDrift: true);
         var controlDrift = await new GpuAutoAffinitySession(controlDriftBackend).RunAsync(request);
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, controlDrift.Recommendation);
@@ -230,14 +243,17 @@ public sealed class GpuAutoAffinitySessionTests
                 item.StartsWith("original:screening-original:", StringComparison.Ordinal)),
             "Original sampling must stop after four scored attempts when no stable 3-run cluster exists.");
         Assert.IsTrue(persistentOriginalBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)),
-            "A noisy but valid four-run Original baseline must no longer abort before any CPU candidate is tested.");
+            "A noisy but valid four-run Original baseline must still screen every CPU once.");
+        Assert.IsFalse(persistentOriginalBackend.Events.Any(static item =>
+            item.Contains("screening-finalists", StringComparison.Ordinal)),
+            "Extreme Original noise must not expand into exhaustive finalist re-tests.");
         Assert.IsTrue(persistentOriginal.Report.Reasons.Any(static reason =>
             reason.Contains("search continued", StringComparison.OrdinalIgnoreCase) &&
             reason.Contains("noise", StringComparison.OrdinalIgnoreCase)),
-            "The report must disclose that the strict cluster was unavailable and that observed noise was carried into the decision.");
+            "The report must disclose that the strict cluster was unavailable and that observed noise was carried into the screen.");
         Assert.IsTrue(persistentOriginal.Report.Reasons.Any(static reason =>
-            reason.Contains("control drifted", StringComparison.OrdinalIgnoreCase)),
-            "The later Original control still has authority to stop a moving environment safely.");
+            reason.Contains("exhaustive-confirmation budget", StringComparison.OrdinalIgnoreCase)),
+            "Extreme baseline noise must explain why bounded finalist confirmation was skipped.");
 
         var recoverableFinalistBackend = new RecordingBackend(recoverableFinalistOutlier: true);
         var recoverableFinalist = await new GpuAutoAffinitySession(recoverableFinalistBackend).RunAsync(request);
@@ -332,6 +348,32 @@ public sealed class GpuAutoAffinitySessionTests
                 TimeSpan.FromSeconds(15)));
     }
 
+    private static (ProcessorTopologySnapshot Topology, ProcessorPressureEvidence[] Pressure, GpuAutoAffinitySessionRequest Request)
+        CreateSixCoreRequest()
+    {
+        var processors = Enumerable.Range(0, 6)
+            .Select(static index => new LogicalProcessorId(0, checked((byte)(index * 2))))
+            .ToArray();
+        var topology = new ProcessorTopologySnapshot(
+            [new ProcessorPackageSnapshot(0, processors)],
+            processors.Select((processor, index) =>
+                new ProcessorCoreSnapshot(index, 0, [processor])).ToArray(),
+            DateTimeOffset.UnixEpoch);
+        var pressure = processors
+            .Select((processor, index) => new ProcessorPressureEvidence(processor, 0.1 + (index * 0.01)))
+            .ToArray();
+        return (
+            topology,
+            pressure,
+            new GpuAutoAffinitySessionRequest(
+                Guid.NewGuid(),
+                topology,
+                pressure,
+                null,
+                0x51A7,
+                TimeSpan.FromSeconds(15)));
+    }
+
     private sealed class RecordingObserver : IGpuAutoAffinitySessionObserver
     {
         internal List<GpuAutoAffinityCandidateReport> Reports { get; } = [];
@@ -400,6 +442,11 @@ public sealed class GpuAutoAffinitySessionTests
                       string.Equals(request.Phase, "finalist-control", StringComparison.Ordinal)))
             {
                 periods = Enumerable.Repeat(16d, 100).ToArray();
+            }
+            else if (persistentlyNoisyOriginal &&
+                     string.Equals(request.Phase, "screening-control", StringComparison.Ordinal))
+            {
+                periods = Enumerable.Repeat(17.4d, 100).ToArray();
             }
             else
             {
