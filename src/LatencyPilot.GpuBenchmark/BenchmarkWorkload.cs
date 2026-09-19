@@ -19,7 +19,7 @@ internal sealed class BenchmarkWorkload
     private const int MinimumSimulationIterations = 1_000;
     private const int MaximumSimulationIterations = 4_000_000;
     private static readonly TimeSpan WarmupDuration = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan CalibrationProgressInterval = TimeSpan.FromMilliseconds(250);
     private readonly BenchmarkOptions options;
     private readonly TextWriter output;
     private readonly IReadOnlyList<LogicalProcessorId> workerMap;
@@ -73,7 +73,7 @@ internal sealed class BenchmarkWorkload
                 intervalStarted.Restart();
             }
 
-            if (started.Elapsed - lastProgress >= ProgressInterval)
+            if (started.Elapsed - lastProgress >= CalibrationProgressInterval)
             {
                 lastProgress = started.Elapsed;
                 BenchmarkProtocol.WriteProgress(
@@ -128,10 +128,19 @@ internal sealed class BenchmarkWorkload
             1d,
             150_000d));
         var frames = new List<BenchmarkFrameTelemetry>(expectedFrames);
+
+        // Keep observer work outside the scored interval. Frame periods are measured
+        // between Present calls, so serialization/console flushing between frames
+        // would become artificial tail latency in the following frame.
+        BenchmarkProtocol.WriteProgress(
+            output,
+            options.SessionId,
+            "measuring",
+            0d,
+            "Starting scored measurement window; in-window progress output is suspended to avoid perturbing frame periods.");
+
         var startedAtUtc = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
-        var lastProgress = TimeSpan.Zero;
-
         renderer.BeginMeasurementWindow();
         while (stopwatch.Elapsed < duration)
         {
@@ -143,21 +152,6 @@ internal sealed class BenchmarkWorkload
                 ValidateFrame(frame);
                 frames.Add(frame);
             }
-
-            if (stopwatch.Elapsed - lastProgress >= ProgressInterval)
-            {
-                lastProgress = stopwatch.Elapsed;
-                BenchmarkProtocol.WriteProgress(
-                    output,
-                    options.SessionId,
-                    "measuring",
-                    Math.Clamp(
-                        stopwatch.Elapsed.TotalMilliseconds /
-                        duration.TotalMilliseconds,
-                        0d,
-                        1d),
-                    $"Measured {frames.Count} completed frames with frozen workload.");
-            }
         }
 
         foreach (var frame in renderer.DrainFrames())
@@ -165,6 +159,8 @@ internal sealed class BenchmarkWorkload
             ValidateFrame(frame);
             frames.Add(frame);
         }
+
+        var completedAtUtc = DateTimeOffset.UtcNow;
 
         if (frames.Count == 0)
         {
@@ -174,11 +170,18 @@ internal sealed class BenchmarkWorkload
 
         frames.Sort(static (left, right) => left.FrameIndex.CompareTo(right.FrameIndex));
 
+        BenchmarkProtocol.WriteProgress(
+            output,
+            options.SessionId,
+            "measuring",
+            1d,
+            $"Measured {frames.Count} completed frames with frozen workload.");
+
         return Task.FromResult(new GpuBenchmarkTrialArtifact(
             GpuBenchmarkTrialArtifact.SchemaId,
             options.SessionId,
             startedAtUtc,
-            DateTimeOffset.UtcNow,
+            completedAtUtc,
             renderer.AdapterName,
             renderer.PresentMode,
             renderer.TimestampFrequency,
