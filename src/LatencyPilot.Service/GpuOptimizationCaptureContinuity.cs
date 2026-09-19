@@ -12,12 +12,14 @@ internal sealed record GpuOptimizationCaptureContinuitySnapshot(
     string ProcessName,
     int ProcessSessionId,
     uint ActiveConsoleSessionId,
+    SystemLoadSnapshot SystemLoad,
     SystemPowerSnapshot Power,
     SystemAwakeTimeSnapshot AwakeTime,
     GpuGraphicsTargetIdentitySnapshot GraphicsTarget);
 
 internal sealed record GpuOptimizationCaptureContinuityResult(
     bool IsStable,
+    double? SystemCpuBusyPercent,
     IReadOnlyList<string> Reasons);
 
 internal static class GpuOptimizationCaptureContinuity
@@ -79,13 +81,15 @@ internal static class GpuOptimizationCaptureContinuity
                 return false;
             }
 
+            var runtimeContext = RuntimeMeasurementContextReader.Capture();
             snapshot = new GpuOptimizationCaptureContinuitySnapshot(
                 processId,
                 new DateTimeOffset(process.StartTime.ToUniversalTime()),
                 process.ProcessName,
                 processSessionId,
                 activeConsoleSessionId,
-                RuntimeMeasurementContextReader.Capture().Power,
+                runtimeContext.SystemLoad,
+                runtimeContext.Power,
                 SystemAwakeTimeReader.Capture(),
                 graphicsTarget.Identity);
             return true;
@@ -128,8 +132,11 @@ internal static class GpuOptimizationCaptureContinuity
             reasons.Add("The active local console or workload session changed during capture.");
         }
 
+        var systemCpuBusyPercent = RuntimeMeasurementContextReader.CalculateSystemCpuBusyPercent(
+            before.SystemLoad,
+            after.SystemLoad);
         var powerInterval = new RuntimeMeasurementContextInterval(
-            SystemCpuBusyPercent: null,
+            systemCpuBusyPercent,
             before.Power,
             after.Power);
         if (powerInterval.PowerContextChanged)
@@ -164,6 +171,7 @@ internal static class GpuOptimizationCaptureContinuity
 
         return new GpuOptimizationCaptureContinuityResult(
             reasons.Count == 0,
+            systemCpuBusyPercent,
             reasons.AsReadOnly());
     }
 
