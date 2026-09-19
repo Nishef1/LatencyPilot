@@ -1,0 +1,78 @@
+name: Robust GPU sampling TDD
+
+on:
+  push:
+    branches:
+      - tmp-robust-sampling-final
+    paths:
+      - eng/robust-gpu-sampling.py
+      - .github/workflows/robust-gpu-sampling.yml
+
+permissions:
+  contents: write
+
+jobs:
+  red-green:
+    runs-on: windows-latest
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+      NUGET_XMLDOC_MODE: skip
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.401
+
+      - name: RED — robust sampling contract must fail first
+        shell: pwsh
+        run: |
+          python eng/robust-gpu-sampling.py test
+          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+          if ($LASTEXITCODE -eq 0) {
+            throw 'RED unexpectedly passed before robust sampling implementation.'
+          }
+          Write-Host 'RED confirmed: current fixed-spread logic does not satisfy the robust 3-of-up-to-5 contract.'
+          exit 0
+
+      - name: Apply robust sampling implementation
+        shell: pwsh
+        run: python eng/robust-gpu-sampling.py implementation
+
+      - name: GREEN — critical suite
+        shell: pwsh
+        run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
+
+      - name: Full solution build
+        shell: pwsh
+        run: dotnet build LatencyPilot.slnx --configuration Release
+
+      - name: Review patch hygiene
+        shell: pwsh
+        run: |
+          git diff --check
+          git status --short
+          $testMethods = (Get-ChildItem tests/LatencyPilot.CriticalTests -Filter *.cs | Select-String -Pattern '\[TestMethod\]' -SimpleMatch).Count
+          if ($testMethods -gt 10) {
+            throw "Permanent MSTest entrypoints exceeded budget: $testMethods"
+          }
+          Write-Host "Permanent MSTest entrypoints: $testMethods"
+
+      - name: Commit verified implementation
+        shell: pwsh
+        run: |
+          git config user.name 'LatencyPilot CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -- \
+            src/LatencyPilot.Benchmarking/Optimization/GpuAutoAffinitySession.cs \
+            src/LatencyPilot.Benchmarking/Optimization/GpuRepeatabilityClusterSelector.cs \
+            tools/LatencyPilot.GateAValidation/GpuGateAProgressFile.cs \
+            tests/LatencyPilot.CriticalTests/GpuAutoAffinitySessionTests.cs \
+            docs/BENCHMARK_METHODOLOGY.md
+          git commit -m 'fix: make gpu repeatability sampling robust'
+          git push origin HEAD:tmp-robust-sampling-final
