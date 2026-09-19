@@ -173,9 +173,16 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             .Distinct()
             .Count();
         var best = rows[0];
+        var keptWinner = string.Equals(
+            report.FinalRecommendation,
+            GpuOptimizationRecommendation.KeepCandidate.ToString(),
+            StringComparison.Ordinal) &&
+            report.FinalProcessor is not null;
         RankedSummaryText.Text = string.Format(
             CultureInfo.InvariantCulture,
-            "Selected: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}). Sub-1% differences in 1% low / AVG / p99 are treated as practical ties; 0.1% low uses a wider rare-tail margin.",
+            keptWinner
+                ? "Selected and kept: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}). Sub-1% differences in 1% low / AVG / p99 are treated as practical ties; 0.1% low uses a wider rare-tail margin."
+                : "Top measured candidate: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}) — not kept; Original/default was restored. Noise and guardrails remain part of the decision.",
             best.Processor.Number,
             best.Low1PctFps!.Value,
             rows.Length,
