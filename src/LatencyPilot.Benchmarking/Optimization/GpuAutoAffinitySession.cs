@@ -935,7 +935,7 @@ public sealed class GpuAutoAffinitySession
                     observations.Length);
             }
             selectedValues = cluster.Indexes.Select(index => values[index]).ToArray();
-            selectedObservations = observations;
+            selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
             primaryRelativeNoise = cluster.MaximumRelativeDeviation;
         }
 
@@ -978,8 +978,9 @@ public sealed class GpuAutoAffinitySession
                 observations.Length);
         }
         var selected = cluster.Indexes.Select(index => values[index]).ToArray();
+        var selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
         return new OriginalEvaluation(
-            observations,
+            selectedObservations,
             Median(selected.Select(static item => item.Low1PctFps)),
             Median(selected.Select(static item => item.Low01PctFps)),
             Median(selected.Select(static item => item.AvgFps)),
