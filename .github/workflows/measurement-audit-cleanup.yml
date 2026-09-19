@@ -94,14 +94,46 @@ jobs:
 
           renderer_path = Path('src/LatencyPilot.GpuBenchmark/D3D12BenchmarkRenderer.cs')
           renderer = renderer_path.read_text(encoding='utf-8')
-          renderer_path.write_text(
-              replace_once(
-                  renderer,
-                  '    private sealed record PendingFrame(\n',
-                  '    private readonly record struct PendingFrame(\n',
-                  'PendingFrame allocation'),
-              encoding='utf-8',
-              newline='\n')
+          renderer = replace_once(
+              renderer,
+              '    private sealed record PendingFrame(\n',
+              '    private readonly record struct PendingFrame(\n',
+              'PendingFrame allocation')
+          old_context = '''        var pending = pendingFrames[contextIndex];
+          if (pending is null)
+          {
+              return null;
+          }
+
+          WaitForFence(frameContextFenceValues[contextIndex]);
+          var gpuMilliseconds = timestamps[contextIndex].ReadElapsedMilliseconds();
+          pendingFrames[contextIndex] = null;
+          frameContextFenceValues[contextIndex] = 0;
+
+          return new BenchmarkFrameTelemetry(
+              pending.FrameIndex,
+              pending.CpuRecordingMilliseconds,
+              gpuMilliseconds,
+              pending.FramePeriodMilliseconds);
+          '''
+          new_context = '''        if (pendingFrames[contextIndex] is not { } pending)
+          {
+              return null;
+          }
+
+          WaitForFence(frameContextFenceValues[contextIndex]);
+          var gpuMilliseconds = timestamps[contextIndex].ReadElapsedMilliseconds();
+          pendingFrames[contextIndex] = null;
+          frameContextFenceValues[contextIndex] = 0;
+
+          return new BenchmarkFrameTelemetry(
+              pending.FrameIndex,
+              pending.CpuRecordingMilliseconds,
+              gpuMilliseconds,
+              pending.FramePeriodMilliseconds);
+          '''
+          renderer = replace_once(renderer, old_context, new_context, 'PendingFrame nullable unwrapping')
+          renderer_path.write_text(renderer, encoding='utf-8', newline='\n')
           '@ | python -
 
       - name: GREEN critical contracts
