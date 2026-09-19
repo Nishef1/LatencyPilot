@@ -118,8 +118,9 @@ exact original/default state
 → collect one fresh scored Original control after the full sweep
    if its 1% low leaves the Original repeatability band:
      discard the sweep and RestoreOriginal
+→ if observed Original 1%-low noise exceeds 15% after the full sweep and control remains comparable: keep the screening table, skip exhaustive finalist confirmation, RestoreOriginal and report that the environment is too noisy for an automatic Keep decision
 → rank valid screening candidates
-→ shortlist the best three plus every additional candidate whose screening 1% low is within max(1%, observed Original cluster noise) of the third-place cutoff
+→ shortlist the best three plus candidates within min(3%, max(1%, observed Original cluster noise)) of the third-place cutoff, capped at five finalists
 → shortlisted candidates:
      two independent re-test rounds are mandatory
      each finalist gets fresh apply/restart + stored-state verify, warm-up, scored run, exact rollback
@@ -181,7 +182,7 @@ The ±3% band is a **preferred-cluster rule**, not a universal claim about Windo
 
 ### 6.3 Adaptive finalist cutoff
 
-The initial screen always advances at least the best three rankable logical CPUs. It also advances every additional core whose **screening 1% low is within max(1%, observed Original cluster noise) of the third-place screening value**. A fresh Original warm-up precedes the scored control after the sweep; if the scored control leaves the Original repeatability band, the sweep is discarded rather than ranking measurements taken across a moving environment. A second fresh Original warm-up precedes the scored control after finalist re-tests; that scored control must remain comparable in 1% low, AVG and frame-p99 before any finalist is eligible for Keep. The shortlist is intentionally uncapped; if many logical CPUs are effectively tied, extra re-tests are preferable to manufacturing a winner from noise.
+The initial screen always advances at least the best three rankable logical CPUs. The finalist equivalence band is **min(3%, max(1%, observed Original 1%-low noise))** and the shortlist is capped at five candidates. Original noise still raises the eventual Keep threshold without being allowed to turn every screened CPU into a finalist. A fresh Original warm-up precedes the scored control after the sweep; if the scored control leaves the Original repeatability band, the sweep is discarded. If the control is comparable but Original 1%-low noise exceeds 15%, LatencyPilot retains the complete screening ranking and restores Original without expensive finalist re-tests because the environment is too noisy for a trustworthy automatic Keep decision. A second fresh Original warm-up precedes the scored control after finalist re-tests when that phase runs.
 
 ## 7. Screening evidence and external collectors
 
