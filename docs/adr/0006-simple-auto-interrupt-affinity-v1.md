@@ -10,7 +10,7 @@ LatencyPilot v1 automates the useful parts of the manual workflow commonly assem
 
 ```text
 quiet/preflight → baseline interrupt evidence
-→ benchmark GPU on eligible physical cores
+→ benchmark GPU on every eligible logical CPU
 → keep the best repeatable GPU core
 → choose a separate low-interrupt-load CPU for the input xHCI controller
 → apply supported reversible policies
@@ -36,14 +36,14 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
 ## Candidate search
 
 1. Capture one non-scored original/default warm-up to establish benchmark/workload continuity.
-2. Generate one canonical lowest-numbered logical representative for each physical core from Windows topology; do not assume even/odd CPU numbering and do not ban CPU0.
-3. For every physical-core candidate:
+2. Generate one candidate for every eligible logical processor from Windows topology; do not assume even/odd CPU numbering, do not ban CPU0, and do not silently collapse SMT siblings.
+3. For every logical-CPU candidate:
    - apply exact GPU interrupt affinity;
    - restart/activate and verify stored state;
    - run a 5 s non-scored warm-up (benchmark only; no PresentMon/ETW);
    - run **one** scored screening measurement;
    - restore and verify the exact original state.
-4. After the full physical-core sweep, capture one fresh scored Original control. If its 1% low leaves the Original ±3% repeatability band, discard the sweep and retain exact Original rather than ranking across time/thermal/background drift.
+4. After the full logical-CPU sweep, capture one fresh scored Original control. If its 1% low leaves the Original ±3% repeatability band, discard the sweep and retain exact Original rather than ranking across time/thermal/background drift.
 5. Rank with explicit practical-equivalence margins rather than false precision:
    1. 1% low, treating <=1% relative difference as tied;
    2. AVG FPS, treating <=1% as tied;
@@ -54,7 +54,7 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
 7. Rank finalists from a stable three-run cluster. At most one scored run may be rejected, so Original/finalist sampling is capped at four scored attempts; a fifth run cannot rescue a 3-of-5 pattern with two rejected observations.
 8. Capture a second scored Original control after finalist re-tests. Its 1% low, AVG and frame-p99 must remain inside the Original repeatability band or finalist evidence is discarded and exact Original is retained.
 9. Evaluate finalists in ranking order against exact Original. AVG, frame-p99 and 0.1% low remain guardrails. When both sides provide at least three usable interrupt-tail runs, GPU-driver DPC/ISR p99 is evaluated per run and the median regression must remain within max(10%, observed Original tail noise, observed finalist tail noise). A rejected first-place finalist does not prevent the next ranked clean improvement from being considered.
-10. SMT/hyperthread siblings are intentionally neither benchmarked nor substituted dynamically; one canonical lowest-numbered logical processor per physical core remains the v1 search unit. There is no ABBA/BAAB confirmation loop.
+10. Eligible SMT/hyperthread siblings are first-class logical-CPU candidates in the main sweep. There is no separate SMT-refinement phase and no ABBA/BAAB confirmation loop.
 
 Windows default is the exact recovery/reference state, not an opponent that every forced CPU must beat by a fixed percentage.
 
