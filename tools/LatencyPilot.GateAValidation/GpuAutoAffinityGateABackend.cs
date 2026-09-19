@@ -147,8 +147,26 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         ArgumentNullException.ThrowIfNull(candidate);
         var currentBefore = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
         var expected = ToMutationCandidate(candidate);
-        if (string.Equals(currentBefore.DriverVersion, originalState.DriverVersion, StringComparison.OrdinalIgnoreCase) &&
-            GpuInterruptAffinityStateComparer.MatchesCandidate(currentBefore, expected))
+        var driverMatchesOriginal = string.Equals(
+            currentBefore.DriverVersion,
+            originalState.DriverVersion,
+            StringComparison.OrdinalIgnoreCase);
+        if (!driverMatchesOriginal ||
+            !GpuInterruptAffinityStateComparer.MatchesOriginal(currentBefore, originalState))
+        {
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow,
+                "ApplyCandidateRefusedExternalDrift",
+                Guid.Empty,
+                candidate.Processor,
+                StoredStateVerified: false,
+                ToStoredStateReport(currentBefore),
+                "Stored GPU affinity or display-driver version changed outside the session before candidate apply."));
+            throw new InvalidOperationException(
+                "GPU affinity state changed outside the active optimization session; candidate apply was refused before any write.");
+        }
+
+        if (GpuInterruptAffinityStateComparer.MatchesCandidate(currentBefore, expected))
         {
             mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
                 DateTimeOffset.UtcNow,
