@@ -208,7 +208,6 @@ internal sealed class GpuGateAProgressFile
                 completedUnits = totalUnits;
             }
 
-            lastCompletedCandidateVerdict = recommendation;
             var terminalCandidate = string.Equals(
                 recommendation,
                 GpuOptimizationRecommendation.KeepCandidate.ToString(),
