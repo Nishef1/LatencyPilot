@@ -108,6 +108,15 @@ public sealed class AuditClosureIntegrationTests
         var reportContract = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Core", "Benchmarking", "GpuAutoAffinityReport.cs"));
         StringAssert.Contains(reportContract, "GateAClosureEligible");
         StringAssert.Contains(reportContract, "SourceState");
+
+        var benchmarkWorkload = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.GpuBenchmark", "BenchmarkWorkload.cs"));
+        StringAssert.Contains(
+            benchmarkWorkload,
+            "var simulationIterations = MinimumSimulationIterations;",
+            "The v1 benchmark must keep synthetic CPU simulation at its fixed minimum instead of calibrating scheduler pressure into the scored workload.");
+        Assert.IsFalse(
+            benchmarkWorkload.Contains("TuneSimulationIterations(", StringComparison.Ordinal),
+            "The v1 benchmark must not adaptively increase CPU simulation based on CPU frame time.");
     }
 
     private static object? ReadProperty(object? value, string name) =>
