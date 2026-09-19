@@ -4,7 +4,7 @@
 
 **Goal:** Make the current v1 GPU-affinity experiment more trustworthy before expanding its search space.
 
-**Architecture:** Preserve ADR 0006 as the product authority. First remove MSI mutation from the automatic v1 sequence and fix D3D12 timestamp-frequency handling. Then reduce benchmark scheduler contamination without changing the candidate search or Keep safety contract, add bounded local controls only where evidence justifies them, and add read-only runtime interrupt-topology evidence before any future multi-processor/MSI-X policy work.
+**Architecture:** Preserve ADR 0006 as the product authority. First reconcile the automatic workflow with that authority by removing MSI mutation from the v1 sequence. Then reduce benchmark scheduler contamination without changing the candidate search or Keep safety contract, add bounded local controls only where evidence justifies them, and add read-only runtime interrupt-topology evidence before any future multi-processor/MSI-X policy work.
 
 **Tech Stack:** C# 14, .NET 10, D3D12/Vortice, MSTest/Microsoft.Testing.Platform, Windows 11 x64.
 
@@ -20,9 +20,13 @@
 - Do not add MSI-mode mutation, power-plan mutation, NIC/RSS or audio mutation to the v1 automatic path.
 - Do not expand single-CPU affinity search to multi-processor/MSI-X policy search until runtime interrupt topology is observable and physically validated.
 
+## Rulings
+
+- **Timestamp-frequency ruling (2026-09-19):** do not change `GpuTimestampCollector` merely to re-query `GetTimestampFrequency` per resolve. The current Microsoft DirectX engineering spec states that timestamp frequencies do not change even when other GPU clocks change, while the current English Learn page dated 2026-08-19 no longer carries the earlier localized dynamic-clock-scaling warning. The previously proposed per-resolve fix therefore lacks current authoritative support and would add work without a demonstrated defect. The RED assertion for that proposed behavior was withdrawn before production code changed.
+
 ## Review Focus
 
-- D3D12 timestamp frequency changing under dynamic clock scaling must not invalidate GPU-work timing.
+- Keep D3D12 timestamp interpretation consistent with current Microsoft DirectX semantics rather than stale localized guidance.
 - MSI source may remain available for future/manual use but must not run in automatic v1 sequencing.
 - Benchmark changes must not make candidate workload vary by candidate or restart.
 - Runtime reductions must not weaken final ETW placement proof or rollback safety.
@@ -30,28 +34,23 @@
 
 ---
 
-### Task 1: Reconcile v1 sequencing and D3D12 timestamp timing
+### Task 1: Reconcile v1 automatic sequencing
 
 **Files:**
 - Modify: `tests/LatencyPilot.CriticalTests/AuditClosureIntegrationTests.cs`
 - Modify: `src/LatencyPilot.Service/AutomaticOptimizationWorkflow.cs`
-- Modify: `src/LatencyPilot.GpuBenchmark/GpuTimestampCollector.cs`
-- Modify: `src/LatencyPilot.GpuBenchmark/D3D12BenchmarkRenderer.cs`
-- Modify: `docs/BENCHMARK_METHODOLOGY.md`
 - Modify: `PROJECT_STATUS.md`
 
 **Interfaces:**
-- Consumes: ADR 0006 automatic-stage scope and Microsoft D3D12 timestamp-frequency semantics.
-- Produces: automatic v1 sequence without MSI; per-resolve timestamp-frequency sampling; a diagnostic artifact frequency snapshot that is not used to convert all frames.
+- Consumes: ADR 0006 automatic-stage scope.
+- Produces: automatic v1 sequence without MSI while retaining the conservative non-v1/manual MSI substrate for recovery and future use.
 
-- [ ] Change the existing consolidated audit contract so MSI is absent from `AutomaticOptimizationWorkflow.OrderedStages` and the first reboot-pending mutation example is xHCI.
-- [ ] Add a durable audit assertion that `GpuTimestampCollector.RecordEndAndResolve` re-queries `GetTimestampFrequency` and does not cache one lifetime `readonly ulong frequency`.
-- [ ] Run hosted Tests and observe the expected RED against current production source.
-- [ ] Remove MSI from the automatic stage array while retaining non-v1 MSI mutation substrate.
-- [ ] Store the command queue in `GpuTimestampCollector`, re-query frequency immediately before timestamp resolve, validate it, and use that per-frame-context frequency when converting the resolved ticks.
-- [ ] Make renderer artifact frequency a fresh queue-frequency snapshot rather than a constructor-cached conversion authority.
-- [ ] Update canonical methodology/status wording.
-- [ ] Run hosted Tests to GREEN.
+- [x] Change the existing consolidated audit contract so MSI is absent from `AutomaticOptimizationWorkflow.OrderedStages` and the reboot-pending mutation example is xHCI.
+- [x] Run hosted Tests and observe the expected RED against current production source.
+- [x] Re-check the proposed D3D12 timestamp-frequency defect against current primary Microsoft sources; withdraw it when the current engineering spec contradicted the older guidance.
+- [x] Remove MSI from the automatic stage array while retaining non-v1 MSI mutation substrate.
+- [ ] Update canonical status wording.
+- [ ] Run hosted Tests to GREEN on the reconciled source/status HEAD.
 
 ### Task 2: Make the benchmark subject GPU-dominant without candidate-dependent work
 
