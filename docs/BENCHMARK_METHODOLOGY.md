@@ -80,7 +80,7 @@ The built-in D3D12 benchmark performs one adaptive calibration and then freezes:
 - resolution;
 - benchmark process identity.
 
-Applying GPU interrupt affinity may restart the display adapter. The benchmark intentionally keeps one authenticated benchmark process alive for the whole search and recreates its D3D12 renderer/device exactly once after each affinity-triggered restart. The non-scored warm-up and its scored run then reuse that same renderer/device. The frozen workload, seed and worker map therefore stay process-stable; process launch/JIT/cold-start effects are not reintroduced for every candidate.
+Applying or rolling back GPU interrupt affinity restarts the display adapter. The benchmark intentionally keeps one authenticated benchmark process alive for the whole search and recreates its D3D12 renderer/device after **every** apply/rollback activation before the next warm-up or scored block. If a surviving control process still receives `DXGI_ERROR_DEVICE_REMOVED` (`0x887A0005`) or `DXGI_ERROR_DEVICE_RESET` (`0x887A0007`) from a trial, that evidence slot gets one bounded renderer recreation + retry; a second failure remains terminal. The non-scored warm-up and its scored run otherwise reuse the same recreated renderer/device. The frozen workload, seed and worker map therefore stay process-stable without reusing D3D12 resources across an adapter restart.
 
 ### 5.1 Controlled frame period
 
