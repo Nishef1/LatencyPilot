@@ -207,6 +207,16 @@ public sealed class GpuAutoAffinitySession
                     cancellationToken).ConfigureAwait(false));
             }
 
+            await CaptureAcceptedAsync(
+                () => ++nextRunNumber,
+                "screening-control-warmup",
+                GpuConfirmationOrder.Original,
+                null,
+                TransitionWarmupDuration,
+                reference: null,
+                experimentId: null,
+                trialReports,
+                cancellationToken).ConfigureAwait(false);
             var screeningControl = await CaptureAcceptedAsync(
                 () => ++nextRunNumber,
                 "screening-control",
@@ -237,6 +247,16 @@ public sealed class GpuAutoAffinitySession
                 () => ++nextRunNumber,
                 cancellationToken).ConfigureAwait(false);
 
+            await CaptureAcceptedAsync(
+                () => ++nextRunNumber,
+                "finalist-control-warmup",
+                GpuConfirmationOrder.Original,
+                null,
+                TransitionWarmupDuration,
+                reference: null,
+                experimentId: null,
+                trialReports,
+                cancellationToken).ConfigureAwait(false);
             var finalistControl = await CaptureAcceptedAsync(
                 () => ++nextRunNumber,
                 "finalist-control",
