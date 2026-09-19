@@ -33,7 +33,7 @@ The automatic GPU-affinity workflow does **not** reinterpret its synthetic bench
 
 The product question is:
 
-> Among the tested valid physical-core interrupt targets, which CPU gives the strongest repeatable controlled benchmark result?
+> Among the tested valid logical-processor interrupt targets, which CPU gives the strongest repeatable controlled benchmark result?
 
 Windows default is exact reference/recovery state. It is not an opponent that every forced CPU must beat by a fixed percentage.
 
@@ -97,7 +97,7 @@ This is LatencyPilot's documented methodology. It is intentionally understandabl
 
 ## 6. GPU candidate search
 
-Candidate generation uses actual Windows processor topology. One eligible logical representative is selected for each physical core; no even/odd numbering assumption is made and CPU0 is not banned.
+Candidate generation uses actual Windows processor topology and includes every eligible logical processor in the supported group. SMT siblings are distinct candidates because Windows interrupt affinity targets logical processors. No even/odd numbering assumption is made and CPU0 is not banned.
 
 Current v1 sequence:
 
@@ -109,7 +109,7 @@ exact original/default state
      collect one replacement run 4
    if no stable 3-of-up-to-4 cluster exists:
      RestoreOriginal and report an environment/workload repeatability failure
-→ each eligible physical core:
+→ each eligible logical CPU:
      journaled apply/restart + stored-state verify
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored 30 s screening run
@@ -135,7 +135,7 @@ exact original/default state
    otherwise exact RestoreOriginal
 ```
 
-There is no SMT/hyperthread sibling refinement in v1 and no ABBA/BAAB finalist loop.
+There is no separate SMT/hyperthread refinement phase in v1 because eligible siblings are screened directly, and there is no ABBA/BAAB finalist loop.
 
 ### 6.1 Ranking order
 
@@ -172,11 +172,11 @@ LatencyPilot uses bounded robust sampling instead:
 - When both Original and finalist provide at least three scored runs with enough attributable samples, GPU-driver DPC/ISR p99 is computed per run. Median tail regression is compared against a noise-aware limit of `max(10%, Original run-to-run tail noise, finalist run-to-run tail noise)`; a regression beyond that limit rejects that finalist without preventing the next ranked finalist from being considered.
 - The final winner must beat `max(1%, observed Original cluster noise, observed finalist cluster noise)` on the primary 1% low before guardrails and final ETW placement verification are considered.
 
-The ±3% band is a versioned methodology default, not a claim that every Windows system has exactly 3% variance. A persistent inability to produce a stable 3-run cluster is an environment/workload repeatability failure and retains exact Original. Screening remains one scored run per physical core for bounded runtime; robust replacement sampling is applied to Original and finalists where evidence drives Keep/Restore.
+The ±3% band is a versioned methodology default, not a claim that every Windows system has exactly 3% variance. A persistent inability to produce a stable 3-run cluster is an environment/workload repeatability failure and retains exact Original. Screening remains one scored run per eligible logical CPU; robust replacement sampling is applied only to Original and finalists where evidence drives Keep/Restore.
 
 ### 6.3 Adaptive finalist cutoff
 
-The initial screen always advances at least the best three rankable physical cores. It also advances every additional core whose **screening 1% low is within max(1%, observed Original cluster noise) of the third-place screening value**. A fresh Original control is captured after the sweep; if it leaves the Original repeatability band, the sweep is discarded rather than ranking measurements taken across a moving environment. A second fresh Original control is captured after finalist re-tests and must remain comparable in 1% low, AVG and frame-p99 before any finalist is eligible for Keep. The shortlist is intentionally uncapped; if many physical cores are effectively tied, extra re-tests are preferable to manufacturing a winner from noise.
+The initial screen always advances at least the best three rankable logical CPUs. It also advances every additional core whose **screening 1% low is within max(1%, observed Original cluster noise) of the third-place screening value**. A fresh Original control is captured after the sweep; if it leaves the Original repeatability band, the sweep is discarded rather than ranking measurements taken across a moving environment. A second fresh Original control is captured after finalist re-tests and must remain comparable in 1% low, AVG and frame-p99 before any finalist is eligible for Keep. The shortlist is intentionally uncapped; if many logical CPUs are effectively tied, extra re-tests are preferable to manufacturing a winner from noise.
 
 ## 7. Screening evidence and external collectors
 
