@@ -44,6 +44,21 @@ def apply_implementation_fixes() -> None:
         encoding="utf-8",
         newline="\n")
 
+    # These are current product/design docs, not historical plan/spec records.
+    # Their user-facing action really is snapshot restore, so remove the stale label.
+    for relative in [
+        "docs/OPTIMIZER_TARGET_GRAPH.md",
+        "docs/adr/0006-simple-auto-interrupt-affinity-v1.md",
+    ]:
+        target = ROOT / relative
+        text = target.read_text(encoding="utf-8")
+        if "Restore Windows Defaults" not in text:
+            raise RuntimeError(f"{relative}: expected stale restore label was not found")
+        target.write_text(
+            text.replace("Restore Windows Defaults", "Restore original settings"),
+            encoding="utf-8",
+            newline="\n")
+
 
 def apply_consolidation_fixes() -> None:
     # After consolidation, AuditCase methods are intentionally invoked by the
