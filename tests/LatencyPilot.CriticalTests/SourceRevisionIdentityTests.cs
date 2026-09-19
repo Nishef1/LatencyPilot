@@ -318,6 +318,10 @@ public sealed class SourceRevisionIdentityTests
             "DXGI_ERROR_DEVICE_RESET must be recognized as one bounded renderer-recreation retry.");
         StringAssert.Contains(
             benchmarkControlClientSource,
+            "0x887A0020",
+            "DXGI_ERROR_DRIVER_INTERNAL_ERROR must be recognized as one bounded renderer-recreation retry.");
+        StringAssert.Contains(
+            benchmarkControlClientSource,
             "await RecreateRendererAsync(cancellationToken)",
             "The benchmark client must recreate the renderer before retrying a recoverable renderer trial.");
 
