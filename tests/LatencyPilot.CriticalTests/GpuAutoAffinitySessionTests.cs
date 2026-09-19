@@ -115,6 +115,13 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsFalse(controlDriftBackend.Events.Any(static item =>
             item.Contains("screening-finalists", StringComparison.Ordinal)));
 
+        var finalistControlDriftBackend = new RecordingBackend(postFinalistControlDrift: true);
+        var finalistControlDrift = await new GpuAutoAffinitySession(finalistControlDriftBackend).RunAsync(request);
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, finalistControlDrift.Recommendation);
+        Assert.IsTrue(finalistControlDrift.Report.Reasons.Any(static reason =>
+            reason.Contains("after finalist re-tests", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsFalse(finalistControlDriftBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
+
         var interruptFallbackBackend = new RecordingBackend(interruptGuardrailFallbackCase: true);
         var interruptFallback = await new GpuAutoAffinitySession(interruptFallbackBackend).RunAsync(request);
         Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, interruptFallback.Recommendation);
@@ -335,6 +342,7 @@ public sealed class GpuAutoAffinitySessionTests
         bool noisyOriginalCluster = false,
         bool noiseAwareShortlistCase = false,
         bool postScreeningControlDrift = false,
+        bool postFinalistControlDrift = false,
         bool interruptGuardrailFallbackCase = false,
         byte? noWriteProcessorNumber = null) : IGpuAutoAffinitySessionBackend
     {
@@ -370,8 +378,10 @@ public sealed class GpuAutoAffinitySessionTests
                         };
                 periods = Enumerable.Repeat(period, 100).ToArray();
             }
-            else if (postScreeningControlDrift &&
-                     string.Equals(request.Phase, "screening-control", StringComparison.Ordinal))
+            else if ((postScreeningControlDrift &&
+                      string.Equals(request.Phase, "screening-control", StringComparison.Ordinal)) ||
+                     (postFinalistControlDrift &&
+                      string.Equals(request.Phase, "finalist-control", StringComparison.Ordinal)))
             {
                 periods = Enumerable.Repeat(16d, 100).ToArray();
             }
