@@ -70,11 +70,11 @@ capture exact original/default state
      5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
      1 scored screen
      exact rollback
-→ fresh scored Original control after the sweep; discard the sweep if Original leaves its repeatability band
+→ 5 s Original warm-up → fresh scored Original control after the sweep; discard the sweep if Original leaves its repeatability band
 → rank valid screens by higher 1% low, then AVG, lower p99, then 0.1% rare-tail context
 → re-test the best three plus every additional candidate inside max(1%, observed Original noise)
 → require stable 3-of-up-to-4 evidence with at most one rejected score
-→ fresh scored Original control after finalist re-tests; reject finalist evidence if 1%/AVG/p99 drift
+→ 5 s Original warm-up → fresh scored Original control after finalist re-tests; reject finalist evidence if 1%/AVG/p99 drift
 → evaluate finalists in rank order against Original + frame and noise-aware attributable DPC/ISR p99 guardrails
 → apply the highest-ranked clean winner once
 → final 5 s benchmark-only warm-up → 5 s ETW-backed verification capture
@@ -90,8 +90,8 @@ Important current properties:
 - No separate SMT sibling-refinement phase is needed because eligible siblings are first-class candidates.
 - No ABBA/BAAB confirmation loop; the superseded ABBA/BAAB orchestrator, decision engine, confirmation engine and evidence collector were removed from source.
 - The old generic GPU screening/confirmation result models were pruned; the live v1 decision path has one owner: `GpuAutoAffinitySession`.
-- A fresh post-sweep Original control rejects a moving benchmark environment before finalist ranking.
-- A second post-finalist Original control rejects drift in 1% low, AVG or frame-p99 before any Keep decision.
+- A fresh post-sweep Original warm-up + scored control rejects a moving benchmark environment before finalist ranking.
+- A second post-finalist Original warm-up + scored control rejects drift in 1% low, AVG or frame-p99 before any Keep decision.
 - System CPU busy is measured from Windows system-time snapshots; material drift is surfaced rather than hard-coded false.
 - Missing PresentMon/ETW during screening is visible context and does not by itself abort benchmark ranking.
 - If healthy ETW proves off-target placement during screening, that candidate is invalid.
