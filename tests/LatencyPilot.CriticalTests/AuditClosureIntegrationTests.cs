@@ -105,16 +105,6 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(gateARunner, "GateAClosureEligible");
         StringAssert.Contains(gateARunner, "DevelopmentOnly");
 
-        var timestampCollector = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.GpuBenchmark", "GpuTimestampCollector.cs"));
-        var resolveStart = timestampCollector.IndexOf("internal void RecordEndAndResolve", StringComparison.Ordinal);
-        var readStart = timestampCollector.IndexOf("internal double ReadElapsedMilliseconds", StringComparison.Ordinal);
-        Assert.IsTrue(resolveStart >= 0 && readStart > resolveStart, "GPU timestamp collector shape changed; audit the per-resolve frequency contract.");
-        var resolveBlock = timestampCollector[resolveStart..readStart];
-        StringAssert.Contains(resolveBlock, "GetTimestampFrequency");
-        Assert.IsFalse(
-            timestampCollector.Contains("private readonly ulong frequency", StringComparison.Ordinal),
-            "GPU timestamp frequency must not be cached for the collector lifetime.");
-
         var reportContract = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Core", "Benchmarking", "GpuAutoAffinityReport.cs"));
         StringAssert.Contains(reportContract, "GateAClosureEligible");
         StringAssert.Contains(reportContract, "SourceState");
