@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
+using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.System;
@@ -11,6 +12,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace LatencyPilot.App;
 
@@ -18,7 +20,10 @@ public sealed partial class MainWindow
 {
     private static readonly JsonSerializerOptions GateAJsonOptions = new(JsonSerializerDefaults.Web);
     private Button? _gateAValidationButton;
+    private Border? _gateAValidationStateBadge;
+    private TextBlock? _gateAValidationStateText;
     private string? _gateARepositoryRoot;
+    private GpuOptimizationSourceAssessment? _gateASourceAssessment;
     private bool _gateAValidationRunning;
 
     internal void InitializeGateAValidationExperience()
@@ -34,27 +39,141 @@ public sealed partial class MainWindow
             return;
         }
 
+        _gateAValidationStateText = new TextBlock
+        {
+            Text = "Checking source",
+            Style = (Style)Application.Current.Resources["MetricLabelTextStyle"],
+        };
+        _gateAValidationStateBadge = new Border
+        {
+            Child = _gateAValidationStateText,
+            Padding = new Thickness(10, 5, 10, 5),
+            CornerRadius = new CornerRadius(999),
+            BorderThickness = new Thickness(1),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ApplyGateAStateBadgeBrushes("SemanticAttentionBrush", "SemanticAttentionSoftBrush");
+
         _gateAValidationButton = new Button
         {
             Content = "Run GPU Gate A",
-            MinHeight = 34,
-            Padding = new Thickness(12, 6, 12, 6),
-            Style = (Style)Application.Current.Resources["QuietButtonStyle"],
+            MinHeight = 36,
+            Padding = new Thickness(14, 7, 14, 7),
+            Style = (Style)Application.Current.Resources["SecondaryButtonStyle"],
         };
         AutomationProperties.SetName(_gateAValidationButton, "Run GPU Gate A development validation");
         AutomationProperties.SetHelpText(
             _gateAValidationButton,
-            "Development-only owner validation. Launches the deterministic Direct3D 12 benchmark as a normal-user process, asks for administrator consent once, screens each eligible physical core once, re-tests the best up to three candidates, verifies final ISR placement, and preserves journal-owned rollback/recovery.");
+            "Runs deterministic physical GPU affinity validation with journal-owned rollback/recovery. Clean exact-source runs may contribute to Gate A closure; dirty main runs are development-only evidence.");
         ToolTipService.SetToolTip(
             _gateAValidationButton,
-            "Development-only physical GPU affinity validation.");
+            "Checking source state before GPU affinity validation.");
         _gateAValidationButton.Click += GateAValidationButton_Click;
+        DeveloperValidationHost.Spacing = 8;
+        DeveloperValidationHost.Children.Add(_gateAValidationStateBadge);
         DeveloperValidationCard.Visibility = Visibility.Visible;
         DeveloperValidationHost.Children.Add(_gateAValidationButton);
+        DeveloperValidationStatusText.Text = "Checking Git source state…";
+        _ = RefreshGateASourceAssessmentAsync();
     }
 
     internal static bool IsDevelopmentGateAAvailable(string? repositoryRoot) =>
         !string.IsNullOrWhiteSpace(repositoryRoot);
+
+    private async Task RefreshGateASourceAssessmentAsync()
+    {
+        if (_gateARepositoryRoot is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var assessment = await ReadGateASourceAssessmentAsync(_gateARepositoryRoot);
+            _gateASourceAssessment = assessment;
+            ApplyGateASourceAssessmentUi(assessment);
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            UnauthorizedAccessException or
+            InvalidOperationException or
+            Win32Exception)
+        {
+            Logger.Warning(exception, "GPU Gate A source state could not be refreshed.");
+            _gateASourceAssessment = new GpuOptimizationSourceAssessment(
+                GpuOptimizationSourceState.Blocked,
+                string.Empty,
+                string.Empty,
+                false,
+                $"Source state could not be read: {exception.Message}");
+            ApplyGateASourceAssessmentUi(_gateASourceAssessment);
+        }
+    }
+
+    private void ApplyGateASourceAssessmentUi(GpuOptimizationSourceAssessment assessment)
+    {
+        if (_gateAValidationButton is null ||
+            _gateAValidationStateText is null ||
+            _gateAValidationStateBadge is null)
+        {
+            return;
+        }
+
+        switch (assessment.State)
+        {
+            case GpuOptimizationSourceState.EvidenceReady:
+                _gateAValidationStateText.Text = "Evidence-ready";
+                ApplyGateAStateBadgeBrushes("SemanticGoodBrush", "SemanticGoodSoftBrush");
+                _gateAValidationButton.Content = "Run Gate A";
+                _gateAValidationButton.IsEnabled = !_measurementBusy && !_gateAValidationRunning;
+                AutomationProperties.SetName(_gateAValidationButton, "Run evidence-ready GPU Gate A validation");
+                ToolTipService.SetToolTip(
+                    _gateAValidationButton,
+                    "Clean main checkout at an exact revision. A successful run may contribute to physical Gate A closure.");
+                SetGateAValidationStatus(
+                    "Clean main checkout detected. This run can produce evidence eligible for physical Gate A closure.",
+                    syncEvidenceStatus: false);
+                break;
+
+            case GpuOptimizationSourceState.DevelopmentOnly:
+                _gateAValidationStateText.Text = "Development only";
+                ApplyGateAStateBadgeBrushes("SemanticAttentionBrush", "SemanticAttentionSoftBrush");
+                _gateAValidationButton.Content = "Run development validation";
+                _gateAValidationButton.IsEnabled = !_measurementBusy && !_gateAValidationRunning;
+                AutomationProperties.SetName(_gateAValidationButton, "Run development-only GPU affinity validation");
+                ToolTipService.SetToolTip(
+                    _gateAValidationButton,
+                    "Local changes are present. The run may test hardware behavior and rollback, but it cannot close physical Gate A.");
+                SetGateAValidationStatus(
+                    "Local changes detected. You can test apply/rollback and hardware behavior, but this run cannot close physical Gate A or arm product mutation.",
+                    syncEvidenceStatus: false);
+                break;
+
+            default:
+                _gateAValidationStateText.Text = "Blocked";
+                ApplyGateAStateBadgeBrushes("SemanticFailureBrush", "SemanticFailureSoftBrush");
+                _gateAValidationButton.Content = "Source state blocked";
+                _gateAValidationButton.IsEnabled = false;
+                AutomationProperties.SetName(_gateAValidationButton, "GPU Gate A blocked by source state");
+                ToolTipService.SetToolTip(_gateAValidationButton, assessment.Reason);
+                SetGateAValidationStatus(assessment.Reason, syncEvidenceStatus: false);
+                break;
+        }
+    }
+
+    private void ApplyGateAStateBadgeBrushes(string foregroundResourceKey, string backgroundResourceKey)
+    {
+        if (_gateAValidationStateText is null || _gateAValidationStateBadge is null)
+        {
+            return;
+        }
+
+        var foreground = (Brush)Application.Current.Resources[foregroundResourceKey];
+        var background = (Brush)Application.Current.Resources[backgroundResourceKey];
+        _gateAValidationStateText.Foreground = foreground;
+        _gateAValidationStateBadge.Background = background;
+        _gateAValidationStateBadge.BorderBrush = foreground;
+    }
 
     private async void GateAValidationButton_Click(object sender, RoutedEventArgs e)
     {
@@ -79,8 +198,16 @@ public sealed partial class MainWindow
 
         try
         {
-            SetGateAValidationStatus("Checking the clean source revision before starting Gate A.");
-            var sourceRevision = await ReadCleanSourceRevisionAsync(_gateARepositoryRoot);
+            SetGateAValidationStatus("Checking live source state before starting GPU affinity validation.");
+            var sourceAssessment = await ReadGateASourceAssessmentAsync(_gateARepositoryRoot);
+            _gateASourceAssessment = sourceAssessment;
+            ApplyGateASourceAssessmentUi(sourceAssessment);
+            if (!sourceAssessment.CanRun)
+            {
+                throw new InvalidOperationException(sourceAssessment.Reason);
+            }
+
+            var sourceRevision = sourceAssessment.HeadRevision;
             var topology = ProcessorTopologyReader.Capture();
             if (topology.ProcessorGroupCount != 1 || topology.PhysicalCoreCount <= 0)
             {
@@ -126,7 +253,9 @@ public sealed partial class MainWindow
             }
 
             SetGateAValidationStatus(
-                "GPU Gate A is starting the deterministic normal-user benchmark. A compact progress window will remain available while the main window is minimized.");
+                sourceAssessment.State == GpuOptimizationSourceState.DevelopmentOnly
+                    ? "Starting development-only GPU affinity validation. The result will be marked ineligible for physical Gate A closure."
+                    : "Starting evidence-ready GPU Gate A validation. A compact progress window will remain available while the main window is minimized.");
 
             var benchmarkStartInfo = new ProcessStartInfo
             {
@@ -182,23 +311,28 @@ public sealed partial class MainWindow
                 UseShellExecute = true,
                 Verb = "runas",
             };
-            foreach (var argument in new[]
-                     {
-                         "run",
-                         "--project", helperProject,
-                         "--configuration", "Release",
-                         "--",
-                         "--auto-affinity",
-                         "--repo-root", _gateARepositoryRoot,
-                         "--expected-commit", sourceRevision,
-                         "--output", reportPath,
-                         "--progress", progressPath,
-                         "--cancel", cancelPath,
-                         "--session-id", sessionId.ToString("D"),
-                         "--benchmark-pipe", benchmarkPipe,
-                         "--benchmark-token", benchmarkToken,
-                         "--confirm-physical-mutation",
-                     })
+            var helperArguments = new List<string>
+            {
+                "run",
+                "--project", helperProject,
+                "--configuration", "Release",
+                "--",
+                "--auto-affinity",
+                "--repo-root", _gateARepositoryRoot,
+                "--expected-commit", sourceRevision,
+                "--output", reportPath,
+                "--progress", progressPath,
+                "--cancel", cancelPath,
+                "--session-id", sessionId.ToString("D"),
+                "--benchmark-pipe", benchmarkPipe,
+                "--benchmark-token", benchmarkToken,
+                "--confirm-physical-mutation",
+            };
+            if (sourceAssessment.State == GpuOptimizationSourceState.DevelopmentOnly)
+            {
+                helperArguments.Add("--allow-dirty-development-source");
+            }
+            foreach (var argument in helperArguments)
             {
                 helperStartInfo.ArgumentList.Add(argument);
             }
@@ -243,6 +377,11 @@ public sealed partial class MainWindow
                 report.SessionId != sessionId)
             {
                 throw new InvalidDataException("GPU Gate A report schema or session identity does not match the owner run.");
+            }
+            if (sourceAssessment.State == GpuOptimizationSourceState.DevelopmentOnly && report.GateAClosureEligible)
+            {
+                throw new InvalidDataException(
+                    "A development-only Gate A run was incorrectly marked closure-eligible. The report is rejected fail-closed.");
             }
 
             var terminalSummary = BuildGateATerminalSummary(helperExitCode, report);
@@ -322,14 +461,17 @@ public sealed partial class MainWindow
             }
 
             SetGateAValidationBusy(false);
-            _gateAValidationButton.IsEnabled = true;
+            _gateAValidationButton.IsEnabled = _gateASourceAssessment?.CanRun == true && !_measurementBusy;
         }
     }
 
-    private void SetGateAValidationStatus(string message)
+    private void SetGateAValidationStatus(string message, bool syncEvidenceStatus = true)
     {
         DeveloperValidationStatusText.Text = message;
-        EvidenceExportStatusText.Text = message;
+        if (syncEvidenceStatus)
+        {
+            EvidenceExportStatusText.Text = message;
+        }
     }
 
     private void SetGateAValidationBusy(bool busy)
@@ -344,20 +486,16 @@ public sealed partial class MainWindow
         UpdateMeasurementReadinessState();
     }
 
-    private static async Task<string> ReadCleanSourceRevisionAsync(string repositoryRoot)
+    private static async Task<GpuOptimizationSourceAssessment> ReadGateASourceAssessmentAsync(string repositoryRoot)
     {
         var head = (await RunGitAsync(repositoryRoot, "rev-parse", "HEAD")).Trim();
         var branch = (await RunGitAsync(repositoryRoot, "branch", "--show-current")).Trim();
         var status = await RunGitAsync(repositoryRoot, "status", "--porcelain");
-        if (head.Length != 40 || !head.All(Uri.IsHexDigit) ||
-            !string.Equals(branch, "main", StringComparison.Ordinal) ||
-            !string.IsNullOrWhiteSpace(status))
-        {
-            throw new InvalidOperationException(
-                "GPU Gate A requires a clean main checkout at one exact 40-character source revision.");
-        }
-
-        return head.ToLowerInvariant();
+        return GpuOptimizationSourceRevisionPolicy.Assess(
+            head,
+            branch,
+            !string.IsNullOrWhiteSpace(status),
+            head);
     }
 
     private static async Task<string> RunGitAsync(string workingDirectory, params string[] arguments)
@@ -557,8 +695,13 @@ public sealed partial class MainWindow
             : string.Equals(report.FinalRecommendation, "KeepCandidate", StringComparison.Ordinal)
                 ? " Final ISR placement evidence is missing from the report."
                 : string.Empty;
+        var source = report.GateAClosureEligible
+            ? " Source evidence is eligible for physical Gate A closure."
+            : string.Equals(report.SourceState, GpuOptimizationSourceState.DevelopmentOnly.ToString(), StringComparison.Ordinal)
+                ? " Development-only source: this report cannot close physical Gate A."
+                : " Source evidence is not eligible for physical Gate A closure.";
         var reasons = string.Join(" ", report.Reasons.Take(2));
-        return $"{headline}{metrics}{placement} {reasons}".TrimEnd();
+        return $"{headline}{metrics}{placement}{source} {reasons}".TrimEnd();
     }
 
     private static double? MedianTrialMetric(

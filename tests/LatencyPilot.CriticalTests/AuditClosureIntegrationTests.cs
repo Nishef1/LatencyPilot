@@ -101,12 +101,6 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(gateAUi, "GateAClosureEligible");
         Assert.IsFalse(gateAUi.Contains("ReadCleanSourceRevisionAsync", StringComparison.Ordinal));
 
-        var gateAXaml = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "MainWindow.xaml"));
-        StringAssert.Contains(gateAXaml, "DeveloperValidationStateBadge");
-        StringAssert.Contains(gateAXaml, "DeveloperValidationStateText");
-        StringAssert.Contains(gateAXaml, "RunGateAValidationButton");
-        StringAssert.Contains(gateAXaml, "SecondaryButtonStyle");
-
         var gateARunner = File.ReadAllText(Path.Combine(root, "tools", "LatencyPilot.GateAValidation", "GpuAutoAffinityGateARunner.cs"));
         StringAssert.Contains(gateARunner, "AllowDirtyDevelopmentSource");
         StringAssert.Contains(gateARunner, "GateAClosureEligible");

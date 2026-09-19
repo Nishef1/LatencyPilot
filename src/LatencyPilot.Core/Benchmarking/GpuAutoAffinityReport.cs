@@ -150,4 +150,8 @@ public sealed record GpuAutoAffinityReport(
     UsbAffinityRecommendationReport? UsbRecommendation = null)
 {
     public const string SchemaId = "latencypilot-gpu-auto-affinity-report-v1";
+
+    public string SourceState { get; init; } = "unknown";
+
+    public bool GateAClosureEligible { get; init; }
 }

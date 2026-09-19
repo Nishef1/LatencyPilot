@@ -20,6 +20,7 @@ internal static class GpuAutoAffinityGateARunner
 {
     internal const string ModeFlag = "--auto-affinity";
     private const string MutationConfirmationFlag = "--confirm-physical-mutation";
+    private const string DirtyDevelopmentSourceFlag = "--allow-dirty-development-source";
     private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -29,6 +30,7 @@ internal static class GpuAutoAffinityGateARunner
     internal static async Task<int> RunAsync(string[] args)
     {
         AutoOptions? options = null;
+        GpuOptimizationSourceAssessment? sourceAssessment = null;
         GpuBenchmarkControlClient? benchmark = null;
         GpuAutoAffinityGateABackend? rawBackend = null;
         GpuInterruptAffinitySnapshot? preMutationOriginalState = null;
@@ -40,9 +42,9 @@ internal static class GpuAutoAffinityGateARunner
         try
         {
             options = AutoOptions.Parse(args);
-            stage = "administrator and exact-source preflight";
+            stage = "administrator and source preflight";
             EnsureAdministrator();
-            await VerifyCleanExactSourceAsync(options).ConfigureAwait(false);
+            sourceAssessment = await VerifySourceAsync(options).ConfigureAwait(false);
 
             stage = "mutation-journal and GPU-target preflight";
             var journal = new MutationJournal(MutationJournal.GetDefaultDatabasePath());
@@ -104,7 +106,9 @@ internal static class GpuAutoAffinityGateARunner
                 progressPlan);
             stage = "Gate A progress initialization";
             await progress.ReportInitializingAsync(
-                "Preparing the benchmark-backed GPU affinity session.").ConfigureAwait(false);
+                sourceAssessment.State == GpuOptimizationSourceState.DevelopmentOnly
+                    ? "Preparing development-only GPU affinity validation. This run cannot close physical Gate A."
+                    : "Preparing the benchmark-backed GPU affinity session.").ConfigureAwait(false);
 
             sessionCancellation = new CancellationTokenSource();
             watcherShutdown = new CancellationTokenSource();
@@ -147,6 +151,8 @@ internal static class GpuAutoAffinityGateARunner
 
             Console.WriteLine($"session={options.SessionId:D}");
             Console.WriteLine($"source-revision={options.ExpectedCommit}");
+            Console.WriteLine($"source-state={sourceAssessment.State}");
+            Console.WriteLine($"gate-a-closure-eligible={sourceAssessment.IsClosureEligible}");
             Console.WriteLine($"benchmark-pid={benchmark.ProcessId.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"device={target[0].InstanceId}");
             Console.WriteLine($"physical-cores={topology.PhysicalCoreCount.ToString(CultureInfo.InvariantCulture)}");
@@ -177,9 +183,22 @@ internal static class GpuAutoAffinityGateARunner
 
             var unresolvedAfter = MutationJournalReadOnlyInspector.GetUnresolved(
                 MutationJournal.GetDefaultDatabasePath());
-            var finalReport = rawBackend.CompleteReport(result.Report, unresolvedAfter.Count) with
+            var finalSourceAssessment = await ReadFinalSourceAssessmentAsync(options).ConfigureAwait(false);
+            var closureEligible = sourceAssessment.IsClosureEligible && finalSourceAssessment.IsClosureEligible;
+            var effectiveSourceState = DetermineEffectiveSourceState(sourceAssessment, finalSourceAssessment);
+            var completedReport = rawBackend.CompleteReport(result.Report, unresolvedAfter.Count);
+            IReadOnlyList<string> reportReasons = closureEligible
+                ? completedReport.Reasons
+                : [
+                    .. completedReport.Reasons,
+                    BuildSourceEligibilityReason(sourceAssessment, finalSourceAssessment),
+                ];
+            var finalReport = completedReport with
             {
                 UsbRecommendation = usbRecommendation,
+                SourceState = effectiveSourceState.ToString(),
+                GateAClosureEligible = closureEligible,
+                Reasons = reportReasons,
             };
             if (unresolvedAfter.Count != 0)
             {
@@ -202,11 +221,15 @@ internal static class GpuAutoAffinityGateARunner
                 result.Recommendation.ToString(),
                 result.Finalist,
                 finalReport.FinalStateVerified,
-                result.Recommendation == GpuOptimizationRecommendation.KeepCandidate
-                    ? "GPU auto-affinity finished with a verified finalist candidate."
-                    : $"GPU auto-affinity finished with the verified original state. {string.Join(" ", finalReport.Reasons.Take(2))}").ConfigureAwait(false);
+                closureEligible
+                    ? result.Recommendation == GpuOptimizationRecommendation.KeepCandidate
+                        ? "GPU auto-affinity finished with a verified finalist candidate and evidence-ready source state."
+                        : $"GPU auto-affinity finished with the verified original state. {string.Join(" ", finalReport.Reasons.Take(2))}"
+                    : "GPU auto-affinity finished safely as non-closure evidence. It cannot close physical Gate A.").ConfigureAwait(false);
             Console.WriteLine($"recommendation={result.Recommendation}");
             Console.WriteLine($"final-processor={result.Finalist?.Processor.ToString() ?? "original"}");
+            Console.WriteLine($"source-state={finalReport.SourceState}");
+            Console.WriteLine($"gate-a-closure-eligible={finalReport.GateAClosureEligible}");
             Console.WriteLine("unresolved=0");
             Console.WriteLine($"report={options.OutputPath}");
             return 0;
@@ -233,7 +256,11 @@ internal static class GpuAutoAffinityGateARunner
                     [safe
                         ? "Stop safely was requested; future trials were cancelled and the exact original state was verified."
                         : "Stop safely was requested, but exact rollback/recovery could not be verified automatically."],
-                    Provenance: rawBackend?.ReportProvenance);
+                    Provenance: rawBackend?.ReportProvenance)
+                {
+                    SourceState = sourceAssessment?.State.ToString() ?? GpuOptimizationSourceState.Blocked.ToString(),
+                    GateAClosureEligible = false,
+                };
                 stoppedReport = TryCompleteReport(rawBackend, stoppedReport);
                 safe = IsVerifiedOriginalTerminalState(stoppedReport);
                 await TryWriteTerminalReportAsync(options.OutputPath, stoppedReport).ConfigureAwait(false);
@@ -274,7 +301,11 @@ internal static class GpuAutoAffinityGateARunner
                     FinalStateVerified: safe,
                     OriginalStateRestored: safe,
                     [$"Gate A failed during {stage}: {exception}"],
-                    Provenance: rawBackend?.ReportProvenance);
+                    Provenance: rawBackend?.ReportProvenance)
+                {
+                    SourceState = sourceAssessment?.State.ToString() ?? GpuOptimizationSourceState.Blocked.ToString(),
+                    GateAClosureEligible = false,
+                };
                 fallback = TryCompleteReport(rawBackend, fallback);
                 safe = IsVerifiedOriginalTerminalState(fallback);
                 await TryWriteTerminalReportAsync(options.OutputPath, fallback).ConfigureAwait(false);
@@ -555,18 +586,83 @@ internal static class GpuAutoAffinityGateARunner
                GpuInterruptAffinityStateComparer.MatchesOriginal(current, original);
     }
 
-    private static async Task VerifyCleanExactSourceAsync(AutoOptions options)
+    private static async Task<GpuOptimizationSourceAssessment> VerifySourceAsync(AutoOptions options)
     {
-        var head = await RunGitAsync(options.RepositoryRoot, "rev-parse", "HEAD").ConfigureAwait(false);
-        var branch = await RunGitAsync(options.RepositoryRoot, "branch", "--show-current").ConfigureAwait(false);
-        var status = await RunGitAsync(options.RepositoryRoot, "status", "--porcelain").ConfigureAwait(false);
-        if (!string.Equals(head.Trim(), options.ExpectedCommit, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(branch.Trim(), "main", StringComparison.Ordinal) ||
-            !string.IsNullOrWhiteSpace(status))
+        var assessment = await ReadSourceAssessmentAsync(options).ConfigureAwait(false);
+        if (!assessment.CanRun)
+        {
+            throw new InvalidOperationException(assessment.Reason);
+        }
+        if (assessment.State == GpuOptimizationSourceState.DevelopmentOnly && !options.AllowDirtyDevelopmentSource)
         {
             throw new InvalidOperationException(
-                "GPU auto-affinity Gate A requires a clean main checkout at the exact expected source revision.");
+                $"{assessment.Reason} Pass {DirtyDevelopmentSourceFlag} only for an explicitly development-only owner run.");
         }
+
+        return assessment;
+    }
+
+    private static async Task<GpuOptimizationSourceAssessment> ReadSourceAssessmentAsync(AutoOptions options)
+    {
+        var head = (await RunGitAsync(options.RepositoryRoot, "rev-parse", "HEAD").ConfigureAwait(false)).Trim();
+        var branch = (await RunGitAsync(options.RepositoryRoot, "branch", "--show-current").ConfigureAwait(false)).Trim();
+        var status = await RunGitAsync(options.RepositoryRoot, "status", "--porcelain").ConfigureAwait(false);
+        return GpuOptimizationSourceRevisionPolicy.Assess(
+            head,
+            branch,
+            !string.IsNullOrWhiteSpace(status),
+            options.ExpectedCommit);
+    }
+
+    private static async Task<GpuOptimizationSourceAssessment> ReadFinalSourceAssessmentAsync(AutoOptions options)
+    {
+        try
+        {
+            return await ReadSourceAssessmentAsync(options).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is
+            IOException or
+            UnauthorizedAccessException or
+            InvalidOperationException or
+            Win32Exception)
+        {
+            return new GpuOptimizationSourceAssessment(
+                GpuOptimizationSourceState.Blocked,
+                string.Empty,
+                string.Empty,
+                false,
+                $"Final source state could not be verified: {exception.Message}");
+        }
+    }
+
+    private static GpuOptimizationSourceState DetermineEffectiveSourceState(
+        GpuOptimizationSourceAssessment initial,
+        GpuOptimizationSourceAssessment final)
+    {
+        if (initial.IsClosureEligible && final.IsClosureEligible)
+        {
+            return GpuOptimizationSourceState.EvidenceReady;
+        }
+        if (initial.State == GpuOptimizationSourceState.Blocked || final.State == GpuOptimizationSourceState.Blocked)
+        {
+            return GpuOptimizationSourceState.Blocked;
+        }
+        return GpuOptimizationSourceState.DevelopmentOnly;
+    }
+
+    private static string BuildSourceEligibilityReason(
+        GpuOptimizationSourceAssessment initial,
+        GpuOptimizationSourceAssessment final)
+    {
+        if (initial.State == GpuOptimizationSourceState.DevelopmentOnly)
+        {
+            return "This report was produced from a dirty development checkout. Hardware apply/rollback evidence is preserved, but the report cannot close physical Gate A or arm product mutation.";
+        }
+        if (!final.IsClosureEligible)
+        {
+            return $"The source checkout changed or became unverifiable during Gate A. The run remains auditable, but it cannot close physical Gate A. Final source state: {final.State}. {final.Reason}";
+        }
+        return "This report is not eligible to close physical Gate A.";
     }
 
     private static async Task<string> RunGitAsync(string workingDirectory, params string[] arguments)
@@ -635,7 +731,8 @@ internal static class GpuAutoAffinityGateARunner
         string CancelPath,
         Guid SessionId,
         string BenchmarkPipeName,
-        string BenchmarkToken)
+        string BenchmarkToken,
+        bool AllowDirtyDevelopmentSource)
     {
         internal static AutoOptions Parse(string[] args)
         {
@@ -643,6 +740,7 @@ internal static class GpuAutoAffinityGateARunner
             var values = new Dictionary<string, string>(StringComparer.Ordinal);
             var mode = false;
             var confirmation = false;
+            var allowDirtyDevelopmentSource = false;
             for (var index = 0; index < args.Length; index++)
             {
                 var token = args[index];
@@ -654,6 +752,11 @@ internal static class GpuAutoAffinityGateARunner
                 if (string.Equals(token, MutationConfirmationFlag, StringComparison.Ordinal))
                 {
                     confirmation = true;
+                    continue;
+                }
+                if (string.Equals(token, DirtyDevelopmentSourceFlag, StringComparison.Ordinal))
+                {
+                    allowDirtyDevelopmentSource = true;
                     continue;
                 }
 
@@ -681,7 +784,7 @@ internal static class GpuAutoAffinityGateARunner
                 : throw new ArgumentException($"Required GPU auto-affinity Gate A option '{key}' is missing.");
 
             var expectedCommit = Required("--expected-commit").ToLowerInvariant();
-            if (expectedCommit.Length != 40 || !expectedCommit.All(Uri.IsHexDigit))
+            if (!GpuOptimizationSourceRevisionPolicy.IsValidFullRevision(expectedCommit))
             {
                 throw new ArgumentException("--expected-commit must be an exact 40-character hexadecimal revision.");
             }
@@ -709,7 +812,8 @@ internal static class GpuAutoAffinityGateARunner
                 Path.GetFullPath(Required("--cancel")),
                 sessionId,
                 Required("--benchmark-pipe"),
-                benchmarkToken);
+                benchmarkToken,
+                allowDirtyDevelopmentSource);
         }
     }
 }
