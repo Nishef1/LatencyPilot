@@ -1,4 +1,4 @@
-name: Audit closure F1 F3
+name: Audit closure collectors
 
 on:
   workflow_dispatch:
@@ -6,17 +6,15 @@ on:
     branches: [ main ]
     paths:
       - '.github/workflows/audit-closure-tranche1.yml'
-      - 'eng/audit-closure-f1-thread.py'
-      - 'eng/audit-closure-f1-fix.py'
-      - 'eng/audit-closure-f3-lock-restore.py'
+      - 'eng/audit-closure-task3-collectors.py'
 
 permissions:
   contents: write
 
 jobs:
-  tdd-f1-f3:
+  tdd-collectors:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,53 +22,31 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.401
-      - name: F1 tests only
+      - name: Collector regressions only
         shell: pwsh
-        run: |
-          python eng/audit-closure-f1-thread.py tests
-          python eng/audit-closure-f1-fix.py tests
-      - name: RED F1
-        shell: pwsh
-        run: |
-          dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-          $red = $LASTEXITCODE
-          if ($red -eq 0) { throw 'F1 regression unexpectedly passed before implementation.' }
-          Write-Host "Expected F1 RED observed with exit code $red."
-          exit 0
-      - name: Implement F1
-        shell: pwsh
-        run: |
-          python eng/audit-closure-f1-thread.py implementation
-          python eng/audit-closure-f1-fix.py implementation
-      - name: GREEN F1
-        shell: pwsh
-        run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-      - name: F3 tests only
-        shell: pwsh
-        run: python eng/audit-closure-f3-lock-restore.py tests
-      - name: RED F3
+        run: python eng/audit-closure-task3-collectors.py tests
+      - name: RED collectors
         shell: pwsh
         run: |
           dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
           $red = $LASTEXITCODE
-          if ($red -eq 0) { throw 'F3 regression unexpectedly passed before implementation.' }
-          Write-Host "Expected F3 RED observed with exit code $red."
+          if ($red -eq 0) { throw 'Collector regressions unexpectedly passed before implementation.' }
+          Write-Host "Expected collector RED observed with exit code $red."
           exit 0
-      - name: Implement F3 and retained restore command
+      - name: Implement collector semantics
         shell: pwsh
-        run: python eng/audit-closure-f3-lock-restore.py implementation
-      - name: GREEN F1 F3
+        run: python eng/audit-closure-task3-collectors.py implementation
+      - name: GREEN collectors
         shell: pwsh
         run: dotnet test tests/LatencyPilot.CriticalTests/LatencyPilot.CriticalTests.csproj --configuration Release
-      - name: Validate and commit verified F1 F3
+      - name: Validate and commit collectors
         shell: pwsh
         run: |
-          git add src tools tests
+          git add tools tests
           git diff --cached --check
           if (-not (git diff --cached --quiet)) {
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'fix: serialize mutation and benchmark ownership'
+            git commit -m 'fix: make screening collectors fail soft'
             git push origin HEAD:main
           }
-          git push origin --delete __unused_do_not_create_2 2>$null || Write-Host 'Temporary branch already absent.'
