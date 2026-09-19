@@ -233,7 +233,8 @@ one adaptive calibration
      exact rollback
 → 5 s Original warm-up → fresh scored Original control after the sweep; stop if Original drift exceeds its repeatability band
 → rank by 1% low → AVG → p99 → 0.1% low rare-tail context
-→ best three + all candidates within max(1%, observed Original noise) of the third-place screening cutoff:
+→ if Original 1%-low noise >15% after sweep/control: preserve screening ranking, skip finalist confirmation, RestoreOriginal
+→ otherwise best three + candidates within min(3%, max(1%, observed Original noise)) of the third-place cutoff, capped at five:
      two independent deterministically shuffled re-test rounds
      fresh apply/restart/warm-up + 1 scored 30 s run + exact rollback per round
      at most one adaptive replacement score
