@@ -30,8 +30,8 @@ public sealed record GpuAffinityCandidate(
 public static class GpuAffinityCandidatePlanner
 {
     // A supported single Windows processor group contains at most 64 logical processors.
-    // The automatic path therefore covers every eligible physical-core representative;
-    // an explicit lower caller cap remains possible and visible at the call site.
+    // Interrupt affinity targets logical processors, so the automatic path covers every
+    // eligible logical CPU. An explicit lower caller cap remains possible and visible.
     public const int DefaultMaximumCandidates = 64;
     public const int MaximumCandidates = 64;
 
@@ -64,12 +64,14 @@ public static class GpuAffinityCandidatePlanner
         }
 
         var pressureByProcessor = BuildPressureMap(pressureEvidence);
-        var rankedCandidates = CreateRankedPhysicalCoreCandidates(topology, pressureByProcessor, cpuSets);
+        var rankedCandidates = CreateRankedLogicalProcessorCandidates(topology, pressureByProcessor, cpuSets);
         var ordered = rankedCandidates
             .OrderBy(static ranked => ranked.AvailabilityRank)
             .ThenBy(static ranked => ranked.Candidate.ObservedPressureScore)
             .ThenByDescending(static ranked => ranked.Candidate.EfficiencyClass)
             .ThenBy(static ranked => ranked.Candidate.PhysicalCoreIndex)
+            .ThenBy(static ranked => ranked.Candidate.Processor.Group)
+            .ThenBy(static ranked => ranked.Candidate.Processor.Number)
             .ToArray();
 
         if (ordered.Length <= maximumCandidates)
@@ -88,28 +90,14 @@ public static class GpuAffinityCandidatePlanner
                 static group => group.Key,
                 static group => group.Average(static item => item.PressureScore));
 
-    private static List<RankedGpuAffinityCandidate> CreateRankedPhysicalCoreCandidates(
+    private static List<RankedGpuAffinityCandidate> CreateRankedLogicalProcessorCandidates(
         ProcessorTopologySnapshot topology,
         Dictionary<LogicalProcessorId, double> pressureByProcessor,
         ProcessorCpuSetSnapshot? cpuSets)
     {
-        var rankedCandidates = new List<RankedGpuAffinityCandidate>(topology.PhysicalCoreCount);
+        var rankedCandidates = new List<RankedGpuAffinityCandidate>(topology.LogicalProcessorCount);
         foreach (var core in topology.Cores)
         {
-            // v1 treats a physical core as one search unit. Hyperthread/SMT
-            // siblings are never separate candidates and are never substituted
-            // dynamically based on transient pressure. The canonical
-            // representative is the lowest-numbered logical processor reported
-            // by Windows for that physical core.
-            var canonicalProcessor = core.LogicalProcessors
-                .OrderBy(static processor => processor.Group)
-                .ThenBy(static processor => processor.Number)
-                .First();
-            if (!IsEligible(cpuSets, canonicalProcessor))
-            {
-                continue;
-            }
-
             var observedCorePressure = core.LogicalProcessors
                 .Select(processor => pressureByProcessor.TryGetValue(processor, out var score)
                     ? score
@@ -118,14 +106,27 @@ public static class GpuAffinityCandidatePlanner
                 .DefaultIfEmpty(double.PositiveInfinity)
                 .Average();
 
-            rankedCandidates.Add(new RankedGpuAffinityCandidate(
-                new GpuAffinityCandidate(
-                    core.Index,
-                    canonicalProcessor,
-                    core.EfficiencyClass,
-                    core.IsSmt,
-                    observedCorePressure),
-                GetAvailabilityRank(cpuSets, canonicalProcessor)));
+            foreach (var processor in core.LogicalProcessors
+                         .OrderBy(static processor => processor.Group)
+                         .ThenBy(static processor => processor.Number))
+            {
+                if (!IsEligible(cpuSets, processor))
+                {
+                    continue;
+                }
+
+                var observedLogicalPressure = pressureByProcessor.TryGetValue(processor, out var score)
+                    ? score
+                    : observedCorePressure;
+                rankedCandidates.Add(new RankedGpuAffinityCandidate(
+                    new GpuAffinityCandidate(
+                        core.Index,
+                        processor,
+                        core.EfficiencyClass,
+                        core.IsSmt,
+                        observedLogicalPressure),
+                    GetAvailabilityRank(cpuSets, processor)));
+            }
         }
 
         return rankedCandidates;
@@ -152,10 +153,28 @@ public static class GpuAffinityCandidatePlanner
             }
         }
 
+        // Under an explicit cap, cover distinct physical cores first so SMT-heavy
+        // systems do not spend the whole budget on siblings from a few cores.
         foreach (var ranked in ordered)
         {
             if (selected.Any(existing =>
                     existing.PhysicalCoreIndex == ranked.Candidate.PhysicalCoreIndex))
+            {
+                continue;
+            }
+
+            selected.Add(ranked.Candidate);
+            if (selected.Count == maximumCandidates)
+            {
+                return selected.ToArray();
+            }
+        }
+
+        // If the caller budget exceeds the number of represented physical cores,
+        // fill the remaining slots with the best still-unselected logical siblings.
+        foreach (var ranked in ordered)
+        {
+            if (selected.Any(existing => existing.Processor == ranked.Candidate.Processor))
             {
                 continue;
             }
