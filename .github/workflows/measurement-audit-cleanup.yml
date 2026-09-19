@@ -50,50 +50,58 @@ jobs:
           @'
           from pathlib import Path
 
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected one anchor, found {count}')
+              return text.replace(old, new, 1)
+
           kernel_path = Path('src/LatencyPilot.Platform.Windows/Etw/KernelLatencyCapture.cs')
           kernel = kernel_path.read_text(encoding='utf-8')
-          old = '''    public static KernelLatencyCaptureResult Capture(
-              KernelLatencyCaptureOptions options,
-              CancellationToken cancellationToken = default,
-              Action? onSessionReady = null)
-          {
-          '''
-          new = '''    public static KernelLatencyCaptureResult Capture(
-              KernelLatencyCaptureOptions options,
-              CancellationToken cancellationToken = default) =>
-              Capture(options, onSessionReady: null, cancellationToken);
-
-              public static KernelLatencyCaptureResult Capture(
-              KernelLatencyCaptureOptions options,
-              Action? onSessionReady,
-              CancellationToken cancellationToken = default)
-          {
-          '''
-          if kernel.count(old) != 1:
-              raise RuntimeError('KernelLatencyCapture readiness signature anchor mismatch')
-          kernel_path.write_text(kernel.replace(old, new, 1), encoding='utf-8', newline='\n')
+          old = (
+              "    public static KernelLatencyCaptureResult Capture(\n"
+              "        KernelLatencyCaptureOptions options,\n"
+              "        CancellationToken cancellationToken = default,\n"
+              "        Action? onSessionReady = null)\n"
+              "    {\n"
+          )
+          new = (
+              "    public static KernelLatencyCaptureResult Capture(\n"
+              "        KernelLatencyCaptureOptions options,\n"
+              "        CancellationToken cancellationToken = default) =>\n"
+              "        Capture(options, onSessionReady: null, cancellationToken);\n\n"
+              "    public static KernelLatencyCaptureResult Capture(\n"
+              "        KernelLatencyCaptureOptions options,\n"
+              "        Action? onSessionReady,\n"
+              "        CancellationToken cancellationToken = default)\n"
+              "    {\n"
+          )
+          kernel_path.write_text(replace_once(kernel, old, new, 'kernel readiness overload'), encoding='utf-8', newline='\n')
 
           backend_path = Path('tools/LatencyPilot.GateAValidation/GpuAutoAffinityGateABackend.cs')
           backend = backend_path.read_text(encoding='utf-8')
-          old_call = '''                    new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),
-                      deadline.Token,
-                      () => kernelReady.TrySetResult(true)),
-          '''
-          new_call = '''                    new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),
-                      () => kernelReady.TrySetResult(true),
-                      deadline.Token),
-          '''
-          if backend.count(old_call) != 1:
-              raise RuntimeError('Gate A readiness call anchor mismatch')
-          backend_path.write_text(backend.replace(old_call, new_call, 1), encoding='utf-8', newline='\n')
+          old_call = (
+              "                    new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),\n"
+              "                    deadline.Token,\n"
+              "                    () => kernelReady.TrySetResult(true)),\n"
+          )
+          new_call = (
+              "                    new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),\n"
+              "                    () => kernelReady.TrySetResult(true),\n"
+              "                    deadline.Token),\n"
+          )
+          backend_path.write_text(replace_once(backend, old_call, new_call, 'Gate A readiness call'), encoding='utf-8', newline='\n')
 
           renderer_path = Path('src/LatencyPilot.GpuBenchmark/D3D12BenchmarkRenderer.cs')
           renderer = renderer_path.read_text(encoding='utf-8')
-          old_pending = '    private sealed record PendingFrame(\n'
-          new_pending = '    private readonly record struct PendingFrame(\n'
-          if renderer.count(old_pending) != 1:
-              raise RuntimeError('PendingFrame allocation anchor mismatch')
-          renderer_path.write_text(renderer.replace(old_pending, new_pending, 1), encoding='utf-8', newline='\n')
+          renderer_path.write_text(
+              replace_once(
+                  renderer,
+                  '    private sealed record PendingFrame(\n',
+                  '    private readonly record struct PendingFrame(\n',
+                  'PendingFrame allocation'),
+              encoding='utf-8',
+              newline='\n')
           '@ | python -
 
       - name: GREEN critical contracts
