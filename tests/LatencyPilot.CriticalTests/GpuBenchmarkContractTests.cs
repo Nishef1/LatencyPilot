@@ -136,6 +136,32 @@ public sealed class GpuBenchmarkContractTests
         Assert.IsFalse(interpreted.Guardrails.ContainsKey(PresentMonGuardrailSeriesBuilder.GpuBusyMetric));
         Assert.IsFalse(interpreted.Guardrails.ContainsKey(PresentMonGuardrailSeriesBuilder.DisplayLatencyMetric));
 
+        var noSwapChainsCapture = capture with
+        {
+            Status = PresentMonWorkloadCaptureStatus.NoSwapChains,
+            Frames = [],
+            ActualWindowMilliseconds = 0,
+            Error = "No swap chain observed for target process.",
+        };
+        var internalPrimaryWithoutPresentMon = GpuBenchmarkEvidenceInterpreter.Interpret(evidence with
+        {
+            PresentMonCapture = noSwapChainsCapture,
+            PresentMonBinaryVersion = null,
+            EtwCaptureId = Guid.Empty,
+            EtwIntegrityComplete = false,
+            FramePeriodMilliseconds = frameTimes,
+        });
+        Assert.IsTrue(
+            internalPrimaryWithoutPresentMon.IsValid,
+            "NoSwapChains must not invalidate benchmark-owned frame-period evidence: " +
+            string.Join("; ", internalPrimaryWithoutPresentMon.ValidityReasons));
+        Assert.IsTrue(internalPrimaryWithoutPresentMon.HasVideoPrimary);
+        Assert.AreEqual(frameTimes.Length, internalPrimaryWithoutPresentMon.PrimaryFrameTime.Samples.Count);
+        Assert.AreEqual(0, internalPrimaryWithoutPresentMon.Guardrails.Count,
+            "Missing PresentMon swap-chain evidence must not fabricate external guardrail samples.");
+        Assert.AreEqual(PresentMonWorkloadCaptureStatus.NoSwapChains, noSwapChainsCapture.Status,
+            "The original PresentMon failure state remains explicit audit evidence even when benchmark-owned timing remains usable.");
+
         var provenance = GpuAutoAffinityReportProvenance.FromEvidence(evidence);
         Assert.AreEqual(evidence.SourceRevisionId, provenance.SourceRevisionId);
         Assert.AreEqual(evidence.GpuIdentity, provenance.GpuIdentity);
