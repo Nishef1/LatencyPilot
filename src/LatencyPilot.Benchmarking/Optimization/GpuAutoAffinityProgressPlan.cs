@@ -14,14 +14,14 @@ public sealed class GpuAutoAffinityProgressPlan
     private const int MaximumFinalistCandidates = 3;
     private const int FinalVerificationUnits = 2; // transition warm-up + ETW placement verification
 
-    private GpuAutoAffinityProgressPlan(IReadOnlyList<GpuAffinityCandidate> physicalCandidates)
+    private GpuAutoAffinityProgressPlan(IReadOnlyList<GpuAffinityCandidate> candidates)
     {
-        PhysicalCandidateCount = physicalCandidates.Count;
+        CandidateCount = candidates.Count;
     }
 
-    public int PhysicalCandidateCount { get; }
+    public int CandidateCount { get; }
 
-    public int FinalistCandidateCount => Math.Min(MaximumFinalistCandidates, PhysicalCandidateCount);
+    public int FinalistCandidateCount => Math.Min(MaximumFinalistCandidates, CandidateCount);
 
     public static int AdditionalFinalistUnitsPerCandidate => FinalistUnitsPerCandidate;
 
@@ -36,8 +36,8 @@ public sealed class GpuAutoAffinityProgressPlan
         ArgumentNullException.ThrowIfNull(pressureEvidence);
 
         var pressure = pressureEvidence.ToArray();
-        var physicalCandidates = GpuAffinityCandidatePlanner.Create(topology, pressure, cpuSets);
-        return new GpuAutoAffinityProgressPlan(physicalCandidates);
+        var candidates = GpuAffinityCandidatePlanner.Create(topology, pressure, cpuSets);
+        return new GpuAutoAffinityProgressPlan(candidates);
     }
 
     private int GetBaseTotalUnits() =>
@@ -45,7 +45,7 @@ public sealed class GpuAutoAffinityProgressPlan
         ScoredOriginalUnits +
         PostScreeningControlUnits +
         PostFinalistControlUnits +
-        (PhysicalCandidateCount * ScreeningUnitsPerCandidate) +
+        (CandidateCount * ScreeningUnitsPerCandidate) +
         (FinalistCandidateCount * FinalistUnitsPerCandidate) +
         FinalVerificationUnits;
 
