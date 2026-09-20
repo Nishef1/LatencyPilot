@@ -5,12 +5,14 @@ namespace LatencyPilot.GpuBenchmark;
 
 internal sealed class GpuTimestampCollector : IDisposable
 {
+    private readonly ID3D12CommandQueue queue;
     private readonly ID3D12QueryHeap queryHeap;
     private readonly ID3D12Resource readback;
-    private readonly ulong frequency;
+    private ulong frequency;
 
     internal GpuTimestampCollector(ID3D12Device device, ID3D12CommandQueue queue)
     {
+        this.queue = queue;
         queue.GetTimestampFrequency(out frequency).CheckError();
         if (frequency == 0)
         {
@@ -31,6 +33,16 @@ internal sealed class GpuTimestampCollector : IDisposable
 
     internal void RecordEndAndResolve(ID3D12GraphicsCommandList commandList)
     {
+        // Query this frame-context's conversion rate immediately before resolve.
+        // Some hardware can vary GPU timestamp frequency under dynamic clock
+        // scaling; keeping a renderer-lifetime cached value can therefore distort
+        // the converted GPU-work interval.
+        queue.GetTimestampFrequency(out frequency).CheckError();
+        if (frequency == 0)
+        {
+            throw new InvalidOperationException("D3D12 command queue reported a zero timestamp frequency.");
+        }
+
         commandList.EndQuery(queryHeap, QueryType.Timestamp, 1);
         commandList.ResolveQueryData(queryHeap, QueryType.Timestamp, 0, 2, readback, 0);
     }
