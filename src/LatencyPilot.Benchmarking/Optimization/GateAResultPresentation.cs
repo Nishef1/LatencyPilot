@@ -190,12 +190,11 @@ public static class GateAResultPresentation
             Median(original.Select(static trial => trial.Low01PctFps)));
     }
 
-    private static IReadOnlyList<GateAMetricComparison> BuildMetricComparisons(
+    private static GateAMetricComparison[] BuildMetricComparisons(
         OriginalMetrics original,
         GpuAutoAffinityCandidateReport? candidate,
         double uncertainty) =>
-        new[]
-        {
+        [
             CreateMetric("low1", "1% low", "FPS", original.OnePercentLowFps,
                 candidate?.DecisionOnePercentLowFps, lowerIsBetter: false, uncertainty),
             CreateMetric("avg", "Average", "FPS", original.AvgFps,
@@ -204,7 +203,7 @@ public static class GateAResultPresentation
                 candidate?.DecisionFrameP99Milliseconds, lowerIsBetter: true, uncertainty),
             CreateMetric("low01", "0.1% low", "FPS", original.Low01PctFps,
                 candidate?.DecisionLow01PctFps, lowerIsBetter: false, uncertainty),
-        };
+        ];
 
     private static GateAMetricComparison CreateMetric(
         string key,
@@ -234,7 +233,7 @@ public static class GateAResultPresentation
             key, label, unit, original, candidate, delta, uncertainty, state, lowerIsBetter);
     }
 
-    private static IReadOnlyList<GateACandidateBar> BuildCandidateBars(
+    private static GateACandidateBar[] BuildCandidateBars(
         GpuAutoAffinityReport report,
         LogicalProcessorId? comparedProcessor,
         bool kept)
@@ -282,7 +281,7 @@ public static class GateAResultPresentation
         }).ToArray();
     }
 
-    private static IReadOnlyList<GateATrialPoint> BuildTrialPoints(
+    private static GateATrialPoint[] BuildTrialPoints(
         IReadOnlyList<GpuAutoAffinityTrialReport> trials,
         LogicalProcessorId? comparedProcessor) =>
         trials
@@ -303,7 +302,7 @@ public static class GateAResultPresentation
                 trial.ReadinessState))
             .ToArray();
 
-    private static IReadOnlyList<GateADecisionEvidenceRow> BuildDecisionRows(
+    private static GateADecisionEvidenceRow[] BuildDecisionRows(
         GpuAutoAffinityReport report,
         GpuAutoAffinityCandidateReport? compared,
         IReadOnlyList<GateAMetricComparison> metrics)
@@ -341,8 +340,8 @@ public static class GateAResultPresentation
             ? "Passed"
             : "Needs attention";
 
-        return new[]
-        {
+        return
+        [
             new GateADecisionEvidenceRow(
                 "Primary improvement",
                 primaryState,
@@ -379,7 +378,7 @@ public static class GateAResultPresentation
                     : report.OriginalStateRestored && report.FinalStateVerified
                         ? "The exact original GPU affinity state was restored and verified."
                         : "The report does not prove a verified restored Original state."),
-        };
+        ];
     }
 
     private static string BuildSummary(
