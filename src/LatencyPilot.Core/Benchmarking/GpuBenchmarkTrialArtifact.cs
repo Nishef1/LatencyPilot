@@ -14,7 +14,8 @@ public readonly record struct GpuBenchmarkArtifactFrame(
     long FrameIndex,
     double CpuRecordingMilliseconds,
     double GpuWorkMilliseconds,
-    double FramePeriodMilliseconds);
+    double FramePeriodMilliseconds,
+    ulong GpuTimestampFrequency = 0);
 
 public sealed record GpuBenchmarkTrialArtifact(
     string Schema,
