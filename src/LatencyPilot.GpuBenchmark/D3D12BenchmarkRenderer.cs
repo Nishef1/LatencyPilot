@@ -14,7 +14,8 @@ internal readonly record struct BenchmarkFrameTelemetry(
     long FrameIndex,
     double CpuRecordingMilliseconds,
     double GpuWorkMilliseconds,
-    double FramePeriodMilliseconds = 0d);
+    double FramePeriodMilliseconds = 0d,
+    ulong GpuTimestampFrequency = 0);
 
 internal sealed class D3D12BenchmarkRenderer : IDisposable
 {
@@ -407,7 +408,8 @@ internal sealed class D3D12BenchmarkRenderer : IDisposable
             pending.FrameIndex,
             pending.CpuRecordingMilliseconds,
             gpuMilliseconds,
-            pending.FramePeriodMilliseconds);
+            pending.FramePeriodMilliseconds,
+            GpuTimestampFrequency: timestamps[contextIndex].Frequency);
     }
 
     private void WaitForFence(ulong value)
