@@ -116,7 +116,13 @@ public sealed record GpuAutoAffinityCandidateReport(
     string Verdict,
     double? RelativeFrameP99Improvement,
     IReadOnlyList<string> RegressedGuardrails,
-    string? Reason = null);
+    string? Reason = null,
+    double? DecisionOnePercentLowFps = null,
+    double? DecisionAvgFps = null,
+    double? DecisionFrameP99Milliseconds = null,
+    double? DecisionLow01PctFps = null,
+    double? LocalControlUncertainty = null,
+    bool UsesTimeLocalNormalization = false);
 
 public sealed record UsbAffinityRecommendationReport(
     string Status,
