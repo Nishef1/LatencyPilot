@@ -177,7 +177,9 @@ internal sealed class BenchmarkWorkload
             completedAtUtc,
             renderer.AdapterName,
             renderer.PresentMode,
-            renderer.TimestampFrequency,
+            // Preserve the existing trial-level field for compatibility, but source
+            // it from actual scored evidence rather than renderer construction time.
+            frames[0].GpuTimestampFrequency,
             new GpuBenchmarkArtifactWorkload(
                 workload.CommandBatchesPerWorker,
                 workload.SimulationIterationsPerWorker,
@@ -189,7 +191,8 @@ internal sealed class BenchmarkWorkload
                 frame.FrameIndex,
                 frame.CpuRecordingMilliseconds,
                 frame.GpuWorkMilliseconds,
-                frame.FramePeriodMilliseconds)).ToArray(),
+                frame.FramePeriodMilliseconds,
+                frame.GpuTimestampFrequency)).ToArray(),
             renderer.CaptureWorkerChecksums()));
     }
 
@@ -200,10 +203,11 @@ internal sealed class BenchmarkWorkload
             !double.IsFinite(frame.GpuWorkMilliseconds) ||
             frame.GpuWorkMilliseconds < 0 ||
             !double.IsFinite(frame.FramePeriodMilliseconds) ||
-            frame.FramePeriodMilliseconds <= 0)
+            frame.FramePeriodMilliseconds <= 0 ||
+            frame.GpuTimestampFrequency == 0)
         {
             throw new InvalidDataException(
-                "Benchmark trial produced invalid frame timing.");
+                "Benchmark trial produced invalid frame timing or timestamp provenance.");
         }
     }
 
