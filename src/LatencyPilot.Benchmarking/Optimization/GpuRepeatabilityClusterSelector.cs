@@ -10,30 +10,31 @@ internal static class GpuRepeatabilityClusterSelector
 {
     internal const int RequiredRunCount = 3;
     internal const int MaximumAttemptCount = 4;
+    internal const int MaximumOriginalAttemptCount = 5;
     internal const double RelativeTolerance = 0.03d;
     internal const double RecoveryRelativeTolerance = 0.06d;
 
     internal static GpuRepeatabilityClusterSelection? Select(double[] values)
     {
         ArgumentNullException.ThrowIfNull(values);
-        if (values.Length < RequiredRunCount || values.Any(static value => !double.IsFinite(value) || value <= 0d))
+        if (values.Length < RequiredRunCount ||
+            values.Length > MaximumOriginalAttemptCount ||
+            values.Any(static value => !double.IsFinite(value) || value <= 0d))
         {
             return null;
         }
 
         var preferred = SelectWithinTolerance(values, RelativeTolerance);
-        if (preferred is not null || values.Length != MaximumAttemptCount)
+        if (preferred is not null || values.Length < MaximumAttemptCount)
         {
             return preferred;
         }
 
-        // The fourth scored attempt is already the bounded replacement sample.
-        // If exactly three of the four observations now form a moderately wider
-        // local regime, keep that three-run cluster while preserving the excluded
-        // sample in the audit trail. The cluster's actual deviation still becomes
-        // the noise floor, so recovery does not turn a 5-6% regime into a 3% claim.
-        // More broadly unstable four-run sets still return null and use the existing
-        // all-run noise-aware fallback in the session.
+        // Attempts four and five are bounded replacement opportunities. If a
+        // coherent three-run regime appears after one or two cold/background
+        // outliers, keep that regime while preserving every excluded observation
+        // in the audit trail. Recovery never widens beyond ±6% and never accepts
+        // more than five total observations.
         return SelectWithinTolerance(values, RecoveryRelativeTolerance);
     }
 
