@@ -107,6 +107,36 @@ public sealed class GpuMeasurementRobustnessContractTests
     }
 
     [AuditCase]
+    public void BenchmarkArtifactPreservesResolvedTimestampFrequencyPerFrame()
+    {
+        var frameType = typeof(GpuBenchmarkTrialArtifact).Assembly.GetType(
+            "LatencyPilot.Core.Benchmarking.GpuBenchmarkArtifactFrame",
+            throwOnError: true)!;
+        var frequencyProperty = frameType.GetProperty("GpuTimestampFrequency");
+        Assert.IsNotNull(
+            frequencyProperty,
+            "Each serialized frame must preserve the queue frequency used to convert that frame's D3D12 timestamp ticks; one trial-level scalar is insufficient when dynamic clock scaling changes the frequency.");
+        Assert.AreEqual(typeof(ulong), frequencyProperty.PropertyType);
+
+        var rendererSource = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.GpuBenchmark",
+            "D3D12BenchmarkRenderer.cs"));
+        var workloadSource = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.GpuBenchmark",
+            "BenchmarkWorkload.cs"));
+        StringAssert.Contains(
+            rendererSource,
+            "GpuTimestampFrequency: timestamps[contextIndex].Frequency",
+            "The completed frame must snapshot the frequency from the exact frame context before that context is reused.");
+        StringAssert.Contains(
+            workloadSource,
+            "frame.GpuTimestampFrequency",
+            "The frame-context frequency must survive into the persisted benchmark artifact.");
+    }
+
+    [AuditCase]
     public void PresentMonDynamicQueryRemainsBoundToTheBenchmarkProcessAndKeepsNoSwapChainsExplicit()
     {
         var source = File.ReadAllText(FindRepositoryFile(
