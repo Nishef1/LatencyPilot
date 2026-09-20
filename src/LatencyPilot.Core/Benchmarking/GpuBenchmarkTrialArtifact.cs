@@ -27,7 +27,10 @@ public sealed record GpuBenchmarkTrialArtifact(
     ulong GpuTimestampFrequency,
     GpuBenchmarkArtifactWorkload FrozenWorkload,
     IReadOnlyList<GpuBenchmarkArtifactFrame> Frames,
-    IReadOnlyList<ulong> WorkerChecksums)
+    IReadOnlyList<ulong> WorkerChecksums,
+    long StartedAtQpc = 0,
+    long EndedAtQpc = 0,
+    long QpcFrequency = 0)
 {
     public const string SchemaId = "latencypilot-gpu-benchmark-v1";
 }
