@@ -1158,7 +1158,7 @@ public sealed class GpuAutoAffinitySession
     private static CandidateEvaluation[] NormalizeScreeningEvaluations(
         IReadOnlyList<CandidateEvaluation> evaluations,
         OriginalEvaluation original,
-        IReadOnlyList<GpuAutoAffinityTrialObservation> blockEndControls)
+        GpuAutoAffinityTrialObservation[] blockEndControls)
     {
         if (evaluations.Count == 0)
         {
@@ -1167,17 +1167,17 @@ public sealed class GpuAutoAffinitySession
 
         var expectedControls = (evaluations.Count + ScreeningCandidatesPerControlBlock - 1) /
             ScreeningCandidatesPerControlBlock;
-        if (blockEndControls.Count != expectedControls)
+        if (blockEndControls.Length != expectedControls)
         {
             throw new InvalidOperationException(
-                $"Time-local screening normalization expected {expectedControls} block-end Original controls but received {blockEndControls.Count}.");
+                $"Time-local screening normalization expected {expectedControls} block-end Original controls but received {blockEndControls.Length}.");
         }
 
         var result = new CandidateEvaluation[evaluations.Count];
         var baseline = ControlPoint.FromOriginal(original);
         var blockStart = baseline;
         var evaluationIndex = 0;
-        for (var blockIndex = 0; blockIndex < blockEndControls.Count; blockIndex++)
+        for (var blockIndex = 0; blockIndex < blockEndControls.Length; blockIndex++)
         {
             var blockEnd = ControlPoint.FromObservation(blockEndControls[blockIndex]);
             var drift = ControlDriftEnvelope.Between(blockStart, blockEnd);
