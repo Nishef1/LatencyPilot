@@ -47,7 +47,10 @@ public static class PresentMonConsoleFrameMetricsReader
         startInfo.ArgumentList.Add("--output_file");
         startInfo.ArgumentList.Add(csvPath);
         startInfo.ArgumentList.Add("--v2_metrics");
-        startInfo.ArgumentList.Add("--date_time");
+        // PresentMon and Stopwatch/QPC now share the same monotonic time domain.
+        // This avoids local-time conversion, wall-clock adjustment, and tolerance
+        // padding when cropping external frame evidence to the scored benchmark.
+        startInfo.ArgumentList.Add("--qpc_time");
         startInfo.ArgumentList.Add("--no_console_stats");
         startInfo.ArgumentList.Add("--session_name");
         startInfo.ArgumentList.Add($"LatencyPilot-{captureId}");
@@ -95,6 +98,9 @@ public static class PresentMonConsoleFrameMetricsReader
         string csvPath,
         uint processId,
         TimeSpan requestedWindow,
+        long benchmarkStartedAtQpc,
+        long benchmarkEndedAtQpc,
+        long qpcFrequency,
         DateTimeOffset benchmarkStartedAtUtc,
         DateTimeOffset benchmarkEndedAtUtc,
         string presentMonPath,
@@ -111,6 +117,19 @@ public static class PresentMonConsoleFrameMetricsReader
                 benchmarkStartedAtUtc,
                 benchmarkEndedAtUtc);
         }
+        if (benchmarkStartedAtQpc <= 0 ||
+            benchmarkEndedAtQpc <= benchmarkStartedAtQpc ||
+            qpcFrequency <= 0)
+        {
+            return Failure(
+                PresentMonWorkloadCaptureStatus.InvalidData,
+                processId,
+                requestedWindow,
+                presentMonPath,
+                "Benchmark QPC provenance is missing or invalid; PresentMon rows cannot be correlated safely.",
+                benchmarkStartedAtUtc,
+                benchmarkEndedAtUtc);
+        }
 
         try
         {
@@ -122,7 +141,7 @@ public static class PresentMonConsoleFrameMetricsReader
 
             var processIdOrdinal = RequireColumn(csv, "ProcessID");
             var swapChainOrdinal = RequireColumn(csv, "SwapChainAddress");
-            var startTimeOrdinal = RequireAnyColumn(csv, "CPUStartDateTime", "CPUStartTime", "CPUStartQPC", "CPUStartQPCTime");
+            var startQpcOrdinal = RequireColumn(csv, "CPUStartQPC");
             // PresentMon documents MsBetweenPresents as the interval between
             // Present() calls. MsBetweenAppStart measures a different CPU-frame
             // boundary and must not be substituted as the same frame interval.
@@ -143,10 +162,8 @@ public static class PresentMonConsoleFrameMetricsReader
             AddUnavailable(unavailable, displayLatencyOrdinal, "Display latency (ms)");
 
             var frames = new List<PresentMonFrameMetricsSnapshot>(8_192);
-            var startColumnName = csv.GetName(startTimeOrdinal);
-            var useDateCrop = startColumnName.Contains("DateTime", StringComparison.OrdinalIgnoreCase);
-            var minRowUtc = DateTimeOffset.MaxValue;
-            var maxRowUtc = DateTimeOffset.MinValue;
+            var minimumAcceptedQpc = long.MaxValue;
+            var maximumAcceptedQpc = long.MinValue;
             var rowsForProcess = 0;
             var rowsInWindow = 0;
             while (await csv.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -158,23 +175,20 @@ public static class PresentMonConsoleFrameMetricsReader
                 }
 
                 rowsForProcess++;
-                if (useDateCrop)
+                if (!long.TryParse(
+                        csv.GetString(startQpcOrdinal),
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out var rowStartedAtQpc) ||
+                    rowStartedAtQpc < benchmarkStartedAtQpc ||
+                    rowStartedAtQpc > benchmarkEndedAtQpc)
                 {
-                    if (!TryParseLocalTimestamp(csv.GetString(startTimeOrdinal), out var rowStartedAtUtc) ||
-                        rowStartedAtUtc < benchmarkStartedAtUtc - TimeSpan.FromSeconds(5) ||
-                        rowStartedAtUtc > benchmarkEndedAtUtc + TimeSpan.FromSeconds(5))
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    rowsInWindow++;
-                    if (rowStartedAtUtc < minRowUtc) minRowUtc = rowStartedAtUtc;
-                    if (rowStartedAtUtc > maxRowUtc) maxRowUtc = rowStartedAtUtc;
-                }
-                else
-                {
-                    rowsInWindow++;
-                }
+                rowsInWindow++;
+                minimumAcceptedQpc = Math.Min(minimumAcceptedQpc, rowStartedAtQpc);
+                maximumAcceptedQpc = Math.Max(maximumAcceptedQpc, rowStartedAtQpc);
 
                 if (!TryParseSwapChain(csv.GetString(swapChainOrdinal), out var swapChain) || swapChain == 0 ||
                     !TryParseRequiredDouble(csv.GetString(frameTimeOrdinal), out var frameTime) || frameTime <= 0 ||
@@ -204,14 +218,22 @@ public static class PresentMonConsoleFrameMetricsReader
                     processId,
                     requestedWindow,
                     presentMonPath,
-                    $"PresentMon produced no valid frame rows inside the benchmark artifact window (rows for PID={rowsForProcess}, in window={rowsInWindow}).",
+                    $"PresentMon produced no valid frame rows inside the benchmark QPC window (target PID {processId}; rows for target={rowsForProcess}, rows in window={rowsInWindow}).",
                     benchmarkStartedAtUtc,
                     benchmarkEndedAtUtc);
             }
 
-            var observedStart = useDateCrop && maxRowUtc >= minRowUtc ? minRowUtc : benchmarkStartedAtUtc;
-            var observedEnd = useDateCrop && maxRowUtc >= minRowUtc ? maxRowUtc : benchmarkEndedAtUtc;
-            var actualWindowMs = Math.Max(1d, (observedEnd - observedStart).TotalMilliseconds);
+            var observedStart = AddQpcOffset(
+                benchmarkStartedAtUtc,
+                minimumAcceptedQpc - benchmarkStartedAtQpc,
+                qpcFrequency);
+            var observedEnd = AddQpcOffset(
+                benchmarkStartedAtUtc,
+                maximumAcceptedQpc - benchmarkStartedAtQpc,
+                qpcFrequency);
+            var actualWindowMs = Math.Max(
+                1d,
+                (maximumAcceptedQpc - minimumAcceptedQpc) * 1000d / qpcFrequency);
             return new PresentMonFrameCaptureSnapshot(
                 PresentMonWorkloadCaptureStatus.Available,
                 processId,
@@ -235,7 +257,8 @@ public static class PresentMonConsoleFrameMetricsReader
             InvalidDataException or
             IOException or
             FormatException or
-            OverflowException)
+            OverflowException or
+            ArgumentOutOfRangeException)
         {
             return Failure(
                 PresentMonWorkloadCaptureStatus.InvalidData,
@@ -246,6 +269,20 @@ public static class PresentMonConsoleFrameMetricsReader
                 benchmarkStartedAtUtc,
                 benchmarkEndedAtUtc);
         }
+    }
+
+    private static DateTimeOffset AddQpcOffset(
+        DateTimeOffset benchmarkStartedAtUtc,
+        long qpcDelta,
+        long qpcFrequency)
+    {
+        var seconds = qpcDelta / (double)qpcFrequency;
+        if (!double.IsFinite(seconds) || seconds < 0d)
+        {
+            throw new InvalidDataException("PresentMon QPC row produced an invalid benchmark-relative offset.");
+        }
+
+        return benchmarkStartedAtUtc.AddSeconds(seconds);
     }
 
     private static PresentMonFrameCaptureSnapshot Failure(
@@ -343,32 +380,6 @@ public static class PresentMonConsoleFrameMetricsReader
                 : null;
     }
 
-    private static bool TryParseLocalTimestamp(string value, out DateTimeOffset utc)
-    {
-        utc = default;
-        var text = value.Trim();
-        var dot = text.LastIndexOf('.');
-        if (dot >= 0)
-        {
-            var fractionLength = text.Length - dot - 1;
-            if (fractionLength > 7) text = text[..(dot + 1 + 7)];
-        }
-
-        if (!DateTime.TryParseExact(
-                text,
-                "yyyy-M-d H:mm:ss.FFFFFFF",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AllowWhiteSpaces,
-                out var local))
-        {
-            return false;
-        }
-
-        local = DateTime.SpecifyKind(local, DateTimeKind.Local);
-        utc = new DateTimeOffset(local).ToUniversalTime();
-        return true;
-    }
-
     private static void TryTerminate(Process process)
     {
         try
@@ -457,6 +468,9 @@ public static class PresentMonConsoleFrameMetricsReader
         }
 
         public async Task<PresentMonFrameCaptureSnapshot> CompleteAsync(
+            long benchmarkStartedAtQpc,
+            long benchmarkEndedAtQpc,
+            long qpcFrequency,
             DateTimeOffset benchmarkStartedAtUtc,
             DateTimeOffset benchmarkEndedAtUtc,
             CancellationToken cancellationToken = default)
@@ -489,6 +503,9 @@ public static class PresentMonConsoleFrameMetricsReader
                         csvPath,
                         processId,
                         requestedWindow,
+                        benchmarkStartedAtQpc,
+                        benchmarkEndedAtQpc,
+                        qpcFrequency,
                         benchmarkStartedAtUtc,
                         benchmarkEndedAtUtc,
                         presentMonPath,
