@@ -128,11 +128,10 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 : finite[finite.Length / 2];
         }
 
-        // Use only decision-grade scored observations. Retryable/inconclusive
-        // attempts remain in the JSON audit trail but must not change the medians
-        // displayed as the basis for ranking. A later time-local Original control
-        // can invalidate the whole comparison even though those individual captures
-        // were internally valid when recorded.
+        // Raw scored trials remain the audit trail. Candidate reports carry the
+        // actual decision metrics: screening rows can be time-local normalized,
+        // while finalist rows use repeated medians and retain local-control drift
+        // as uncertainty. Old reports without these fields fall back to raw medians.
         var rows = report.Trials
             .Where(static trial =>
                 (string.Equals(trial.Phase, "screening", StringComparison.Ordinal) ||
@@ -146,35 +145,53 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             .Select(group =>
             {
                 var candidate = report.Candidates.LastOrDefault(item => item.Processor.Equals(group.Key));
+                var rawLow1 = Median(group.Select(static trial => trial.OnePercentLowFps));
+                var rawLow01 = Median(group.Select(static trial => trial.Low01PctFps));
+                var rawAvg = Median(group.Select(static trial => trial.AvgFps));
+                var rawP99 = Median(group.Select(static trial => trial.FrameP99Milliseconds));
                 return new
                 {
                     Processor = group.Key,
                     Core = candidate?.PhysicalCoreIndex,
-                    Low1PctFps = Median(group.Select(static trial => trial.OnePercentLowFps)),
-                    Low01PctFps = Median(group.Select(static trial => trial.Low01PctFps)),
-                    AvgFps = Median(group.Select(static trial => trial.AvgFps)),
-                    MedianP99 = Median(group.Select(static trial => trial.FrameP99Milliseconds)),
+                    RawLow1PctFps = rawLow1,
+                    DecisionOnePercentLowFps = IsFinitePositive(candidate?.DecisionOnePercentLowFps)
+                        ? candidate!.DecisionOnePercentLowFps
+                        : rawLow1,
+                    DecisionLow01PctFps = IsFinitePositive(candidate?.DecisionLow01PctFps)
+                        ? candidate!.DecisionLow01PctFps
+                        : rawLow01,
+                    DecisionAvgFps = IsFinitePositive(candidate?.DecisionAvgFps)
+                        ? candidate!.DecisionAvgFps
+                        : rawAvg,
+                    DecisionFrameP99Milliseconds = IsFinitePositive(candidate?.DecisionFrameP99Milliseconds)
+                        ? candidate!.DecisionFrameP99Milliseconds
+                        : rawP99,
+                    LocalControlUncertainty = candidate?.LocalControlUncertainty,
+                    UsesTimeLocalNormalization = candidate?.UsesTimeLocalNormalization == true,
                     Verdict = candidate?.Verdict ?? "—",
                 };
             })
-            .Where(static row => row.Low1PctFps is { } low && double.IsFinite(low) && low > 0)
+            .Where(static row =>
+                row.DecisionOnePercentLowFps is { } low &&
+                double.IsFinite(low) &&
+                low > 0)
             .OrderByDescending(row =>
                 report.FinalProcessor is not null &&
                 report.FinalProcessor.Equals(row.Processor))
-            .ThenByDescending(static row => row.Low1PctFps)
-            .ThenByDescending(static row => row.AvgFps)
-            .ThenBy(static row => row.MedianP99)
-            .ThenByDescending(static row => row.Low01PctFps)
+            .ThenByDescending(static row => row.DecisionOnePercentLowFps)
+            .ThenByDescending(static row => row.DecisionAvgFps)
+            .ThenBy(static row => row.DecisionFrameP99Milliseconds)
+            .ThenByDescending(static row => row.DecisionLow01PctFps)
             .ToArray();
 
         if (rows.Length == 0)
         {
             RankedSummaryText.Text = screeningInvalidated
-                ? "Measurements invalidated by drift — no valid winner. Original/default was restored; open the JSON report for diagnostic trial evidence."
-                : "No ranked candidates. The search restored the original state or ended Inconclusive; open the JSON report for trial reasons.";
+                ? "Measurements invalidated by a structural evidence failure — no valid winner. Original/default was restored; open the JSON report for diagnostic trial evidence."
+                : "No decision-grade candidates. The search restored the original state or ended Inconclusive; open the JSON report for trial reasons.";
             AutomationProperties.SetName(
                 RankedSummaryText,
-                screeningInvalidated ? "Candidate measurements invalidated by drift" : "Ranked candidates: none");
+                screeningInvalidated ? "Candidate measurements structurally invalidated" : "Decision-grade candidates: none");
             return;
         }
 
@@ -189,28 +206,49 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             "KeepCandidate",
             StringComparison.Ordinal) &&
             report.FinalProcessor is not null;
+        var maximumLocalUncertainty = rows
+            .Select(static row => row.LocalControlUncertainty)
+            .Where(static value => value is { } item && double.IsFinite(item) && item >= 0d)
+            .Select(static value => value!.Value)
+            .DefaultIfEmpty(0d)
+            .Max();
+        var hasTimeLocalDecisionEvidence = rows.Any(static row =>
+            row.UsesTimeLocalNormalization ||
+            row.LocalControlUncertainty is { } uncertainty && uncertainty > 0d);
+
         if (screeningInvalidated)
         {
             RankedSummaryText.Text =
-                "Measurements invalidated by drift — no valid winner. Original/default was restored; candidate measurements below are diagnostic only and are not a valid ranking.";
-            AutomationProperties.SetName(RankedSummaryText, "Candidate measurements invalidated by drift; no valid winner");
+                "Measurements invalidated by a structural evidence failure — no valid winner. Original/default was restored; candidate measurements below are diagnostic only.";
+            AutomationProperties.SetName(RankedSummaryText, "Candidate measurements structurally invalidated; no valid winner");
+        }
+        else if (hasTimeLocalDecisionEvidence)
+        {
+            RankedSummaryText.Text = string.Format(
+                CultureInfo.InvariantCulture,
+                keptWinner
+                    ? "Selected and kept: CPU {0} using time-local decision evidence. Background variability is modeled rather than treated as a winner; maximum observed local-control uncertainty is {1:P1}."
+                    : "Top decision candidate: CPU {0}. Time-local controls observed background variability; screening evidence is normalized where applicable and measured drift raises the Keep threshold. Maximum local-control uncertainty is {1:P1}. Original/default is the safe terminal state unless a finalist clears that uncertainty and final placement proof.",
+                best.Processor.Number,
+                maximumLocalUncertainty);
+            AutomationProperties.SetName(RankedSummaryText, $"Time-local GPU decision evidence. {RankedSummaryText.Text}");
         }
         else
         {
             RankedSummaryText.Text = string.Format(
                 CultureInfo.InvariantCulture,
                 keptWinner
-                    ? "Selected and kept: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}). Sub-1% differences in 1% low / AVG / p99 are treated as practical ties; 0.1% low uses a wider rare-tail margin."
-                    : "Top measured candidate: CPU {0} (median 1% low {1:F1} FPS, {2} ranked{3}) — not kept; Original/default was restored. Noise and guardrails remain part of the decision.",
+                    ? "Selected and kept: CPU {0} (decision 1% low {1:F1} FPS, {2} ranked{3}). Sub-1% differences in 1% low / AVG / p99 are treated as practical ties; 0.1% low uses a wider rare-tail margin."
+                    : "Top decision candidate: CPU {0} (decision 1% low {1:F1} FPS, {2} ranked{3}) — not kept; Original/default was restored. Noise and guardrails remain part of the decision.",
                 best.Processor.Number,
-                best.Low1PctFps!.Value,
+                best.DecisionOnePercentLowFps!.Value,
                 rows.Length,
                 inconclusive > 0 ? $", {inconclusive} inconclusive" : string.Empty);
-            AutomationProperties.SetName(RankedSummaryText, $"Ranked candidates. {RankedSummaryText.Text}");
+            AutomationProperties.SetName(RankedSummaryText, $"GPU candidate decision evidence. {RankedSummaryText.Text}");
         }
 
-        var minimumLow = rows.Min(static row => row.Low1PctFps!.Value);
-        var maximumLow = rows.Max(static row => row.Low1PctFps!.Value);
+        var minimumLow = rows.Min(static row => row.DecisionOnePercentLowFps!.Value);
+        var maximumLow = rows.Max(static row => row.DecisionOnePercentLowFps!.Value);
         var span = maximumLow - minimumLow;
         foreach (var row in rows)
         {
@@ -218,17 +256,32 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 report.FinalProcessor is not null &&
                 report.FinalProcessor.Equals(row.Processor);
             var displayedVerdict = screeningInvalidated ? "Measured · invalidated" : row.Verdict;
+            var evidenceMode = row.UsesTimeLocalNormalization
+                ? " · time-local normalized"
+                : string.Empty;
+            var uncertainty = row.LocalControlUncertainty is { } value && double.IsFinite(value) && value > 0d
+                ? string.Create(CultureInfo.InvariantCulture, $" · uncertainty {value:P1}")
+                : string.Empty;
+            var rawContext = row.UsesTimeLocalNormalization &&
+                row.RawLow1PctFps is { } raw &&
+                double.IsFinite(raw) &&
+                raw > 0d
+                    ? string.Create(CultureInfo.InvariantCulture, $" · raw 1% {raw:F1}")
+                    : string.Empty;
             var label = new TextBlock
             {
                 Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    "CPU {0}{1} · 1% {2} · 0.1% {3} · AVG {4} FPS · p99 {5} ms · {6}{7}",
+                    "CPU {0}{1} · decision 1% {2} · 0.1% {3} · AVG {4} FPS · p99 {5} ms{6}{7}{8} · {9}{10}",
                     row.Processor.Number,
                     row.Core is { } core ? $" · core {core}" : string.Empty,
-                    FormatFps(row.Low1PctFps),
-                    FormatFps(row.Low01PctFps),
-                    FormatFps(row.AvgFps),
-                    row.MedianP99 is { } p99 ? p99.ToString("F2", CultureInfo.InvariantCulture) : "—",
+                    FormatFps(row.DecisionOnePercentLowFps),
+                    FormatFps(row.DecisionLow01PctFps),
+                    FormatFps(row.DecisionAvgFps),
+                    row.DecisionFrameP99Milliseconds is { } p99 ? p99.ToString("F2", CultureInfo.InvariantCulture) : "—",
+                    evidenceMode,
+                    uncertainty,
+                    rawContext,
                     displayedVerdict,
                     isFinalist ? " · finalist" : string.Empty),
                 Style = (Style)Application.Current.Resources["BodyTextStyle"],
@@ -239,18 +292,21 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             {
                 Minimum = 0,
                 Maximum = 100,
-                Value = span > 0 ? (row.Low1PctFps!.Value - minimumLow) / span * 100d : 100d,
+                Value = span > 0 ? (row.DecisionOnePercentLowFps!.Value - minimumLow) / span * 100d : 100d,
                 Height = 8,
             };
             AutomationProperties.SetName(
                 bar,
-                string.Create(CultureInfo.InvariantCulture, $"CPU {row.Processor.Number} relative 1 percent low bar"));
+                string.Create(CultureInfo.InvariantCulture, $"CPU {row.Processor.Number} relative decision 1 percent low bar"));
             var container = new StackPanel { Spacing = 2 };
             container.Children.Add(label);
             container.Children.Add(bar);
             RankedCandidatesPanel.Children.Add(container);
         }
     }
+
+    private static bool IsFinitePositive(double? value) =>
+        value is { } item && double.IsFinite(item) && item > 0d;
 
     private static bool IsScreeningInvalidated(GpuAutoAffinityReport report)
     {
@@ -260,6 +316,9 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             return false;
         }
 
+        // Compatibility for historical reports that used drift itself as a hard
+        // invalidation reason. New reports reserve invalidation for structural
+        // evidence failures and represent ordinary drift as explicit uncertainty.
         return report.Reasons.Any(static reason =>
             reason.Contains("drift", StringComparison.OrdinalIgnoreCase) &&
             (reason.Contains("invalidated", StringComparison.OrdinalIgnoreCase) ||
