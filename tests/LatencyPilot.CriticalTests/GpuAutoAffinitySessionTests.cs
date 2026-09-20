@@ -128,7 +128,11 @@ public sealed class GpuAutoAffinitySessionTests
         var controlDrift = await new GpuAutoAffinitySession(controlDriftBackend).RunAsync(request);
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, controlDrift.Recommendation);
         Assert.IsTrue(controlDrift.Report.Reasons.Any(static reason =>
-            reason.Contains("control drifted", StringComparison.OrdinalIgnoreCase)));
+            reason.Contains("background variability", StringComparison.OrdinalIgnoreCase)),
+            "Large screening-control movement must remain explicit measurement uncertainty rather than disappearing from the report.");
+        Assert.IsTrue(controlDrift.Report.Reasons.Any(static reason =>
+            reason.Contains("exhaustive-confirmation budget", StringComparison.OrdinalIgnoreCase)),
+            "When time-local 1%-low variability exceeds the bounded confirmation budget, expensive finalist re-tests must be skipped without pretending the sweep structurally failed.");
         Assert.IsFalse(controlDriftBackend.Events.Any(static item =>
             item.Contains("screening-finalists", StringComparison.Ordinal)));
 
@@ -136,7 +140,9 @@ public sealed class GpuAutoAffinitySessionTests
         var finalistControlDrift = await new GpuAutoAffinitySession(finalistControlDriftBackend).RunAsync(request);
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, finalistControlDrift.Recommendation);
         Assert.IsTrue(finalistControlDrift.Report.Reasons.Any(static reason =>
-            reason.Contains("after finalist re-tests", StringComparison.OrdinalIgnoreCase)));
+            reason.Contains("Finalist re-test phase", StringComparison.OrdinalIgnoreCase) &&
+            reason.Contains("background variability", StringComparison.OrdinalIgnoreCase)),
+            "Finalist-phase drift must raise uncertainty and block an unjustified Keep rather than being mislabeled as a structural experiment failure.");
         Assert.IsFalse(finalistControlDriftBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
 
         var interruptFallbackBackend = new RecordingBackend(interruptGuardrailFallbackCase: true);
