@@ -486,9 +486,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         else
         {
             // Provision/start the pinned standalone collector only for scored
-            // or final-verification evidence. The timer includes D3D12 device
-            // recreation after a GPU restart; CSV rows are cropped to the exact
-            // benchmark artifact interval during parsing.
+            // or final-verification evidence. PresentMon emits CPUStartQPC and is
+            // cropped against the benchmark's exact scored QPC interval.
             var presentMonWindow = request.Duration;
             var presentMonStart = await TryStartOptionalPresentMonAsync(
                 benchmarkProcessId,
@@ -526,6 +525,9 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             {
                 await using var presentMonSession = presentMonStart.Session;
                 presentMon = await presentMonSession.CompleteAsync(
+                    artifact.StartedAtQpc,
+                    artifact.EndedAtQpc,
+                    artifact.QpcFrequency,
                     artifact.StartedAtUtc,
                     artifact.EndedAtUtc,
                     deadline.Token).ConfigureAwait(false);
@@ -832,6 +834,14 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 "GPU benchmark trial artifact has incomplete worker checksum evidence.");
         }
 
+        if (artifact.StartedAtQpc <= 0 ||
+            artifact.EndedAtQpc <= artifact.StartedAtQpc ||
+            artifact.QpcFrequency <= 0)
+        {
+            throw new InvalidDataException(
+                "GPU benchmark trial artifact is missing valid scored QPC window provenance.");
+        }
+
         return artifact;
     }
 
@@ -891,15 +901,14 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             soft.Add("Kernel ETW does not cover at least 95% of the scored benchmark trial.");
         }
 
-        // PresentMon reports its honest CSV-observed window. A miss only
-        // degrades external cross-checks; it never invalidates
-        // benchmark-period ranking.
-        var presentMonCoveredMs = (Min(artifact.EndedAtUtc, presentMon.EndedAtUtc) -
-            Max(artifact.StartedAtUtc, presentMon.StartedAtUtc)).TotalMilliseconds;
-        if (!double.IsFinite(presentMonCoveredMs) ||
-            presentMonCoveredMs < request.Duration.TotalMilliseconds * MinimumOverlapRatio)
+        // PresentMon now crops CPUStartQPC against the exact benchmark QPC window.
+        // Keep it best-effort, but validate the resulting observed duration without
+        // crossing back through wall-clock overlap arithmetic.
+        if (presentMon.IsAvailable &&
+            (!double.IsFinite(presentMon.ActualWindowMilliseconds) ||
+             presentMon.ActualWindowMilliseconds < request.Duration.TotalMilliseconds * MinimumOverlapRatio))
         {
-            soft.Add("Standalone PresentMon does not cover at least 95% of the scored benchmark trial.");
+            soft.Add("Standalone PresentMon does not cover at least 95% of the scored benchmark QPC window.");
         }
 
         return (hard, soft);
