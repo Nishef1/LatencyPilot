@@ -12,7 +12,7 @@ namespace LatencyPilot.CriticalTests;
 public sealed class GpuTemporalStabilityContractTests
 {
     [AuditCase]
-    public async Task TemporalDriftStopsScreeningAtFirstLocalControlBoundary()
+    public async Task TimeLocalControlsAbsorbGradualBackgroundDriftWithoutManufacturingWinner()
     {
         var processors = Enumerable.Range(0, 6)
             .Select(static index => new LogicalProcessorId(0, checked((byte)(index * 2))))
@@ -38,51 +38,60 @@ public sealed class GpuTemporalStabilityContractTests
             "The progress budget must reserve the same five-candidate finalist ceiling used by the optimizer.");
         Assert.AreEqual(1, progressPlan.IntermediateScreeningControlCount,
             "Six screening candidates require one time-local Original control after the first four candidates.");
-        var backend = new TemporalDriftBackend(driftAfterScreeningCandidates: 4);
+        var backend = new GradualBackgroundDriftBackend();
 
         var result = await new GpuAutoAffinitySession(backend).RunAsync(request);
 
-        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, result.Recommendation);
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, result.Recommendation,
+            "The synthetic backend deliberately omits final ETW placement proof, so the session must restore even after selecting a decision-grade finalist.");
         Assert.IsTrue(result.Report.FinalStateVerified);
         Assert.IsTrue(result.Report.OriginalStateRestored);
         Assert.IsNull(result.Report.FinalProcessor);
         Assert.IsNull(result.Finalist);
         Assert.AreEqual(
-            4,
+            6,
             backend.ScreeningCandidateCount,
-            "A drifting environment must be stopped at the first bounded screening-control boundary instead of burning the remaining candidates.");
+            "Ordinary gradual background drift must not abort the CPU sweep at the first local-control boundary.");
         Assert.IsTrue(
             result.Report.Trials.Any(static trial =>
                 string.Equals(trial.Phase, "screening-block-control", StringComparison.Ordinal)),
-            "The report must preserve the time-local Original control that invalidated the screening block.");
-        Assert.IsFalse(
-            backend.Events.Any(static item => item.Contains("screening-finalists", StringComparison.Ordinal)),
-            "Finalist confirmation must never start after a local Original control invalidates screening.");
-        Assert.IsFalse(
-            backend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)),
-            "A temporally invalid screening sweep must never Keep a candidate.");
+            "The report must preserve the time-local Original control used to normalize the first screening block.");
         Assert.IsTrue(
             result.Report.Reasons.Any(static reason =>
-                reason.Contains("drift", StringComparison.OrdinalIgnoreCase) &&
-                reason.Contains("block", StringComparison.OrdinalIgnoreCase)),
-            "The report must explain that a local screening block was invalidated by Original drift.");
+                reason.Contains("background variability", StringComparison.OrdinalIgnoreCase) &&
+                reason.Contains("time-local", StringComparison.OrdinalIgnoreCase)),
+            "Control drift should be represented as time-local uncertainty instead of invalidating otherwise valid measurements.");
+        Assert.IsFalse(
+            result.Report.Reasons.Any(static reason =>
+                reason.Contains("invalidated by Original drift", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("discarded because the Original control drifted", StringComparison.OrdinalIgnoreCase)),
+            "Normal Windows drift must not be described as a structural experiment failure.");
+        Assert.IsTrue(
+            result.Report.Reasons.Any(static reason =>
+                reason.Contains("CPU 0 is the highest-ranked finalist", StringComparison.Ordinal)),
+            "All synthetic candidates have the same true relative improvement. Local normalization must remove run-order drift so the deterministic passive fallback chooses the lowest-pressure CPU 0 rather than an earlier raw sample.");
     }
 
     [AuditCase]
-    public void InvalidatedScreeningMustNotBePresentedAsAValidRankedWinner()
+    public void TimeLocalDecisionEvidenceMustBePresentedSeparatelyFromRawTrialDiagnostics()
     {
         var source = File.ReadAllText(FindRepositoryFile(
             "src",
             "LatencyPilot.App",
             "GpuOptimizationProgressWindow.xaml.cs"));
+        var xaml = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.App",
+            "GpuOptimizationProgressWindow.xaml"));
 
-        StringAssert.Contains(
-            source,
-            "Measurements invalidated by drift — no valid winner",
-            "The final UI needs an explicit invalidated-result state instead of presenting the fastest early sample as a valid winner.");
         Assert.IsTrue(
-            source.Contains("IsScreeningInvalidated", StringComparison.Ordinal),
-            "Ranked-result rendering must branch on report validity before selecting a top measured candidate.");
+            source.Contains("DecisionOnePercentLowFps", StringComparison.Ordinal) &&
+            source.Contains("LocalControlUncertainty", StringComparison.Ordinal),
+            "The ranking UI must consume time-local decision metrics and expose their uncertainty instead of sorting only raw trial medians.");
+        StringAssert.Contains(
+            xaml,
+            "Candidate decision evidence",
+            "The development UI must label normalized decision evidence accurately rather than claiming that raw 1%-low bars alone define ranking.");
     }
 
     private static string FindRepositoryFile(params string[] relativeParts)
@@ -103,7 +112,7 @@ public sealed class GpuTemporalStabilityContractTests
             "Unable to locate repository file: " + Path.Combine(relativeParts));
     }
 
-    private sealed class TemporalDriftBackend(int driftAfterScreeningCandidates) : IGpuAutoAffinitySessionBackend
+    private sealed class GradualBackgroundDriftBackend : IGpuAutoAffinitySessionBackend
     {
         private readonly Dictionary<Guid, GpuAffinityCandidate> active = [];
         private int captureSequence;
@@ -118,9 +127,18 @@ public sealed class GpuTemporalStabilityContractTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Events.Add($"original:{request.Phase}:{request.RunNumber}");
-            var isControl = request.Phase.Contains("control", StringComparison.Ordinal);
-            var drifted = isControl && ScreeningCandidateCount >= driftAfterScreeningCandidates;
-            var periods = Enumerable.Repeat(drifted ? 20d : 12d, 100).ToArray();
+
+            // The synthetic machine begins at a 12 ms Original frame period and
+            // gradually moves to 13.2 ms (10% slower) while the first four CPUs are
+            // screened. It then remains at that ordinary-background regime. This is
+            // intentionally larger than the old ±3% hard-abort band but still below
+            // the existing 15% exhaustive-confirmation budget.
+            var originalPeriod = request.Phase switch
+            {
+                "screening-warmup" or "screening-original" => 12d,
+                _ => 13.2d,
+            };
+            var periods = Enumerable.Repeat(originalPeriod, 100).ToArray();
             return Task.FromResult(CreateObservation(request, periods));
         }
 
@@ -143,12 +161,32 @@ public sealed class GpuTemporalStabilityContractTests
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = active[experimentId];
             Events.Add($"candidate:{request.Phase}:{request.RunNumber}:{candidate.Processor}");
+
+            double candidatePeriod;
             if (string.Equals(request.Phase, "screening", StringComparison.Ordinal))
             {
                 ScreeningCandidateCount++;
+                // The candidate is always 25% faster in frame-period terms than
+                // the time-local Original. During the first block the Original
+                // drifts linearly 12.0 -> 13.2 ms, so the raw candidate period also
+                // drifts 9.18 -> 9.72 ms. The last two candidates run at 9.90 ms.
+                // A raw ranking therefore favors early samples even though the true
+                // treatment effect is identical for every CPU.
+                candidatePeriod = ScreeningCandidateCount switch
+                {
+                    1 => 9.18d,
+                    2 => 9.36d,
+                    3 => 9.54d,
+                    4 => 9.72d,
+                    _ => 9.90d,
+                };
+            }
+            else
+            {
+                candidatePeriod = 9.90d;
             }
 
-            var periods = Enumerable.Repeat(10d, 100).ToArray();
+            var periods = Enumerable.Repeat(candidatePeriod, 100).ToArray();
             return Task.FromResult(CreateObservation(request, periods));
         }
 
