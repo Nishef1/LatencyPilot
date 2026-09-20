@@ -86,6 +86,22 @@ public sealed class GpuMeasurementRobustnessContractTests
     }
 
     [AuditCase]
+    public void RendererDoesNotRequireTimestampFrequencyToStayStaticAcrossFrameContexts()
+    {
+        var source = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.GpuBenchmark",
+            "D3D12BenchmarkRenderer.cs"));
+
+        Assert.IsFalse(
+            source.Contains("timestamps.Any(item => item.Frequency != TimestampFrequency)", StringComparison.Ordinal),
+            "Different fresh frequencies from adjacent frame contexts are not a device error under dynamic clock scaling and must not abort the benchmark.");
+        Assert.IsFalse(
+            source.Contains("internal ulong TimestampFrequency { get; }", StringComparison.Ordinal),
+            "The renderer must not expose a construction-time timestamp frequency as though it were stable session state; persisted frames carry the exact resolve-time value instead.");
+    }
+
+    [AuditCase]
     public void D3D12TimestampFrequencyChangesAcrossTrialsDoNotInvalidateConvertedTimingEvidence()
     {
         var reference = CreateVideoEvidence(timestampFrequency: 1_000_000, trialIndex: 1);
