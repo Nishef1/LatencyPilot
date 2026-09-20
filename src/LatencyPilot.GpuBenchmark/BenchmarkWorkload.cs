@@ -18,6 +18,7 @@ internal sealed class BenchmarkWorkload
     private const int MaximumCommandBatches = 4096;
     private const int MinimumSimulationIterations = 1_000;
     private static readonly TimeSpan WarmupDuration = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ObserverSettleDuration = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan CalibrationProgressInterval = TimeSpan.FromMilliseconds(250);
     private readonly BenchmarkOptions options;
     private readonly TextWriter output;
@@ -121,6 +122,33 @@ internal sealed class BenchmarkWorkload
             1d,
             150_000d));
         var frames = new List<BenchmarkFrameTelemetry>(expectedFrames);
+
+        // Scored Gate A trials start external observers shortly before invoking the
+        // benchmark. Run one bounded unscored workload second so collector/JIT/page-in
+        // startup cannot become the first scored Original's tail. This is repeated for
+        // every trial to keep treatment symmetric; its frames are drained and discarded.
+        BenchmarkProtocol.WriteProgress(
+            output,
+            options.SessionId,
+            "observer-settle",
+            0d,
+            "Settling benchmark and observer startup before the scored QPC window.");
+        renderer.BeginMeasurementWindow();
+        var observerSettle = Stopwatch.StartNew();
+        while (observerSettle.Elapsed < ObserverSettleDuration)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (renderer.RenderFrame(
+                    workload.SimulationIterationsPerWorker,
+                    workload.CommandBatchesPerWorker) is { } settleFrame)
+            {
+                ValidateFrame(settleFrame);
+            }
+        }
+        foreach (var settleFrame in renderer.DrainFrames())
+        {
+            ValidateFrame(settleFrame);
+        }
 
         // Keep observer work outside the scored interval. Frame periods are measured
         // between Present calls, so serialization/console flushing between frames
