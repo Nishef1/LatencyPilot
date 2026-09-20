@@ -3,6 +3,7 @@ namespace LatencyPilot.Benchmarking.Optimization;
 public static class GpuOriginalBaselinePolicy
 {
     public const int PreferredRunCount = GpuRepeatabilityClusterSelector.RequiredRunCount;
+    public const int ReplacementTriggerAttemptCount = GpuRepeatabilityClusterSelector.MaximumAttemptCount;
     public const int MaximumPhysicalAttemptCount = GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount;
 
     public static bool HasRepeatableCluster(IEnumerable<double> onePercentLowFps)
