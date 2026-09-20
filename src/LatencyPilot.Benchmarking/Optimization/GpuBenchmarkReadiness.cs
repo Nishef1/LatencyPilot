@@ -86,7 +86,8 @@ public static class GpuBenchmarkReadiness
         }
         if (reference.D3D12TimestampFrequency != trial.D3D12TimestampFrequency)
         {
-            reasons.Add("D3D12 timestamp frequency changed across the benchmark session.");
+            context.Add(
+                "D3D12 timestamp frequency changed across benchmark trials. Each GPU-work interval remains comparable because it is converted from ticks with the frequency captured for its measurement window; frequency is provenance, not a session identity invariant.");
         }
 
         if (contamination.SleepOrResumeDetected)
