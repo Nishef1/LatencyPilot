@@ -1,6 +1,9 @@
 #pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using System.Reflection;
 using LatencyPilot.Benchmarking.Optimization;
+using LatencyPilot.Core.Benchmarking;
+using LatencyPilot.Core.Devices;
+using LatencyPilot.Core.System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -83,6 +86,27 @@ public sealed class GpuMeasurementRobustnessContractTests
     }
 
     [AuditCase]
+    public void D3D12TimestampFrequencyChangesAcrossTrialsDoNotInvalidateConvertedTimingEvidence()
+    {
+        var reference = CreateVideoEvidence(timestampFrequency: 1_000_000, trialIndex: 1);
+        var trial = CreateVideoEvidence(timestampFrequency: 975_000, trialIndex: 2);
+
+        var readiness = GpuBenchmarkReadiness.Evaluate(
+            reference,
+            trial,
+            GpuBenchmarkContaminationContext.Clean);
+
+        Assert.AreEqual(
+            GpuBenchmarkReadinessState.Ready,
+            readiness.State,
+            "A fresh per-window timestamp frequency is part of the conversion provenance, not a session identity invariant. Converted millisecond evidence remains comparable when the queue frequency legitimately changes.");
+        Assert.IsFalse(
+            readiness.Reasons.Any(static reason =>
+                reason.Contains("timestamp frequency", StringComparison.OrdinalIgnoreCase)),
+            "Dynamic GPU clock scaling must not be mislabeled as a broken benchmark identity after each window is converted with its own fresh frequency.");
+    }
+
+    [AuditCase]
     public void PresentMonDynamicQueryRemainsBoundToTheBenchmarkProcessAndKeepsNoSwapChainsExplicit()
     {
         var source = File.ReadAllText(FindRepositoryFile(
@@ -96,6 +120,49 @@ public sealed class GpuMeasurementRobustnessContractTests
         StringAssert.Contains(source, "Poll(query, processId");
         StringAssert.Contains(source, "PresentMonWorkloadCaptureStatus.NoSwapChains");
         StringAssert.Contains(source, "tracked process produced no PresentMon swap-chain rows");
+    }
+
+    private static GpuBenchmarkEvidence CreateVideoEvidence(ulong timestampFrequency, int trialIndex)
+    {
+        const uint processId = 77;
+        var started = DateTimeOffset.UnixEpoch.AddSeconds(trialIndex * 40L);
+        var periods = Enumerable.Repeat(8d, 120).ToArray();
+        return new GpuBenchmarkEvidence(
+            GpuBenchmarkEvidence.SchemaId,
+            new string('a', 40),
+            GpuBenchmarkEvidence.MethodIdValue,
+            "windows-test",
+            "gpu-test",
+            "driver-test",
+            "topology-test",
+            processId,
+            trialIndex == 1 ? "Original" : "Candidate",
+            trialIndex,
+            trialIndex == 1 ? null : new LogicalProcessorId(0, 2),
+            "workload-test",
+            [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 2)],
+            0x51A7,
+            timestampFrequency,
+            Enumerable.Repeat(4d, periods.Length).ToArray(),
+            new PresentMonFrameCaptureSnapshot(
+                PresentMonWorkloadCaptureStatus.NoSwapChains,
+                processId,
+                30_000,
+                0,
+                new PresentMonApiVersionSnapshot(3, 4, 0),
+                [],
+                [],
+                "PresentMonAPI2.dll",
+                null,
+                "Synthetic no-swap-chain guardrail capture.",
+                started,
+                started.AddSeconds(30)),
+            null,
+            Guid.Empty,
+            false,
+            0,
+            [],
+            FramePeriodMilliseconds: periods);
     }
 
     private static string FindRepositoryFile(params string[] relativeParts)
