@@ -46,10 +46,35 @@ public sealed class GpuMeasurementBootstrapContractTests
         Assert.IsFalse(indexes.Contains(0),
             "The cold-start outlier must remain in the audit trail but must not define baseline uncertainty once a coherent regime exists.");
 
+        // The Gate A wrapper presents the replacement as the fourth accepted logical
+        // observation while retaining the rejected physical attempt in TrialReports.
+        // That accepted set must still expose the same coherent regime to the core session.
+        var acceptedAfterReplacement = new[] { 68.5d, 160.8d, 152.8d, 155.5d };
+        Assert.IsNotNull(
+            select.Invoke(null, [acceptedAfterReplacement]),
+            "Replacing the unstable fourth physical sample with the bounded fifth attempt must produce a repeatable accepted baseline when the fifth sample rejoins the stable regime.");
+
         var broadlyUnstable = new[] { 70d, 88d, 111d, 139d, 176d };
         Assert.IsNull(
             select.Invoke(null, [broadlyUnstable]),
             "Five attempts are a hard ceiling, not permission to cherry-pick a baseline from genuinely broad instability.");
+    }
+
+    [AuditCase]
+    public void GateAWrapperUsesOneBoundedOriginalReplacementBeforeAnyCandidateWrite()
+    {
+        var source = File.ReadAllText(FindRepositoryFile(
+            "tools",
+            "LatencyPilot.GateAValidation",
+            "ProgressReportingGpuAutoAffinityBackend.cs"));
+
+        StringAssert.Contains(source, "GpuOriginalBaselinePolicy.ReplacementTriggerAttemptCount");
+        StringAssert.Contains(source, "GpuOriginalBaselinePolicy.HasRepeatableCluster");
+        StringAssert.Contains(source, "ControlTrialDrifted = true");
+        StringAssert.Contains(source, "single bounded replacement");
+        Assert.IsFalse(
+            source.Contains("ApplyCandidateAsync(candidate", StringComparison.Ordinal),
+            "Original baseline recovery belongs in capture orchestration and must not perform its own candidate mutation.");
     }
 
     [AuditCase]
@@ -90,6 +115,14 @@ public sealed class GpuMeasurementBootstrapContractTests
         StringAssert.Contains(artifactSource, "StartedAtQpc");
         StringAssert.Contains(artifactSource, "EndedAtQpc");
         StringAssert.Contains(artifactSource, "QpcFrequency");
+
+        var gateBackendSource = File.ReadAllText(FindRepositoryFile(
+            "tools",
+            "LatencyPilot.GateAValidation",
+            "GpuAutoAffinityGateABackend.cs"));
+        StringAssert.Contains(gateBackendSource, "artifact.StartedAtQpc");
+        StringAssert.Contains(gateBackendSource, "artifact.EndedAtQpc");
+        StringAssert.Contains(gateBackendSource, "artifact.QpcFrequency");
 
         var parse = typeof(PresentMonConsoleFrameMetricsReader).GetMethods(
                 BindingFlags.Static | BindingFlags.NonPublic)
