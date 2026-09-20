@@ -1,6 +1,8 @@
 #pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
 using System.IO.Compression;
 using LatencyPilot.Benchmarking.Optimization;
+using LatencyPilot.Core.Benchmarking;
+using LatencyPilot.Core.System;
 using LatencyPilot.Service;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -150,7 +152,108 @@ public sealed class AuditClosureIntegrationTests
                 Directory.Delete(bundleRoot, recursive: true);
             }
         }
+
+        var cpu7 = new LogicalProcessorId(0, 7);
+        var now = DateTimeOffset.UtcNow;
+        var originalTrials = new[]
+        {
+            CreateOriginalTrial(1, 149d, 160d, 6.30d, 99d),
+            CreateOriginalTrial(2, 151d, 161d, 6.20d, 101d),
+            CreateOriginalTrial(3, 150d, 159d, 6.25d, 100d),
+        };
+        var candidate = new GpuAutoAffinityCandidateReport(
+            "screening-finalists",
+            3,
+            cpu7,
+            3,
+            "Ranked",
+            0.04d,
+            [],
+            "Repeatable finalist cleared measured uncertainty.",
+            165d,
+            172d,
+            5.90d,
+            112d,
+            0.02d,
+            true);
+        var keepReport = new GpuAutoAffinityReport(
+            GpuAutoAffinityReport.SchemaId,
+            Guid.NewGuid(),
+            now,
+            now.AddMinutes(12),
+            42,
+            [candidate],
+            originalTrials,
+            GpuOptimizationRecommendation.KeepCandidate.ToString(),
+            cpu7,
+            true,
+            false,
+            ["CPU 7 cleared Original/noise and guardrail checks."])
+        {
+            GateAClosureEligible = true,
+            SourceState = "evidence-ready",
+        };
+        var keepPresentation = GateAResultPresentation.Create(
+            keepReport,
+            "C:\\evidence\\session",
+            "C:\\evidence\\session\\gpu-auto-affinity-report.json",
+            new GateAEvidenceBundleExportResult("C:\\evidence\\session.zip", null));
+        Assert.AreEqual("CPU 7 kept", keepPresentation.Title);
+        Assert.AreEqual("Closure eligible", keepPresentation.EligibilityLabel);
+        Assert.AreEqual(cpu7, keepPresentation.ComparedProcessor);
+        Assert.IsTrue(keepPresentation.BundleAvailable);
+        Assert.AreEqual(4, keepPresentation.Metrics.Count);
+        Assert.AreEqual(GateAMetricState.Improved, keepPresentation.Metrics.Single(metric => metric.Key == "low1").State);
+        Assert.AreEqual(GateAMetricState.Improved, keepPresentation.Metrics.Single(metric => metric.Key == "p99").State,
+            "Lower frame-p99 must be represented as an improvement rather than a negative FPS-style delta.");
+
+        var restoreReport = keepReport with
+        {
+            FinalRecommendation = GpuOptimizationRecommendation.RestoreOriginal.ToString(),
+            FinalProcessor = null,
+            FinalStateVerified = true,
+            OriginalStateRestored = true,
+            GateAClosureEligible = false,
+            SourceState = "development-only",
+        };
+        var restorePresentation = GateAResultPresentation.Create(
+            restoreReport,
+            "C:\\evidence\\session",
+            "C:\\evidence\\session\\gpu-auto-affinity-report.json",
+            new GateAEvidenceBundleExportResult(null, "ZIP destination is locked."));
+        Assert.AreEqual("Original kept", restorePresentation.Title);
+        Assert.AreEqual("Development evidence", restorePresentation.EligibilityLabel);
+        Assert.AreEqual(cpu7, restorePresentation.ComparedProcessor);
+        Assert.IsTrue(restorePresentation.ComparedCandidateIsDiagnosticOnly);
+        Assert.IsFalse(restorePresentation.BundleAvailable);
+        StringAssert.Contains(restorePresentation.BundleStatus, "could not be packaged");
     }
+
+    private static GpuAutoAffinityTrialReport CreateOriginalTrial(
+        int runNumber,
+        double low1,
+        double avg,
+        double p99,
+        double low01) =>
+        new(
+            runNumber,
+            "screening-original",
+            "Original",
+            null,
+            Guid.NewGuid(),
+            "Ready",
+            true,
+            true,
+            null,
+            p99,
+            low1,
+            30_000d,
+            30_000d,
+            [],
+            null,
+            null,
+            avg,
+            low01);
 
     private static object? ReadProperty(object? value, string name) =>
         value?.GetType().GetProperty(name)?.GetValue(value);
