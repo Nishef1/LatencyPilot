@@ -11,7 +11,7 @@ internal sealed class GpuGateAProgressFile
 {
     private const int MaximumWriteAttempts = 8;
     private const int RequiredRepeatabilityRuns = 3;
-    private const int MaximumRepeatabilityAttempts = 4;
+    private const int MaximumRepeatabilityAttempts = GpuOriginalBaselinePolicy.MaximumPhysicalAttemptCount;
     private static readonly TimeSpan WriteRetryDelay = TimeSpan.FromMilliseconds(25);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -236,12 +236,12 @@ internal sealed class GpuGateAProgressFile
     {
         if (request.RetryAttempt > 0)
         {
-            return "Retrying this benchmark block once after transient contamination.";
+            return "Retrying this benchmark block once after transient contamination or an unstable Original baseline sample.";
         }
 
         if (string.Equals(request.Phase, "screening-original", StringComparison.Ordinal))
         {
-            return $"Original repeatability sample {originalScoredPassesStarted}; target {RequiredRepeatabilityRuns} stable samples, maximum {MaximumRepeatabilityAttempts} attempts.";
+            return $"Original repeatability sample {originalScoredPassesStarted}; target {RequiredRepeatabilityRuns} stable samples, maximum {MaximumRepeatabilityAttempts} physical attempts.";
         }
 
         if (request.Phase.EndsWith("-warmup", StringComparison.Ordinal))
