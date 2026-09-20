@@ -99,9 +99,9 @@
 
                 <Border Style="{StaticResource SubtleCardStyle}">
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Ranked candidates (higher 1% low is better)"
+                        <TextBlock Text="Candidate decision evidence (time-local normalized when available)"
                                    Style="{StaticResource CaptionTextStyle}"
-                                   AutomationProperties.Name="Ranked candidates by 1 percent low" />
+                                   AutomationProperties.Name="GPU candidate decision evidence" />
                         <TextBlock x:Name="RankedSummaryText"
                                    Text="Results appear here when the search finishes."
                                    Style="{StaticResource BodyTextStyle}"
