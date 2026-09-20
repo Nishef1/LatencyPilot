@@ -1,4 +1,5 @@
 #pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
+using System.IO.Compression;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Service;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -117,6 +118,38 @@ public sealed class AuditClosureIntegrationTests
         Assert.IsFalse(
             benchmarkWorkload.Contains("TuneSimulationIterations(", StringComparison.Ordinal),
             "The v1 benchmark must not adaptively increase CPU simulation based on CPU frame time.");
+
+        var bundleRoot = Path.Combine(Path.GetTempPath(), $"latencypilot-gatea-bundle-{Guid.NewGuid():N}");
+        var sessionDirectory = Path.Combine(bundleRoot, "gpu-auto-affinity-session");
+        Directory.CreateDirectory(Path.Combine(sessionDirectory, "benchmark"));
+        await File.WriteAllTextAsync(Path.Combine(sessionDirectory, "gpu-auto-affinity-report.json"), "{\"schema\":\"test\"}");
+        await File.WriteAllTextAsync(Path.Combine(sessionDirectory, "benchmark", "trial.json"), "{\"trial\":1}");
+        try
+        {
+            var export = await GateAEvidenceBundleExporter.TryCreateAsync(sessionDirectory);
+            Assert.IsTrue(export.Succeeded, export.Error);
+            Assert.IsNotNull(export.ZipPath);
+            Assert.IsTrue(File.Exists(export.ZipPath));
+            Assert.IsTrue(Directory.Exists(sessionDirectory), "Packaging must preserve the authoritative uncompressed session directory.");
+
+            using var archive = ZipFile.OpenRead(export.ZipPath);
+            var sessionName = Path.GetFileName(sessionDirectory);
+            Assert.IsTrue(archive.Entries.Any(entry => string.Equals(
+                entry.FullName,
+                $"{sessionName}/gpu-auto-affinity-report.json",
+                StringComparison.Ordinal)));
+            Assert.IsTrue(archive.Entries.Any(entry => string.Equals(
+                entry.FullName,
+                $"{sessionName}/benchmark/trial.json",
+                StringComparison.Ordinal)));
+        }
+        finally
+        {
+            if (Directory.Exists(bundleRoot))
+            {
+                Directory.Delete(bundleRoot, recursive: true);
+            }
+        }
     }
 
     private static object? ReadProperty(object? value, string name) =>
