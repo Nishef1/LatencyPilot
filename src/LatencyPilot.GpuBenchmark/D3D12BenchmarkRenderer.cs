@@ -178,12 +178,6 @@ internal sealed class D3D12BenchmarkRenderer : IDisposable
         timestamps = Enumerable.Range(0, FrameContextCount)
             .Select(_ => new GpuTimestampCollector(device, queue))
             .ToArray();
-        TimestampFrequency = timestamps[0].Frequency;
-        if (timestamps.Any(item => item.Frequency != TimestampFrequency))
-        {
-            throw new InvalidOperationException(
-                "D3D12 timestamp frequency changed while creating frame contexts.");
-        }
 
         executionLists = new ID3D12CommandList[FrameContextCount][];
         for (var context = 0; context < FrameContextCount; context++)
@@ -206,8 +200,6 @@ internal sealed class D3D12BenchmarkRenderer : IDisposable
     internal string PresentMode { get; }
 
     internal bool TearingSupported { get; }
-
-    internal ulong TimestampFrequency { get; }
 
     internal void BeginMeasurementWindow()
     {
