@@ -114,7 +114,7 @@ internal sealed class ProgressReportingGpuAutoAffinityBackend(
             screeningOriginalLow1Fps.Add(videoStats.Low1PctFps);
             pendingOriginalRetryIndex = screeningOriginalLow1Fps.Count - 1;
 
-            if (screeningOriginalLow1Fps.Count == GpuRepeatabilityClusterSelector.MaximumAttemptCount &&
+            if (screeningOriginalLow1Fps.Count == GpuOriginalBaselinePolicy.ReplacementTriggerAttemptCount &&
                 !GpuOriginalBaselinePolicy.HasRepeatableCluster(screeningOriginalLow1Fps))
             {
                 // CaptureAcceptedAsync owns exactly one retry. Reclassify only this
@@ -144,7 +144,7 @@ internal sealed class ProgressReportingGpuAutoAffinityBackend(
         }
         pendingOriginalRetryIndex = -1;
 
-        if (screeningOriginalLow1Fps.Count == GpuRepeatabilityClusterSelector.MaximumAttemptCount &&
+        if (screeningOriginalLow1Fps.Count == GpuOriginalBaselinePolicy.ReplacementTriggerAttemptCount &&
             !GpuOriginalBaselinePolicy.HasRepeatableCluster(screeningOriginalLow1Fps))
         {
             // This is the single bounded replacement. Returning retryable
