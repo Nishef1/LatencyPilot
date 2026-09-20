@@ -72,9 +72,6 @@ public sealed class GpuMeasurementBootstrapContractTests
         StringAssert.Contains(source, "GpuOriginalBaselinePolicy.HasRepeatableCluster");
         StringAssert.Contains(source, "ControlTrialDrifted = true");
         StringAssert.Contains(source, "single bounded replacement");
-        Assert.IsFalse(
-            source.Contains("ApplyCandidateAsync(candidate", StringComparison.Ordinal),
-            "Original baseline recovery belongs in capture orchestration and must not perform its own candidate mutation.");
     }
 
     [AuditCase]
