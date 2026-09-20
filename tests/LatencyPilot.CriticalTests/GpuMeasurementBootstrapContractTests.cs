@@ -53,6 +53,23 @@ public sealed class GpuMeasurementBootstrapContractTests
     }
 
     [AuditCase]
+    public void BenchmarkSettlesObserverStartupBeforeOpeningTheScoredQpcWindow()
+    {
+        var source = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.GpuBenchmark",
+            "BenchmarkWorkload.cs"));
+        StringAssert.Contains(source, "ObserverSettleDuration");
+        StringAssert.Contains(source, "observer-settle");
+
+        var settleStart = source.IndexOf("observer-settle", StringComparison.Ordinal);
+        var qpcStart = source.IndexOf("var startedAtQpc = Stopwatch.GetTimestamp();", StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, settleStart);
+        Assert.IsGreaterThan(settleStart, qpcStart,
+            "Unscored settle work must complete before the benchmark records its scored QPC start boundary.");
+    }
+
+    [AuditCase]
     public async Task PresentMonConsoleCropsInTheSameQpcDomainAsTheBenchmark()
     {
         var source = File.ReadAllText(FindRepositoryFile(
