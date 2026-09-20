@@ -132,9 +132,10 @@ internal sealed class BenchmarkWorkload
             0d,
             "Starting scored measurement window; in-window progress output is suspended to avoid perturbing frame periods.");
 
-        var startedAtUtc = DateTimeOffset.UtcNow;
-        var stopwatch = Stopwatch.StartNew();
         renderer.BeginMeasurementWindow();
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        var startedAtQpc = Stopwatch.GetTimestamp();
+        var stopwatch = Stopwatch.StartNew();
         while (stopwatch.Elapsed < duration)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -147,6 +148,10 @@ internal sealed class BenchmarkWorkload
             }
         }
 
+        // Every Present belonging to the scored interval has occurred by this point.
+        // Capture the QPC boundary before draining pending GPU completions so external
+        // frame collectors can crop in the exact same monotonic clock domain.
+        var completedAtQpc = Stopwatch.GetTimestamp();
         foreach (var frame in renderer.DrainFrames())
         {
             ValidateFrame(frame);
@@ -159,6 +164,11 @@ internal sealed class BenchmarkWorkload
         {
             throw new InvalidDataException(
                 "Benchmark trial completed without any frame evidence.");
+        }
+        if (startedAtQpc <= 0 || completedAtQpc <= startedAtQpc || Stopwatch.Frequency <= 0)
+        {
+            throw new InvalidDataException(
+                "Benchmark trial completed without a valid monotonic QPC measurement window.");
         }
 
         frames.Sort(static (left, right) => left.FrameIndex.CompareTo(right.FrameIndex));
@@ -193,7 +203,10 @@ internal sealed class BenchmarkWorkload
                 frame.GpuWorkMilliseconds,
                 frame.FramePeriodMilliseconds,
                 frame.GpuTimestampFrequency)).ToArray(),
-            renderer.CaptureWorkerChecksums()));
+            renderer.CaptureWorkerChecksums(),
+            startedAtQpc,
+            completedAtQpc,
+            Stopwatch.Frequency));
     }
 
     private static void ValidateFrame(BenchmarkFrameTelemetry frame)
