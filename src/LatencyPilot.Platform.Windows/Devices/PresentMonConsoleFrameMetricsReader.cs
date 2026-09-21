@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Text;
 using LatencyPilot.Core.Devices;
+using Microsoft.Diagnostics.Tracing.Session;
 using Sylvan.Data.Csv;
 
 namespace LatencyPilot.Platform.Windows.Devices;
@@ -9,8 +9,8 @@ namespace LatencyPilot.Platform.Windows.Devices;
 public static class PresentMonConsoleFrameMetricsReader
 {
     private const int MaximumRetainedFailureCaptures = 5;
-    private const string RecordingStartedMessage = "Started recording.";
     private static readonly TimeSpan StartupReadinessTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan StartupReadinessPollInterval = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan CompletionSlack = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ActiveCaptureGrace = TimeSpan.FromMinutes(5);
 
@@ -30,6 +30,7 @@ public static class PresentMonConsoleFrameMetricsReader
             executablePath,
             cancellationToken).ConfigureAwait(false);
         var captureId = Guid.NewGuid().ToString("N");
+        var sessionName = $"LatencyPilot-{captureId}";
         var tempRoot = Path.Combine(Path.GetTempPath(), "LatencyPilot", "PresentMon");
         var tempDirectory = Path.Combine(tempRoot, captureId);
         Directory.CreateDirectory(tempDirectory);
@@ -55,15 +56,14 @@ public static class PresentMonConsoleFrameMetricsReader
         startInfo.ArgumentList.Add("--qpc_time");
         startInfo.ArgumentList.Add("--no_console_stats");
         startInfo.ArgumentList.Add("--session_name");
-        startInfo.ArgumentList.Add($"LatencyPilot-{captureId}");
+        startInfo.ArgumentList.Add(sessionName);
         startInfo.ArgumentList.Add("--timed");
         startInfo.ArgumentList.Add(captureSeconds.ToString(CultureInfo.InvariantCulture));
         startInfo.ArgumentList.Add("--terminate_after_timed");
 
         var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("PresentMon console process could not be started.");
-        var startupSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var stdout = CaptureStandardOutputAsync(process.StandardOutput, startupSignal);
+        var stdout = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
         var stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
 
         try
@@ -71,24 +71,27 @@ public static class PresentMonConsoleFrameMetricsReader
             using var startupDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             startupDeadline.CancelAfter(StartupReadinessTimeout);
 
-            bool recordingStarted;
+            bool traceSessionReady;
             try
             {
-                recordingStarted = await startupSignal.Task.WaitAsync(startupDeadline.Token).ConfigureAwait(false);
+                traceSessionReady = await WaitForTraceSessionReadyAsync(
+                    process,
+                    sessionName,
+                    startupDeadline.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 throw new InvalidOperationException(
-                    $"PresentMon did not report recording readiness within {StartupReadinessTimeout.TotalSeconds:F0} seconds.");
+                    $"PresentMon ETW session did not become queryable within {StartupReadinessTimeout.TotalSeconds:F0} seconds.");
             }
 
-            if (!recordingStarted || process.HasExited)
+            if (!traceSessionReady || process.HasExited)
             {
                 var output = await stdout.ConfigureAwait(false);
                 var error = await stderr.ConfigureAwait(false);
                 var exit = process.HasExited
                     ? $"exit {process.ExitCode}"
-                    : "stdout closed before recording readiness";
+                    : "process exited before ETW session readiness";
                 throw new InvalidOperationException(
                     $"PresentMon was not ready before the benchmark started ({exit}). {Truncate(error)} {Truncate(output)}".Trim());
             }
@@ -119,6 +122,44 @@ public static class PresentMonConsoleFrameMetricsReader
             process.Dispose();
             TryDeleteDirectory(tempDirectory);
             throw;
+        }
+    }
+
+    private static async Task<bool> WaitForTraceSessionReadyAsync(
+        Process process,
+        string sessionName,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (process.HasExited)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (TraceEventSession.GetActiveSessionNames().Any(name =>
+                        string.Equals(name, sessionName, StringComparison.Ordinal)))
+                {
+                    return true;
+                }
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                throw new InvalidOperationException(
+                    "PresentMon ETW readiness could not be queried with the current process permissions.",
+                    exception);
+            }
+            catch (System.Security.SecurityException exception)
+            {
+                throw new InvalidOperationException(
+                    "PresentMon ETW readiness could not be queried with the current process permissions.",
+                    exception);
+            }
+
+            await Task.Delay(StartupReadinessPollInterval, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -406,28 +447,6 @@ public static class PresentMonConsoleFrameMetricsReader
               double.IsFinite(result) && result >= 0
                 ? result
                 : null;
-    }
-
-    private static async Task<string> CaptureStandardOutputAsync(
-        StreamReader reader,
-        TaskCompletionSource<bool> startupSignal)
-    {
-        var buffer = new StringBuilder();
-        while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
-        {
-            if (buffer.Length > 0)
-            {
-                buffer.AppendLine();
-            }
-            buffer.Append(line);
-            if (string.Equals(line.Trim(), RecordingStartedMessage, StringComparison.Ordinal))
-            {
-                startupSignal.TrySetResult(true);
-            }
-        }
-
-        startupSignal.TrySetResult(false);
-        return buffer.ToString();
     }
 
     private static void TryTerminate(Process process)
