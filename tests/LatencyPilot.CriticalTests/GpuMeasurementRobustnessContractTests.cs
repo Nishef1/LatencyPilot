@@ -57,36 +57,47 @@ public sealed class GpuMeasurementRobustnessContractTests
     }
 
     [AuditCase]
-    public void D3D12TimestampFrequencyIsRefreshedAtTheResolveBoundary()
+    public void D3D12TimestampFrequencyIsCapturedOncePerCommandQueue()
     {
         var source = File.ReadAllText(FindRepositoryFile(
             "src",
             "LatencyPilot.GpuBenchmark",
             "GpuTimestampCollector.cs"));
 
+        var constructorStart = source.IndexOf(
+            "internal GpuTimestampCollector",
+            StringComparison.Ordinal);
+        var recordBeginStart = source.IndexOf(
+            "internal void RecordBegin",
+            StringComparison.Ordinal);
         var resolveStart = source.IndexOf(
             "internal void RecordEndAndResolve",
             StringComparison.Ordinal);
         var readStart = source.IndexOf(
             "internal double ReadElapsedMilliseconds",
             StringComparison.Ordinal);
-        Assert.IsGreaterThanOrEqualTo(0, resolveStart);
+        Assert.IsGreaterThanOrEqualTo(0, constructorStart);
+        Assert.IsGreaterThan(constructorStart, recordBeginStart);
+        Assert.IsGreaterThan(recordBeginStart, resolveStart);
         Assert.IsGreaterThan(resolveStart, readStart);
 
+        var constructorBlock = source[constructorStart..recordBeginStart];
         var resolveBlock = source[resolveStart..readStart];
-        var frequencyRead = resolveBlock.IndexOf("GetTimestampFrequency", StringComparison.Ordinal);
-        var resolveCall = resolveBlock.IndexOf("ResolveQueryData", StringComparison.Ordinal);
-        Assert.IsGreaterThanOrEqualTo(0, frequencyRead,
-            "Microsoft's current D3D12 timing guidance requires the queue timestamp frequency to be re-queried close to timestamp resolve rather than cached for a long renderer lifetime.");
-        Assert.IsGreaterThan(frequencyRead, resolveCall,
-            "The fresh queue frequency must be captured before the timestamp resolve is recorded.");
+        StringAssert.Contains(
+            constructorBlock,
+            "GetTimestampFrequency",
+            "The queue timestamp rate must be captured when the D3D12 command queue is established.");
         Assert.IsFalse(
-            source.Contains("private readonly ulong frequency", StringComparison.Ordinal),
-            "A renderer-lifetime readonly timestamp frequency would reintroduce the stale-frequency defect.");
+            resolveBlock.Contains("GetTimestampFrequency", StringComparison.Ordinal),
+            "Direct/compute queue timestamp frequency is constant; querying it in every scored frame adds unnecessary host work to the measured Present cadence.");
+        StringAssert.Contains(
+            source,
+            "private readonly ulong frequency",
+            "The timestamp conversion rate is immutable for the lifetime of this command queue.");
     }
 
     [AuditCase]
-    public void RendererDoesNotRequireTimestampFrequencyToStayStaticAcrossFrameContexts()
+    public void RendererDoesNotInventTimestampRateChangesFromGpuClockScaling()
     {
         var source = File.ReadAllText(FindRepositoryFile(
             "src",
@@ -95,14 +106,14 @@ public sealed class GpuMeasurementRobustnessContractTests
 
         Assert.IsFalse(
             source.Contains("timestamps.Any(item => item.Frequency != TimestampFrequency)", StringComparison.Ordinal),
-            "Different fresh frequencies from adjacent frame contexts are not a device error under dynamic clock scaling and must not abort the benchmark.");
+            "The renderer does not need a cross-context clock-scaling check; each collector belongs to the same command queue and therefore uses the same stable queue timestamp rate.");
         Assert.IsFalse(
             source.Contains("internal ulong TimestampFrequency { get; }", StringComparison.Ordinal),
-            "The renderer must not expose a construction-time timestamp frequency as though it were stable session state; persisted frames carry the exact resolve-time value instead.");
+            "Timestamp conversion provenance should remain attached to captured frame/trial evidence rather than becoming a separate mutable renderer contract.");
     }
 
     [AuditCase]
-    public void D3D12TimestampFrequencyChangesAcrossTrialsDoNotInvalidateConvertedTimingEvidence()
+    public void D3D12TimestampFrequencyDifferencesAcrossIndependentTrialsDoNotInvalidateConvertedTimingEvidence()
     {
         var reference = CreateVideoEvidence(timestampFrequency: 1_000_000, trialIndex: 1);
         var trial = CreateVideoEvidence(timestampFrequency: 975_000, trialIndex: 2);
@@ -115,15 +126,15 @@ public sealed class GpuMeasurementRobustnessContractTests
         Assert.AreEqual(
             GpuBenchmarkReadinessState.Ready,
             readiness.State,
-            "A fresh per-window timestamp frequency is part of the conversion provenance, not a session identity invariant. Converted millisecond evidence remains comparable when the queue frequency legitimately changes.");
+            "Timestamp frequency is conversion provenance, not a cross-trial hardware identity invariant. Independently created queues may still provide comparable converted millisecond evidence.");
         Assert.IsFalse(
             readiness.Reasons.Any(static reason =>
                 reason.Contains("timestamp frequency", StringComparison.OrdinalIgnoreCase)),
-            "Dynamic GPU clock scaling must not be mislabeled as a broken benchmark identity after each window is converted with its own fresh frequency.");
+            "A different valid conversion rate from another trial must not by itself invalidate already-converted timing evidence.");
     }
 
     [AuditCase]
-    public void BenchmarkArtifactPreservesResolvedTimestampFrequencyPerFrame()
+    public void BenchmarkArtifactPreservesQueueTimestampFrequencyPerFrame()
     {
         var frameType = typeof(GpuBenchmarkTrialArtifact).Assembly.GetType(
             "LatencyPilot.Core.Benchmarking.GpuBenchmarkArtifactFrame",
@@ -131,7 +142,7 @@ public sealed class GpuMeasurementRobustnessContractTests
         var frequencyProperty = frameType.GetProperty("GpuTimestampFrequency");
         Assert.IsNotNull(
             frequencyProperty,
-            "Each serialized frame must preserve the queue frequency used to convert that frame's D3D12 timestamp ticks; one trial-level scalar is insufficient when dynamic clock scaling changes the frequency.");
+            "Serialized frame evidence should preserve the D3D12 queue frequency used for timestamp conversion provenance.");
         Assert.AreEqual(typeof(ulong), frequencyProperty.PropertyType);
 
         var rendererSource = File.ReadAllText(FindRepositoryFile(
@@ -145,11 +156,11 @@ public sealed class GpuMeasurementRobustnessContractTests
         StringAssert.Contains(
             rendererSource,
             "GpuTimestampFrequency: timestamps[contextIndex].Frequency",
-            "The completed frame must snapshot the frequency from the exact frame context before that context is reused.");
+            "The completed frame must carry the stable frequency of its command queue as conversion provenance.");
         StringAssert.Contains(
             workloadSource,
             "frame.GpuTimestampFrequency",
-            "The frame-context frequency must survive into the persisted benchmark artifact.");
+            "Timestamp conversion provenance must survive into the persisted benchmark artifact.");
     }
 
     [AuditCase]
