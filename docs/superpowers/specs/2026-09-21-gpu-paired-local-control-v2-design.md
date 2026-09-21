@@ -15,7 +15,7 @@ Success means:
 - strong local drift invalidates the pair instead of being transformed into candidate benefit;
 - noisy runs terminate early instead of spending the full search budget after the measurement substrate is already untrustworthy;
 - development iteration can restrict the search to an exact user-selected CPU subset through the existing Gate A developer UI;
-- subset runs use the real hardware path but can never be mistaken for full-search closure evidence or auto-Keep authority.
+- subset runs use the real hardware screening path but can never be mistaken for full-search closure evidence or auto-Keep authority.
 
 ## Scope and authority
 
@@ -70,14 +70,16 @@ No new product dependency is required for v2.
 
 ### 1. Initial Original qualification
 
-Before the first candidate mutation, capture the existing non-scored Original warm-up and establish a real scored Original regime using the existing three-of-up-to-five bounded cluster policy:
+Before the first candidate mutation, capture the existing non-scored Original warm-up and establish a real scored Original regime using **10-second scored observations**, matching the v2 screening duration, and the existing three-of-up-to-five bounded cluster policy:
 
 - prefer a three-run cluster within +/-3% of its median;
 - from observation four onward permit the existing bounded recovery band up to +/-6%;
 - stop before any candidate mutation when no bounded three-run Original cluster exists after five scored Original observations;
 - preserve every scored observation in the audit trail.
 
-The accepted cluster defines initial Original noise and the first local control `O0`.
+`InitialOriginal1PercentLowNoise` is the maximum relative deviation of the accepted three-observation cluster from that cluster's 1%-Low median.
+
+The accepted cluster qualifies the screening substrate and defines initial noise; it is **not** reused as a local pair control. After qualification, capture one fresh Original warm-up plus one fresh 10-second scored Original control `O0`. This avoids treating an excluded/stale qualification observation as the first local control.
 
 ### 2. Paired local-control sequence
 
@@ -93,10 +95,10 @@ For each candidate:
 2. apply the candidate GPU interrupt affinity;
 3. restart/activate the device and verify stored state;
 4. perform the bounded non-scored transition warm-up;
-5. capture one scored candidate observation;
+5. capture one 10-second scored candidate observation;
 6. restore and verify exact Original;
 7. recreate/warm the benchmark renderer as required by the existing restart contract;
-8. capture one scored Original observation as `OriginalAfter`;
+8. capture one 10-second scored Original observation as `OriginalAfter`;
 9. evaluate the pair locally.
 
 `OriginalAfter` becomes the next valid pair's `OriginalBefore`, so v2 does not capture two redundant Original controls between adjacent candidates.
@@ -155,13 +157,13 @@ Structural evidence failures remain fail-closed immediately and do not consume t
 
 Screening is deliberately a filter, not final proof:
 
-- scored candidate/control window: approximately 10 seconds;
+- scored candidate/control window: exactly 10 seconds;
 - primary screening metric: local 1%-Low effect;
 - screening guardrails/context: AVG and frame p99;
 - 0.1% Low remains diagnostic in the short window and does not decide screening rank;
 - ETW/PresentMon keep their current screening integrity roles.
 
-The exact duration is one shared constant/configuration owned by the benchmark method and persisted in the report; the UI does not invent a separate duration.
+The 10-second duration is one shared v2 method constant persisted in the report; the UI does not own a separate duration.
 
 ## Full-search candidate strategy
 
@@ -203,7 +205,7 @@ If fewer than two valid logical CPUs remain, finalist confirmation still runs fo
 
 Screening measurements are not mixed with finalist samples because the scored durations differ.
 
-Each finalist receives **three independent 30-second paired observations** under the same `OriginalBefore -> Candidate -> OriginalAfter` contract. Finalist order is deterministically shuffled per round and the seed/order are persisted.
+At the start of finalist confirmation, capture a fresh 30-second Original control. Each finalist then receives **three independent 30-second paired observations** under the same chained `OriginalBefore -> Candidate -> OriginalAfter` contract. Finalist order is deterministically shuffled per round and the seed/order are persisted.
 
 For each finalist calculate:
 
@@ -217,11 +219,11 @@ For each finalist calculate:
 A finalist is improvement-capable only when:
 
 - at least two of its three valid paired 1%-Low effects are positive;
-- its median paired 1%-Low effect exceeds `max(1%, InitialOriginal1PercentLowNoise, median finalist pair-control movement)`;
+- its median paired 1%-Low effect exceeds `max(1%, median finalist pair-control movement)`;
 - no valid pair shows a material 1%-Low regression beyond the same decision floor;
 - AVG, frame-p99 and existing interrupt-tail guardrails do not show a material regression under their existing noise-aware semantics.
 
-A pair that is locally unstable follows the same single-retry rule. If a finalist cannot produce three valid pairs within that bounded retry policy, it is `Inconclusive` and cannot be kept.
+A finalist pair that is locally unstable follows the same single-retry rule. If a finalist cannot produce three valid pairs within that bounded retry policy, it is `Inconclusive` and cannot be kept.
 
 ## Winner, practical ties and final Keep
 
@@ -254,9 +256,9 @@ The public product continues to receive only the conservative Keep/Restore truth
 
 ### Purpose
 
-The owner needs a fast physical iteration path for testing methodology changes on exact CPUs without waiting for a full topology search.
+The owner needs a **fast physical methodology-validation path** for testing exact CPUs without waiting for the full topology search and finalist tournament.
 
-This is **not** a second benchmark method. It executes the same v2 mutation, restart, warm-up, paired measurement, rollback and verification path with a restricted candidate source.
+Custom scope is not a second measurement formula. It executes the exact same v2 10-second paired screening path with a restricted candidate source, then restores Original. It intentionally skips full-search physical-core expansion, finalist confirmation and final Keep because its purpose is rapid diagnostic iteration.
 
 ### UI placement
 
@@ -295,7 +297,7 @@ The selection is ephemeral development state. It resets to `All eligible CPUs` o
 The main card status explicitly says when a subset is active, for example:
 
 ```text
-Custom diagnostic scope: CPU 4, CPU 8, CPU 12, CPU 6. The run will restore Original and cannot close Gate A.
+Custom diagnostic scope: CPU 4, CPU 8, CPU 12, CPU 6. Screening only; Original will be restored and this run cannot close Gate A.
 ```
 
 ### Helper contract
@@ -310,11 +312,14 @@ Because the current mutation path supports exactly one processor group, these nu
 
 Malformed, duplicate, out-of-range or currently ineligible processors fail before the first candidate mutation with an exact diagnostic.
 
+The helper deterministically shuffles the validated custom processors using the session seed before screening so the UI selection order cannot become a time-order bias.
+
 The report persists:
 
 - `SearchScope = Full | Custom`;
 - requested processors;
 - validated processors actually screened;
+- realized shuffled order;
 - whether full topology coverage was achieved.
 
 ### Custom-mode safety semantics
@@ -322,13 +327,15 @@ The report persists:
 A custom subset run is always diagnostic-only even on a clean exact source revision:
 
 - `GateAClosureEligible = false`;
+- execute only initial Original qualification + fresh `O0` + paired screening of selected CPUs + bounded pair retry/early-abort semantics;
+- skip sibling expansion, three-pair finalist confirmation and final candidate Keep;
 - no candidate may remain kept at the end of the session;
-- after the selected CPUs and any bounded methodology retries complete, exact Original is restored and verified;
-- the report may identify `BestWithinSelectedScope` and finalist-like paired evidence, but must never label it the best CPU on the machine;
+- exact Original is restored and verified before completion;
+- the report may identify `BestWithinSelectedScope` from valid screening pairs, but must never label it the best CPU on the machine;
 - the result UI says `Best within selected CPUs` and `Original restored`;
 - custom mode cannot arm public mutation.
 
-This allows fast real-hardware investigation without creating a shortcut around the full-search evidence gate.
+This gives a short real-hardware probe for methodology/debugging without creating a shortcut around the full-search evidence gate.
 
 ## Result and progress UX
 
@@ -346,9 +353,11 @@ Control movement    1.4%
 Status              Advanced to finalist
 ```
 
+Custom scope substitutes `Best within selected CPUs` / `Diagnostic only` language and never says `Advanced to finalist` because custom runs stop after screening.
+
 Do not display normalized pseudo-FPS.
 
-Finalist presentation shows the three independent paired effects and their median. The primary status is one of `Winner`, `Practical tie`, `No measured winner`, `Inconclusive`, or `Custom diagnostic result`.
+Full-mode finalist presentation shows the three independent paired effects and their median. The primary status is one of `Winner`, `Practical tie`, `No measured winner`, `Inconclusive`, or `Custom diagnostic result`.
 
 Color semantics:
 
@@ -365,17 +374,18 @@ The v2 report must make the decision reconstructable without UI inference. Add e
 
 - method version and search scope;
 - shuffle seed and realized candidate order;
-- initial Original cluster/noise;
+- initial Original qualification cluster/noise;
+- fresh screening `O0`;
 - per-pair `OriginalBefore`, `Candidate`, `OriginalAfter` artifact references;
 - pair drift budget and observed movement;
 - raw local effects by metric;
 - retry relationship when applicable;
 - pair verdict (`Valid`, `Unstable`, `Inconclusive`, structural invalidity where appropriate);
-- physical-core representative/refinement provenance;
-- finalist paired observations and median effects;
+- physical-core representative/refinement provenance in full mode;
+- finalist paired observations and median effects in full mode;
 - practical-tie metadata;
 - selected operational target, if any;
-- final runtime ISR-placement evidence;
+- final runtime ISR-placement evidence when Keep is attempted;
 - exact terminal machine state and recovery status;
 - full/custom coverage and closure eligibility.
 
@@ -409,7 +419,7 @@ Durable contracts to cover using the existing test surfaces:
 2. candidate sequencing is chained `O-C-O` with exact rollback between candidates;
 3. unstable pair receives at most one measurement retry and cannot rank;
 4. repeated local instability triggers early RestoreOriginal;
-5. custom scope revalidates the requested subset and never Keep/closure-qualifies;
+5. custom scope revalidates the requested subset, performs screening only and never Keep/closure-qualifies;
 6. full scope still derives from fresh eligible topology rather than UI input;
 7. UI/result presentation consumes authoritative v2 pair/finalist decisions and uses `Best within selected CPUs` for custom runs;
 8. final Keep still requires target-only runtime ISR proof and verified terminal state.
@@ -441,15 +451,15 @@ Do not create a new UI subsystem, selection persistence service, statistics pack
 | Stage | Deliverable | Exit evidence |
 |---|---|---|
 | 1 | Accept v2 ADR/report semantics and mark v1 block normalization superseded | docs internally consistent |
-| 2 | Versioned v2 pair/report model | build/tests compile against explicit v2 evidence |
+| 2 | Versioned v2 pair/report model | source/tests compile against explicit v2 evidence |
 | 3 | `O-C-O` screening, local effects, bounded retry and early abort | existing session/temporal contracts pass |
-| 4 | full-search physical-core representative + sibling refinement + finalist selection | deterministic software tests pass |
+| 4 | full-search physical-core representative + sibling refinement + finalist selection | deterministic software contracts pass |
 | 5 | three-pair finalist confirmation + practical-tie/winner policy | decision contracts pass |
 | 6 | helper custom CPU scope and fresh privileged revalidation | invalid/custom/full scope contracts pass |
-| 7 | Gate A CPU-scope GUI beside Run Gate A | local Windows build/render inspection required |
-| 8 | v2 progress/results presentation | local Windows render plus result-contract tests |
+| 7 | Gate A CPU-scope GUI beside Run Gate A | owner-local Windows build + render inspection |
+| 8 | v2 progress/results presentation | owner-local Windows build/render + result-contract tests |
 | 9 | exact-head hosted Tests + diff/step-back review | green test-only CI on exact commit |
-| 10 | quick physical custom run, initially suggested CPUs 4/8/12/6 | uploaded real v2 evidence; Original restored |
+| 10 | quick physical custom run, initially suggested CPUs 4/8/12/6 | uploaded real v2 screening evidence; Original restored |
 | 11 | full v2 physical search | valid winner/tie/inconclusive evidence |
 | 12 | repeat full search for reproducibility | winner or practical-tie set reproduces, or method truthfully reports insufficient discrimination |
 | 13 | Stop safely + one supported failure/recovery exercise | verified terminal state, unresolved journal = 0 |
@@ -469,9 +479,10 @@ The design addresses these without prebuilding more infrastructure:
 - abrupt restart/time effects invalidate local pairs instead of being normalized away;
 - top physical cores explicitly receive sibling refinement;
 - only screening uses short windows; final authority uses repeated 30-second pairs;
+- custom scope gives a bounded real-hardware methodology probe without running the full tournament;
 - if paired v2 still exhibits material residual self-interference, Windows CPU-set shielding becomes a separately evidenced follow-up rather than a bundled treatment;
 - global core reservation remains outside the initial v2 path.
 
 ## Completion rule
 
-v2 source is implemented when the software contracts and exact-head CI are green. v2 measurement is **not closed** until owner-hardware runs demonstrate that the paired method can either produce reproducible decision-grade evidence or truthfully identify that this workload cannot distinguish CPU targets on that machine.
+v2 source is implemented when deterministic software contracts pass, the owner-local Windows build succeeds for the WinUI/Windows-specific projects, and hosted test-only CI is green on the exact source HEAD. v2 measurement is **not closed** until owner-hardware runs demonstrate that the paired method can either produce reproducible decision-grade evidence or truthfully identify that this workload cannot distinguish CPU targets on that machine.
