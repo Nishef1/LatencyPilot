@@ -25,6 +25,7 @@ public sealed record GateAMetricComparison(
 public sealed record GateACandidateBar(
     LogicalProcessorId Processor,
     int PhysicalCoreIndex,
+    int? DecisionRank,
     double OnePercentLowFps,
     double? AvgFps,
     double? FrameP99Milliseconds,
@@ -116,7 +117,7 @@ public static class GateAResultPresentation
             ? "No authoritative comparison candidate"
             : verifiedKeep
                 ? $"CPU {compared.Processor.Number} · kept"
-                : $"CPU {compared.Processor.Number} · comparison only · not kept";
+                : $"CPU {compared.Processor.Number} · best measured · not kept";
         var bundleStatus = bundle.Succeeded
             ? "Shareable evidence ZIP is ready."
             : string.IsNullOrWhiteSpace(bundle.Error)
@@ -301,13 +302,14 @@ public static class GateAResultPresentation
             var state = isKept
                 ? "Kept"
                 : isCompared
-                    ? "Comparison only"
+                    ? "Not kept"
                     : string.Equals(candidate.Verdict, "Inconclusive", StringComparison.OrdinalIgnoreCase)
                         ? "Inconclusive"
                         : "Tested";
             return new GateACandidateBar(
                 processor,
                 candidate.PhysicalCoreIndex,
+                candidate.DecisionRank,
                 candidate.DecisionOnePercentLowFps!.Value,
                 candidate.DecisionAvgFps,
                 candidate.DecisionFrameP99Milliseconds,
@@ -395,7 +397,7 @@ public static class GateAResultPresentation
                     ? "No authority-ranked comparison candidate is persisted in this report."
                     : verifiedKeep
                         ? $"The candidate survived the optimizer's repeatability and uncertainty gates. Local-control uncertainty recorded for presentation is {SanitizeUncertainty(compared.LocalControlUncertainty):P1}."
-                        : $"The candidate is shown only for diagnostics. Local-control uncertainty recorded for the candidate is {SanitizeUncertainty(compared.LocalControlUncertainty):P1}; no independent pass is inferred here."),
+                        : $"The best measured candidate is diagnostic only. Its local-control uncertainty is {SanitizeUncertainty(compared.LocalControlUncertainty):P1}; no independent pass is inferred here."),
             new GateADecisionEvidenceRow(
                 "Performance guardrails",
                 guardrailState,
@@ -403,7 +405,7 @@ public static class GateAResultPresentation
                     ? "Guardrail decision evidence is unavailable because no authority-ranked comparison candidate is persisted."
                     : verifiedKeep
                         ? "The verified Keep was emitted only after the optimizer accepted its AVG, frame-p99, 0.1%-low and interrupt-tail guardrails."
-                        : "Measured guardrail values may be inspected, but this presentation does not convert an empty diagnostic field into a Passed result."),
+                        : "Measured guardrail values remain diagnostic because the run did not reach a verified Keep decision."),
             new GateADecisionEvidenceRow(
                 "Runtime ISR placement",
                 placementState,
@@ -439,7 +441,7 @@ public static class GateAResultPresentation
         {
             return compared is null
                 ? "LatencyPilot retained and verified the exact original GPU affinity policy. No authority-ranked comparison candidate is available for a trustworthy before/after claim in this report."
-                : $"CPU {compared.Processor.Number} is shown only as the optimizer-ranked diagnostic comparison and was not kept. LatencyPilot retained and verified the exact original policy instead of turning non-Keep evidence into a winner claim.";
+                : $"CPU {compared.Processor.Number} was the optimizer's best measured candidate, but it did not clear the full Keep gates. LatencyPilot retained and verified the exact original policy instead of turning uncertain evidence into a system change.";
         }
 
         return "Gate A produced a report, but the terminal machine state is not fully verified. Use the evidence and recovery status below before continuing.";
