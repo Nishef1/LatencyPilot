@@ -86,6 +86,9 @@ public sealed class GpuAutoAffinitySession
     private const int MinimumInterruptTailSamples = 20;
     private const int MinimumInterruptTailRuns = 3;
     private const int MaximumRejectedRepeatabilityRuns = 1;
+    private const int MaximumRejectedOriginalRepeatabilityRuns =
+        GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount -
+        GpuRepeatabilityClusterSelector.RequiredRunCount;
     private const int MinimumFinalistCandidates = 3;
     private const int MaximumFinalistCandidates = 5;
     private const int ScreeningCandidatesPerControlBlock = 4;
@@ -141,9 +144,10 @@ public sealed class GpuAutoAffinitySession
 
         try
         {
-            // Establish continuity once, then collect enough exact-Original samples
-            // to identify three repeatable runs. A single noisy Windows/background
-            // outlier is replaced rather than aborting the whole search.
+            // Establish continuity once, then collect exact-Original scored observations
+            // sequentially until a repeatable three-run regime exists or the bounded
+            // five-observation ceiling is exhausted. Attempts four and five remain
+            // first-class measurements; they are never manufactured as contamination.
             var referenceObservation = await CaptureAcceptedAsync(
                 () => ++nextRunNumber,
                 "screening-warmup",
@@ -155,10 +159,11 @@ public sealed class GpuAutoAffinitySession
                 trialReports,
                 cancellationToken).ConfigureAwait(false);
             var reference = referenceObservation.Evidence;
-            var originalObservations = new List<GpuAutoAffinityTrialObservation>(GpuRepeatabilityClusterSelector.MaximumAttemptCount);
+            var originalObservations = new List<GpuAutoAffinityTrialObservation>(
+                GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount);
             var original = OriginalEvaluation.Unrankable(
                 "Original repeatability has not collected three scored observations yet.");
-            while (originalObservations.Count < GpuRepeatabilityClusterSelector.MaximumAttemptCount)
+            while (originalObservations.Count < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount)
             {
                 originalObservations.Add(await CaptureAcceptedAsync(
                     () => ++nextRunNumber,
@@ -190,13 +195,7 @@ public sealed class GpuAutoAffinitySession
                     originalVerified, originalVerified, candidateReports, trialReports, reasons);
             }
             decisionBaseline = ToDecisionBaseline(original);
-            if (original.UsedNoiseAwareFallback)
-            {
-                reasons.Add(string.Create(
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    $"Original did not form the preferred ±{GpuRepeatabilityClusterSelector.RelativeTolerance:P0} 1%-low cluster after {original.TotalObservationCount} scored runs. The search continued with all valid Original runs instead of aborting; observed 1%-low noise is {original.PrimaryRelativeNoise:P2} and is carried into shortlist and Keep thresholds."));
-            }
-            else if (original.TotalObservationCount > original.ValidObservationCount)
+            if (original.TotalObservationCount > original.ValidObservationCount)
             {
                 reasons.Add(string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
@@ -1120,32 +1119,31 @@ public sealed class GpuAutoAffinitySession
             return OriginalEvaluation.Unrankable("Original benchmark ranking statistics are missing or non-finite.", observations.Length);
         }
         var cluster = GpuRepeatabilityClusterSelector.Select(values.Select(static item => item.Low1PctFps).ToArray());
-        GpuBenchmarkVideoStats[] selected;
-        GpuAutoAffinityTrialObservation[] selectedObservations;
-        var usedNoiseAwareFallback = false;
         if (cluster is null)
         {
-            if (observations.Length < GpuRepeatabilityClusterSelector.MaximumAttemptCount)
-            {
-                return OriginalEvaluation.Unrankable(BuildNoStableClusterReason(observations.Length), observations.Length);
-            }
-
-            selected = values;
-            selectedObservations = observations;
-            usedNoiseAwareFallback = true;
-        }
-        else
-        {
-            if (observations.Length - cluster.Indexes.Length > MaximumRejectedRepeatabilityRuns)
+            if (observations.Length < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount)
             {
                 return OriginalEvaluation.Unrankable(
-                    $"Repeatability rejected {observations.Length - cluster.Indexes.Length} of {observations.Length} Original observations; automatic ranking allows at most {MaximumRejectedRepeatabilityRuns} rejected run.",
+                    BuildNoStableOriginalClusterReason(observations.Length),
                     observations.Length);
             }
-            selected = cluster.Indexes.Select(index => values[index]).ToArray();
-            selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
+
+            return OriginalEvaluation.Unrankable(
+                string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"No stable {GpuRepeatabilityClusterSelector.RequiredRunCount}-run Original 1% low cluster exists after the bounded {GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount} scored observations; candidate mutation is not allowed."),
+                observations.Length);
         }
 
+        if (observations.Length - cluster.Indexes.Length > MaximumRejectedOriginalRepeatabilityRuns)
+        {
+            return OriginalEvaluation.Unrankable(
+                $"Repeatability rejected {observations.Length - cluster.Indexes.Length} of {observations.Length} Original observations; the bounded Original policy allows at most {MaximumRejectedOriginalRepeatabilityRuns} excluded observations while selecting the repeatable three-run regime.",
+                observations.Length);
+        }
+
+        var selected = cluster.Indexes.Select(index => values[index]).ToArray();
+        var selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
         var medianLow1 = Median(selected.Select(static item => item.Low1PctFps));
         var medianLow01 = Median(selected.Select(static item => item.Low01PctFps));
         var medianAvg = Median(selected.Select(static item => item.AvgFps));
@@ -1163,7 +1161,7 @@ public sealed class GpuAutoAffinitySession
             selectedObservations.Length,
             observations.Length,
             true,
-            usedNoiseAwareFallback,
+            UsedNoiseAwareFallback: false,
             null);
     }
 
@@ -1361,6 +1359,11 @@ public sealed class GpuAutoAffinitySession
         string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
             $"No stable {GpuRepeatabilityClusterSelector.RequiredRunCount}-run 1% low cluster exists within ±{GpuRepeatabilityClusterSelector.RelativeTolerance:P0} after {observationCount} scored observation(s)." );
+
+    private static string BuildNoStableOriginalClusterReason(int observationCount) =>
+        string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"No stable {GpuRepeatabilityClusterSelector.RequiredRunCount}-run Original 1% low cluster exists after {observationCount} scored observation(s); continuing toward the bounded {GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount}-observation ceiling before any candidate mutation." );
 
     private static double RelativeDifference(double left, double right) =>
         Math.Abs(left - right) / Math.Max(Math.Abs(right), double.Epsilon);
