@@ -493,6 +493,9 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 benchmarkProcessId,
                 presentMonWindow,
                 cancellationToken).ConfigureAwait(false);
+            // Own the collector before starting either capture. A benchmark/ETW
+            // exception or cancellation must dispose it as well as the happy path.
+            await using var presentMonSession = presentMonStart.Session;
 
             var kernelDuration = request.Duration + CollectorTailSlack;
             var kernelTask = Task.Run(
@@ -512,7 +515,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             var artifactPath = await artifactPathTask.ConfigureAwait(false);
             artifact = await ReadArtifactAsync(artifactPath, deadline.Token).ConfigureAwait(false);
 
-            if (presentMonStart.Session is null)
+            if (presentMonSession is null)
             {
                 presentMon = CreateUnavailablePresentMon(
                     benchmarkProcessId,
@@ -523,7 +526,6 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             }
             else
             {
-                await using var presentMonSession = presentMonStart.Session;
                 presentMon = await presentMonSession.CompleteAsync(
                     artifact.StartedAtQpc,
                     artifact.EndedAtQpc,

@@ -1,59 +1,63 @@
 using LatencyPilot.Benchmarking.Candidates;
+using LatencyPilot.Core.Benchmarking;
 using LatencyPilot.Core.System;
 
 namespace LatencyPilot.Benchmarking.Optimization;
 
 public sealed class GpuAutoAffinityProgressPlan
 {
-    private const int ControlWarmupCount = 1;
-    private const int ScoredOriginalUnits = 3;
-    private const int ScreeningCandidatesPerControlBlock = 4;
-    private const int ScreeningBlockControlUnits = 2; // warm-up + scored Original control
-    private const int PostScreeningControlUnits = 2; // warm-up + scored Original control
-    private const int PostFinalistControlUnits = 2; // warm-up + scored Original control
-    private const int ScreeningUnitsPerCandidate = 2; // transition warm-up + one scored run
-    private const int FinalistUnitsPerCandidate = 4; // two independent transition warm-up + scored re-test rounds
-    private const int MaximumFinalistCandidates = 5;
-    private const int FinalVerificationUnits = 2; // transition warm-up + ETW placement verification
-
-    private GpuAutoAffinityProgressPlan(IReadOnlyList<GpuAffinityCandidate> candidates)
+    private GpuAutoAffinityProgressPlan(int candidateCount, int screeningCount, GpuAutoAffinitySearchScope scope)
     {
-        CandidateCount = candidates.Count;
+        CandidateCount = candidateCount;
+        ScreeningCandidateCount = screeningCount;
+        SearchScope = scope;
     }
 
     public int CandidateCount { get; }
 
-    public int FinalistCandidateCount => Math.Min(MaximumFinalistCandidates, CandidateCount);
+    public int ScreeningCandidateCount { get; }
+    public GpuAutoAffinitySearchScope SearchScope { get; }
+    public int FinalistCandidateCount => SearchScope == GpuAutoAffinitySearchScope.Full ? Math.Min(3, CandidateCount) : 0;
+    public static int AdditionalFinalistUnitsPerCandidate => 12;
 
-    public int IntermediateScreeningControlCount =>
-        CandidateCount <= ScreeningCandidatesPerControlBlock
-            ? 0
-            : (CandidateCount - 1) / ScreeningCandidatesPerControlBlock;
-
-    public static int AdditionalFinalistUnitsPerCandidate => FinalistUnitsPerCandidate;
-
-    public int InitialTotalUnits => GetBaseTotalUnits();
+    // Adaptive work estimate: each pair has candidate warm-up/score + Original warm-up/score.
+    public int InitialTotalUnits => SearchScope == GpuAutoAffinitySearchScope.OriginalDiagnostics
+        ? 1 + GpuOriginalBaselinePolicy.MaximumScoredObservationCount
+        : 1 + 3 + 2 + (ScreeningCandidateCount * 4) +
+          (FinalistCandidateCount == 0 ? 0 : 2 + (FinalistCandidateCount * AdditionalFinalistUnitsPerCandidate) + 2);
 
     public static GpuAutoAffinityProgressPlan Create(
         ProcessorTopologySnapshot topology,
         IEnumerable<ProcessorPressureEvidence> pressureEvidence,
-        ProcessorCpuSetSnapshot? cpuSets)
+        ProcessorCpuSetSnapshot? cpuSets,
+        GpuAutoAffinitySearchScope scope = GpuAutoAffinitySearchScope.Full,
+        IReadOnlyList<LogicalProcessorId>? requestedProcessors = null)
     {
         ArgumentNullException.ThrowIfNull(topology);
         ArgumentNullException.ThrowIfNull(pressureEvidence);
 
-        var pressure = pressureEvidence.ToArray();
-        var candidates = GpuAffinityCandidatePlanner.Create(topology, pressure, cpuSets);
-        return new GpuAutoAffinityProgressPlan(candidates);
+        if (!Enum.IsDefined(scope))
+        {
+            throw new ArgumentOutOfRangeException(nameof(scope));
+        }
+        var candidates = GpuAffinityCandidatePlanner.Create(topology, pressureEvidence.ToArray(), cpuSets);
+        var requested = requestedProcessors?.ToArray() ?? [];
+        if (scope == GpuAutoAffinitySearchScope.Custom)
+        {
+            var eligible = candidates.Select(static candidate => candidate.Processor).ToHashSet();
+            if (requested.Length == 0 || requested.Distinct().Count() != requested.Length ||
+                requested.Any(processor => processor.Group != 0 || !eligible.Contains(processor)))
+            {
+                throw new ArgumentException("Custom CPU scope must contain unique currently eligible group-0 processors.", nameof(requestedProcessors));
+            }
+            return new GpuAutoAffinityProgressPlan(requested.Length, requested.Length, scope);
+        }
+        if (requested.Length != 0)
+        {
+            throw new ArgumentException("Only custom scope accepts candidate processors.", nameof(requestedProcessors));
+        }
+        var cores = candidates.GroupBy(static candidate => candidate.PhysicalCoreIndex).ToArray();
+        var siblingBudget = cores.Select(static core => core.Count() - 1).OrderDescending().Take(3).Sum();
+        return new GpuAutoAffinityProgressPlan(candidates.Count, cores.Length + siblingBudget, scope);
     }
-
-    private int GetBaseTotalUnits() =>
-        ControlWarmupCount +
-        ScoredOriginalUnits +
-        (IntermediateScreeningControlCount * ScreeningBlockControlUnits) +
-        PostScreeningControlUnits +
-        PostFinalistControlUnits +
-        (CandidateCount * ScreeningUnitsPerCandidate) +
-        (FinalistCandidateCount * FinalistUnitsPerCandidate) +
-        FinalVerificationUnits;
 }

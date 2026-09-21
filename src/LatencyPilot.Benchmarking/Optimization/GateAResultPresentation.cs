@@ -35,7 +35,10 @@ public sealed record GateACandidateBar(
     string StateLabel,
     double? LocalControlUncertainty,
     bool IsKept,
-    bool IsCompared);
+    bool IsCompared)
+{
+    public double? OnePercentLowEffect { get; init; }
+}
 
 public sealed record GateATrialPoint(
     int RunNumber,
@@ -70,6 +73,7 @@ public sealed record GateAResultViewModel(
     TimeSpan Duration)
 {
     public bool BundleAvailable => !string.IsNullOrWhiteSpace(ZipPath);
+    public IReadOnlyList<GpuAutoAffinityPairReport> Pairs { get; init; } = [];
 }
 
 public static class GateAResultPresentation
@@ -93,10 +97,10 @@ public static class GateAResultPresentation
         var compared = SelectComparedCandidate(report, recommendationKeepsCandidate);
         var comparedProcessor = compared?.Processor;
         var diagnosticOnly = compared is not null && !verifiedKeep;
-        var original = OriginalMetrics.From(report.DecisionBaseline);
-        var localControlUncertainty = SanitizeUncertainty(compared?.LocalControlUncertainty);
+        var localControlUncertainty = SanitizeUncertainty(
+            report.Finalists.LastOrDefault(finalist => finalist.Processor == comparedProcessor)?.DecisionFloor
+            ?? compared?.LocalControlUncertainty);
         var metrics = BuildMetricComparisons(
-            original,
             compared,
             localControlUncertainty,
             verifiedKeep);
@@ -104,7 +108,9 @@ public static class GateAResultPresentation
         var trialPoints = BuildTrialPoints(report.Trials, comparedProcessor);
         var decisionRows = BuildDecisionRows(report, compared, metrics, verifiedKeep);
 
-        var title = verifiedKeep
+        var title = report.OriginalDiagnostic is { } diagnostic
+            ? diagnostic.Repeatable ? "Original repeatable in this sample" : "Original variability is too high"
+            : verifiedKeep
             ? $"CPU {report.FinalProcessor!.Value.Number} kept"
             : report.FinalStateVerified && report.OriginalStateRestored
                 ? "Original kept"
@@ -148,7 +154,10 @@ public static class GateAResultPresentation
             sourceRevision,
             report.EndedAtUtc >= report.StartedAtUtc
                 ? report.EndedAtUtc - report.StartedAtUtc
-                : TimeSpan.Zero);
+                : TimeSpan.Zero)
+        {
+            Pairs = report.Pairs,
+        };
     }
 
     private static GpuAutoAffinityCandidateReport? SelectComparedCandidate(
@@ -167,22 +176,17 @@ public static class GateAResultPresentation
         // persisted an explicit decision rank; never infer a winner from list order.
         return report.Candidates
             .Where(static candidate =>
-                candidate.DecisionRank == 1 &&
-                string.Equals(candidate.Verdict, "Ranked", StringComparison.OrdinalIgnoreCase))
+                candidate.DecisionRank == 1)
             .Where(HasDecisionMetrics)
             .OrderByDescending(static candidate =>
-                string.Equals(candidate.Phase, "screening-finalists", StringComparison.Ordinal))
+                string.Equals(candidate.Phase, "finalists", StringComparison.Ordinal))
             .FirstOrDefault();
     }
 
     private static bool HasDecisionMetrics(GpuAutoAffinityCandidateReport candidate) =>
-        IsFinitePositive(candidate.DecisionOnePercentLowFps) ||
-        IsFinitePositive(candidate.DecisionAvgFps) ||
-        IsFinitePositive(candidate.DecisionFrameP99Milliseconds) ||
-        IsFinitePositive(candidate.DecisionLow01PctFps);
+        IsFinite(candidate.DecisionOnePercentLowEffect);
 
     private static GateAMetricComparison[] BuildMetricComparisons(
-        OriginalMetrics original,
         GpuAutoAffinityCandidateReport? candidate,
         double localControlUncertainty,
         bool verifiedKeep) =>
@@ -190,9 +194,7 @@ public static class GateAResultPresentation
             CreateMetric(
                 "low1",
                 "1% low",
-                "FPS",
-                original.OnePercentLowFps,
-                candidate?.DecisionOnePercentLowFps,
+                candidate?.DecisionOnePercentLowEffect,
                 lowerIsBetter: false,
                 localControlUncertainty,
                 verifiedKeep,
@@ -200,9 +202,7 @@ public static class GateAResultPresentation
             CreateMetric(
                 "avg",
                 "Average",
-                "FPS",
-                original.AvgFps,
-                candidate?.DecisionAvgFps,
+                candidate?.DecisionAvgEffect,
                 lowerIsBetter: false,
                 localControlUncertainty,
                 verifiedKeep,
@@ -210,9 +210,7 @@ public static class GateAResultPresentation
             CreateMetric(
                 "p99",
                 "Frame p99",
-                "ms",
-                original.FrameP99Milliseconds,
-                candidate?.DecisionFrameP99Milliseconds,
+                candidate?.DecisionFrameP99Effect,
                 lowerIsBetter: true,
                 localControlUncertainty,
                 verifiedKeep,
@@ -220,43 +218,36 @@ public static class GateAResultPresentation
             CreateMetric(
                 "low01",
                 "0.1% low",
-                "FPS",
-                original.Low01PctFps,
-                candidate?.DecisionLow01PctFps,
+                candidate?.DecisionLow01PctEffect,
                 lowerIsBetter: false,
                 localControlUncertainty,
-                verifiedKeep,
+                verifiedKeep: false,
                 primaryMetric: false),
         ];
 
     private static GateAMetricComparison CreateMetric(
         string key,
         string label,
-        string unit,
-        double? original,
-        double? candidate,
+        double? effect,
         bool lowerIsBetter,
         double localControlUncertainty,
         bool verifiedKeep,
         bool primaryMetric)
     {
-        if (!IsFinitePositive(original) || !IsFinitePositive(candidate))
+        if (!IsFinite(effect))
         {
             return new GateAMetricComparison(
                 key,
                 label,
-                unit,
-                original,
-                candidate,
+                "%",
+                null,
+                null,
                 null,
                 localControlUncertainty,
                 GateAMetricState.Unavailable,
                 lowerIsBetter);
         }
 
-        var delta = lowerIsBetter
-            ? (original!.Value - candidate!.Value) / original.Value
-            : (candidate!.Value - original!.Value) / original.Value;
         var state = !verifiedKeep
             ? GateAMetricState.DiagnosticOnly
             : primaryMetric
@@ -265,10 +256,10 @@ public static class GateAResultPresentation
         return new GateAMetricComparison(
             key,
             label,
-            unit,
-            original,
-            candidate,
-            delta,
+            "%",
+            null,
+            null,
+            effect,
             localControlUncertainty,
             state,
             lowerIsBetter);
@@ -283,10 +274,6 @@ public static class GateAResultPresentation
         var order = new List<LogicalProcessorId>();
         foreach (var candidate in report.Candidates)
         {
-            if (!IsFinitePositive(candidate.DecisionOnePercentLowFps))
-            {
-                continue;
-            }
             if (!latestByProcessor.ContainsKey(candidate.Processor))
             {
                 order.Add(candidate.Processor);
@@ -294,7 +281,7 @@ public static class GateAResultPresentation
             latestByProcessor[candidate.Processor] = candidate;
         }
 
-        return order.Select(processor =>
+        return order.Where(processor => HasDecisionMetrics(latestByProcessor[processor])).Select(processor =>
         {
             var candidate = latestByProcessor[processor];
             var isKept = verifiedKeep && report.FinalProcessor == processor;
@@ -310,7 +297,7 @@ public static class GateAResultPresentation
                 processor,
                 candidate.PhysicalCoreIndex,
                 candidate.DecisionRank,
-                candidate.DecisionOnePercentLowFps!.Value,
+                candidate.DecisionOnePercentLowFps ?? 0d,
                 candidate.DecisionAvgFps,
                 candidate.DecisionFrameP99Milliseconds,
                 candidate.DecisionLow01PctFps,
@@ -319,7 +306,10 @@ public static class GateAResultPresentation
                 state,
                 candidate.LocalControlUncertainty,
                 isKept,
-                isCompared);
+                isCompared)
+            {
+                OnePercentLowEffect = candidate.DecisionOnePercentLowEffect,
+            };
         }).ToArray();
     }
 
@@ -404,7 +394,7 @@ public static class GateAResultPresentation
                 compared is null
                     ? "Guardrail decision evidence is unavailable because no authority-ranked comparison candidate is persisted."
                     : verifiedKeep
-                        ? "The verified Keep was emitted only after the optimizer accepted its AVG, frame-p99, 0.1%-low and interrupt-tail guardrails."
+                        ? "The verified Keep requires AVG, frame-p99 and interrupt-tail guardrails. 0.1% low remains diagnostic at this sample size."
                         : "Measured guardrail values remain diagnostic because the run did not reach a verified Keep decision."),
             new GateADecisionEvidenceRow(
                 "Runtime ISR placement",
@@ -432,16 +422,23 @@ public static class GateAResultPresentation
         GpuAutoAffinityCandidateReport? compared,
         bool verifiedKeep)
     {
+        if (report.OriginalDiagnostic is { } diagnostic)
+        {
+            return $"{diagnostic.ObservationCount} Original observations; 1%-low noise {diagnostic.OnePercentLowRelativeNoise:P1}, AVG noise {diagnostic.AvgRelativeNoise:P1}, frame-p99 noise {diagnostic.FrameP99RelativeNoise:P1}. {diagnostic.Reason} Final state verified: {report.FinalStateVerified}.";
+        }
+        var scope = report.SearchScope == GpuAutoAffinitySearchScope.Custom
+            ? "Selected-CPU diagnostic screening; no candidate can be kept. "
+            : report.PracticalTie ? "Finalists form a practical tie; no unique winner was established. " : string.Empty;
         if (verifiedKeep && report.FinalProcessor is { } processor)
         {
-            return $"CPU {processor.Number} survived the benchmark decision gates and is the verified terminal GPU interrupt-affinity state. The evidence below shows the authority-selected baseline, measured deltas and runtime placement proof.";
+            return $"CPU {processor.Number} survived the paired benchmark decision gates and is the verified terminal GPU interrupt-affinity state. Effects use each candidate's adjacent Original controls; raw FPS remains in the pair evidence.";
         }
 
         if (report.OriginalStateRestored && report.FinalStateVerified)
         {
-            return compared is null
+            return scope + (compared is null
                 ? "LatencyPilot retained and verified the exact original GPU affinity policy. No authority-ranked comparison candidate is available for a trustworthy before/after claim in this report."
-                : $"CPU {compared.Processor.Number} was the optimizer's best measured candidate, but it did not clear the full Keep gates. LatencyPilot retained and verified the exact original policy instead of turning uncertain evidence into a system change.";
+                : $"CPU {compared.Processor.Number} has the highest persisted rank for comparison. The session did not establish a verified Keep. The exact original policy is verified.");
         }
 
         return "Gate A produced a report, but the terminal machine state is not fully verified. Use the evidence and recovery status below before continuing.";
@@ -449,14 +446,14 @@ public static class GateAResultPresentation
 
     private static string DescribeMetric(GateAMetricComparison metric, string interpretation)
     {
-        if (!IsFinitePositive(metric.OriginalValue) || !IsFinitePositive(metric.CandidateValue))
+        if (!IsFinite(metric.ImprovementFraction))
         {
             return $"{metric.Label} does not have enough authority-selected comparable evidence. {interpretation}";
         }
         var delta = metric.ImprovementFraction is null
             ? string.Empty
             : $" ({metric.ImprovementFraction.Value:+0.0%;-0.0%;0.0%} improvement-direction delta)";
-        return $"Original {metric.OriginalValue:0.##} {metric.Unit} → candidate {metric.CandidateValue:0.##} {metric.Unit}{delta}; local-control uncertainty {metric.UncertaintyFraction:P1}. {interpretation}";
+        return $"Paired effect{delta}; decision uncertainty floor {metric.UncertaintyFraction:P1}. {interpretation}";
     }
 
     private static bool IsFinitePositive(double? value) =>
@@ -465,19 +462,5 @@ public static class GateAResultPresentation
     private static double SanitizeUncertainty(double? value) =>
         value is >= 0d && double.IsFinite(value.Value) ? value.Value : 0d;
 
-    private sealed record OriginalMetrics(
-        double? OnePercentLowFps,
-        double? AvgFps,
-        double? FrameP99Milliseconds,
-        double? Low01PctFps)
-    {
-        internal static OriginalMetrics From(GpuAutoAffinityDecisionBaselineReport? baseline) =>
-            baseline is null
-                ? new OriginalMetrics(null, null, null, null)
-                : new OriginalMetrics(
-                    baseline.OnePercentLowFps,
-                    baseline.AvgFps,
-                    baseline.FrameP99Milliseconds,
-                    baseline.Low01PctFps);
-    }
+    private static bool IsFinite(double? value) => value is { } number && double.IsFinite(number);
 }

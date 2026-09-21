@@ -72,7 +72,7 @@ internal static class GpuAutoAffinityGateARunner
             if (topology.ProcessorGroupCount != 1)
             {
                 throw new NotSupportedException(
-                    "GPU auto-affinity Gate A v1 requires exactly one Windows processor group.");
+                    "GPU auto-affinity Gate A requires exactly one Windows processor group.");
             }
 
             ProcessorCpuSetSnapshot? cpuSets = null;
@@ -93,8 +93,9 @@ internal static class GpuAutoAffinityGateARunner
                 .SelectMany(static core => core.LogicalProcessors)
                 .Select(static processor => new ProcessorPressureEvidence(processor, 0d))
                 .ToArray();
-            var progressPlan = GpuAutoAffinityProgressPlan.Create(topology, pressure, cpuSets);
-            if (progressPlan.CandidateCount == 0)
+            var progressPlan = GpuAutoAffinityProgressPlan.Create(
+                topology, pressure, cpuSets, options.SearchScope, options.RequestedProcessors);
+            if (progressPlan.CandidateCount == 0 && options.SearchScope != GpuAutoAffinitySearchScope.OriginalDiagnostics)
             {
                 throw new InvalidOperationException(
                     "GPU auto-affinity Gate A has no eligible logical-CPU candidates after topology/CPU-set exclusions.");
@@ -147,12 +148,16 @@ internal static class GpuAutoAffinityGateARunner
                 pressure,
                 cpuSets,
                 shuffleSeed,
-                TimeSpan.FromSeconds(30));
+                GpuAutoAffinitySession.V2ScreeningDuration,
+                GpuAutoAffinitySession.V2FinalistDuration,
+                options.SearchScope,
+                options.RequestedProcessors);
 
             Console.WriteLine($"session={options.SessionId:D}");
             Console.WriteLine($"source-revision={options.ExpectedCommit}");
             Console.WriteLine($"source-state={sourceAssessment.State}");
-            Console.WriteLine($"gate-a-closure-eligible={sourceAssessment.IsClosureEligible}");
+            Console.WriteLine($"search-scope={options.SearchScope}");
+            Console.WriteLine($"gate-a-closure-eligible={sourceAssessment.IsClosureEligible && options.SearchScope == GpuAutoAffinitySearchScope.Full}");
             Console.WriteLine($"benchmark-pid={benchmark.ProcessId.ToString(CultureInfo.InvariantCulture)}");
             Console.WriteLine($"device={target[0].InstanceId}");
             Console.WriteLine($"physical-cores={topology.PhysicalCoreCount.ToString(CultureInfo.InvariantCulture)}");
@@ -184,10 +189,11 @@ internal static class GpuAutoAffinityGateARunner
             var unresolvedAfter = MutationJournalReadOnlyInspector.GetUnresolved(
                 MutationJournal.GetDefaultDatabasePath());
             var finalSourceAssessment = await ReadFinalSourceAssessmentAsync(options).ConfigureAwait(false);
-            var closureEligible = sourceAssessment.IsClosureEligible && finalSourceAssessment.IsClosureEligible;
+            var sourceEligible = sourceAssessment.IsClosureEligible && finalSourceAssessment.IsClosureEligible;
+            var closureEligible = sourceEligible && options.SearchScope == GpuAutoAffinitySearchScope.Full;
             var effectiveSourceState = DetermineEffectiveSourceState(sourceAssessment, finalSourceAssessment);
             var completedReport = rawBackend.CompleteReport(result.Report, unresolvedAfter.Count);
-            IReadOnlyList<string> reportReasons = closureEligible
+            IReadOnlyList<string> reportReasons = sourceEligible
                 ? completedReport.Reasons
                 : [
                     .. completedReport.Reasons,
@@ -200,6 +206,18 @@ internal static class GpuAutoAffinityGateARunner
                 GateAClosureEligible = closureEligible,
                 Reasons = reportReasons,
             };
+            if (options.SearchScope != GpuAutoAffinitySearchScope.Full)
+            {
+                finalReport = finalReport with
+                {
+                    Reasons = [.. finalReport.Reasons, "Diagnostic scope cannot close Gate A or retain a candidate."],
+                };
+                if (result.Recommendation != GpuOptimizationRecommendation.RestoreOriginal ||
+                    finalReport.FinalProcessor is not null || !finalReport.OriginalStateRestored)
+                {
+                    throw new InvalidOperationException("Diagnostic scope did not return a verified Original-only terminal state.");
+                }
+            }
             if (unresolvedAfter.Count != 0)
             {
                 throw new InvalidOperationException(
@@ -732,7 +750,9 @@ internal static class GpuAutoAffinityGateARunner
         Guid SessionId,
         string BenchmarkPipeName,
         string BenchmarkToken,
-        bool AllowDirtyDevelopmentSource)
+        bool AllowDirtyDevelopmentSource,
+        GpuAutoAffinitySearchScope SearchScope,
+        IReadOnlyList<LogicalProcessorId> RequestedProcessors)
     {
         internal static AutoOptions Parse(string[] args)
         {
@@ -741,9 +761,19 @@ internal static class GpuAutoAffinityGateARunner
             var mode = false;
             var confirmation = false;
             var allowDirtyDevelopmentSource = false;
+            var diagnoseOriginal = false;
             for (var index = 0; index < args.Length; index++)
             {
                 var token = args[index];
+                if (string.Equals(token, "--diagnose-original", StringComparison.Ordinal))
+                {
+                    if (diagnoseOriginal)
+                    {
+                        throw new ArgumentException("Duplicate --diagnose-original option.");
+                    }
+                    diagnoseOriginal = true;
+                    continue;
+                }
                 if (string.Equals(token, ModeFlag, StringComparison.Ordinal))
                 {
                     mode = true;
@@ -761,7 +791,7 @@ internal static class GpuAutoAffinityGateARunner
                 }
 
                 if (token is not ("--repo-root" or "--expected-commit" or "--output" or
-                    "--progress" or "--cancel" or "--session-id" or "--benchmark-pipe" or "--benchmark-token"))
+                    "--progress" or "--cancel" or "--session-id" or "--benchmark-pipe" or "--benchmark-token" or "--candidate-cpus"))
                 {
                     throw new ArgumentException($"Unknown GPU auto-affinity Gate A option '{token}'.");
                 }
@@ -770,7 +800,10 @@ internal static class GpuAutoAffinityGateARunner
                     throw new ArgumentException($"GPU auto-affinity Gate A option '{token}' requires a value.");
                 }
 
-                values[token] = args[++index];
+                if (!values.TryAdd(token, args[++index]))
+                {
+                    throw new ArgumentException($"Duplicate GPU Gate A option '{token}'.");
+                }
             }
 
             if (!mode || !confirmation)
@@ -804,6 +837,29 @@ internal static class GpuAutoAffinityGateARunner
                 throw new DirectoryNotFoundException("--repo-root is not a LatencyPilot source checkout.");
             }
 
+            var custom = values.TryGetValue("--candidate-cpus", out var processorList);
+            if (custom && diagnoseOriginal)
+            {
+                throw new ArgumentException("Original diagnostics cannot be combined with a candidate CPU subset.");
+            }
+            var requested = new List<LogicalProcessorId>();
+            if (custom)
+            {
+                foreach (var part in processorList!.Split(','))
+                {
+                    if (!byte.TryParse(part.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var number) || number >= 64)
+                    {
+                        throw new ArgumentException($"Invalid candidate CPU '{part}'; use group-0 CPU numbers from 0 to 63.");
+                    }
+                    var processor = new LogicalProcessorId(0, number);
+                    if (requested.Contains(processor))
+                    {
+                        throw new ArgumentException($"Duplicate candidate CPU {number}.");
+                    }
+                    requested.Add(processor);
+                }
+            }
+
             return new AutoOptions(
                 repoRoot,
                 expectedCommit,
@@ -813,7 +869,9 @@ internal static class GpuAutoAffinityGateARunner
                 sessionId,
                 Required("--benchmark-pipe"),
                 benchmarkToken,
-                allowDirtyDevelopmentSource);
+                allowDirtyDevelopmentSource,
+                diagnoseOriginal ? GpuAutoAffinitySearchScope.OriginalDiagnostics : custom ? GpuAutoAffinitySearchScope.Custom : GpuAutoAffinitySearchScope.Full,
+                requested.ToArray());
         }
     }
 }

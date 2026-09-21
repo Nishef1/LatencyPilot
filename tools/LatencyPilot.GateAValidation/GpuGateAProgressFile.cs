@@ -38,7 +38,7 @@ internal sealed class GpuGateAProgressFile
         GpuAutoAffinityProgressPlan progressPlan)
     {
         ArgumentNullException.ThrowIfNull(progressPlan);
-        if (sessionId == Guid.Empty || progressPlan.CandidateCount <= 0)
+        if (sessionId == Guid.Empty || (progressPlan.CandidateCount <= 0 && progressPlan.SearchScope != GpuAutoAffinitySearchScope.OriginalDiagnostics))
         {
             throw new ArgumentException("Progress identity and logical-CPU candidate plan are required.");
         }
@@ -76,11 +76,13 @@ internal sealed class GpuGateAProgressFile
                 finalistWarmupsStarted.TryGetValue(key, out var pass);
                 pass++;
                 finalistWarmupsStarted[key] = pass;
-                if (pass > 2)
+                if (pass > 3)
                 {
-                    totalUnits = checked(totalUnits + 2);
+                    totalUnits = checked(totalUnits + 4);
                 }
             }
+
+            totalUnits = Math.Max(totalUnits, completedUnits + 1);
 
             var (candidateIndex, candidateCount) = GetCandidateOrdinal(request.Phase, request.Candidate);
             return WriteAsync(Create(
@@ -205,7 +207,7 @@ internal sealed class GpuGateAProgressFile
             };
             if (string.Equals(terminalPhase, "complete", StringComparison.Ordinal))
             {
-                completedUnits = totalUnits;
+                totalUnits = Math.Max(1, completedUnits);
             }
 
             var terminalCandidate = string.Equals(
@@ -256,21 +258,22 @@ internal sealed class GpuGateAProgressFile
             return "Verifying final stored state and target-only runtime GPU ISR placement before Keep.";
         }
 
-        if (request.Candidate is not null &&
-            (string.Equals(request.Phase, "screening", StringComparison.Ordinal) ||
-             string.Equals(request.Phase, "screening-finalists", StringComparison.Ordinal)))
+        if (request.Phase == "diagnostic-original")
+        {
+            return "Original-only measurement; all five observations are retained, with no affinity change or device restart.";
+        }
+
+        if (request.Candidate is not null && request.Phase.StartsWith("screening-", StringComparison.Ordinal))
         {
             var key = $"{request.Phase}|{request.Candidate.Processor}";
             candidatePassesStarted.TryGetValue(key, out var pass);
             pass++;
             candidatePassesStarted[key] = pass;
-            if (string.Equals(request.Phase, "screening", StringComparison.Ordinal))
+            if (!string.Equals(request.Phase, "screening-finalists", StringComparison.Ordinal))
             {
-                return "Scored screening pass 1 / 1.";
+                return "Scored candidate in a local Original → Candidate → Original pair; confirmation follows rollback.";
             }
-            return pass <= 2
-                ? $"Scored finalist re-test {pass} / 2."
-                : $"Adaptive replacement re-test {pass}; maximum 4 finalist scored observations including the initial screen.";
+            return $"Finalist scored observation {pass}; three valid independent pairs required, with at most one retry per pair.";
         }
 
         return "Measuring benchmark trial.";
@@ -306,7 +309,7 @@ internal sealed class GpuGateAProgressFile
             candidate?.PhysicalCoreIndex,
             candidateIndex,
             candidateCount,
-            runNumber is null ? message : $"{message} Run {runNumber.Value}.",
+            $"{progressPlan.SearchScope}: " + (runNumber is null ? message : $"{message} Run {runNumber.Value}."),
             elapsed,
             remaining,
             frameP99,
@@ -324,15 +327,15 @@ internal sealed class GpuGateAProgressFile
             return (null, null);
         }
 
-        if (string.Equals(phase, "screening", StringComparison.Ordinal) ||
-            string.Equals(phase, "screening-warmup", StringComparison.Ordinal))
+        if (phase.StartsWith("screening-representative", StringComparison.Ordinal) ||
+            phase.StartsWith("screening-sibling", StringComparison.Ordinal))
         {
             if (!screeningCandidates.TryGetValue(candidate.Processor, out var index))
             {
                 index = screeningCandidates.Count + 1;
                 screeningCandidates.Add(candidate.Processor, index);
             }
-            return (index, progressPlan.CandidateCount);
+            return (index, progressPlan.ScreeningCandidateCount);
         }
 
         if (string.Equals(phase, "screening-finalists", StringComparison.Ordinal) ||

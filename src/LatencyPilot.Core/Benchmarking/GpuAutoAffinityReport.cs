@@ -7,6 +7,7 @@ public enum GpuAutoAffinitySearchScope
 {
     Full,
     Custom,
+    OriginalDiagnostics,
 }
 
 public enum GpuAutoAffinityPairVerdict
@@ -151,7 +152,10 @@ public sealed record GpuAutoAffinityFinalistReport(
     double? MedianFrameP99Effect,
     double? MedianLow01PctEffect,
     string Verdict,
-    string Reason);
+    string Reason)
+{
+    public double DecisionFloor { get; init; }
+}
 
 public sealed record GpuAutoAffinityCandidateReport(
     string Phase,
@@ -168,7 +172,21 @@ public sealed record GpuAutoAffinityCandidateReport(
     double? DecisionLow01PctFps = null,
     double? LocalControlUncertainty = null,
     bool UsesTimeLocalNormalization = false,
-    int? DecisionRank = null);
+    int? DecisionRank = null)
+{
+    public double? DecisionOnePercentLowEffect { get; init; }
+    public double? DecisionAvgEffect { get; init; }
+    public double? DecisionFrameP99Effect { get; init; }
+    public double? DecisionLow01PctEffect { get; init; }
+}
+
+public sealed record GpuOriginalDiagnosticReport(
+    int ObservationCount,
+    double OnePercentLowRelativeNoise,
+    double AvgRelativeNoise,
+    double FrameP99RelativeNoise,
+    bool Repeatable,
+    string Reason);
 
 /// <summary>
 /// The exact Original-state aggregate selected by the optimizer for decision-making.
@@ -239,4 +257,6 @@ public sealed record GpuAutoAffinityReport(
     public IReadOnlyList<GpuAutoAffinityFinalistReport> Finalists { get; init; } = [];
 
     public bool PracticalTie { get; init; }
+
+    public GpuOriginalDiagnosticReport? OriginalDiagnostic { get; init; }
 }

@@ -135,7 +135,7 @@ public sealed class GpuAutoAffinitySession
             ? V2FinalistDuration
             : request.FinalistDuration;
 
-        if (candidates.Length == 0)
+        if (candidates.Length == 0 && request.SearchScope != GpuAutoAffinitySearchScope.OriginalDiagnostics)
         {
             reasons.Add("No eligible GPU interrupt-affinity candidate is available for the requested search scope.");
             var originalVerified = await backend.VerifyOriginalStateAsync(cancellationToken).ConfigureAwait(false);
@@ -161,6 +161,37 @@ public sealed class GpuAutoAffinitySession
                 trialReports,
                 cancellationToken).ConfigureAwait(false);
             var reference = referenceObservation.Evidence;
+
+            if (request.SearchScope == GpuAutoAffinitySearchScope.OriginalDiagnostics)
+            {
+                var observations = new List<GpuAutoAffinityTrialObservation>();
+                for (var index = 0; index < GpuOriginalBaselinePolicy.MaximumScoredObservationCount; index++)
+                {
+                    observations.Add(await CaptureAcceptedAsync(
+                        () => ++nextRunNumber, "diagnostic-original", GpuConfirmationOrder.Original,
+                        null, request.ScreeningDuration, reference, null, trialReports,
+                        cancellationToken).ConfigureAwait(false));
+                }
+
+                // Diagnose all five observations, without selecting a quiet subset.
+                var stats = observations.Select(item => RequireVideoStats(item, "Original diagnostic")).ToArray();
+                var low1Noise = RelativeNoise(stats.Select(static item => item.Low1PctFps), Median(stats.Select(static item => item.Low1PctFps)));
+                var avgNoise = RelativeNoise(stats.Select(static item => item.AvgFps), Median(stats.Select(static item => item.AvgFps)));
+                var p99Noise = RelativeNoise(stats.Select(static item => item.P99Milliseconds), Median(stats.Select(static item => item.P99Milliseconds)));
+                var repeatable = Math.Max(low1Noise, Math.Max(avgNoise, p99Noise)) <= 0.06d;
+                var diagnostic = new GpuOriginalDiagnosticReport(
+                    observations.Count, low1Noise, avgNoise, p99Noise, repeatable,
+                    $"All {observations.Count} Original observations retained: 1%-low variation {low1Noise:P1}, AVG {avgNoise:P1}, p99 {p99Noise:P1}. " +
+                    (repeatable ? "Repeatable within the 6% diagnostic budget. " : "Measurement is unstable before any affinity change. ") +
+                    "No device restart or affinity change was performed; restart sensitivity and candidate benefit remain untested.");
+                reasons.Add(diagnostic.Reason);
+                var verified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+                var diagnosticResult = CreateResult(
+                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
+                    verified, verified, candidateReports, trialReports, pairReports, finalistReports,
+                    reasons, null, screenedProcessors, fullTopologyCoverage: false, practicalTie: false);
+                return diagnosticResult with { Report = diagnosticResult.Report with { OriginalDiagnostic = diagnostic } };
+            }
 
             var original = await QualifyOriginalAsync(
                 request.ScreeningDuration,
@@ -962,7 +993,13 @@ public sealed class GpuAutoAffinitySession
             stats?.P99Milliseconds,
             stats?.Low01PctFps,
             pair.ControlMovement,
-            UsesTimeLocalNormalization: false);
+            UsesTimeLocalNormalization: false)
+        {
+            DecisionOnePercentLowEffect = measurement is null ? null : pair.OnePercentLowEffect,
+            DecisionAvgEffect = measurement is null ? null : pair.AvgEffect,
+            DecisionFrameP99Effect = measurement is null ? null : pair.FrameP99Effect,
+            DecisionLow01PctEffect = measurement is null ? null : pair.Low01PctEffect,
+        };
     }
 
     private static void ApplyPairDecisionRanks(
@@ -1077,7 +1114,13 @@ public sealed class GpuAutoAffinitySession
                 stats?.P99Milliseconds,
                 stats?.Low01PctFps,
                 pairs.Count == 0 ? null : Median(pairs.Select(static pair => pair.Report.ControlMovement)),
-                UsesTimeLocalNormalization: false));
+                UsesTimeLocalNormalization: false)
+            {
+                DecisionOnePercentLowEffect = report.MedianOnePercentLowEffect,
+                DecisionAvgEffect = report.MedianAvgEffect,
+                DecisionFrameP99Effect = report.MedianFrameP99Effect,
+                DecisionLow01PctEffect = report.MedianLow01PctEffect,
+            });
             decisions.Add(new FinalistDecision(candidate, report, improvementCapable));
         }
 
@@ -1630,6 +1673,10 @@ public sealed class GpuAutoAffinitySession
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Topology);
         ArgumentNullException.ThrowIfNull(request.PressureEvidence);
+        if (!Enum.IsDefined(request.SearchScope))
+        {
+            throw new ArgumentOutOfRangeException(nameof(request), "Unknown GPU search scope.");
+        }
         if (request.SessionId == Guid.Empty)
         {
             throw new ArgumentException("GPU auto-affinity session identity is required.", nameof(request));

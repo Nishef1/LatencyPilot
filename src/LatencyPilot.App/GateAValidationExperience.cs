@@ -73,6 +73,7 @@ public sealed partial class MainWindow
         DeveloperValidationHost.Children.Add(_gateAValidationStateBadge);
         DeveloperValidationCard.Visibility = Visibility.Visible;
         DeveloperValidationHost.Children.Add(_gateAValidationButton);
+        InitializeGateACpuScope();
         DeveloperValidationStatusText.Text = "Checking Git source state…";
         _ = RefreshGateASourceAssessmentAsync();
     }
@@ -159,6 +160,7 @@ public sealed partial class MainWindow
                 SetGateAValidationStatus(assessment.Reason, syncEvidenceStatus: false);
                 break;
         }
+        UpdateGateAScopeUi();
     }
 
     private void ApplyGateAStateBadgeBrushes(string foregroundResourceKey, string backgroundResourceKey)
@@ -218,6 +220,10 @@ public sealed partial class MainWindow
             var workerCount = Math.Min(
                 topology.PhysicalCoreCount,
                 GpuAffinityCandidatePlanner.MaximumCandidates);
+            // Revalidate an ephemeral selection against fresh topology before
+            // launching the subject; the elevated helper repeats this check.
+            _ = GpuAutoAffinityProgressPlan.Create(
+                topology, [], ProcessorCpuSetReader.Capture(), _gateASearchScope, _gateASelectedProcessors);
             var sessionId = Guid.NewGuid();
             var benchmarkToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
             var benchmarkPipe = $"LatencyPilot.GpuBenchmark.{sessionId:N}";
@@ -332,6 +338,15 @@ public sealed partial class MainWindow
             {
                 helperArguments.Add("--allow-dirty-development-source");
             }
+            if (_gateASearchScope == GpuAutoAffinitySearchScope.Custom)
+            {
+                helperArguments.Add("--candidate-cpus");
+                helperArguments.Add(string.Join(",", _gateASelectedProcessors.Select(static processor => processor.Number.ToString(CultureInfo.InvariantCulture))));
+            }
+            else if (_gateASearchScope == GpuAutoAffinitySearchScope.OriginalDiagnostics)
+            {
+                helperArguments.Add("--diagnose-original");
+            }
             foreach (var argument in helperArguments)
             {
                 helperStartInfo.ArgumentList.Add(argument);
@@ -382,6 +397,12 @@ public sealed partial class MainWindow
             {
                 throw new InvalidDataException(
                     "A development-only Gate A run was incorrectly marked closure-eligible. The report is rejected fail-closed.");
+            }
+            if (report.SearchScope != _gateASearchScope ||
+                (_gateASearchScope != GpuAutoAffinitySearchScope.Full &&
+                 (report.GateAClosureEligible || report.FinalProcessor is not null)))
+            {
+                throw new InvalidDataException("GPU result scope/Keep authority does not match the requested diagnostic scope.");
             }
 
             var evidenceBundle = await GateAEvidenceBundleExporter.TryCreateAsync(sessionDirectory);
@@ -501,6 +522,7 @@ public sealed partial class MainWindow
     private void SetGateAValidationBusy(bool busy)
     {
         _gateAValidationRunning = busy;
+        UpdateGateAScopeUi();
         SetObservationControlsBusy(_measurementBusy);
         if (_measurementScenarioComboBox is not null)
         {
