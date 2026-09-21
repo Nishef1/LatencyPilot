@@ -46,7 +46,11 @@ public sealed record GateATrialPoint(
     LogicalProcessorId? Processor,
     double OnePercentLowFps,
     string Phase,
-    string ReadinessState);
+    string ReadinessState)
+{
+    public GpuAutoAffinityPairVerdict? PairVerdict { get; init; }
+    public int? PairAttempt { get; init; }
+}
 
 public sealed record GateADecisionEvidenceRow(
     string Label,
@@ -105,7 +109,7 @@ public static class GateAResultPresentation
             ?? compared?.LocalControlUncertainty);
         var metrics = BuildMetricComparisons(compared, localControlUncertainty, verifiedKeep);
         var candidateBars = BuildCandidateBars(report, comparedProcessor, verifiedKeep);
-        var trialPoints = BuildTrialPoints(report.Trials, comparedProcessor);
+        var trialPoints = BuildTrialPoints(report);
         var decisionRows = BuildDecisionRows(report, compared, metrics, verifiedKeep);
         var terminalOriginalVerified = report.FinalStateVerified && report.OriginalStateRestored;
 
@@ -289,26 +293,42 @@ public static class GateAResultPresentation
         }).ToArray();
     }
 
-    private static GateATrialPoint[] BuildTrialPoints(
-        IReadOnlyList<GpuAutoAffinityTrialReport> trials,
-        LogicalProcessorId? comparedProcessor) =>
-        trials
+    private static GateATrialPoint[] BuildTrialPoints(GpuAutoAffinityReport report)
+    {
+        var pairByCandidateCapture = report.Pairs
+            .GroupBy(static pair => pair.CandidateCaptureId)
+            .ToDictionary(static group => group.Key, static group => group.Last());
+
+        return report.Trials
             .Where(trial =>
                 IsFinitePositive(trial.OnePercentLowFps) &&
                 !trial.Phase.EndsWith("-warmup", StringComparison.Ordinal) &&
                 (string.Equals(trial.Role, "Original", StringComparison.OrdinalIgnoreCase) ||
-                 (comparedProcessor is not null && trial.Processor == comparedProcessor)))
+                 string.Equals(trial.Role, "Candidate", StringComparison.OrdinalIgnoreCase)))
             .OrderBy(static trial => trial.RunNumber)
-            .Select(trial => new GateATrialPoint(
-                trial.RunNumber,
-                string.Equals(trial.Role, "Original", StringComparison.OrdinalIgnoreCase)
-                    ? "Original"
-                    : $"CPU {trial.Processor?.Number}",
-                trial.Processor,
-                trial.OnePercentLowFps!.Value,
-                trial.Phase,
-                trial.ReadinessState))
+            .Select(trial =>
+            {
+                var isOriginal = string.Equals(trial.Role, "Original", StringComparison.OrdinalIgnoreCase);
+                GpuAutoAffinityPairReport? pair = null;
+                if (!isOriginal)
+                {
+                    pairByCandidateCapture.TryGetValue(trial.CaptureId, out pair);
+                }
+
+                return new GateATrialPoint(
+                    trial.RunNumber,
+                    isOriginal ? "Original" : $"CPU {trial.Processor?.Number}",
+                    trial.Processor,
+                    trial.OnePercentLowFps!.Value,
+                    trial.Phase,
+                    trial.ReadinessState)
+                {
+                    PairVerdict = pair?.Verdict,
+                    PairAttempt = pair?.Attempt,
+                };
+            })
             .ToArray();
+    }
 
     private static GateADecisionEvidenceRow[] BuildDecisionRows(
         GpuAutoAffinityReport report,
@@ -399,9 +419,10 @@ public static class GateAResultPresentation
 
         if (report.SearchScope == GpuAutoAffinitySearchScope.Custom)
         {
+            var coverage = BuildCustomCoverageSummary(report);
             return compared is null
-                ? "Selected-CPU diagnostic screening produced no authority-ranked local pair. The exact Original policy was restored and verified; no machine-wide claim was made."
-                : $"Best within selected CPUs was CPU {compared.Processor.Number} by persisted paired-screening rank. This restricted diagnostic skipped machine-wide refinement and finalist Keep; the exact Original policy was restored and verified.";
+                ? $"{coverage}. No selected CPU produced an authority-ranked local pair. The exact Original policy was restored and verified; no machine-wide claim was made."
+                : $"{coverage}. Best within selected CPUs was CPU {compared.Processor.Number} by persisted paired-screening rank. This restricted diagnostic skipped machine-wide refinement and finalist Keep; the exact Original policy was restored and verified.";
         }
 
         if (verifiedKeep && report.FinalProcessor is { } processor)
@@ -422,6 +443,17 @@ public static class GateAResultPresentation
         }
 
         return "Gate A produced a report, but the terminal machine state is not fully verified. Use the evidence and recovery status below before continuing.";
+    }
+
+    private static string BuildCustomCoverageSummary(GpuAutoAffinityReport report)
+    {
+        var selected = report.RequestedProcessors.Count;
+        var tested = report.ValidatedProcessors.Count;
+        var notReached = Math.Max(0, selected - tested);
+        var stopDetail = notReached > 0
+            ? " after early instability stop"
+            : string.Empty;
+        return $"{selected} selected · {tested} tested · {notReached} not reached{stopDetail}";
     }
 
     private static string DescribeMetric(GateAMetricComparison metric, string interpretation)
