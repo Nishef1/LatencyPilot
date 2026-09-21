@@ -5,6 +5,7 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
+    <Using Include="LatencyPilot.Core.Devices" />
     <ProjectReference Include="../../src/LatencyPilot.Core/LatencyPilot.Core.csproj" />
     <ProjectReference Include="../../src/LatencyPilot.Benchmarking/LatencyPilot.Benchmarking.csproj" />
     <ProjectReference Include="../../src/LatencyPilot.Protocol/LatencyPilot.Protocol.csproj" />
