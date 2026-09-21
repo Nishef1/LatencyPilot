@@ -70,8 +70,6 @@ public sealed partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center,
         });
 
-        // Evidence eligibility describes source/provenance suitability, not the
-        // performance verdict itself, so keep it informational rather than green.
         var eligibilityBrush = result.GateAClosureEligible ? "ChartAccentPrimaryBrush" : "SemanticAttentionBrush";
         var eligibilitySoftBrush = result.GateAClosureEligible ? "BrandActionSoftBrush" : "SemanticAttentionSoftBrush";
         var eligibility = new Border
@@ -141,11 +139,7 @@ public sealed partial class MainWindow
         {
             var card = StyledBorder("DashboardMetricStyle");
             var content = new StackPanel { Spacing = 7d };
-            content.Children.Add(new TextBlock
-            {
-                Text = metric.Label,
-                Style = AppStyle("MetricLabelTextStyle"),
-            });
+            content.Children.Add(new TextBlock { Text = metric.Label, Style = AppStyle("MetricLabelTextStyle") });
             content.Children.Add(new TextBlock
             {
                 Text = FormatMetricComparison(metric),
@@ -184,12 +178,11 @@ public sealed partial class MainWindow
             null,
             $"{measuredProcessors} measured CPU candidate(s); {result.Candidates.Count} candidate(s) have persisted decision aggregates. {result.ComparedCandidateLabel}. Bars are paired 1% low effects centered on 0%. Raw local controls are listed below.",
             result.Pairs.Count > 0 && result.Candidates.Count == 0
-                ? "No decision-grade candidate could be charted. Measured local pairs remain available below with their drift and retry outcomes."
+                ? "No decision-grade candidate could be charted. Measured local pairs remain available below with their control movement and retry outcomes."
                 : null);
 
         var trialChart = new GateATrialHistoryChart();
-        var originalTrials = result.Trials.Count(static point =>
-            string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase));
+        var originalTrials = result.Trials.Count(static point => string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase));
         trialChart.SetData(
             result.Trials,
             $"Scored 1% low history contains {originalTrials} Original control point(s) and {result.Trials.Count - originalTrials} candidate observation(s). Original controls are connected; candidate observations are discrete markers so different CPUs are never presented as one synthetic series.");
@@ -230,7 +223,7 @@ public sealed partial class MainWindow
         stack.Children.Add(new TextBlock { Text = "Local pair evidence", Style = AppStyle("SubsectionTitleTextStyle") });
         stack.Children.Add(new TextBlock
         {
-            Text = "Direct Original → Candidate → Original measurements. The compact header keeps effect, drift and verdict visible; expand a row for raw FPS and the full reason.",
+            Text = "Direct Original → Candidate → Original measurements. The compact header keeps effect, control movement and verdict visible; expand a row for raw FPS and the full reason.",
             Style = AppStyle("CaptionTextStyle"),
             TextWrapping = TextWrapping.Wrap,
         });
@@ -250,9 +243,7 @@ public sealed partial class MainWindow
                 var median = finalist.MedianOnePercentLowEffect is { } effect && double.IsFinite(effect)
                     ? effect.ToString("+0.0%;-0.0%;0.0%", System.Globalization.CultureInfo.InvariantCulture)
                     : "—";
-                var pairNumbers = finalist.PairNumbers.Count == 0
-                    ? "none"
-                    : string.Join(", ", finalist.PairNumbers);
+                var pairNumbers = finalist.PairNumbers.Count == 0 ? "none" : string.Join(", ", finalist.PairNumbers);
                 stack.Children.Add(new TextBlock
                 {
                     Text = $"CPU {finalist.Processor.Number} · median 1% low {median} · decision floor {finalist.DecisionFloor:P1} · {finalist.Verdict} · pairs {pairNumbers}",
@@ -273,9 +264,7 @@ public sealed partial class MainWindow
         }
         else
         {
-            foreach (var pair in result.Pairs
-                         .OrderBy(static item => item.PairNumber)
-                         .ThenBy(static item => item.Attempt))
+            foreach (var pair in result.Pairs.OrderBy(static item => item.PairNumber).ThenBy(static item => item.Attempt))
             {
                 var header = new StackPanel { Spacing = 3d };
                 header.Children.Add(new TextBlock
@@ -288,7 +277,7 @@ public sealed partial class MainWindow
                 });
                 header.Children.Add(new TextBlock
                 {
-                    Text = $"1% low effect {pair.OnePercentLowEffect:+0.0%;-0.0%;0.0%} · drift {pair.ControlMovement:P1} / {pair.DriftBudget:P1} budget · {pair.Verdict}",
+                    Text = $"1% low effect {pair.OnePercentLowEffect:+0.0%;-0.0%;0.0%} · Control movement {pair.ControlMovement:P1} / {pair.DriftBudget:P1} budget · {pair.Verdict}",
                     FontSize = 11d,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                     Foreground = PairVerdictBrush(card, pair.Verdict),
@@ -466,10 +455,7 @@ public sealed partial class MainWindow
         }
         for (var index = 0; index < grid.Children.Count; index++)
         {
-            if (grid.Children[index] is not FrameworkElement child)
-            {
-                continue;
-            }
+            if (grid.Children[index] is not FrameworkElement child) continue;
             Grid.SetColumn(child, index % columnCount);
             Grid.SetRow(child, index / columnCount);
         }
@@ -493,23 +479,16 @@ public sealed partial class MainWindow
         }
         for (var index = 0; index < grid.Children.Count; index++)
         {
-            if (grid.Children[index] is not FrameworkElement child)
-            {
-                continue;
-            }
+            if (grid.Children[index] is not FrameworkElement child) continue;
             Grid.SetColumn(child, sideBySide ? index : 0);
             Grid.SetRow(child, sideBySide ? 0 : index);
         }
     }
 
-    private static string FormatMetricComparison(GateAMetricComparison metric)
-    {
-        if (metric.ImprovementFraction is { } effect && double.IsFinite(effect))
-        {
-            return $"{effect:+0.0%;-0.0%;0.0%} paired effect";
-        }
-        return "—";
-    }
+    private static string FormatMetricComparison(GateAMetricComparison metric) =>
+        metric.ImprovementFraction is { } effect && double.IsFinite(effect)
+            ? $"{effect:+0.0%;-0.0%;0.0%} paired effect"
+            : "—";
 
     private static string FormatPairStage(string stage) => stage switch
     {
@@ -598,17 +577,12 @@ public sealed partial class MainWindow
 
     private static Style AppStyle(string key)
     {
-        if (Application.Current.Resources.TryGetValue(key, out var value) && value is Style style)
-        {
-            return style;
-        }
+        if (Application.Current.Resources.TryGetValue(key, out var value) && value is Style style) return style;
         throw new InvalidOperationException($"Application style '{key}' is unavailable.");
     }
 
     private static double ResourceDouble(string key, double fallback) =>
-        Application.Current.Resources.TryGetValue(key, out var value) && value is double number
-            ? number
-            : fallback;
+        Application.Current.Resources.TryGetValue(key, out var value) && value is double number ? number : fallback;
 
     private static string ShortRevision(string revision) => revision.Length >= 12 ? revision[..12] : revision;
 
