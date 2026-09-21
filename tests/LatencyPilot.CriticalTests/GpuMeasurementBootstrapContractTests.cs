@@ -109,6 +109,27 @@ public sealed class GpuMeasurementBootstrapContractTests
         Assert.IsGreaterThanOrEqualTo(0, settleStart);
         Assert.IsGreaterThan(settleStart, qpcStart,
             "Unscored settle work must complete before the benchmark records its scored QPC start boundary.");
+
+        var presentMonSource = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.Platform.Windows",
+            "Devices",
+            "PresentMonConsoleFrameMetricsReader.cs"));
+        StringAssert.Contains(
+            presentMonSource,
+            "RecordingStartedMessage",
+            "PresentMon startup must expose an explicit readiness marker rather than treating process liveness as capture readiness.");
+        StringAssert.Contains(
+            presentMonSource,
+            "Started recording.",
+            "The pinned PresentMon console's recording-start message is the readiness barrier for scored capture.");
+        StringAssert.Contains(
+            presentMonSource,
+            "startupSignal.Task.WaitAsync",
+            "PresentMon startup must wait for the recording-start signal before scored rendering can proceed.");
+        Assert.IsFalse(
+            presentMonSource.Contains("StartupProbeDelay", StringComparison.Ordinal),
+            "A fixed sleep plus process-liveness probe is not an ETW recording-readiness contract.");
     }
 
     [AuditCase]
