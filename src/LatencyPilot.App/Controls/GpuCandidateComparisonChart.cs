@@ -32,13 +32,14 @@ public sealed class GpuCandidateComparisonChart : UserControl
         SizeChanged += (_, _) => Render();
         ActualThemeChanged += (_, _) => Render();
         AutomationProperties.SetName(this, "GPU candidate comparison chart");
-        Clear("No Gate A candidate evidence is available yet.");
+        Clear("No Gate A candidate measurement has been completed yet.");
     }
 
     internal void SetData(
         IReadOnlyList<GateACandidateBar> candidates,
         double? originalOnePercentLowFps,
-        string automationSummary)
+        string automationSummary,
+        string? emptyMessage = null)
     {
         _candidates = candidates ?? Array.Empty<GateACandidateBar>();
         _originalOnePercentLowFps = IsFinitePositive(originalOnePercentLowFps)
@@ -47,6 +48,9 @@ public sealed class GpuCandidateComparisonChart : UserControl
         var desiredHeight = Math.Max(MinimumChartHeight, 58d + (_candidates.Count * RowHeight));
         MinHeight = desiredHeight;
         Height = desiredHeight;
+        _emptyState.SetMessage(string.IsNullOrWhiteSpace(emptyMessage)
+            ? "No decision-grade candidate could be charted. Measured local pairs remain available below with their drift and retry outcomes."
+            : emptyMessage);
         AutomationProperties.SetHelpText(this, automationSummary);
         Render();
     }
