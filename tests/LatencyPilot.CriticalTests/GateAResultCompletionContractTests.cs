@@ -130,6 +130,12 @@ public sealed class GateAResultCompletionContractTests
             "The candidate chart must visualize the persisted local paired effect rather than treating the last raw candidate FPS as the decision aggregate.");
         StringAssert.Contains(candidateChart, "No decision-grade candidate could be charted",
             "A completed run with unrankable pairs must not claim that no candidate evidence exists.");
+        StringAssert.Contains(candidateChart, "OnCreateAutomationPeer",
+            "The custom candidate chart must be represented explicitly in the UI Automation tree.");
+        StringAssert.Contains(candidateChart, "FrameworkElementAutomationPeer",
+            "The candidate chart must reuse WinUI framework automation support instead of relying on Canvas primitives.");
+        StringAssert.Contains(candidateChart, "AutomationProperties.SetItemStatus",
+            "The candidate chart must expose authority-ranked data to assistive technology instead of making visual bars/tooltips the only detail.");
         Assert.IsFalse(candidateChart.Contains("candidate.OnePercentLowFps / maximum", StringComparison.Ordinal),
             "The paired-v2 chart must not size decision bars from raw candidate FPS.");
         Assert.IsFalse(candidateChart.Contains("OrderByDescending(static candidate => candidate.OnePercentLowFps)", StringComparison.Ordinal),
@@ -144,6 +150,12 @@ public sealed class GateAResultCompletionContractTests
             "Candidate measurements from different CPUs must be rendered as discrete observations, not connected into a synthetic time series.");
         StringAssert.Contains(trialHistory, "SemanticAttentionBrush",
             "Unstable/inconclusive paired attempts need an explicit visual state in the diagnostic history.");
+        StringAssert.Contains(trialHistory, "OnCreateAutomationPeer",
+            "The custom stability chart must be represented explicitly in the UI Automation tree.");
+        StringAssert.Contains(trialHistory, "FrameworkElementAutomationPeer",
+            "The stability chart must reuse WinUI framework automation support.");
+        StringAssert.Contains(trialHistory, "AutomationProperties.SetItemStatus",
+            "The stability chart must expose a concise accessible series summary in addition to visual marks.");
 
         var sessionSource = File.ReadAllText(FindRepositoryFile(
             "src",
