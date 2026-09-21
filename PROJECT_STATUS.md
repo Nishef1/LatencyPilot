@@ -109,6 +109,8 @@ The result surface now distinguishes:
 
 Candidate bars are centered on 0% paired 1%-low effect and never re-rank candidates in UI code. A RestoreOriginal result may show the best measured candidate as diagnostic context, but never as a kept winner.
 
+The two custom chart surfaces now create explicit UI Automation peers and expose stable automation ids/control types plus concise status and full chart-content descriptions. This closes only the source-level automation-tree gap; Narrator/Accessibility Insights, high-contrast, text-scaling and keyboard behavior still require real Windows inspection.
+
 ### USB/xHCI recommendation
 
 After a verified GPU Keep, current source can stop the GPU benchmark, capture quiet ETW headroom, resolve primary Raw Input routes to exact xHCI controllers, exclude the GPU winner's physical core, rank remaining CPUs by interrupt duration/tail evidence, and persist the recommendation.
@@ -130,7 +132,8 @@ The paired-v2 work is covered by the existing permanent critical-test budget rat
 - misleading “Closure eligible” copy;
 - unsupported CPU-scope handling;
 - stale progress warm-up semantics;
-- hidden direct pair evidence.
+- hidden direct pair evidence;
+- custom Canvas-backed result charts that exposed visual/tool-tip evidence without explicit UI Automation peers or concise accessible chart summaries.
 
 Exact-head hosted **Tests** are mandatory for every revision used as physical closure evidence. Every commit moves HEAD, so GitHub Actions for the exact revision selected for physical work is the CI oracle; an older successful or cancelled run must never be reused as proof for a later SHA.
 
