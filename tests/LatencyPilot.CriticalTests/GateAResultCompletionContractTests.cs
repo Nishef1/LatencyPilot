@@ -56,6 +56,13 @@ public sealed class GateAResultCompletionContractTests
             resultExperience,
             "paired effect",
             "The result metric card must render the persisted paired effect instead of an empty absolute Original-to-candidate value pair.");
+        StringAssert.Contains(
+            resultExperience,
+            "BuildGateAPairEvidence",
+            "The v2 result must expose the direct Original -> Candidate -> Original evidence instead of hiding it only in raw JSON.");
+        StringAssert.Contains(resultExperience, "Original before");
+        StringAssert.Contains(resultExperience, "Original after");
+        StringAssert.Contains(resultExperience, "Control movement");
         Assert.IsFalse(
             resultExperience.Contains("DecisionRank", StringComparison.Ordinal) ||
             resultExperience.Contains("OrderByDescending", StringComparison.Ordinal),
@@ -95,6 +102,14 @@ public sealed class GateAResultCompletionContractTests
             presentation,
             "screening-finalists",
             "When finalist authority exists, the result presentation must prefer the three-pair finalist aggregate over a short-screen row with the same persisted rank.");
+        StringAssert.Contains(
+            presentation,
+            "Best within selected CPUs",
+            "Custom diagnostic results must describe their restricted authority rather than implying a machine-wide winner.");
+        StringAssert.Contains(
+            presentation,
+            "Custom diagnostic result",
+            "Custom scope needs an explicit primary result status.");
         Assert.IsFalse(
             presentation.Contains("candidate.Phase, \"finalists\"", StringComparison.Ordinal),
             "The result presentation must use the actual persisted finalist phase name.");
@@ -128,6 +143,10 @@ public sealed class GateAResultCompletionContractTests
             sessionSource,
             "DecisionFloor = decisionFloor",
             "The finalist decision floor used to accept a winner must be persisted for the evidence UI instead of silently becoming zero.");
+        StringAssert.Contains(sessionSource, "RealizedCandidateOrder = pairReports");
+        StringAssert.Contains(sessionSource, "RealizedFinalistPairOrder = pairReports");
+        StringAssert.Contains(sessionSource, "InitialScreeningOriginalCaptureId = pairReports");
+        StringAssert.Contains(sessionSource, "ScreeningDurationMilliseconds = request.ScreeningDuration.TotalMilliseconds");
 
         var scopeExperience = File.ReadAllText(FindRepositoryFile(
             "src",
@@ -153,6 +172,11 @@ public sealed class GateAResultCompletionContractTests
         StringAssert.Contains(reportContract, "IReadOnlyList<GpuAutoAffinityFinalistReport> Finalists");
         StringAssert.Contains(reportContract, "IReadOnlyList<LogicalProcessorId> RequestedProcessors");
         StringAssert.Contains(reportContract, "IReadOnlyList<LogicalProcessorId> ValidatedProcessors");
+        StringAssert.Contains(reportContract, "IReadOnlyList<LogicalProcessorId> RealizedCandidateOrder");
+        StringAssert.Contains(reportContract, "IReadOnlyList<LogicalProcessorId> RealizedFinalistPairOrder");
+        StringAssert.Contains(reportContract, "Guid? InitialScreeningOriginalCaptureId");
+        StringAssert.Contains(reportContract, "double ScreeningDurationMilliseconds");
+        StringAssert.Contains(reportContract, "double FinalistDurationMilliseconds");
         StringAssert.Contains(reportContract, "bool FullTopologyCoverage");
     }
 
