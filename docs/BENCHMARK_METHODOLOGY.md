@@ -1,11 +1,11 @@
 # Benchmark Methodology
 
-Status: **V0.11 benchmark contract**  
+Status: **V0.12 benchmark contract**  
 Last updated: 2026-09-21
 
 LatencyPilot exists to distinguish measurable effects from placebo, ordinary run-to-run variation, workload drift and unsafe/unverified state. It is not a generic Windows tweak collection.
 
-Current GPU auto-affinity authority: **ADR 0006**, including its 2026-09-20 time-local measurement amendment and 2026-09-21 Original-baseline correction. The steady RealWorld evidence product and the deterministic GPU candidate-search method are intentionally different measurement shapes.
+Current GPU measurement/search/ranking authority: **ADR 0007 — Paired local-control GPU affinity v2**. ADR 0006 remains authoritative for the broader v1 product scope, safety, mutation/recovery ownership and product sequencing.
 
 ## 1. Evidence hierarchy
 
@@ -25,17 +25,17 @@ Purpose: ETW integrity, attribution, per-CPU concentration, obvious tail events 
 750 ms inter-window settle
 ```
 
-This remains the authoritative steady/manual RealWorld contract. Each window requires clean capture integrity, >=95% requested duration, >=1,000 DPC, >=1,000 ISR and finite positive distribution statistics. Existing noise/drift/workload-stability rules remain valid for this product.
+This remains the authoritative steady/manual RealWorld contract. It is intentionally separate from the synthetic GPU candidate-search method.
 
-The automatic GPU-affinity workflow does **not** reinterpret its synthetic benchmark trials as these five equivalent RealWorld windows.
-
-### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v1`
+### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v2`
 
 The product question is:
 
-> Among the tested valid logical-processor interrupt targets, which CPU gives the strongest repeatable controlled benchmark result after measured time-local background movement is accounted for?
+> Which logical CPU, if any, shows a repeatable local paired improvement for GPU interrupt affinity on the current machine under LatencyPilot's controlled workload, while preserving guardrails and final runtime placement proof?
 
-Windows default is exact reference/recovery state. It is not an opponent that every forced CPU must beat by a fixed percentage.
+Windows default is the exact reference/recovery state. It is not an opponent that a forced CPU must beat by a fixed folklore percentage.
+
+Historical `gpu-affinity-benchmark-v1` evidence remains historical and is never reinterpreted as v2.
 
 ## 2. Source hierarchy
 
@@ -46,16 +46,20 @@ Windows default is exact reference/recovery state. It is not an opponent that ev
 
 ## 3. Provenance and integrity
 
-Authoritative evidence records where applicable:
+Authoritative GPU evidence records where applicable:
 
-- exact clean source revision;
-- schema/method version;
+- exact source revision and source eligibility state;
+- method/report schema version;
 - Windows build and processor topology;
 - target device and driver identity;
 - benchmark process/frozen workload/seed/worker map;
 - requested and actual interval;
 - requested mutation and verified stored state;
-- capture identity and integrity state.
+- raw trial/capture identity;
+- pair identity/attempt/verdict/effects/control movement/drift budget;
+- finalist pair membership and decision floor;
+- requested/validated processors and realized execution order;
+- final recommendation and terminal state.
 
 Dirty or unverifiable source must not claim clean provenance. Missing evidence remains missing rather than being reconstructed from registry folklore.
 
@@ -69,9 +73,11 @@ Stored interrupt configuration, allocated resources and runtime DPC/ISR behavior
 stored policy ≠ allocated assignment ≠ runtime placement
 ```
 
-## 5. GPU controlled benchmark
+A registry policy is therefore not runtime proof.
 
-The built-in D3D12 benchmark performs one adaptive calibration and then freezes:
+## 5. Controlled GPU benchmark
+
+The built-in normal-user D3D12 benchmark performs one startup calibration and freezes:
 
 - worker mapping;
 - command workload;
@@ -80,259 +86,289 @@ The built-in D3D12 benchmark performs one adaptive calibration and then freezes:
 - resolution;
 - benchmark process identity.
 
-Applying or rolling back GPU interrupt affinity restarts the display adapter. The benchmark intentionally keeps one authenticated benchmark process alive for the whole search and recreates its D3D12 renderer/device after **every** apply/rollback activation before the next warm-up or scored block. If a surviving control process still receives `DXGI_ERROR_DEVICE_REMOVED` (`0x887A0005`) or `DXGI_ERROR_DEVICE_RESET` (`0x887A0007`) from a trial, that evidence slot gets one bounded renderer recreation + retry; a second failure remains terminal. The non-scored warm-up and its scored run otherwise reuse the same recreated renderer/device. The frozen workload, seed and worker map therefore stay process-stable without reusing D3D12 resources across an adapter restart.
+Applying or rolling back GPU interrupt affinity restarts/activates the display adapter. The benchmark process remains alive for the search, while the D3D12 renderer/device is recreated after each transition before the next warm-up/scored observation. Frozen workload identity stays constant across candidates.
 
-D3D12 GPU timestamps remain queue-owned evidence. The benchmark queries the command queue's timestamp frequency and converts resolved timestamp deltas using that queue frequency; it does not reinterpret PresentMon telemetry as direct GPU execution timing.
+D3D12 GPU timestamps remain queue-owned evidence. PresentMon is not reinterpreted as direct GPU execution timing.
 
-### 5.1 Controlled frame period
+### 5.1 Controlled frame-period statistics
 
-Each benchmark loop records its own wall-clock period. Because the loop includes the benchmark's synchronization policy, this is a **controlled comparison signal**. It is not claimed to be identical to an arbitrary game's end-to-end frame time.
-
-For every scored run LatencyPilot derives:
+Each scored benchmark loop records its own controlled wall-clock frame period. For a valid scored observation LatencyPilot derives:
 
 - AVG FPS = inverse of mean valid frame period;
 - 1% low FPS from the worst 1% of controlled frame periods;
 - 0.1% low FPS from the worst 0.1%;
-- frame-p99 as diagnostic/tie context.
+- frame-p99 latency.
 
-This is LatencyPilot's documented methodology. It is intentionally understandable and is not described as bit-for-bit identical to AutoGpuAffinity's historical low calculation.
+These are controlled comparison signals for the LatencyPilot workload, not claims about arbitrary-game click-to-photon latency.
 
-## 6. GPU candidate search
+## 6. Initial Original qualification
 
-Candidate generation uses actual Windows processor topology and includes every eligible logical processor in the supported group. SMT siblings are distinct candidates because Windows interrupt affinity targets logical processors. No even/odd numbering assumption is made and CPU0 is not banned.
+Before the first candidate mutation:
 
-Current v1 sequence:
+1. run a 5-second non-scored Original warm-up;
+2. collect scored Original observations of exactly 10 seconds;
+3. after three observations, require a three-run 1%-low cluster within the preferred ±3% median-relative band;
+4. if absent, collect observation four and re-evaluate every three-run combination;
+5. after observation four exists, the existing bounded recovery band may accept the tightest three-run cluster up to ±6%;
+6. if still absent, collect observation five and re-evaluate under the same preferred-then-bounded-recovery rule;
+7. if no eligible three-run cluster exists after five scored observations, verify/retain exact Original and stop before any candidate mutation.
+
+Every scored observation remains in the audit trail. The accepted cluster qualifies the measurement substrate and yields the accepted Original 1%-low noise. It is **not** reused as a local candidate control.
+
+## 7. Paired local-control screening
+
+After qualification, capture a fresh 10-second Original control `O0` and screen candidates in a chained sequence:
 
 ```text
-exact original/default state
-→ 5 s non-scored original warm-up/reference (benchmark only; no PresentMon/ETW)
-→ collect 3 scored 30 s Original runs
-   require the preferred 3-run 1%-low cluster within ±3% of its cluster median
-   if absent:
-     collect scored Original run 4 and re-evaluate every 3-run combination
-     prefer ±3%; from run 4 onward permit the bounded recovery band up to ±6%
-   if still absent:
-     collect scored Original run 5 and re-evaluate under the same preferred-then-recovery rule
-   if no bounded 3-run cluster exists after 5 scored Original observations:
-     verify/retain exact Original and stop before any candidate mutation
-   otherwise use the selected tightest 3-run Original cluster; excluded observations remain in the audit trail
-→ screen every eligible logical CPU in bounded blocks of at most four candidates:
-     for each candidate:
-       journaled apply/restart + stored-state verify
-       5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
-       1 scored 30 s screening run
-       exact rollback + Original-state verification
-     after every full four-candidate block when candidates remain:
-       5 s non-scored Original warm-up
-       collect one fresh scored Original block control
-→ 5 s non-scored Original warm-up
-→ collect one fresh scored Original control after the completed sweep
-→ use the Original controls to measure time-local background movement around each candidate block
-→ normalize rankable candidate decision metrics back to the session Original baseline
-   raw candidate/control trials remain unchanged in the audit trail
-   local control movement remains explicit uncertainty and raises Keep thresholds
-→ if effective 1%-low variability = max(Original noise, time-local control drift) exceeds 15%:
-     keep normalized screening diagnostics
-     skip exhaustive finalist confirmation
-     verify exact Original and RestoreOriginal
-→ otherwise rank normalized valid screening candidates
-→ shortlist the best three plus candidates within min(3%, max(1%, effective screening variability)) of the third-place cutoff, capped at five finalists
-→ shortlisted candidates:
-     two independent re-test rounds are mandatory
-     each finalist gets fresh apply/restart + stored-state verify, warm-up, scored run, exact rollback
-     only finalists still lacking a preferred 3-run cluster receive one replacement round
-→ finalist repeatability with 3 scores requires the preferred ±3% cluster
-   on score 4, re-evaluate every 3-run combination, preferring ±3% and permitting the bounded recovery band up to ±6%
-   if four valid finalist runs still form no bounded cluster, retain all four and use their observed variance in decision thresholds
-→ 5 s non-scored Original warm-up
-→ collect one fresh scored Original control after finalist re-tests
-   merge this phase's control movement into time-local uncertainty
-→ test finalists in ranking order against Original/noise/time-local uncertainty and guardrails; if the first fails, try the next clean finalist
-→ apply the highest-ranked clean winner once
-→ final benchmark-only warm-up → ETW placement-verification capture
-→ Keep only when measured improvement clears the full noise/uncertainty floor,
-   comparable GPU-driver DPC/ISR p99 does not materially regress,
-   and final runtime ISR placement is proved
-   otherwise exact RestoreOriginal
+O0 → C1 → O1 → C2 → O2 → C3 → O3 ...
 ```
 
-The initial Original acquisition is a core-session **3-of-up-to-5 scored-observation** policy, not a contamination trick. Scored Original observations four and five are ordinary independent measurements. The preferred repeatability band remains ±3%; only after an additional observation exists may the selector use its bounded recovery band up to ±6%, and it still chooses the tightest eligible three-run combination. Real transient contamination or collector/device failure uses the separate bounded retry path and does not relabel a clean scored observation as contaminated merely to obtain another sample.
+For each candidate:
 
-The Original block controls are **measurement controls, not abort triggers for ordinary gradual drift and not candidate observations**. They let the optimizer separate a candidate's measured effect from background movement that occurs as a long search proceeds. For each rankable screening candidate, the decision metric is normalized by the relevant local Original level relative to the session Original baseline. The raw scored observation remains unchanged and visible for diagnostics.
+1. start from a verified exact Original state and a scored `OriginalBefore` control;
+2. apply the candidate and activate/restart the device;
+3. verify the stored candidate state;
+4. run the bounded 5-second non-scored transition warm-up;
+5. capture one 10-second scored candidate observation;
+6. restore and verify exact Original;
+7. recreate/warm the renderer as required;
+8. capture one 10-second scored `OriginalAfter` control;
+9. evaluate the local pair.
 
-This normalization is deliberately bounded. Measured control movement is carried forward as uncertainty and therefore raises the minimum improvement required for Keep. If effective 1%-low variability exceeds the existing 15% exhaustive-confirmation budget, LatencyPilot stops before expensive finalist re-tests and restores Original. Structural evidence failures are never normalized away.
+`OriginalAfter` becomes the next pair's chain anchor only when the pair/control state is acceptable. Unstable retries acquire a fresh valid control rather than treating a failed pair as a trustworthy anchor.
 
-There is no separate SMT/hyperthread refinement phase in v1 because eligible siblings are screened directly, and there is no ABBA/BAAB finalist loop.
+### 7.1 Local reference and effect
 
-### 6.1 Ranking order
+Raw observations remain authoritative and unchanged.
 
-Ranking is transparent and lexicographic; there is no hidden weighted score. Ranking uses the optimizer's **decision aggregates** after time-local normalization where applicable, not shuffled raw collection order:
+For positive-valued higher-is-better metrics:
 
-1. compare median **1% low**; differences <=1% are treated as practical ties;
-2. if tied, compare median **AVG FPS** with the same 1% equivalence margin;
-3. if tied, compare lower median **frame-p99** with a 1% equivalence margin;
-4. if still tied, compare median **0.1% low** only when the relative difference exceeds 5%;
-5. if still tied, use passive core-pressure/core/processor identity only as deterministic fallback.
+```text
+LocalReference = sqrt(OriginalBefore × OriginalAfter)
+LocalEffect    = Candidate / LocalReference - 1
+```
 
-The 1% comparison margin follows the practical repeatability scale expected from a well-behaved benchmark rather than pretending that tiny decimal differences identify a real winner.
+For lower-is-better frame p99:
 
-`0.1% low` remains visible because it is useful for spotting severe tail spikes, but a 30 s run can contain only a small number of frames in the worst 0.1%; it therefore does not outrank the more stable 1% low/AVG/p99 signals.
+```text
+LocalEffect = LocalReference / Candidate - 1
+```
 
-An initial screening candidate has one 30 s scored observation. A finalist has three scored observations: its initial screen plus one fresh score in each of two separate re-test rounds. No finalist receives two scored re-tests back-to-back under one affinity activation.
+Positive effect always means improvement-directed movement.
 
-### 6.2 Repeatability and uncertainty
+The report/UI may show the raw three values plus the derived effect. It must not synthesize pseudo-normalized FPS and present that as a measured observation.
 
-Repeatability no longer uses raw `(max - min) / min` spread. A single multitasking spike can invalidate that statistic and its `min` denominator biases the reported variation toward the worst run.
+### 7.2 Pair drift budget
 
-LatencyPilot uses bounded robust sampling with **different terminal semantics for initial Original acquisition and finalist confirmation**:
+Primary pair movement is the relative movement between the two adjacent Original 1%-low controls.
 
-- 1% low is the primary repeatability signal.
-- For any cluster search, evaluate every 3-observation combination and choose the tightest eligible cluster by maximum median-relative deviation, then total deviation.
-- **Preferred band:** with the first three observations, a cluster is eligible only when every member is within **±3%** of its cluster median.
-- **Bounded recovery band:** after observation #4 exists, if no preferred ±3% cluster is available, the selector may accept the tightest three-run cluster within **±6%**. The band never widens beyond ±6%; it is a bounded recovery mechanism for one or two early/cold/background outliers, not a claim that 6% variance is generally good.
-- **Initial Original:** start with three scored observations. If no eligible cluster exists, collect scored observation #4 and re-evaluate; if still absent, collect scored observation #5 and re-evaluate. Five scored Original observations are the hard ceiling. A valid Original cluster may exclude up to two scored observations, which remain in the audit trail. If no bounded three-run cluster exists after five, Original is not decision-grade and the session verifies/retains exact Original **before any candidate mutation**. There is no all-runs noise fallback for initial Original acquisition.
-- **Finalists:** the initial screen plus two independent fresh re-tests provide three scored observations. Only a finalist still lacking the preferred cluster receives one bounded replacement. On that fourth score, the selector re-evaluates under the same preferred ±3% / recovery ±6% rule. Four scored finalist observations are the hard ceiling. If no bounded cluster exists after four, retain all four and use their observed per-metric variance in later decision thresholds.
-- Real transient contamination or collector/device failure uses the separate bounded capture retry contract. It does not count as justification to manufacture contamination and does not alter the scored-observation ceilings above.
-- AVG FPS and frame-p99 remain decision guardrails; 0.1% low remains rare-tail diagnostic/regression context rather than the outlier detector.
-- Time-local Original-control movement is tracked separately from within-state repeatability noise. The optimizer carries both into decision thresholds rather than pretending they are the same phenomenon.
-- Final AVG / frame-p99 / 0.1%-low regression guardrails are noise-aware, using the larger of the documented minimum margin, observed Original/finalist run-to-run noise and relevant time-local uncertainty.
-- When both Original and finalist provide at least three scored runs with enough attributable samples, GPU-driver DPC/ISR p99 is computed per run. Median tail regression is compared against a noise-aware limit of `max(10%, Original run-to-run tail noise, finalist run-to-run tail noise)`; a regression beyond that limit rejects that finalist without preventing the next ranked finalist from being considered.
-- The final winner's 1%-low gain must clear `max(1%, Original 1%-low noise, finalist 1%-low noise, time-local control uncertainty)` before guardrails and final ETW placement verification are considered.
+```text
+PairDriftBudget = clamp(max(6%, 2 × InitialOriginal1PercentLowNoise), 6%, 10%)
+```
 
-The ±3% band remains the preferred repeatability target; the ±6% band is only a bounded recovery after additional observations. During initial Original acquisition, absence of any bounded three-run regime after five scored observations is intentionally a pre-mutation safety stop. After Original is established, gradual time-local control movement during screening is normalized and recorded as uncertainty rather than treated as structural failure. Finalist evidence has its own bounded four-observation fallback because candidate mutations have already been measured and the observed variance can safely make Keep harder to earn rather than inventing a stable baseline.
+If Original movement exceeds the budget, the pair is `Unstable` and cannot rank the candidate.
 
-### 6.3 Adaptive finalist cutoff
+One fresh retry is allowed. If the second attempt also exceeds the budget, the candidate becomes `Inconclusive`. Two consecutive candidates that exhaust their retry cause an early safe stop with exact Original retained. A later valid candidate resets the consecutive-unstable counter.
 
-The initial screen advances at least the best three rankable logical CPUs when effective background variability remains within the 15% exhaustive-confirmation budget. The finalist equivalence band is **min(3%, max(1%, effective screening variability))**, where effective screening variability is the larger of Original 1%-low repeatability noise and measured time-local 1%-low control movement. The shortlist is capped at five candidates.
+Structural evidence failures remain fail-closed immediately and do not consume the statistical retry.
 
-A fresh Original block control is taken after each group of four candidates when more candidates remain, and a final screening control closes the last block. These controls normalize screening decision evidence and quantify uncertainty; ordinary gradual movement does not automatically invalidate the block. If the resulting effective variability exceeds 15%, LatencyPilot retains the screening diagnostics and restores Original without expensive finalist re-tests because the environment is too variable for a trustworthy automatic Keep decision. A second fresh Original control after finalist re-tests contributes additional time-local uncertainty before Keep evaluation.
+## 8. Full-search candidate strategy
 
-## 7. Screening evidence and external collectors
+The full search spends short screens broadly and long confirmation narrowly.
 
-Screening must remain robust enough to complete the bounded CPU search while preserving structural integrity.
+### Stage A — physical-core representatives
+
+For every eligible physical core, choose one eligible logical processor using:
+
+1. current CPU-set availability/allocation evidence;
+2. lower observed pressure;
+3. deterministic processor-number fallback.
+
+Do not assume even/odd SMT numbering and do not globally ban CPU0.
+
+Each representative receives one valid paired short screen.
+
+### Stage B — sibling refinement
+
+Order valid Stage-A hypotheses by paired 1%-low effect. Select:
+
+- the best two physical-core hypotheses;
+- plus a third only when it is within the 1 percentage-point practical-equivalence margin of second place;
+- hard cap: three physical cores.
+
+Screen any still-untested eligible SMT sibling on those selected cores.
+
+### Stage C — finalists
+
+From all valid logical-CPU screening pairs, advance:
+
+- the best two logical CPUs;
+- plus one additional CPU only when it is within the same 1 percentage-point margin of second place;
+- hard cap: three finalists.
+
+The 10-second screen is a filter, not final proof. Primary ranking uses paired 1%-low effect. AVG/frame-p99 are guardrail/context signals; 0.1% low remains diagnostic in the short window.
+
+## 9. Finalist confirmation
+
+Finalist evidence is separate from the 10-second screening sample.
+
+1. capture a fresh 30-second Original control;
+2. run three rounds;
+3. deterministically shuffle finalist order per round;
+4. each finalist must obtain three independent valid 30-second local pairs;
+5. apply the same one-retry local-stability rule to a finalist pair.
+
+Persist per finalist:
+
+- the three accepted pair numbers;
+- median paired 1%-low effect;
+- median paired AVG effect;
+- median paired frame-p99 effect;
+- median diagnostic 0.1%-low effect where available;
+- local pair-control movement;
+- `DecisionFloor`;
+- verdict and reason.
+
+### 9.1 Finalist decision floor
+
+```text
+DecisionFloor = max(1%, median finalist pair-control movement)
+```
+
+A finalist is improvement-capable only when:
+
+- at least two of its three valid paired 1%-low effects are positive;
+- median paired 1%-low effect is above the decision floor;
+- no valid primary pair shows a material regression beyond that floor;
+- median paired AVG does not materially regress;
+- median paired frame-p99 does not materially regress;
+- sufficiently supported GPU-driver DPC/ISR tail evidence does not materially regress.
+
+A finalist that cannot obtain three valid pairs within the bounded retry policy is `Inconclusive` and cannot be kept.
+
+## 10. Ranking and practical ties
+
+Finalists are ordered by median paired 1%-low effect.
+
+Differences of at most one **percentage point of paired effect** are practical ties. LatencyPilot may use passive observed-pressure/topology/processor identity ordering to select one operational target among tied improvement-capable finalists, but the report/UI must say **Practical tie** and must not claim the chosen target proved faster than tied peers.
+
+There is no hidden weighted score.
+
+0.1% low remains visible tail context but does not independently overturn the primary paired-v2 authority.
+
+## 11. Interrupt-tail guardrails
+
+When both Original and candidate/finalist evidence provide enough attributable samples across enough runs, GPU-driver DPC/ISR p99 tails may be compared as guardrails.
+
+Tail guardrails must be noise-aware. Missing/insufficient optional tail evidence is not silently converted to zero and cannot be called a pass. Final Keep still requires explicit runtime placement proof independently of these comparative tail guardrails.
+
+## 12. Screening collectors
 
 ### Controlled benchmark evidence — required
 
+A rankable scored trial requires, among other structural checks:
+
 - valid artifact/session identity;
 - frozen-workload continuity;
-- valid D3D12 timestamp evidence;
-- valid controlled frame periods;
-- exact stored affinity verified around candidate capture.
+- finite positive controlled frame-period statistics;
+- exact expected stored affinity verified before/after the capture.
 
-### PresentMon — independent best-effort cross-check
+### PresentMon — best-effort independent cross-check
 
-LatencyPilot uses the pinned standalone PresentMon 2.5.1 console collector; a separately installed PresentMon Service/API is not a Gate A prerequisite.
+LatencyPilot uses a pinned standalone PresentMon console collector; a separately installed PresentMon Service/API is not a Gate A prerequisite.
 
-PresentMon's documented timing fields are not interchangeable:
+PresentMon cadence fields are not treated as interchangeable. Current `FrameTime`/supported cadence data may be used as cross-check evidence; unrelated start-offset semantics are not silently substituted.
 
-- `FrameTime` is the current CPU frame-time metric in the capture schema;
-- `MsBetweenPresents` = time between Present() calls;
-- `MsBetweenAppStart` = start of the current frame until CPU work begins for the next frame.
+If PresentMon is unavailable or yields no usable target rows, that state remains explicit context. It does not fabricate samples and does not invalidate otherwise valid benchmark-owned controlled-frame evidence.
 
-Therefore the console CSV parser accepts the current `FrameTime` field or legacy `MsBetweenPresents` for present cadence; it does **not** substitute `MsBetweenAppStart` as the same metric. Failed raw CSV may be retained for owner diagnosis, but retention is bounded.
+### Kernel ETW during screening — best-effort unless it proves contradiction
 
-When PresentMon returns `NoSwapChains` or otherwise provides no usable target frames, that state remains explicit diagnostic evidence. It does not fabricate guardrail samples and does not invalidate an otherwise valid scored trial when benchmark-owned controlled frame periods are present. Without benchmark-owned frame periods, the legacy PresentMon-dependent path remains fail-closed.
+If screening ETW is unavailable/dirty, the absence remains explicit context and ranking may continue when the benchmark/stored-state evidence is valid.
 
-PresentMon GPU-active/busy metrics remain context; D3D12 timestamps are the direct GPU-work timing source for the built-in DX12 workload.
+If healthy ETW proves resolved GPU ISR activity contradicts the requested candidate placement, that candidate is invalid.
 
-### Kernel ETW during screening — best-effort unless it proves failure
+## 13. Final Keep validity
 
-If kernel ETW is unavailable/dirty during a screening block, the absence is explicit context and benchmark-period ranking may continue under verified stored state.
+A performance winner is not enough.
 
-If ETW is healthy and attribution proves the requested candidate is not the effective target, that candidate is invalid and cannot be ranked.
+Before Keep:
 
-## 8. Final GPU Keep validity
+1. apply the selected finalist once more;
+2. verify exact stored candidate state;
+3. run the final non-scored warm-up;
+4. capture final kernel ETW;
+5. require clean ETW integrity and zero lost events;
+6. require attributable GPU ISR samples;
+7. require requested target-only runtime placement with zero resolved off-target ISR;
+8. verify terminal stored state.
 
-Final Keep is intentionally stricter than screening.
+If final runtime placement cannot be proved, exact Original is restored.
 
-After selecting the ranked winner, LatencyPilot applies it one final time and runs a fresh verification capture. Keep requires all of:
+## 14. Diagnostic scopes
 
-- exact stored candidate state verified before/after the capture;
-- kernel ETW integrity complete;
-- zero reported ETW event loss;
-- attributable GPU ISR samples exist;
-- target processor matches the selected finalist;
-- target ISR count > 0;
-- resolved off-target ISR count = 0.
+### Selected CPUs / Custom
 
-Missing ETW is **not** sufficient for Keep. If final placement cannot be proved, LatencyPilot restores and verifies exact Original.
+Runs the real Original qualification and local paired 10-second screening only for the selected logical processors.
 
-For a single-adapter WDDM system, display-KMD attribution is preferred; a labelled `dxgkrnl` dispatch fallback is accepted only where the existing conservative attribution method can identify the single display target without guessing.
+It is diagnostic-only:
 
-## 9. Failure, cancellation and rollback
+- no machine-wide sibling/finalist tournament;
+- no Keep;
+- exact Original restored at the end;
+- cannot close physical Gate A.
 
-Mutation ownership starts before state is changed and remains owned until exact Keep or Revert terminalization. Before every candidate write, stored affinity and display-driver version must still match the exact session-original snapshot. Transaction preparation repeats that same comparison inside the mutation lock, and the existing immediate-prewrite reread rejects any later TOCTOU drift before registry write.
+### Original diagnostics
 
-- Original baseline fails to form a valid bounded three-run cluster after five scored observations → verify exact Original, RestoreOriginal, and stop before the first candidate mutation.
-- External affinity/driver drift before apply → refuse before write.
-- Candidate failure after apply → exact rollback + original verification.
-- Cancellation before Keep → exact rollback + original verification.
-- Ordinary time-local Original-control movement → normalize decision metrics, record uncertainty, continue while structural evidence remains valid and effective variability stays inside the finalist-confirmation budget.
-- Effective 1%-low variability >15% after the completed screen → skip finalist confirmation, verify exact Original, RestoreOriginal.
-- Invalid benchmark/session provenance, state divergence, failed mutation ownership, healthy ETW proving wrong placement or another structural integrity failure → fail closed; do not normalize it away.
-- Final placement failure → exact rollback + original verification.
-- Keep failure → rollback is attempted and both failures are preserved if rollback also fails.
-- Unknown/diverged state stays recovery-owned; the journal is never edited away to make validation pass.
+Performs the bounded Original-only measurement path with no affinity mutation or device restart. It diagnoses pre-search variability only and cannot prove candidate benefit or restart stability.
 
-## 10. Input/USB measurement contract
+## 15. UI/evidence semantics
 
-Raw Input characterizes **host-observable** report timing and does not establish physical click-to-photon latency.
-
-Device routing must use authoritative topology:
+Presentation must distinguish:
 
 ```text
-Raw Input device → PnP ancestry → USB hub/port → exact xHCI controller
+raw observation
+≠ paired derived effect
+≠ persisted decision/finalist authority
+≠ verified terminal machine state
 ```
 
-Names, VID/PID or loose registry hints are not sufficient route proof.
+The UI must consume persisted decision/finalist authority rather than re-ranking shuffled execution order.
 
-After the GPU winner is fixed, v1 CPU selection for input/xHCI uses available interrupt headroom. The decision should prioritize DPC duration, ISR duration and tail spikes; DPC/ISR count is visible context/tie information rather than the sole optimizer truth. The GPU winner CPU is excluded by default.
+For direct pair evidence it should expose, where available:
 
-System-changing xHCI affinity is part of the v1 workflow but remains unarmed until GPU Gate A physically proves the shared mutation/recovery substrate.
+- Original before;
+- Candidate;
+- Original after;
+- paired effect;
+- control movement;
+- drift budget;
+- attempt/verdict.
 
-## 11. Before/after evidence
+A non-Keep candidate is diagnostic/comparison-only even if it shows a positive measured effect.
 
-The automatic v1 workflow should compare like-for-like baseline/final conditions where feasible and show raw named metrics rather than a synthetic overall score.
+`GateAClosureEligible` is a compatibility field for source/evidence eligibility. UI copy uses **Evidence eligible** because the field does not mean physical Gate A has already closed.
 
-Expected final user-facing evidence includes:
+## 16. Physical evidence boundary
 
-- GPU selected CPU;
-- AVG / 1% low / 0.1% low and p99 context;
-- input/xHCI selected CPU;
-- per-CPU/controller DPC/ISR count, total duration and tail behavior;
-- host Raw Input timing where captured;
-- verification/recovery state.
+Hosted CI can verify software contracts and compilation. It cannot prove:
 
-Development Gate A result presentation distinguishes three evidence layers:
+- actual GPU device restart/activation behavior;
+- physical runtime ISR placement;
+- whole-search reproducibility;
+- Stop-safely/failure recovery on owner hardware;
+- real WinUI rendering/accessibility;
+- LocalSystem/package/signing behavior.
 
-1. raw scored trial history;
-2. authority-selected decision aggregates/rank after time-local normalization where applicable;
-3. verified terminal machine state.
+Physical Gate A therefore remains a separate requirement on one exact clean green `main` revision.
 
-A diagnostic comparison candidate is not labelled as kept when the final recommendation is RestoreOriginal. Raw shuffled measurement order must never be reinterpreted in the UI as rank.
+## 17. Interpretation rules
 
-Do not label a proxy as network latency, click-to-photon latency or another quantity that was not measured.
+- Do not call a positive single pair a proven winner.
+- Do not compare historical v1 normalized aggregates as though they were paired-v2 effects.
+- Do not treat registry state as runtime placement proof.
+- Do not hide unstable/inconclusive evidence.
+- Do not turn optional missing telemetry into zero or success.
+- Do not lengthen warm-up or add new isolation machinery merely because a run is noisy; first inspect the paired evidence and identify a falsifiable cause.
+- Prefer Restore Original to manufacturing certainty when the evidence contract is not satisfied.
 
-## 12. Future/non-v1 methods
-
-MSI-mode mutation, NIC/RSS automatic mutation, audio affinity, power-plan mutation and cross-subsystem/Pareto automatic optimization are future/non-v1 work and do not enter the automatic v1 decision path. Existing conservative source/recovery code may remain where it supports exact restoration or future experiments, but it cannot silently enter v1 automation.
-
-## 13. Auditability and observer effect
-
-Authoritative experiments retain enough data to audit the decision later. Historical evidence is not rewritten to fit new interpretation logic. Time-local normalization creates new decision aggregates while retaining the raw candidate/control trials that produced them.
-
-During authoritative capture avoid unnecessary per-event allocation, synchronous high-volume file I/O, frequent UI redraw and avoidable GC pressure. Benchmark progress reporting remains low frequency after calibration.
-
-## 14. Permanent-test policy
-
-The permanent suite is behavior-focused and must not grow one test per implementation detail. Temporary TDD characterization tests are removed after the behavior is represented in canonical tests. Physical benchmark repetitions and Gate A runs are evidence, not unit tests.
-
-## Audit-closure one-at-a-time workflow (updated 2026-09-21)
-
-LatencyPilot treats v1 automatic optimization as a one-at-a-time experiment pipeline: **Original measurement → GPU affinity → primary-input/xHCI → final verification → report**. A stage that is NotReady, structurally invalid, requires recovery attention, or requires reboot stops the pipeline; ordinary bounded time-local GPU background movement is handled inside the GPU measurement stage by normalization + uncertainty rather than being mislabeled as a structural failure.
-
-MSI-mode mutation remains outside the v1 automatic path under ADR 0006. Existing MSI inspection/recovery code is not proof of automatic applicability and must not be inserted into v1 ordering without a new accepted authority change.
-
-xHCI affinity requires one explicit primary Raw Input identity, one exact USB route, clean capture evidence, and reversible journal ownership.
-
-`Restore original settings` replays retained LatencyPilot changes newest-first from exact snapshots. It does **not** claim to restore Windows defaults. Public mutation remains fail-closed (`MutationAvailable = false`) until exact-revision physical GPU/xHCI validation is recorded; hosted CI proves source contracts only.
+See ADR 0007 and `docs/PHASE3_PHYSICAL_VALIDATION.md` for the authoritative paired-v2 Gate A procedure.
