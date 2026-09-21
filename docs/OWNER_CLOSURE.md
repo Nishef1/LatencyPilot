@@ -11,7 +11,7 @@ Use a clean `main` checkout whose exact HEAD already has a successful hosted `Te
 
 For the steady Real-world baseline, hold one warmed scene, action loop or workload pattern through all five windows. A scripted benchmark that intentionally changes scenes/phases is not a substitute for this closure baseline; repeated whole benchmark runs are a separate experiment shape.
 
-Both files must be closure-grade `latencypilot-evidence-v9` evidence from the exact 40-hex source revision. Baseline v9 serializes `baseline-quality-v2`, `workload-stability-v1`, and explicit optimizer-eligibility evidence so `Valid for comparison` cannot be confused with `Ready for optimization`. Do not reuse an older baseline after source changes.
+Both files must be closure-grade `latencypilot-evidence-v9` evidence from the exact source revision. Do not reuse an older baseline after source changes.
 
 ## 2. Run the consolidated read-only audit
 
@@ -28,20 +28,18 @@ dotnet run --project .\tools\LatencyPilot.ReadOnlyClosure\LatencyPilot.ReadOnlyC
   --output $out
 ```
 
-The command is deliberately read-only except for writing the requested audit JSON. It fails closed unless the required source/CI/Service/journal/ETW/device/USB/evidence checks pass, including:
+The command is deliberately read-only except for writing the requested audit JSON. It fails closed unless required source/CI/Service/journal/ETW/device/USB/evidence checks pass, including:
 
 - clean local `main` at the exact requested HEAD;
 - GitHub `main` and a successful exact-SHA hosted `Tests` run;
 - `ServiceBoundary.MutationAvailable=false`;
 - exact protected observation-Service provenance;
 - zero unresolved mutation journal entries;
-- no stale `LatencyPilot-Kernel-*` ETW session;
+- no stale LatencyPilot kernel ETW session;
 - representative GPU and xHCI/device topology visibility required by the current audit;
 - both baseline files match the exact revision/scenario and pass the canonical evidence verifier.
 
 The Service provenance check reads version metadata from the executable configured in Windows Service Control Manager. A correctly named or correctly located stale binary is not accepted as exact-revision closure evidence.
-
-`logman query -ets` and Windows service inspection are observation surfaces only; the audit does not start/stop a Service, ETW session, device, or mutation experiment.
 
 ## 3. Capture reproducible UI/accessibility evidence
 
@@ -81,26 +79,70 @@ A green read-only audit JSON plus UI evidence is **not** Phase 2 closure by itse
 
 Only after those checks and the automated audit agree may Phase 2 be marked physically closed.
 
-## 5. Run GPU Gate A
+## 5. Run paired-v2 GPU Gate A
 
 After the exact revision is green and the prerequisite read-only substrate is understood, follow `docs/PHASE3_PHYSICAL_VALIDATION.md`.
 
-GPU Gate A is a **different measurement shape** from the five-window Real-world baseline. It uses the built-in deterministic D3D12 candidate search with time-local Original controls, normalized decision aggregates and strict final ETW ISR-placement proof. Do not feed the Real-world baseline into the GPU candidate ranking or treat it as a substitute for the Gate A Original controls.
+GPU Gate A is a **different measurement shape** from the five-window Real-world baseline. It uses the built-in deterministic D3D12 benchmark and direct local controls:
 
-Gate A still requires real owner-local apply/restart/runtime-placement/rollback/recovery evidence. ConfigMgr allocated interrupt resources are provenance only; final Keep requires attributable runtime ISR placement on the requested logical processor.
+```text
+bounded Original qualification
+→ Original before → Candidate → Original after
+→ physical-core representative screen
+→ bounded SMT sibling refinement
+→ up to 3 finalists
+→ 3 independent 30 s local pairs per finalist
+→ final clean target-only ETW ISR-placement proof before Keep
+```
 
-A successful Gate A session also needs the in-product result/evidence path inspected: validated report → evidence ZIP → Overview decision presentation. The UI must distinguish raw trials, decision aggregates and verified terminal state.
+Do not feed the Real-world Phase 2 baseline into GPU candidate ranking or treat it as a substitute for the Gate A local controls.
+
+Key paired-v2 closure rules:
+
+- screening windows are 10 s;
+- raw observations remain unchanged;
+- paired effect is derived from the geometric mean of adjacent Original controls;
+- local Original movement above the bounded drift budget invalidates that pair rather than becoming candidate benefit;
+- one fresh retry is allowed for an unstable pair;
+- two consecutive candidates that exhaust retry stop safely and retain exact Original;
+- full search screens one eligible logical representative per physical core before refining promising siblings;
+- finalist count is capped at three;
+- each accepted finalist needs three valid 30 s local pairs;
+- finalists within one percentage point are a practical tie and must be presented as such;
+- final Keep requires attributable runtime GPU ISR placement on the requested logical processor;
+- terminal stored state and journal ownership must verify.
+
+A successful Gate A session also needs the in-product result/evidence path inspected: validated report → evidence ZIP → Overview decision presentation. The UI must distinguish raw observations, paired effects, persisted decision/finalist authority and verified terminal state.
+
+`GateAClosureEligible` means source/evidence eligibility only. Product copy should say **Evidence eligible** and must not imply that physical Gate A is already closed.
 
 Do not expose or arm public mutation before Gate A is physically proven.
 
-## 6. Continue the v1 dependency chain
+## 6. Repeat, stop safely and recover
 
-After GPU Gate A closes:
+Gate A closure requires more than one happy-path run. On the same exact clean green revision:
+
+1. run the complete paired-v2 search and preserve the full evidence bundle;
+2. return to exact Original and repeat the whole search for practical reproducibility;
+3. run a separate search and invoke **Stop safely** while a candidate mutation is owned; require exact Original and `unresolved=0`;
+4. exercise one supported failure/recovery path from the existing physical-validation tooling; require exact Original or explicit fail-closed/manual-intervention state, then zero unresolved ownership before closure;
+5. inspect the real result/progress surfaces in Light, Dark, High Contrast, text scaling, narrow/wide, keyboard and UIA/Narrator states.
+
+Hosted CI is necessary software evidence but cannot substitute for these owner-local physical checks.
+
+## 7. Continue the v1 dependency chain
+
+Only after GPU Gate A closes:
 
 1. introduce/verify the typed allowlisted product mutation boundary;
-2. close the integrated primary-input → USB → xHCI recommendation/apply/runtime-verification path;
-3. close combined reboot/resume/recovery behavior;
-4. capture final comparable before/after evidence;
-5. finish normal-user one-button UX, Restore original settings, accessibility/runtime checks and signed package/install/upgrade/uninstall evidence.
+2. prove physical App → Service mutation authorization;
+3. close the integrated primary-input → USB → xHCI recommendation/apply/runtime-verification path;
+4. close combined reboot/resume/recovery behavior;
+5. capture final comparable before/after evidence;
+6. finish normal-user one-button UX, prominent Restore original settings, accessibility/runtime checks and signed package/install/upgrade/uninstall evidence.
 
 NIC/RSS automatic mutation, audio affinity, MSI-mode toggling, HAGS/BIOS/power changes and generic cross-subsystem optimization are **not** v1 closure dependencies.
+
+## Completion rule
+
+Do not call the project physically complete because source builds or hosted tests are green. Source completion requires canonical docs and exact-head hosted verification to match the implemented contract. True v1 completion additionally requires the physical GPU, xHCI, reboot/recovery, before/after, accessibility and packaging gates described in `ROADMAP.md`.
