@@ -324,7 +324,7 @@ public sealed partial class MainWindow
         return card;
     }
 
-    private Button ActionButton(string text, bool primary = false)
+    private static Button ActionButton(string text, bool primary = false)
     {
         var button = new Button
         {
@@ -465,7 +465,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private Border StyledBorder(string styleKey) => new() { Style = AppStyle(styleKey) };
+    private static Border StyledBorder(string styleKey) => new() { Style = AppStyle(styleKey) };
 
     private static Style AppStyle(string key)
     {
