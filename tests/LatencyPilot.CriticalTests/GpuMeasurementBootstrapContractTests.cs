@@ -45,14 +45,8 @@ public sealed class GpuMeasurementBootstrapContractTests
         Assert.AreEqual(3, indexes.Length);
         Assert.IsFalse(indexes.Contains(0),
             "The cold-start outlier must remain in the audit trail but must not define baseline uncertainty once a coherent regime exists.");
-
-        // The Gate A wrapper presents the replacement as the fourth accepted logical
-        // observation while retaining the rejected physical attempt in TrialReports.
-        // That accepted set must still expose the same coherent regime to the core session.
-        var acceptedAfterReplacement = new[] { 68.5d, 160.8d, 152.8d, 155.5d };
-        Assert.IsNotNull(
-            select.Invoke(null, [acceptedAfterReplacement]),
-            "Replacing the unstable fourth physical sample with the bounded fifth attempt must produce a repeatable accepted baseline when the fifth sample rejoins the stable regime.");
+        Assert.IsTrue(indexes.Contains(4),
+            "The fifth attempt must remain a first-class eligible observation rather than replacing or hiding the fourth attempt.");
 
         var broadlyUnstable = new[] { 70d, 88d, 111d, 139d, 176d };
         Assert.IsNull(
@@ -61,17 +55,31 @@ public sealed class GpuMeasurementBootstrapContractTests
     }
 
     [AuditCase]
-    public void GateAWrapperUsesOneBoundedOriginalReplacementBeforeAnyCandidateWrite()
+    public void OriginalBaselineSequentialThreeOfFiveMustLiveInCoreSession()
     {
-        var source = File.ReadAllText(FindRepositoryFile(
+        var sessionSource = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.Benchmarking",
+            "Optimization",
+            "GpuAutoAffinitySession.cs"));
+        StringAssert.Contains(
+            sessionSource,
+            "originalObservations.Count < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount",
+            "The core session must own the five-observation Original ceiling so attempts four and five remain real eligible measurements.");
+        StringAssert.Contains(
+            sessionSource,
+            "observations.Length < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount",
+            "Original evaluation must continue through attempt five when no stable cluster exists instead of falling back after attempt four.");
+
+        var wrapperSource = File.ReadAllText(FindRepositoryFile(
             "tools",
             "LatencyPilot.GateAValidation",
             "ProgressReportingGpuAutoAffinityBackend.cs"));
-
-        StringAssert.Contains(source, "GpuOriginalBaselinePolicy.ReplacementTriggerAttemptCount");
-        StringAssert.Contains(source, "GpuOriginalBaselinePolicy.HasRepeatableCluster");
-        StringAssert.Contains(source, "ControlTrialDrifted = true");
-        StringAssert.Contains(source, "single bounded replacement");
+        Assert.IsFalse(
+            wrapperSource.Contains("ApplyBoundedOriginalBaselineRecovery", StringComparison.Ordinal) ||
+            wrapperSource.Contains("pendingOriginalRetryIndex", StringComparison.Ordinal) ||
+            wrapperSource.Contains("ControlTrialDrifted = true", StringComparison.Ordinal),
+            "Progress reporting must not manufacture contamination to obtain the fifth Original sample; it should observe core-session behavior only.");
     }
 
     [AuditCase]
