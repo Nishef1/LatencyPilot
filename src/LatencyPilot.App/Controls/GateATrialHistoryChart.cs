@@ -1,4 +1,5 @@
 using LatencyPilot.Benchmarking.Optimization;
+using LatencyPilot.Core.Benchmarking;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -22,7 +23,7 @@ public sealed class GateATrialHistoryChart : UserControl
         VerticalContentAlignment = VerticalAlignment.Stretch;
         _emptyState = new ChartEmptyState(
             "\uE823",
-            "Run GPU Gate A to inspect scored 1% low history.");
+            "Run GPU Gate A to inspect scored control stability.");
 
         var root = new Grid();
         root.Children.Add(_canvas);
@@ -31,8 +32,8 @@ public sealed class GateATrialHistoryChart : UserControl
 
         SizeChanged += (_, _) => Render();
         ActualThemeChanged += (_, _) => Render();
-        AutomationProperties.SetName(this, "Gate A repeatability trial history chart");
-        Clear("No scored Gate A trial history is available yet.");
+        AutomationProperties.SetName(this, "Gate A control stability history chart");
+        Clear("No scored Gate A control history is available yet.");
     }
 
     internal void SetData(IReadOnlyList<GateATrialPoint> points, string automationSummary)
@@ -84,6 +85,7 @@ public sealed class GateATrialHistoryChart : UserControl
         var mutedBrush = DashboardThemeResources.Brush(this, "MutedTextBrush");
         var originalBrush = DashboardThemeResources.Brush(this, "ChartAccentPrimaryBrush");
         var candidateBrush = DashboardThemeResources.Brush(this, "ChartAccentSecondaryBrush");
+        var attentionBrush = DashboardThemeResources.Brush(this, "SemanticAttentionBrush");
         var ringBrush = DashboardThemeResources.Brush(this, "GlassRaisedBrush");
 
         for (var index = 0; index < 4; index++)
@@ -132,7 +134,7 @@ public sealed class GateATrialHistoryChart : UserControl
             _canvas.Children.Add(lastRunLabel);
         }
 
-        RenderSeries(
+        RenderOriginalSeries(
             valid.Where(static point => string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase)).ToArray(),
             originalBrush,
             ringBrush,
@@ -144,9 +146,10 @@ public sealed class GateATrialHistoryChart : UserControl
             top,
             plotWidth,
             plotHeight);
-        RenderSeries(
+        RenderCandidateMarkers(
             valid.Where(static point => !string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase)).ToArray(),
             candidateBrush,
+            attentionBrush,
             ringBrush,
             minimumRun,
             runSpan,
@@ -158,7 +161,7 @@ public sealed class GateATrialHistoryChart : UserControl
             plotHeight);
     }
 
-    private void RenderSeries(
+    private void RenderOriginalSeries(
         GateATrialPoint[] points,
         Brush brush,
         Brush ringBrush,
@@ -178,13 +181,8 @@ public sealed class GateATrialHistoryChart : UserControl
 
         var coordinates = points
             .OrderBy(static point => point.RunNumber)
-            .Select(point =>
-            {
-                var x = left + plotWidth * (point.RunNumber - minimumRun) / runSpan;
-                var normalized = Math.Clamp((point.OnePercentLowFps - minimum) / valueSpan, 0d, 1d);
-                var y = top + plotHeight - normalized * plotHeight;
-                return (Point: point, Position: new Point(x, y));
-            })
+            .Select(point => (Point: point, Position: PositionOf(
+                point, minimumRun, runSpan, minimum, valueSpan, left, top, plotWidth, plotHeight)))
             .ToArray();
 
         if (coordinates.Length > 1)
@@ -218,12 +216,72 @@ public sealed class GateATrialHistoryChart : UserControl
             };
             ToolTipService.SetToolTip(
                 dot,
-                $"Run {coordinate.Point.RunNumber} · {coordinate.Point.Series}\n" +
+                $"Run {coordinate.Point.RunNumber} · Original control\n" +
                 $"1% low {coordinate.Point.OnePercentLowFps:0.0} FPS · {coordinate.Point.ReadinessState}\n" +
                 $"{coordinate.Point.Phase}");
             Canvas.SetLeft(dot, coordinate.Position.X - dot.Width / 2d);
             Canvas.SetTop(dot, coordinate.Position.Y - dot.Height / 2d);
             _canvas.Children.Add(dot);
         }
+    }
+
+    private void RenderCandidateMarkers(
+        GateATrialPoint[] points,
+        Brush candidateBrush,
+        Brush attentionBrush,
+        Brush ringBrush,
+        int minimumRun,
+        int runSpan,
+        double minimum,
+        double valueSpan,
+        double left,
+        double top,
+        double plotWidth,
+        double plotHeight)
+    {
+        foreach (var point in points.OrderBy(static point => point.RunNumber))
+        {
+            var position = PositionOf(
+                point, minimumRun, runSpan, minimum, valueSpan, left, top, plotWidth, plotHeight);
+            var unstable = point.PairVerdict is GpuAutoAffinityPairVerdict.Unstable or GpuAutoAffinityPairVerdict.Inconclusive;
+            var ready = string.Equals(point.ReadinessState, "Ready", StringComparison.OrdinalIgnoreCase);
+            var brush = unstable ? attentionBrush : candidateBrush;
+            var marker = new Ellipse
+            {
+                Width = unstable ? 11d : 9d,
+                Height = unstable ? 11d : 9d,
+                Fill = ready && !unstable ? brush : ringBrush,
+                Stroke = brush,
+                StrokeThickness = unstable ? 2.5d : 2d,
+            };
+            var pairContext = point.PairVerdict is { } verdict
+                ? $" · pair {point.PairAttempt?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "—"} · {verdict}"
+                : string.Empty;
+            ToolTipService.SetToolTip(
+                marker,
+                $"Run {point.RunNumber} · {point.Series}{pairContext}\n" +
+                $"1% low {point.OnePercentLowFps:0.0} FPS · {point.ReadinessState}\n" +
+                $"{point.Phase}");
+            Canvas.SetLeft(marker, position.X - marker.Width / 2d);
+            Canvas.SetTop(marker, position.Y - marker.Height / 2d);
+            _canvas.Children.Add(marker);
+        }
+    }
+
+    private static Point PositionOf(
+        GateATrialPoint point,
+        int minimumRun,
+        int runSpan,
+        double minimum,
+        double valueSpan,
+        double left,
+        double top,
+        double plotWidth,
+        double plotHeight)
+    {
+        var x = left + plotWidth * (point.RunNumber - minimumRun) / runSpan;
+        var normalized = Math.Clamp((point.OnePercentLowFps - minimum) / valueSpan, 0d, 1d);
+        var y = top + plotHeight - normalized * plotHeight;
+        return new Point(x, y);
     }
 }
