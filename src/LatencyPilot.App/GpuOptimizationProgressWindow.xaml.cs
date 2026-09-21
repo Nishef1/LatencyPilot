@@ -129,9 +129,9 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         }
 
         // Raw scored trials remain the audit trail. Candidate reports carry the
-        // actual decision metrics: screening rows can be time-local normalized,
-        // while finalist rows use repeated medians and retain local-control drift
-        // as uncertainty. Old reports without these fields fall back to raw medians.
+        // authoritative decision metrics and persisted decision rank. The UI may
+        // display that authority but must never reconstruct another ranking from
+        // metric decimals because the optimizer owns practical-tie semantics.
         var rows = report.Trials
             .Where(static trial =>
                 (string.Equals(trial.Phase, "screening", StringComparison.Ordinal) ||
@@ -153,6 +153,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 {
                     Processor = group.Key,
                     Core = candidate?.PhysicalCoreIndex,
+                    DecisionRank = candidate?.DecisionRank,
                     RawLow1PctFps = rawLow1,
                     DecisionOnePercentLowFps = IsFinitePositive(candidate?.DecisionOnePercentLowFps)
                         ? candidate!.DecisionOnePercentLowFps
@@ -175,13 +176,9 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 row.DecisionOnePercentLowFps is { } low &&
                 double.IsFinite(low) &&
                 low > 0)
-            .OrderByDescending(row =>
-                report.FinalProcessor is not null &&
-                report.FinalProcessor.Equals(row.Processor))
-            .ThenByDescending(static row => row.DecisionOnePercentLowFps)
-            .ThenByDescending(static row => row.DecisionAvgFps)
-            .ThenBy(static row => row.DecisionFrameP99Milliseconds)
-            .ThenByDescending(static row => row.DecisionLow01PctFps)
+            .OrderBy(static row => row.DecisionRank ?? int.MaxValue)
+            .ThenBy(static row => row.Processor.Group)
+            .ThenBy(static row => row.Processor.Number)
             .ToArray();
 
         if (rows.Length == 0)
@@ -200,7 +197,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             .Select(static item => item.Processor.Number)
             .Distinct()
             .Count();
-        var best = rows[0];
+        var best = rows.FirstOrDefault(static row => row.DecisionRank == 1);
         var keptWinner = string.Equals(
             report.FinalRecommendation,
             "KeepCandidate",
@@ -222,13 +219,19 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 "Measurements invalidated by a structural evidence failure — no valid winner. Original/default was restored; candidate measurements below are diagnostic only.";
             AutomationProperties.SetName(RankedSummaryText, "Candidate measurements structurally invalidated; no valid winner");
         }
+        else if (best is null)
+        {
+            RankedSummaryText.Text =
+                "Decision metrics are available, but this report does not persist an authoritative candidate rank. Original/default remains the safe terminal state; inspect the report for diagnostic evidence.";
+            AutomationProperties.SetName(RankedSummaryText, "GPU candidate decision evidence has no authoritative persisted rank");
+        }
         else if (hasTimeLocalDecisionEvidence)
         {
             RankedSummaryText.Text = string.Format(
                 CultureInfo.InvariantCulture,
                 keptWinner
-                    ? "Selected and kept: CPU {0} using time-local decision evidence. Background variability is modeled rather than treated as a winner; maximum observed local-control uncertainty is {1:P1}."
-                    : "Top decision candidate: CPU {0}. Time-local controls observed background variability; screening evidence is normalized where applicable and measured drift raises the Keep threshold. Maximum local-control uncertainty is {1:P1}. Original/default is the safe terminal state unless a finalist clears that uncertainty and final placement proof.",
+                    ? "Selected and kept: CPU {0} using the optimizer's persisted decision rank. Background variability is modeled rather than treated as a winner; maximum observed local-control uncertainty is {1:P1}."
+                    : "Best measured candidate: CPU {0} by the optimizer's persisted decision rank — not kept. Time-local controls observed background variability, and measured drift raises the Keep threshold. Maximum local-control uncertainty is {1:P1}; Original/default is the verified terminal state unless a finalist clears the full decision and placement gates.",
                 best.Processor.Number,
                 maximumLocalUncertainty);
             AutomationProperties.SetName(RankedSummaryText, $"Time-local GPU decision evidence. {RankedSummaryText.Text}");
@@ -238,11 +241,11 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             RankedSummaryText.Text = string.Format(
                 CultureInfo.InvariantCulture,
                 keptWinner
-                    ? "Selected and kept: CPU {0} (decision 1% low {1:F1} FPS, {2} ranked{3}). Sub-1% differences in 1% low / AVG / p99 are treated as practical ties; 0.1% low uses a wider rare-tail margin."
-                    : "Top decision candidate: CPU {0} (decision 1% low {1:F1} FPS, {2} ranked{3}) — not kept; Original/default was restored. Noise and guardrails remain part of the decision.",
+                    ? "Selected and kept: CPU {0} (decision 1% low {1:F1} FPS, {2} ranked{3}). The optimizer's persisted rank already applies the documented practical-tie rules."
+                    : "Best measured candidate: CPU {0} (decision 1% low {1:F1} FPS, {2} ranked{3}) — not kept; Original/default was restored. The optimizer's persisted rank already applies noise, practical ties and guardrails.",
                 best.Processor.Number,
                 best.DecisionOnePercentLowFps!.Value,
-                rows.Length,
+                rows.Count(static row => row.DecisionRank is > 0),
                 inconclusive > 0 ? $", {inconclusive} inconclusive" : string.Empty);
             AutomationProperties.SetName(RankedSummaryText, $"GPU candidate decision evidence. {RankedSummaryText.Text}");
         }
@@ -256,6 +259,9 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 report.FinalProcessor is not null &&
                 report.FinalProcessor.Equals(row.Processor);
             var displayedVerdict = screeningInvalidated ? "Measured · invalidated" : row.Verdict;
+            var rank = row.DecisionRank is { } decisionRank
+                ? $"#{decisionRank} · "
+                : string.Empty;
             var evidenceMode = row.UsesTimeLocalNormalization
                 ? " · time-local normalized"
                 : string.Empty;
@@ -272,7 +278,8 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             {
                 Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    "CPU {0}{1} · decision 1% {2} · 0.1% {3} · AVG {4} FPS · p99 {5} ms{6}{7}{8} · {9}{10}",
+                    "{0}CPU {1}{2} · decision 1% {3} · 0.1% {4} · AVG {5} FPS · p99 {6} ms{7}{8}{9} · {10}{11}",
+                    rank,
                     row.Processor.Number,
                     row.Core is { } core ? $" · core {core}" : string.Empty,
                     FormatFps(row.DecisionOnePercentLowFps),
