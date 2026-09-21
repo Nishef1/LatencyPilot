@@ -392,6 +392,13 @@ public sealed partial class MainWindow
                     evidenceBundle.Error);
             }
 
+            var resultPresentation = GateAResultPresentation.Create(
+                report,
+                sessionDirectory,
+                reportPath,
+                evidenceBundle);
+            RenderGateAResult(resultPresentation);
+
             var terminalSummary = BuildGateATerminalSummary(helperExitCode, report);
             var terminalStateVerified = IsGateATerminalStateVerified(helperExitCode, report);
             progressWindow.ShowFinalOutcome(terminalSummary, reportPath, terminalStateVerified, report);
@@ -399,6 +406,13 @@ public sealed partial class MainWindow
                 evidenceBundle.Succeeded
                     ? $"{terminalSummary} Evidence ZIP: {evidenceBundle.ZipPath}"
                     : $"{terminalSummary} Evidence bundle could not be packaged: {evidenceBundle.Error}. Report: {reportPath}");
+
+            if (mainMinimized && AppWindow.Presenter is OverlappedPresenter completionPresenter)
+            {
+                completionPresenter.Restore(activateWindow: true);
+                mainMinimized = false;
+            }
+            Activate();
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
