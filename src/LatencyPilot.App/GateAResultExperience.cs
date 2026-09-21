@@ -353,8 +353,12 @@ public sealed partial class MainWindow
         }
         for (var index = 0; index < grid.Children.Count; index++)
         {
-            Grid.SetColumn(grid.Children[index], index % columnCount);
-            Grid.SetRow(grid.Children[index], index / columnCount);
+            if (grid.Children[index] is not FrameworkElement child)
+            {
+                continue;
+            }
+            Grid.SetColumn(child, index % columnCount);
+            Grid.SetRow(child, index / columnCount);
         }
     }
 
@@ -376,8 +380,12 @@ public sealed partial class MainWindow
         }
         for (var index = 0; index < grid.Children.Count; index++)
         {
-            Grid.SetColumn(grid.Children[index], sideBySide ? index : 0);
-            Grid.SetRow(grid.Children[index], sideBySide ? 0 : index);
+            if (grid.Children[index] is not FrameworkElement child)
+            {
+                continue;
+            }
+            Grid.SetColumn(child, sideBySide ? index : 0);
+            Grid.SetRow(child, sideBySide ? 0 : index);
         }
     }
 
