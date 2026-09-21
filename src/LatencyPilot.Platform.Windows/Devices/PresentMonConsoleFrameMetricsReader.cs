@@ -152,7 +152,7 @@ public static class PresentMonConsoleFrameMetricsReader
                     "PresentMon ETW readiness could not be queried with the current process permissions.",
                     exception);
             }
-            catch (System.Security.SecurityException exception)
+            catch (global::System.Security.SecurityException exception)
             {
                 throw new InvalidOperationException(
                     "PresentMon ETW readiness could not be queried with the current process permissions.",
