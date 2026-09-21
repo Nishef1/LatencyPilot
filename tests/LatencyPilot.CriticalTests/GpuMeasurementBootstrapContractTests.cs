@@ -117,19 +117,16 @@ public sealed class GpuMeasurementBootstrapContractTests
             "PresentMonConsoleFrameMetricsReader.cs"));
         StringAssert.Contains(
             presentMonSource,
-            "RecordingStartedMessage",
-            "PresentMon startup must expose an explicit readiness marker rather than treating process liveness as capture readiness.");
+            "WaitForTraceSessionReadyAsync",
+            "PresentMon startup must wait for the uniquely named ETW session rather than treating process liveness as capture readiness.");
         StringAssert.Contains(
             presentMonSource,
-            "Started recording.",
-            "The pinned PresentMon console's recording-start message is the readiness barrier for scored capture.");
-        StringAssert.Contains(
-            presentMonSource,
-            "startupSignal.Task.WaitAsync",
-            "PresentMon startup must wait for the recording-start signal before scored rendering can proceed.");
+            "TraceEventSession.GetActiveSessionNames()",
+            "PresentMon startup must query the real ETW session using the already-maintained TraceEvent dependency.");
         Assert.IsFalse(
+            presentMonSource.Contains("RecordingStartedMessage", StringComparison.Ordinal) ||
             presentMonSource.Contains("StartupProbeDelay", StringComparison.Ordinal),
-            "A fixed sleep plus process-liveness probe is not an ETW recording-readiness contract.");
+            "Readiness must not depend on redirected console buffering or a fixed startup sleep.");
     }
 
     [AuditCase]
