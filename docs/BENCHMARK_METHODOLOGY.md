@@ -277,7 +277,7 @@ A rankable scored trial requires, among other structural checks:
 
 LatencyPilot uses a pinned standalone PresentMon console collector; a separately installed PresentMon Service/API is not a Gate A prerequisite.
 
-For the pinned console path, process liveness alone is not treated as capture readiness. LatencyPilot waits for PresentMon's explicit `Started recording.` console marker before returning the optional collector session, then still runs the benchmark-owned bounded unscored observer-settle work before opening the scored QPC window. If the marker is not observed within the bounded startup deadline, PresentMon remains explicit unavailable cross-check evidence rather than delaying indefinitely or fabricating readiness.
+For the pinned console path, process liveness alone is not treated as capture readiness. LatencyPilot waits until the uniquely named PresentMon ETW session is visible through the existing TraceEvent session-query API, then the benchmark still runs its bounded unscored observer-active settle before opening the scored QPC window. The session can become queryable slightly before every child-side startup step is complete, so the session query and the benchmark-owned settle jointly establish the pre-score boundary. A bounded timeout or permission/query failure leaves PresentMon as explicit unavailable cross-check evidence rather than delaying indefinitely or fabricating readiness.
 
 PresentMon cadence fields are not treated as interchangeable. Current `FrameTime`/supported cadence data may be used as cross-check evidence; unrelated start-offset semantics are not silently substituted.
 
