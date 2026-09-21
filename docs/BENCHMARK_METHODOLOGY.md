@@ -1,11 +1,11 @@
 # Benchmark Methodology
 
-Status: **V0.10 benchmark contract**  
-Last updated: 2026-09-19
+Status: **V0.11 benchmark contract**  
+Last updated: 2026-09-21
 
 LatencyPilot exists to distinguish measurable effects from placebo, ordinary run-to-run variation, workload drift and unsafe/unverified state. It is not a generic Windows tweak collection.
 
-Current GPU auto-affinity authority: **ADR 0006**. The steady RealWorld evidence product and the deterministic GPU candidate-search method are intentionally different measurement shapes.
+Current GPU auto-affinity authority: **ADR 0006**, including its 2026-09-20 time-local measurement amendment. The steady RealWorld evidence product and the deterministic GPU candidate-search method are intentionally different measurement shapes.
 
 ## 1. Evidence hierarchy
 
@@ -33,7 +33,7 @@ The automatic GPU-affinity workflow does **not** reinterpret its synthetic bench
 
 The product question is:
 
-> Among the tested valid logical-processor interrupt targets, which CPU gives the strongest repeatable controlled benchmark result?
+> Among the tested valid logical-processor interrupt targets, which CPU gives the strongest repeatable controlled benchmark result after measured time-local background movement is accounted for?
 
 Windows default is exact reference/recovery state. It is not an opponent that every forced CPU must beat by a fixed percentage.
 
@@ -82,6 +82,8 @@ The built-in D3D12 benchmark performs one adaptive calibration and then freezes:
 
 Applying or rolling back GPU interrupt affinity restarts the display adapter. The benchmark intentionally keeps one authenticated benchmark process alive for the whole search and recreates its D3D12 renderer/device after **every** apply/rollback activation before the next warm-up or scored block. If a surviving control process still receives `DXGI_ERROR_DEVICE_REMOVED` (`0x887A0005`) or `DXGI_ERROR_DEVICE_RESET` (`0x887A0007`) from a trial, that evidence slot gets one bounded renderer recreation + retry; a second failure remains terminal. The non-scored warm-up and its scored run otherwise reuse the same recreated renderer/device. The frozen workload, seed and worker map therefore stay process-stable without reusing D3D12 resources across an adapter restart.
 
+D3D12 GPU timestamps remain queue-owned evidence. The benchmark queries the command queue's timestamp frequency and converts resolved timestamp deltas using that queue frequency; it does not reinterpret PresentMon telemetry as direct GPU execution timing.
+
 ### 5.1 Controlled frame period
 
 Each benchmark loop records its own wall-clock period. Because the loop includes the benchmark's synchronization policy, this is a **controlled comparison signal**. It is not claimed to be identical to an arbitrary game's end-to-end frame time.
@@ -108,8 +110,8 @@ exact original/default state
    if no stable 3-run 1%-low cluster exists within ±3% of its median:
      collect one replacement run 4
    if four valid runs still do not form that preferred cluster:
-     retain all four runs and use their observed per-metric variance as the noise floor; do not abort before CPU screening
-→ screen eligible logical CPUs in bounded blocks of at most four candidates:
+     retain all four runs and use observed per-metric variance as the noise floor
+→ screen every eligible logical CPU in bounded blocks of at most four candidates:
      for each candidate:
        journaled apply/restart + stored-state verify
        5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
@@ -118,42 +120,46 @@ exact original/default state
      after every full four-candidate block when candidates remain:
        5 s non-scored Original warm-up
        collect one fresh scored Original block control
-       if 1% low, AVG or frame-p99 leaves the Original repeatability band:
-         invalidate the screening evidence collected so far, do not start remaining candidates, RestoreOriginal
 → 5 s non-scored Original warm-up
 → collect one fresh scored Original control after the completed sweep
-   if 1% low, AVG or frame-p99 leaves the Original repeatability band:
-     discard the sweep and RestoreOriginal
-→ if observed Original 1%-low noise exceeds 15% after the completed sweep and control remains comparable: keep the screening table, skip exhaustive finalist confirmation, RestoreOriginal and report that the environment is too noisy for an automatic Keep decision
-→ rank valid screening candidates
-→ shortlist the best three plus candidates within min(3%, max(1%, observed Original cluster noise)) of the third-place cutoff, capped at five finalists
+→ use the Original controls to measure time-local background movement around each candidate block
+→ normalize rankable candidate decision metrics back to the session Original baseline
+   raw candidate/control trials remain unchanged in the audit trail
+   local control movement remains explicit uncertainty and raises Keep thresholds
+→ if effective 1%-low variability = max(Original noise, time-local control drift) exceeds 15%:
+     keep normalized screening diagnostics
+     skip exhaustive finalist confirmation
+     verify exact Original and RestoreOriginal
+→ otherwise rank normalized valid screening candidates
+→ shortlist the best three plus candidates within min(3%, max(1%, effective screening variability)) of the third-place cutoff, capped at five finalists
 → shortlisted candidates:
      two independent re-test rounds are mandatory
      each finalist gets fresh apply/restart + stored-state verify, warm-up, scored run, exact rollback
      only finalists still lacking a stable 3-run cluster receive one replacement round
 → prefer the tightest stable 3-run cluster selected from at most 4 scored observations
    at most one scored observation is excluded when such a cluster exists
-   if four valid runs still do not cluster, retain all four and use their observed variance in ranking/guardrail thresholds
+   if four valid runs still do not cluster, retain all four and use their observed variance in decision thresholds
 → 5 s non-scored Original warm-up
 → collect one fresh scored Original control after finalist re-tests
-   if 1% low, AVG or frame-p99 leaves the Original repeatability band:
-     discard finalist evidence and RestoreOriginal
-→ test finalists in ranking order against Original/noise and guardrails; if the first fails, try the next clean finalist
+   merge this phase's control movement into time-local uncertainty
+→ test finalists in ranking order against Original/noise/time-local uncertainty and guardrails; if the first fails, try the next clean finalist
 → apply the highest-ranked clean winner once
 → final benchmark-only warm-up → ETW placement-verification capture
-→ Keep only when measured improvement clears the observed cluster-noise floor, comparable GPU-driver DPC/ISR p99 does not materially regress, and final runtime ISR placement is proved
+→ Keep only when measured improvement clears the full noise/uncertainty floor,
+   comparable GPU-driver DPC/ISR p99 does not materially regress,
+   and final runtime ISR placement is proved
    otherwise exact RestoreOriginal
 ```
 
-The intermediate Original controls exist to detect temporal drift before an entire long CPU sweep is spent in a moving environment. Their comparison uses the same per-metric noise-aware Original bands as the final sweep control. Candidate measurements from an invalidated block remain diagnostic audit evidence but are not a valid ranking and must not be presented as a winner.
+The Original block controls are **measurement controls, not abort triggers for ordinary gradual drift and not candidate observations**. They let the optimizer separate a candidate's measured effect from background movement that occurs as a long search proceeds. For each rankable screening candidate, the decision metric is normalized by the relevant local Original level relative to the session Original baseline. The raw scored observation remains unchanged and visible for diagnostics.
+
+This normalization is deliberately bounded. Measured control movement is carried forward as uncertainty and therefore raises the minimum improvement required for Keep. If effective 1%-low variability exceeds the existing 15% exhaustive-confirmation budget, LatencyPilot stops before expensive finalist re-tests and restores Original. Structural evidence failures are never normalized away.
 
 There is no separate SMT/hyperthread refinement phase in v1 because eligible siblings are screened directly, and there is no ABBA/BAAB finalist loop.
 
 ### 6.1 Ranking order
 
-Ranking is transparent and lexicographic; there is no hidden weighted score:
-
-Ranking is noise-aware rather than raw-number lexicographic:
+Ranking is transparent and lexicographic; there is no hidden weighted score. Ranking uses the optimizer's **decision aggregates** after time-local normalization where applicable, not shuffled raw collection order:
 
 1. compare median **1% low**; differences <=1% are treated as practical ties;
 2. if tied, compare median **AVG FPS** with the same 1% equivalence margin;
@@ -167,7 +173,7 @@ The 1% comparison margin follows the practical repeatability scale expected from
 
 An initial screening candidate has one 30 s scored observation. A finalist has three scored observations: its initial screen plus one fresh score in each of two separate re-test rounds. No finalist receives two scored re-tests back-to-back under one affinity activation.
 
-### 6.2 Repeatability
+### 6.2 Repeatability and uncertainty
 
 Repeatability no longer uses raw `(max - min) / min` spread. A single multitasking spike can invalidate that statistic and its `min` denominator biases the reported variation toward the worst run.
 
@@ -179,22 +185,24 @@ LatencyPilot uses bounded robust sampling instead:
 - If no preferred cluster exists, collect one replacement observation and re-evaluate. No fifth score is collected.
 - Three valid runs are sufficient for a preferred cluster; four scored attempts are the hard maximum.
 - If a preferred cluster exists, at most one scored observation may be excluded and the excluded sample remains in the audit trail.
-- If four valid runs still do not form a ±3% 1%-low cluster, **do not discard the benchmark evidence**. Median 1% low / 0.1% low / AVG / frame-p99 are computed from all four runs, and each metric's maximum median-relative deviation becomes observed noise for later comparisons.
+- If four valid runs still do not form a ±3% 1%-low cluster, **do not discard the benchmark evidence**. Median 1% low / 0.1% low / AVG / frame-p99 are computed from all four runs, and each metric's maximum median-relative deviation becomes observed repeatability noise for later comparisons.
 - AVG FPS and frame-p99 remain decision guardrails; 0.1% low remains rare-tail diagnostic/regression context rather than the outlier detector.
-- Original-control drift bands are noise-aware per metric: each allowed band is `max(3%, observed Original noise for that metric)`.
-- Final AVG / frame-p99 / 0.1%-low regression guardrails are also noise-aware, using the larger of the documented minimum margin and observed Original/finalist run-to-run noise.
+- Time-local Original-control movement is tracked separately from within-state repeatability noise. The optimizer carries both into decision thresholds rather than pretending they are the same phenomenon.
+- Final AVG / frame-p99 / 0.1%-low regression guardrails are noise-aware, using the larger of the documented minimum margin, observed Original/finalist run-to-run noise and relevant time-local uncertainty.
 - When both Original and finalist provide at least three scored runs with enough attributable samples, GPU-driver DPC/ISR p99 is computed per run. Median tail regression is compared against a noise-aware limit of `max(10%, Original run-to-run tail noise, finalist run-to-run tail noise)`; a regression beyond that limit rejects that finalist without preventing the next ranked finalist from being considered.
-- The final winner must beat `max(1%, observed Original 1%-low noise, observed finalist 1%-low noise)` before guardrails and final ETW placement verification are considered.
+- The final winner's 1%-low gain must clear `max(1%, Original 1%-low noise, finalist 1%-low noise, time-local control uncertainty)` before guardrails and final ETW placement verification are considered.
 
-The ±3% band is a **preferred-cluster rule**, not a universal claim about Windows variance and no longer a pre-screen abort gate. A noisy but otherwise valid Original baseline can therefore continue into CPU screening; its instability makes the Keep threshold harder to clear rather than preventing the optimizer from testing candidates at all. Screening uses one scored run per candidate while the environment remains comparable; the time-local Original controls may terminate the remaining screen early when temporal drift invalidates comparison. Robust replacement sampling is applied only to Original and finalists where evidence drives Keep/Restore.
+The ±3% band is a **preferred-cluster rule**, not a universal claim about Windows variance and not a whole-sweep hard-abort threshold. A noisy but otherwise valid Original baseline can therefore continue into CPU screening; its instability makes the Keep threshold harder to clear. Gradual control movement during screening is normalized and recorded as uncertainty. Robust replacement sampling is applied only to Original and finalists where evidence drives Keep/Restore.
 
 ### 6.3 Adaptive finalist cutoff
 
-The initial screen always advances at least the best three rankable logical CPUs only when the complete screening evidence remains temporally valid. The finalist equivalence band is **min(3%, max(1%, observed Original 1%-low noise))** and the shortlist is capped at five candidates. Original noise still raises the eventual Keep threshold without being allowed to turn every screened CPU into a finalist. During the screen, a fresh Original block control is taken after each group of four candidates when more candidates remain; a drifted block control stops the remaining screen and prevents ranking. A fresh Original warm-up also precedes the scored control after the completed sweep; if that scored control leaves the Original repeatability band, the sweep is discarded. If the control is comparable but Original 1%-low noise exceeds 15%, LatencyPilot retains the complete screening ranking and restores Original without expensive finalist re-tests because the environment is too noisy for a trustworthy automatic Keep decision. A second fresh Original warm-up precedes the scored control after finalist re-tests when that phase runs.
+The initial screen advances at least the best three rankable logical CPUs when effective background variability remains within the 15% exhaustive-confirmation budget. The finalist equivalence band is **min(3%, max(1%, effective screening variability))**, where effective screening variability is the larger of Original 1%-low repeatability noise and measured time-local 1%-low control movement. The shortlist is capped at five candidates.
+
+A fresh Original block control is taken after each group of four candidates when more candidates remain, and a final screening control closes the last block. These controls normalize screening decision evidence and quantify uncertainty; ordinary gradual movement does not automatically invalidate the block. If the resulting effective variability exceeds 15%, LatencyPilot retains the screening diagnostics and restores Original without expensive finalist re-tests because the environment is too variable for a trustworthy automatic Keep decision. A second fresh Original control after finalist re-tests contributes additional time-local uncertainty before Keep evaluation.
 
 ## 7. Screening evidence and external collectors
 
-Screening must remain robust enough to complete the bounded CPU search while the environment remains comparable.
+Screening must remain robust enough to complete the bounded CPU search while preserving structural integrity.
 
 ### Controlled benchmark evidence — required
 
@@ -210,6 +218,7 @@ LatencyPilot uses the pinned standalone PresentMon 2.5.1 console collector; a se
 
 PresentMon's documented timing fields are not interchangeable:
 
+- `FrameTime` is the current CPU frame-time metric in the capture schema;
 - `MsBetweenPresents` = time between Present() calls;
 - `MsBetweenAppStart` = start of the current frame until CPU work begins for the next frame.
 
@@ -250,7 +259,9 @@ Mutation ownership starts before state is changed and remains owned until exact 
 - External affinity/driver drift before apply → refuse before write.
 - Candidate failure after apply → exact rollback + original verification.
 - Cancellation before Keep → exact rollback + original verification.
-- Time-local Original-control drift → stop future candidates, retain diagnostic evidence only, verify exact Original.
+- Ordinary time-local Original-control movement → normalize decision metrics, record uncertainty, continue while structural evidence remains valid and effective variability stays inside the finalist-confirmation budget.
+- Effective 1%-low variability >15% after the completed screen → skip finalist confirmation, verify exact Original, RestoreOriginal.
+- Invalid benchmark/session provenance, state divergence, failed mutation ownership, healthy ETW proving wrong placement or another structural integrity failure → fail closed; do not normalize it away.
 - Final placement failure → exact rollback + original verification.
 - Keep failure → rollback is attempted and both failures are preserved if rollback also fails.
 - Unknown/diverged state stays recovery-owned; the journal is never edited away to make validation pass.
@@ -284,6 +295,14 @@ Expected final user-facing evidence includes:
 - host Raw Input timing where captured;
 - verification/recovery state.
 
+Development Gate A result presentation distinguishes three evidence layers:
+
+1. raw scored trial history;
+2. authority-selected decision aggregates/rank after time-local normalization where applicable;
+3. verified terminal machine state.
+
+A diagnostic comparison candidate is not labelled as kept when the final recommendation is RestoreOriginal. Raw shuffled measurement order must never be reinterpreted in the UI as rank.
+
 Do not label a proxy as network latency, click-to-photon latency or another quantity that was not measured.
 
 ## 12. Future/non-v1 methods
@@ -292,7 +311,7 @@ MSI-mode mutation, NIC/RSS automatic mutation, audio affinity, power-plan mutati
 
 ## 13. Auditability and observer effect
 
-Authoritative experiments retain enough data to audit the decision later. Historical evidence is not rewritten to fit new interpretation logic.
+Authoritative experiments retain enough data to audit the decision later. Historical evidence is not rewritten to fit new interpretation logic. Time-local normalization creates new decision aggregates while retaining the raw candidate/control trials that produced them.
 
 During authoritative capture avoid unnecessary per-event allocation, synchronous high-volume file I/O, frequent UI redraw and avoidable GC pressure. Benchmark progress reporting remains low frequency after calibration.
 
@@ -300,9 +319,9 @@ During authoritative capture avoid unnecessary per-event allocation, synchronous
 
 The permanent suite is behavior-focused and must not grow one test per implementation detail. Temporary TDD characterization tests are removed after the behavior is represented in canonical tests. Physical benchmark repetitions and Gate A runs are evidence, not unit tests.
 
-## Audit-closure one-at-a-time workflow (2026-09-19)
+## Audit-closure one-at-a-time workflow (updated 2026-09-21)
 
-LatencyPilot treats v1 automatic optimization as a one-at-a-time experiment pipeline: **Original measurement → GPU affinity → primary-input/xHCI → final verification → report**. A stage that is NotReady, inconclusive, drift-invalidated, or requires reboot stops the pipeline; intent is never treated as activation proof.
+LatencyPilot treats v1 automatic optimization as a one-at-a-time experiment pipeline: **Original measurement → GPU affinity → primary-input/xHCI → final verification → report**. A stage that is NotReady, structurally invalid, requires recovery attention, or requires reboot stops the pipeline; ordinary bounded time-local GPU background movement is handled inside the GPU measurement stage by normalization + uncertainty rather than being mislabeled as a structural failure.
 
 MSI-mode mutation remains outside the v1 automatic path under ADR 0006. Existing MSI inspection/recovery code is not proof of automatic applicability and must not be inserted into v1 ordering without a new accepted authority change.
 
