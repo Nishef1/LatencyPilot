@@ -153,6 +153,7 @@ public sealed class AuditClosureIntegrationTests
             }
         }
 
+        var cpu6 = new LogicalProcessorId(0, 6);
         var cpu7 = new LogicalProcessorId(0, 7);
         var now = DateTimeOffset.UtcNow;
         var originalTrials = new[]
@@ -161,34 +162,64 @@ public sealed class AuditClosureIntegrationTests
             CreateOriginalTrial(2, 151d, 161d, 6.20d, 101d),
             CreateOriginalTrial(3, 150d, 159d, 6.25d, 100d),
         };
-        var candidate = new GpuAutoAffinityCandidateReport(
+        var executionFirstButRankedSecond = new GpuAutoAffinityCandidateReport(
+            "screening-finalists",
+            2,
+            cpu6,
+            3,
+            "Ranked",
+            null,
+            [],
+            "Measured before the decision leader because screening order is shuffled.",
+            162d,
+            170d,
+            6.00d,
+            109d,
+            0.03d,
+            true,
+            DecisionRank: 2);
+        var decisionLeader = new GpuAutoAffinityCandidateReport(
             "screening-finalists",
             3,
             cpu7,
             3,
             "Ranked",
-            0.04d,
+            null,
             [],
-            "Repeatable finalist cleared measured uncertainty.",
+            "Decision authority ranked this candidate first after finalist measurement.",
             165d,
             172d,
             5.90d,
             112d,
             0.02d,
-            true);
+            true,
+            DecisionRank: 1);
+        var decisionBaseline = new GpuAutoAffinityDecisionBaselineReport(
+            145d,
+            158d,
+            6.40d,
+            95d,
+            0.04d,
+            0.02d,
+            0.03d,
+            0.05d,
+            3,
+            4,
+            false);
         var keepReport = new GpuAutoAffinityReport(
             GpuAutoAffinityReport.SchemaId,
             Guid.NewGuid(),
             now,
             now.AddMinutes(12),
             42,
-            [candidate],
+            [executionFirstButRankedSecond, decisionLeader],
             originalTrials,
             GpuOptimizationRecommendation.KeepCandidate.ToString(),
             cpu7,
             true,
             false,
-            ["CPU 7 cleared Original/noise and guardrail checks."])
+            ["CPU 7 cleared Original/noise and guardrail checks."],
+            DecisionBaseline: decisionBaseline)
         {
             GateAClosureEligible = true,
             SourceState = "evidence-ready",
@@ -203,9 +234,12 @@ public sealed class AuditClosureIntegrationTests
         Assert.AreEqual(cpu7, keepPresentation.ComparedProcessor);
         Assert.IsTrue(keepPresentation.BundleAvailable);
         Assert.AreEqual(4, keepPresentation.Metrics.Count);
-        Assert.AreEqual(GateAMetricState.Improved, keepPresentation.Metrics.Single(metric => metric.Key == "low1").State);
-        Assert.AreEqual(GateAMetricState.Improved, keepPresentation.Metrics.Single(metric => metric.Key == "p99").State,
-            "Lower frame-p99 must be represented as an improvement rather than a negative FPS-style delta.");
+        Assert.AreEqual(145d, keepPresentation.Metrics.Single(metric => metric.Key == "low1").OriginalValue,
+            "Presentation must use the optimizer-selected Original decision baseline rather than recomputing a median from every raw Original trial.");
+        Assert.AreEqual(GateAMetricState.Improved, keepPresentation.Metrics.Single(metric => metric.Key == "low1").State,
+            "A verified Keep proves that the primary 1%-low metric cleared the optimizer's authoritative threshold.");
+        Assert.AreEqual(GateAMetricState.DecisionGuardrailSatisfied, keepPresentation.Metrics.Single(metric => metric.Key == "p99").State,
+            "A secondary metric may be shown as measured delta, but the presentation must not independently invent statistical significance; verified Keep only proves that this guardrail stayed inside the authority's allowed envelope.");
 
         var restoreReport = keepReport with
         {
@@ -223,8 +257,16 @@ public sealed class AuditClosureIntegrationTests
             new GateAEvidenceBundleExportResult(null, "ZIP destination is locked."));
         Assert.AreEqual("Original kept", restorePresentation.Title);
         Assert.AreEqual("Development evidence", restorePresentation.EligibilityLabel);
-        Assert.AreEqual(cpu7, restorePresentation.ComparedProcessor);
+        Assert.AreEqual(cpu7, restorePresentation.ComparedProcessor,
+            "Diagnostic comparison must follow the optimizer's persisted decision rank, not candidate execution order.");
         Assert.IsTrue(restorePresentation.ComparedCandidateIsDiagnosticOnly);
+        StringAssert.Contains(restorePresentation.ComparedCandidateLabel, "comparison only");
+        Assert.IsTrue(restorePresentation.Metrics.All(metric =>
+            metric.State is GateAMetricState.DiagnosticOnly or GateAMetricState.Unavailable),
+            "A restored run may display measured deltas, but it must not turn them into independent pass/fail decisions.");
+        var restoredGuardrail = restorePresentation.DecisionEvidence.Single(row => row.Label == "Performance guardrails");
+        Assert.AreEqual("Diagnostic only", restoredGuardrail.State,
+            "An empty regressed-guardrails list is not structured proof that an unkept candidate passed final guardrails.");
         Assert.IsFalse(restorePresentation.BundleAvailable);
         StringAssert.Contains(restorePresentation.BundleStatus, "could not be packaged");
     }
