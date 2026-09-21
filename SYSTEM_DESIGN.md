@@ -1,9 +1,9 @@
 # LatencyPilot System Design
 
 Status: **Authoritative architecture baseline**  
-Last updated: 2026-09-18
+Last updated: 2026-09-21
 
-`ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence. ADR 0006 owns the current v1 interrupt-affinity product direction.
+`ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence. ADR 0006, including its 2026-09-20 measurement amendment, owns the current v1 interrupt-affinity product direction.
 
 ## 1. Product model
 
@@ -19,6 +19,7 @@ The normal-user v1 workflow is:
 preflight / quiet check
 → baseline DPC/ISR evidence
 → GPU logical-CPU benchmark search
+→ time-local Original controls + normalized decision evidence
 → final runtime GPU placement proof
 → input/xHCI CPU-headroom selection
 → reversible xHCI/controller affinity
@@ -29,7 +30,7 @@ preflight / quiet check
 
 A mutation feature is incomplete unless it snapshots exact original state, journals ownership, applies one allowlisted change, verifies stored and runtime state, and can restore the exact baseline after cancellation/failure.
 
-NIC/RSS mutation, audio affinity, BIOS/HAGS/MSI/power-plan changes and cross-subsystem/Pareto auto-tuning are outside the v1 automatic path. Existing read-only/future source may remain but must not complicate the critical path.
+NIC/RSS mutation, audio affinity, BIOS/HAGS/MSI/power-plan changes and cross-subsystem/Pareto auto-tuning are outside the v1 automatic path. Existing read-only/future/recovery source may remain but must not complicate the critical path.
 
 ## 2. Supported target
 
@@ -51,7 +52,7 @@ RDP/multi-session, ARM64 and arbitrary multi-processor-group mutation are not im
 - typed/versioned local Named Pipes;
 - ETW through `Microsoft.Diagnostics.Tracing.TraceEvent`;
 - managed D3D12/DXGI through Vortice;
-- pinned standalone PresentMon 2.5.1 as an independent frame-cadence cross-check;
+- pinned standalone PresentMon as an independent frame-cadence cross-check;
 - `Sylvan.Data.Csv` for PresentMon CSV parsing;
 - SetupAPI + Configuration Manager;
 - documented processor-topology / CPU-set APIs;
@@ -99,7 +100,7 @@ There is no native Vulkan/C++ baseline dependency and no separately installed Pr
          Windows 11 / hardware
 ```
 
-The development Gate A helper is explicit owner validation, not product mutation IPC. Public mutation stays off until the physical safety gates pass.
+The development Gate A helper is explicit owner validation, not product mutation IPC. Public mutation stays off until physical safety gates pass.
 
 There is intentionally no generic tweak engine, generic privileged registry writer, shell execution primitive or repository-abstraction layer.
 
@@ -117,7 +118,11 @@ Hardware-independent interpretation/orchestration:
 - steady `baseline-quality-v2` / `workload-stability-v1`;
 - GPU candidate generation from actual topology;
 - `gpu-affinity-benchmark-v1` evidence interpretation/readiness;
-- v1 GPU search policy: one scored screen/logical CPU, noise-aware finalist re-test, low-FPS ranking and bounded repeatability;
+- one scored screen per eligible logical CPU;
+- bounded Original controls around small screening blocks;
+- time-local normalization of decision aggregates while preserving raw trials;
+- explicit local-control uncertainty propagated into shortlist/Keep thresholds;
+- bounded finalist re-tests, low-FPS ranking and repeatability policy;
 - progress planning;
 - input/xHCI timing/headroom interpretation;
 - future read-only/policy components that do not enter the v1 critical path.
@@ -169,7 +174,7 @@ Normal-user deterministic workload process:
 - hardware D3D12 adapter + flip-model swap chain;
 - fixed multi-core worker map;
 - adaptive startup calibration then frozen workload;
-- direct D3D12 timestamp evidence;
+- direct D3D12 command-queue timestamp evidence;
 - controlled wall-clock loop periods used for AVG / 1% / 0.1% lows and p99 context;
 - renderer recreation after GPU restart;
 - no registry/device mutation and no elevation.
@@ -188,6 +193,8 @@ Privileged boundary. Public v6 is observation-only. Future product mutations mus
 
 Normal-user orchestration and presentation. A development checkout may expose `Run GPU Gate A`; normal-user v1 ultimately exposes `Optimize Interrupt Affinity` and `Restore original settings` after arming gates pass.
 
+For Gate A completion, App consumes an authoritative presentation model derived from the validated report. The renderer must not re-rank candidates from raw/shuffled collection order. Evidence packaging/opening is explicit and raw JSON is not the primary completion UX.
+
 ## 6. Evidence semantics
 
 Never collapse:
@@ -196,6 +203,14 @@ Never collapse:
 stored interrupt configuration
 ≠ allocated IRQ/resource assignment
 ≠ runtime DPC/ISR placement
+```
+
+For GPU decision presentation also never collapse:
+
+```text
+raw scored trial
+≠ time-local normalized decision aggregate
+≠ verified terminal machine state
 ```
 
 Likewise:
@@ -220,32 +235,36 @@ Unavailable evidence remains unavailable.
 
 ### Automatic GPU search
 
-The benchmark process remains stable across the complete search. The D3D12 renderer uses a three-buffer flip chain with two frame contexts/fences, avoiding the old full GPU wait after every Present while bounding queue depth. Every GPU configuration restart—candidate activation **and rollback to Original**—is followed by renderer/device recreation before the next measurement block. A `DXGI_ERROR_DEVICE_REMOVED`/RESET trial has one bounded recreate-and-retry path; repeated failure remains terminal. Workload calibration, process identity, seed and worker map remain frozen.
+The benchmark process remains stable across the complete search. The D3D12 renderer uses a three-buffer flip chain with two frame contexts/fences, avoiding a full GPU wait after every Present while bounding queue depth. Every GPU configuration restart — candidate activation **and rollback to Original** — is followed by renderer/device recreation before the next measurement block. A device-removed/reset trial has one bounded recreate-and-retry path; repeated failure remains terminal. Workload calibration, process identity, seed and worker map remain frozen.
 
 ```text
 one adaptive calibration
 → frozen workload
-→ 5 s original non-scored warm-up/reference (benchmark only; no PresentMon/ETW)
-→ each eligible logical CPU:
+→ Original non-scored warm-up/reference
+→ 3 scored Original runs; one bounded replacement if needed
+→ screen every eligible logical CPU in blocks of at most four:
      apply/restart/verify
-     5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
+     non-scored warm-up
      1 scored run
-     exact rollback
-→ 5 s Original warm-up → fresh scored Original control after the sweep; stop if Original drift exceeds its repeatability band
-→ rank by 1% low → AVG → p99 → 0.1% low rare-tail context
-→ if Original 1%-low noise >15% after sweep/control: preserve screening ranking, skip finalist confirmation, RestoreOriginal
-→ otherwise best three + candidates within min(3%, max(1%, observed Original noise)) of the third-place cutoff, capped at five:
-     two independent deterministically shuffled re-test rounds
-     fresh apply/restart/warm-up + 1 scored 30 s run + exact rollback per round
-     at most one adaptive replacement score
-→ prefer stable 3-of-up-to-4 evidence; otherwise retain all four valid runs and make their measured variance part of ranking/guardrail thresholds
-→ 5 s Original warm-up → fresh scored Original control after finalist re-tests; stop if 1%/AVG/p99 drift
-→ walk finalists in rank order through Original/frame/noise-aware DPC/ISR guardrails
+     exact rollback + Original-state verification
+     fresh Original control after each full block when candidates remain
+→ fresh Original control after final screening block
+→ normalize rankable candidate decision aggregates against time-local Original controls
+→ preserve raw trials and carry measured control movement as uncertainty
+→ if effective 1%-low variability >15%:
+     retain diagnostic screen, skip finalists, RestoreOriginal
+→ otherwise rank by 1% low → AVG → lower p99 → 0.1% low rare-tail context
+→ bounded shortlist capped at five, two independent shuffled re-test rounds
+→ prefer stable 3-of-up-to-4 evidence; otherwise retain all four with measured variance
+→ fresh Original control after finalist phase; merge movement into uncertainty
+→ walk finalists in rank order through Original/repeatability/time-local/frame/interrupt-tail guardrails
 → apply highest-ranked clean winner
 → final benchmark-only warm-up → ETW placement-verification capture
 → Keep only with clean target-only GPU ISR proof
    else exact RestoreOriginal
 ```
+
+Ordinary gradual Original-control movement is a measured background covariate, not an automatic whole-sweep failure. It is normalized out of candidate decision aggregates and simultaneously retained as uncertainty, which raises the threshold for Keep. Structural failures remain fail-closed and are never normalized away.
 
 Windows default is reference/recovery, not a minimum-improvement gate.
 
@@ -257,8 +276,10 @@ Screening prioritizes completing the bounded comparison safely:
 - PresentMon is an independent best-effort cadence cross-check;
 - ETW is a best-effort screening guardrail when unavailable;
 - healthy ETW proving wrong/off-target placement invalidates that candidate;
-- system CPU-busy drift is measured from Windows system-time snapshots and surfaced as trial context;
-- when Original and finalist each have at least three usable attributable GPU-driver runs, DPC/ISR p99 tails are evaluated per run and compared by median against a noise-aware Keep threshold rather than used as ranking inputs.
+- system CPU-busy/context drift is surfaced as trial evidence;
+- Original block controls measure time-local movement used by normalization/uncertainty;
+- effective variability above the finalist-confirmation budget safely returns to Original instead of manufacturing confidence;
+- when Original and finalist each have enough usable attributable GPU-driver runs, DPC/ISR p99 tails are compared by median against a noise-aware Keep threshold rather than used as ranking inputs.
 
 Final Keep is stricter. It requires:
 
@@ -272,11 +293,11 @@ No ETW proof means no Keep.
 
 ## 9. PresentMon boundary
 
-PresentMon is the pinned official standalone 2.5.1 executable resolved only from LatencyPilot-controlled packaged/cache locations with hash verification.
+PresentMon is a pinned official standalone executable resolved only from LatencyPilot-controlled packaged/cache locations with hash verification.
 
 CSV timing semantics are schema-aware:
 
-- current `FrameTime` or legacy `MsBetweenPresents` may provide Present cadence;
+- current `FrameTime` or legacy `MsBetweenPresents` may provide cadence;
 - `MsBetweenAppStart` is a different CPU-frame boundary and is not substituted as the same metric.
 
 Failed raw CSVs may be retained for owner diagnostics, but retention is bounded.
@@ -292,13 +313,13 @@ apply failure / capture failure / cancel / failed final proof
 → terminalize journal
 ```
 
-Before candidate apply, Gate A requires current stored affinity + driver version to equal the exact session-original snapshot; transaction preparation repeats that invariant under the mutation lock and immediate-prewrite verification closes later drift. External changes are therefore refused before LatencyPilot writes.
+Before candidate apply, Gate A requires current stored affinity + driver version to equal the exact session-original snapshot; transaction preparation repeats that invariant under the mutation lock and immediate-prewrite verification closes later drift. External changes are refused before LatencyPilot writes.
 
 Unknown/diverged state stays recovery-owned. A failed rollback verification is never hidden behind the original failure.
 
 ## 11. USB/xHCI v1 architecture
 
-Read-only route source already follows:
+Read-only route source follows:
 
 ```text
 Raw Input interface
@@ -309,17 +330,17 @@ Raw Input interface
 
 No VID/PID/name heuristic is accepted as exact route proof.
 
-After GPU winner is fixed, automatic v1 selection will:
+After a verified GPU Keep, automatic v1 selection can:
 
 ```text
 post-GPU quiet ETW capture
-→ exclude GPU winner CPU by default
+→ exclude the physical core containing the GPU winner
 → rank CPU headroom from DPC duration + ISR duration + tail spikes
    (counts remain visible context)
 → select exact interrupt-owning xHCI controller target
 ```
 
-System-changing xHCI affinity is part of v1 but remains unarmed until GPU Gate A physically proves the shared privileged mutation/recovery substrate. This is sequencing, not scope deferral.
+System-changing xHCI affinity is part of v1 but remains unarmed until GPU Gate A physically proves the shared privileged mutation/recovery substrate and integrated xHCI runtime verification closes.
 
 ## 12. Reboot and verification
 
@@ -328,34 +349,37 @@ The combined product session must persist enough journal state to survive one re
 ## 13. IPC and authorization gates
 
 ```text
-Gate A  owner-only physical GPU search + mutation/recovery proof; public v6 stays read-only
-Gate B  typed allowlisted mutation-specific IPC + authorization
-Gate C  physical App/client → Service mutation proof
-Gate D  normal-user mutation arming
+GPU Gate A  owner-only physical GPU search + mutation/recovery proof; public v6 stays read-only
+next        typed allowlisted mutation-specific IPC + authorization
+next        physical App/client → Service mutation proof
+next        normal-user mutation arming
 ```
 
-Observation authorization is not mutation authorization.
+Observation authorization is not mutation authorization. MSI-mode mutation is not part of the ADR-0006 v1 automatic path.
 
 ## 14. Release and recovery
 
-Hosted CI is test-only. Owner-local release owns Release build/publish, launch smoke, payload manifest/hashes, signing/timestamp, installer/portable packaging and clean-machine/recovery validation.
+Hosted CI is software-contract evidence only. Owner-local release owns Release build/publish, launch smoke, payload manifest/hashes, signing/timestamp, installer/portable packaging and clean-machine/recovery validation.
 
 Install/upgrade/uninstall must not remove recovery tools while LatencyPilot still owns a retained or unresolved system change.
 
 ## 15. Future/non-v1 source
 
-NIC/RSS mutation, audio affinity, profile/Pareto and multi-subsystem automatic optimization are post-v1. Existing read-only/policy source may remain but cannot silently participate in the v1 decision path.
+NIC/RSS mutation, audio affinity, MSI-mode tuning, profile/Pareto and multi-subsystem automatic optimization are post-v1. Existing conservative read-only/recovery source may remain but cannot silently participate in the v1 decision path.
 
 ## 16. Verification discipline
 
-Hosted Tests prove only deterministic/source contracts and compile referenced source. They do not prove physical device restart/interrupt placement, LocalSystem behavior, rendered accessibility, PresentMon runtime on owner hardware, installer/signing or reboot recovery.
+Hosted Tests prove deterministic/source contracts and compile referenced source. They do not prove physical device restart/interrupt placement, LocalSystem behavior, rendered accessibility, PresentMon runtime on owner hardware, installer/signing or reboot recovery.
 
-Physical progression is owned by `ROADMAP.md` / `PROJECT_STATUS.md`: exact-head CI → GPU Gate A → product mutation boundary → automatic USB/xHCI mutation/verification → combined reboot/before-after UX → release/accessibility closure.
+Physical progression is owned by `ROADMAP.md` / `PROJECT_STATUS.md`:
 
-## Audit-closure optimizer transaction model (2026-09-19)
+```text
+exact-head CI
+→ GPU Gate A
+→ product mutation boundary
+→ automatic USB/xHCI mutation/verification
+→ combined reboot/before-after UX
+→ release/accessibility closure
+```
 
-LatencyPilot now treats automatic optimization as a one-at-a-time experiment pipeline: **Original measurement → GPU affinity → conservative MSI → primary-input/xHCI → final verification → report**. A stage that is NotReady, inconclusive, or requires reboot stops the pipeline; intent is never treated as activation proof.
-
-MSI mutation is deliberately narrow: `MSISupported` may be enabled only when authoritative stored state makes the target applicable. `MessageNumberLimit` and interrupt priority are preserved/observed, not tuned automatically. xHCI affinity requires one explicit primary Raw Input identity, one exact USB route, clean capture evidence, and reversible journal ownership.
-
-`Restore original settings` replays retained LatencyPilot changes newest-first from exact snapshots. It does **not** claim to restore Windows defaults. Public mutation remains fail-closed (`MutationAvailable = false`) until exact-revision physical GPU/MSI/xHCI validation is recorded; hosted CI proves source contracts only.
+`Restore original settings` replays retained LatencyPilot changes newest-first from exact snapshots. It does **not** claim to restore Windows defaults. Public mutation remains fail-closed until the required exact-revision physical evidence is recorded.
