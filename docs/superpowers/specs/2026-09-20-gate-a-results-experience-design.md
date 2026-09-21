@@ -1,180 +1,210 @@
 # Gate A Results Experience Design
 
-Date: 2026-09-20
-Status: Approved by delegated product/design direction
+Date: 2026-09-20  
+Status: **Approved and implemented in source; paired-v2 semantics reconciled 2026-09-21**
+
+This document owns the product-information hierarchy for the Gate A result experience. GPU measurement/search/ranking semantics are owned by ADR 0007 and current source. If an older example in this design conflicts with ADR 0007, ADR 0007 wins.
 
 ## Intent
 
-After GPU Gate A finishes, LatencyPilot should return the user to the main window and explain the result inside the product instead of making the raw JSON report the primary experience. A user should be able to understand what changed, which candidate performed best, why LatencyPilot kept or restored a state, how noisy/repeatable the evidence was, and whether final runtime placement was verified.
+After GPU Gate A finishes, LatencyPilot returns the user to the main window and explains the outcome inside the product instead of making raw JSON the primary experience.
 
-The same completed Gate A session directory must also be exported as a ZIP next to the directory so the owner can attach the complete evidence bundle to another conversation without manually compressing it.
+The first questions the result surface must answer are:
+
+1. What machine state is active now?
+2. Was a CPU actually kept, was Original restored, or was the result a practical tie/inconclusive diagnostic?
+3. What paired evidence drove the authority decision?
+4. How stable were the local controls?
+5. Was final runtime ISR placement verified?
+6. Where is the complete evidence bundle?
+
+The completed session directory is also exported as a ZIP sibling when packaging succeeds.
 
 ## Product constraints
 
-- The authoritative decision remains `GpuAutoAffinityReport`; the UI must not invent a second score, re-rank candidates, or reinterpret a rejected candidate as a winner.
-- Keep/Restore semantics, provenance, closure eligibility, stored-state verification and ETW placement evidence remain owned by the existing benchmark/session code.
-- Do not add a charting package. Reuse the existing WinUI chart primitives, design tokens, component styles and accessibility patterns.
-- Keep the result inside Overview rather than creating another NavigationView destination.
-- Preserve both the uncompressed session folder and a ZIP sibling.
-- ZIP creation is evidence packaging only. Failure to package must not change the Gate A decision, rollback ownership or final-state verification.
-- Development-only evidence must remain visibly distinct from closure-eligible evidence.
-- Light, dark and high-contrast modes must remain readable without relying on color alone.
+- `GpuAutoAffinityReport` remains the authoritative decision. Presentation must not invent a second score or re-rank candidates.
+- Paired-v2 presentation consumes persisted `DecisionRank`, finalist aggregates/decision floors and direct pair evidence.
+- Raw execution order is not decision authority.
+- Keep/Restore/practical-tie semantics, provenance, source eligibility, rollback ownership and final ETW placement remain owned by the benchmark/session/report code.
+- Do not add a charting package. Reuse native WinUI primitives and existing design resources.
+- Keep the result inside Overview rather than creating a separate navigation destination.
+- Preserve both the uncompressed session folder and ZIP sibling.
+- Packaging failure must never alter the benchmark decision or recovery ownership.
+- Source/evidence eligibility must not be presented as physical Gate A closure.
+- Color may reinforce state but never carry state alone.
 
 ## Completion flow
 
-1. The elevated helper finishes and the normal-user benchmark process exits.
-2. The app reads `gpu-auto-affinity-report.json` and validates schema/session identity and source-state eligibility exactly as it does today.
-3. The app packages the completed session directory to `<session-directory>.zip` through a temporary ZIP in the same parent directory, then atomically replaces any stale sibling ZIP.
-4. Packaging errors are logged and surfaced as `Evidence bundle could not be packaged`; the Gate A result still renders.
-5. The progress window receives its final outcome and can remain available as secondary history, but the main window restores and activates.
-6. Overview renders a new `GPU optimization result` region using the validated report and the optional ZIP path.
-7. Raw JSON is no longer opened automatically. Explicit actions are provided for `Open ZIP`, `Open session folder`, and `Open raw report`.
+1. The elevated helper finishes and benchmark lifecycle reaches a terminal state.
+2. The app reads `gpu-auto-affinity-report.json` and validates schema/session identity and source-state eligibility.
+3. The app packages the completed session directory into a sibling ZIP through the existing safe temporary-file path.
+4. Packaging failure is surfaced but does not alter the Gate A decision.
+5. The main window restores/activates and Overview renders `GateAResultPresentation`.
+6. Raw JSON is available only through explicit evidence actions.
 
 ## Information hierarchy
 
 ### 1. Decision hero
 
-The first card answers the human question before showing charts.
+The hero states the terminal truth before charts.
 
-Keep example:
+Supported headline families include:
 
-> CPU 7 kept
->
-> The improvement survived repeat testing, cleared measured uncertainty, stayed inside performance guardrails, and final ETW evidence confirmed GPU interrupts on CPU 7.
+- `Winner · CPU n kept`
+- `Practical tie · CPU n kept` when a tied improvement-capable target was selected operationally
+- `No measured winner · Original restored`
+- `Original kept`
+- `Custom diagnostic result`
+- stopped/failure-recovery states when applicable
 
-Restore example:
+The evidence badge uses **Evidence eligible** or **Development evidence**. It must never say `Closure eligible` because the stored compatibility field does not mean physical Gate A has already closed.
 
-> Original kept
->
-> CPU 11 produced the strongest measured candidate result, but the gain did not clear the measured uncertainty and verification gates. LatencyPilot kept the exact original policy instead of turning benchmark noise into a system change.
+The hero summary is derived from report authority only and must not turn a positive diagnostic pair into a Keep claim.
 
-The hero includes:
+### 2. Primary paired evidence
 
-- final state badge: `CPU n kept`, `Original kept`, `Stopped safely`, or `Result needs attention`;
-- evidence badge: `Closure eligible` or `Development evidence`;
-- one concise explanatory paragraph derived only from `FinalRecommendation`, `FinalProcessor`, `FinalStateVerified`, `OriginalStateRestored`, `Reasons`, and final placement evidence;
-- source revision and elapsed duration as quiet metadata.
+For the compared/kept candidate, show the direct local relationship whenever the report contains the required pair evidence:
 
-### 2. Before / result metric strip
+```text
+Original before → Candidate → Original after
+```
 
-Four compact metric cards:
+Expose:
 
-- 1% low FPS — primary metric;
-- Average FPS;
-- frame p99 — lower is better;
-- 0.1% low FPS — tail context.
+- 1% low primary values/effect;
+- AVG paired effect;
+- frame-p99 paired effect, lower-is-better but stored/displayed with improvement-positive sign convention;
+- diagnostic 0.1%-low effect where available;
+- control movement;
+- drift budget;
+- pair attempt/verdict;
+- finalist decision floor when finalist authority exists.
 
-For a kept CPU, compare the accepted Original reference aggregate with the final kept candidate aggregate.
-
-For RestoreOriginal, compare Original with the strongest rankable candidate only as diagnostic context and label it `Best tested · not kept`. The UI must not imply that candidate was safe to apply.
-
-Each card shows Original, compared candidate, signed relative delta, and a text state such as `Improved`, `Within measured uncertainty`, `Guardrail regression`, or `Not enough comparable evidence`. Color may reinforce but never replace the text state.
+Do not manufacture pseudo-normalized FPS. Raw values are observations; paired effect is a derived decision measure.
 
 ### 3. Candidate comparison chart
 
-A native WinUI horizontal comparison chart shows every candidate that has decision metrics.
+The candidate chart displays authority-ranked candidates in persisted rank order.
 
-- Y axis: logical CPU identity, grouped only visually by physical core metadata when useful.
-- X axis: decision 1% low FPS.
-- Original reference is a vertical rule or dedicated reference lane, not a fake CPU bar.
-- Final kept CPU gets the strongest accent and a `Kept` label.
-- Top tested but restored candidate gets an outlined `Not kept` treatment.
-- Inconclusive candidates remain visible with muted treatment when a finite decision metric exists.
-- Tooltips expose 1% low, AVG, p99, 0.1% low, trial count, verdict and local-control uncertainty.
-- If more processors exist than comfortably fit, the chart grows vertically inside the Overview scroll surface rather than shrinking labels to unreadable sizes.
+- X axis: paired 1%-low effect around a 0% Original reference.
+- CPU labels include persisted decision rank where available.
+- Kept candidate receives the strongest terminal-success treatment.
+- Best measured but restored candidate is outlined/diagnostic and explicitly `Not kept`.
+- Inconclusive candidates may remain visible when finite diagnostic evidence exists.
+- Tooltips expose rank, processor/core, state, paired effect, local uncertainty/control movement, raw candidate context, trial count and verdict where available.
 
-### 4. Repeatability / trial history
+The chart must never infer ranking from raw candidate FPS.
 
-A second native chart plots scored trial 1% low FPS in run order.
+### 4. Pair/finalist evidence history
 
-- Original scored trials and compared-candidate scored trials are separate series.
-- Warm-ups are excluded from the plot but remain available in raw evidence.
-- Retry/rejected/contaminated observations remain visible when represented in the report; they use a distinct marker/text treatment instead of being silently deleted.
-- The chart subtitle states the count of scored Original and compared-candidate observations.
-- Accessibility help text summarizes the run range and whether the result was repeatable enough for Keep.
+The result surface should make the decision reconstructable without forcing the user into raw JSON.
+
+Prefer compact evidence rows/cards for the relevant local pairs and finalist authority:
+
+- pair number/stage/attempt;
+- Original-before capture/value;
+- Candidate capture/value;
+- Original-after capture/value;
+- effect;
+- control movement versus drift budget;
+- Valid / Inconclusive state;
+- finalist median effect and decision floor when applicable.
+
+Long execution history may remain secondary. Warm-ups remain evidence but are not decision observations.
 
 ### 5. Why this decision
 
-A compact evidence checklist explains the decision using report facts:
+Rows explain the authoritative decision without creating new logic:
 
-- Primary improvement vs measured uncertainty.
-- Repeatability / local control uncertainty.
+- Primary paired improvement.
+- Local-control stability / decision floor.
 - AVG and frame-p99 guardrails.
+- Supported GPU-driver interrupt-tail guardrails where enough evidence exists.
 - Runtime ISR placement proof.
 - Final stored-state / rollback verification.
 
-Each row has `Passed`, `Blocked`, `Restored`, `Unavailable`, or `Diagnostic only` text plus a short sentence. No new decision logic is introduced; when the report does not provide enough structured data, the UI uses the existing `Reasons` text and labels the row conservatively.
+Use states such as `Passed`, `Blocked`, `Restored`, `Unavailable`, `Practical tie`, or `Diagnostic only`.
+
+For a RestoreOriginal outcome, an empty regression list is not enough to claim a final guardrail pass. Non-Keep evidence stays diagnostic.
 
 ### 6. Evidence actions
 
-Actions are secondary to the explanation:
+Secondary actions:
 
-- `Open ZIP` — enabled only when packaging succeeded.
-- `Copy ZIP path` — enabled only when packaging succeeded.
-- `Open session folder`.
+- `Open ZIP` — when packaging succeeded;
+- `Copy ZIP path` — when packaging succeeded;
+- `Open session folder`;
 - `Open raw report`.
 
-The raw JSON should never be opened automatically after a successful run.
+Raw JSON must not open automatically after a successful run.
 
-## Data derivation
+## Compared candidate selection
 
-The renderer consumes only `GpuAutoAffinityReport` plus the session/report/ZIP paths.
+Presentation follows report authority:
 
-### Original aggregate
+1. if a candidate was actually kept, compare/render that candidate;
+2. otherwise choose the strongest persisted authority candidate for diagnostic context, preferring finalist authority when it exists for the same processor;
+3. never reconstruct a new winner from metric decimals or execution order.
 
-Use scored `Trials` whose role is Original/reference and whose readiness is decision-grade. Prefer the same trial phases that feed the session decision (`screening-original` and accepted Original controls where appropriate). Aggregate with medians, matching the benchmark/session methodology. Do not mix warm-ups.
+For non-Keep outcomes the label must clearly include comparison/diagnostic semantics such as `best measured · comparison only · not kept`.
 
-### Candidate aggregate
+## Practical-tie presentation
 
-Use `GpuAutoAffinityCandidateReport.DecisionOnePercentLowFps`, `DecisionAvgFps`, `DecisionFrameP99Milliseconds`, and `DecisionLow01PctFps` for the candidate comparison surface because these are already the decision aggregates. Per-run history comes from `Trials`.
+When report authority says `PracticalTie=true`, the result must say that the finalists were practically equivalent under the method's one-percentage-point margin. If one target was kept through passive deterministic selection, the UI may explain that it was the operational target but must not claim it proved faster than its tied peers.
 
-### Compared candidate when Original is restored
+## Diagnostic scopes
 
-Choose the highest-ranked report candidate that has finite decision metrics and a rankable verdict, preserving report order. Label it diagnostic and not kept. This is a presentation choice, not a new Keep decision.
+### Selected CPUs / Custom
+
+Show the best measured CPU inside the selected subset, direct pair evidence and why Original was restored. Never present the subset result as a machine-wide winner or closure evidence.
+
+### Original only
+
+Show Original repeatability/variability only. The UI must explicitly state that no system changes were made and candidate benefit/restart stability remain untested.
 
 ## Visual direction
 
-The result region should feel like an evidence console rather than a benchmark leaderboard.
+The result should feel like an evidence console, not a benchmark leaderboard.
 
-- Reuse Mica/glass surfaces, existing corner radii and typography.
-- Use one confident accent for the final kept state, neutral surfaces for ordinary candidates, warning semantics for uncertainty, and failure semantics only for actual verification/export failure.
-- Do not use gradients as data encoding; existing decorative gradient resources may remain for small brand/icon accents.
-- Prefer whitespace and alignment over additional borders.
-- Use compact metric cards and two larger evidence cards; avoid a wall of mini-panels.
-- Keep titles literal: `GPU optimization result`, `Candidate comparison`, `Repeatability`, `Why this decision`.
-- Copy should explain causality in plain English and avoid claims stronger than the report evidence.
+- Strong hierarchy: terminal truth first, evidence second, detail third.
+- Use one confident accent for a verified kept state.
+- Use neutral/outlined treatment for a best-measured-but-not-kept candidate.
+- Warning semantics communicate uncertainty/inconclusive evidence; failure semantics are reserved for actual verification/recovery/export failure.
+- Prefer whitespace/alignment over extra borders and decorative panels.
+- Avoid gradients as data encoding.
+- Keep copy literal and evidence-bounded.
 
 ## Responsive behavior
 
-- Wide: four metric cards in one row; candidate chart and repeatability chart can share a two-column row only when each remains at least ~420 px wide.
-- Medium: metrics wrap 2×2; charts stack.
-- Narrow: metrics become a single column or compact 2-column layout; all actions wrap without horizontal scrolling.
-- Candidate chart height is data-driven with a practical minimum row height so CPU labels remain readable.
+- Wide: summary + compact metric/evidence region may use columns only when content remains readable.
+- Medium: wrap compact cards and stack larger evidence surfaces.
+- Narrow: stack content; no horizontal scrolling for core actions/evidence.
+- Candidate chart height is data-driven with readable row labels.
+- Long explanations wrap rather than truncating the decision reason.
 
 ## Accessibility
 
-- Every chart receives `AutomationProperties.Name` and a complete `HelpText` summary.
-- Every metric delta has textual direction; no red/green-only meaning.
-- High Contrast uses system/theme resources and removes decorative soft fills where current design tokens already do so.
-- Keyboard users can reach all evidence actions in reading order.
+- Charts and evidence surfaces expose meaningful `AutomationProperties.Name`/help summaries.
+- Signed effects also have textual direction/state.
+- High Contrast relies on system/theme resources and text/outline state rather than color-only semantics.
+- Keyboard users can reach Stop/evidence actions in reading order.
+- Real Windows inspection remains required for clipping, focus order, text scaling and Narrator/UIA meaning.
 
 ## ZIP packaging contract
 
-- Source: the completed Gate A `sessionDirectory`.
+- Source: completed Gate A session directory.
 - Destination: `sessionDirectory + ".zip"`.
-- Create into a unique temporary sibling file first.
-- Include the directory contents under one top-level folder named after the session directory so extracted bundles do not spill files into the destination root.
-- Do not delete or mutate the source directory.
-- Overwrite a stale ZIP only after a new ZIP has been created successfully.
-- Packaging must run only after the benchmark/helper lifecycle is complete and the report has passed schema/session validation.
-- Packaging failure is non-fatal to the optimization result but visible in the UI and logs.
+- Create into a unique temporary sibling first.
+- Include evidence under one top-level session folder.
+- Do not delete or mutate the authoritative source directory.
+- Replace a stale ZIP only after a new ZIP is created successfully.
+- Packaging runs only after benchmark/helper lifecycle completion and report identity validation.
+- Packaging failure is visible but non-fatal to the optimization decision.
 
-## Testing and verification
+## Verification boundary
 
-Reuse the existing permanent test budget; do not add a new test project.
+Reuse the existing permanent critical-test budget. Contract tests may assert stable authority/data-flow invariants, but they do not prove visual quality.
 
-- Extend existing Gate A/source contract coverage for ZIP path/name and non-fatal packaging behavior using a temporary directory.
-- Add pure presentation-model tests for Keep and Restore result derivation in an existing critical-test file rather than testing XAML wording or visual tree shape.
-- Build the WinUI app and run `LatencyPilot.CriticalTests`.
-- Inspect the rendered result on real Windows in light, dark, narrow and high-contrast states before calling visual quality complete.
-- Physical Gate A remains required to validate the final experience with a real report and real ZIP evidence; source/CI success alone does not close physical Gate A.
+Before calling this result experience physically complete, inspect it on real Windows with a real paired-v2 report in Light, Dark, High Contrast, increased text scale, narrow/wide layouts, keyboard-only navigation and UI Automation/Narrator states.
+
+Physical Gate A remains separate from source/CI success.
