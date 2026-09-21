@@ -1,125 +1,137 @@
 # GPU Measurement Stability Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Current handoff:** this file records the active measurement-stability work and replaces obsolete intermediate tactics from the original 2026-09-19 plan. ADR 0006 owns intended v1 behavior; `PROJECT_STATUS.md` owns actual completion/evidence state.
 
-**Goal:** Make the current v1 GPU-affinity experiment more trustworthy before expanding its search space.
+**Goal:** make the v1 GPU interrupt-affinity experiment trustworthy enough for physical Gate A without expanding the product into a general tuning suite.
 
-**Architecture:** Preserve ADR 0006 as the product authority. The automatic workflow excludes MSI mutation from v1. The benchmark subject is GPU-dominant rather than deliberately CPU-pressure calibrated. Physical evidence from 2026-09-19 then proved substantial temporal drift remained, so screening now uses bounded time-local Original controls every four candidates and aborts the remaining screen on drift. Read-only runtime interrupt-topology evidence remains the prerequisite for any future multi-processor/MSI-X policy work.
+**Current authority:** `docs/adr/0006-simple-auto-interrupt-affinity-v1.md`, including the 2026-09-20 time-local measurement amendment.
 
-**Tech Stack:** C# 14, .NET 10, D3D12/Vortice, MSTest/Microsoft.Testing.Platform, Windows 11 x64.
+**Current source baseline before this documentation reconciliation:** `29f153b1bfcb15cc452f17a9ffb082be2358852a`; hosted Tests run `35573555174` / run number `1449` passed on that exact source HEAD. Hosted CI is software-contract evidence only and does not close physical Gate A.
 
-**Spec:** `docs/adr/0006-simple-auto-interrupt-affinity-v1.md`
+## Global constraints
 
-## Global Constraints
+- Work on `main` for owner-directed implementation.
+- Keep `ServiceBoundary.MutationAvailable = false` until the physical arming gate is satisfied.
+- Preserve exact journal-owned rollback/recovery behavior.
+- Do not add MSI-mode, power-plan, NIC/RSS, audio, HAGS or BIOS mutation to the v1 automatic path.
+- Do not expand single-CPU GPU affinity into multi-processor/MSI-X search until runtime interrupt topology is observable and physically validated.
+- Keep the permanent test surface consolidated and within the owner-approved cap.
+- Raw measurements, normalized decision evidence, uncertainty and final machine state must remain distinguishable.
 
-- Work directly on `main` for owner-directed automation.
-- Keep public mutation unarmed.
-- Hosted GitHub Actions remains test-only and cannot close physical Gate A.
-- Do not add permanent test entrypoints; fold durable high-blast-radius assertions into the existing consolidated audit boundary.
-- Preserve exact rollback/recovery behavior.
-- Do not add MSI-mode mutation, power-plan mutation, NIC/RSS or audio mutation to the v1 automatic path.
-- Do not expand single-CPU affinity search to multi-processor/MSI-X policy search until runtime interrupt topology is observable and physically validated.
-- Candidate measurements from a drift-invalidated block are diagnostic evidence only; they cannot be presented as a valid ranked winner.
+## Current measurement design
 
-## Rulings
+The source now uses this sequence:
 
-- **Timestamp-frequency ruling (2026-09-19):** do not change `GpuTimestampCollector` merely to re-query `GetTimestampFrequency` per resolve. The current Microsoft DirectX engineering spec states that timestamp frequencies do not change even when other GPU clocks change, while the current English Learn page dated 2026-08-19 no longer carries the earlier localized dynamic-clock-scaling warning. The previously proposed per-resolve fix therefore lacks current authoritative support and would add work without a demonstrated defect. The RED assertion for that proposed behavior was withdrawn before production code changed.
-- **Local-control ruling (updated 2026-09-19):** the stabilized GPU-dominant workload was physically re-run and still showed severe temporal drift: Original 1%-low noise was 56.14%, the post-sweep control drifted 52.44% in 1% low, 11.23% in AVG and 87.14% in frame-p99, and Original was safely restored. This is direct evidence that a full sweep can become non-comparable before its final control. Screening therefore uses a fresh Original warm-up + scored control after each four-candidate block when candidates remain, while retaining the final post-sweep and post-finalist controls.
-- **Warm-up ruling (2026-09-19):** do not replace the fixed 5 s transition warm-up with an arbitrary longer sleep yet. The physical run suggests transition behavior may still be non-steady, but the correct stability signal/threshold is not yet proven. The next exact-revision hardware run must observe the new local controls and warm-up behavior before a bounded stability gate is designed.
-- **PresentMon ruling (2026-09-19):** `NoSwapChains` is explicit best-effort collector evidence, not permission to synthesize frames and not a hard failure when benchmark-owned controlled frame periods are valid. Final Keep remains dependent on ETW placement proof, not PresentMon availability.
+```text
+exact Original state
+→ deterministic D3D12 calibration with fixed low synthetic CPU work
+→ Original warm-up/reference
+→ establish Original repeatability/noise
+→ screen every eligible logical CPU in blocks of at most four
+   → apply/restart/verify
+   → 5 s transition warm-up
+   → one scored screening run
+   → exact rollback + Original verification
+   → Original block control after each full block when candidates remain
+→ final screening Original control
+→ normalize rankable candidate decision metrics against time-local Original controls
+→ preserve raw candidate/control trials unchanged
+→ carry control movement as uncertainty
+→ if effective 1%-low variability >15%: skip finalists and RestoreOriginal
+→ otherwise bounded finalist confirmation and noise-aware ranking
+→ final benchmark-only warm-up + ETW placement verification
+→ Keep only with attributable target-only GPU ISR proof; otherwise RestoreOriginal
+```
 
-## Review Focus
+Within each small screening block, current normalization interpolates the local Original level by candidate position between the surrounding controls. This is intentionally simpler than adding new timing/provenance infrastructure. Do not replace it with a more complex time-weighted model unless owner-hardware evidence shows residual within-block ordering bias that materially changes decisions.
 
-- Keep D3D12 timestamp interpretation consistent with current Microsoft DirectX semantics rather than stale localized guidance.
-- MSI source may remain available for future/manual/recovery use but must not run in automatic v1 sequencing.
-- Benchmark changes must not make candidate workload vary by candidate or restart.
-- Runtime reductions must not weaken final ETW placement proof or rollback safety.
-- Intermediate Original controls must run only after candidate rollback/original-state verification, never while a candidate mutation is still owned.
-- Any methodology change that needs physical evidence remains implemented-but-not-closed until owner hardware validation.
+## Decisions already closed in source
 
----
+### 1. Automatic MSI mutation is excluded from v1
 
-### Task 1: Reconcile v1 automatic sequencing — source complete
+The automatic workflow no longer includes MSI mutation. Conservative MSI-related source may remain for recovery/future/manual work, but it is not part of the v1 automatic sequence.
 
-**Files:**
-- Modified: `tests/LatencyPilot.CriticalTests/AuditClosureIntegrationTests.cs`
-- Modified: `src/LatencyPilot.Service/AutomaticOptimizationWorkflow.cs`
+### 2. Benchmark calibration is GPU-dominant
 
-**Interfaces:**
-- Consumes: ADR 0006 automatic-stage scope.
-- Produces: automatic v1 sequence without MSI while retaining the conservative non-v1/manual MSI substrate for recovery and future use.
+Synthetic CPU simulation is fixed at the existing minimum (`1000` iterations per worker). GPU command-batch calibration remains adaptive. Process identity, seed, resolution, worker map and workload stay frozen across candidate comparisons.
 
-- [x] Change the existing consolidated audit contract so MSI is absent from `AutomaticOptimizationWorkflow.OrderedStages` and the reboot-pending mutation example is xHCI.
-- [x] Run hosted Tests and observe the expected RED against current production source (`35471270990`).
-- [x] Re-check the proposed D3D12 timestamp-frequency defect against current primary Microsoft sources; withdraw it when the current engineering spec contradicted the older guidance.
-- [x] Remove MSI from the automatic stage array while retaining non-v1 MSI mutation substrate.
-- [x] Reconcile canonical wording with ADR 0006.
-- [x] Preserve `ServiceBoundary.MutationAvailable = false` and exact MSI/xHCI recovery substrate.
+The 2026-09-19 owner run confirmed that this removed the former intentional multi-millisecond CPU-pressure confounder, but substantial time/order drift still remained.
 
-### Task 2: Make the benchmark subject GPU-dominant without candidate-dependent work — source complete, physical effect observed
+### 3. Ordinary gradual drift is normalized, not treated as an automatic structural failure
 
-**Files:**
-- Modified: `src/LatencyPilot.GpuBenchmark/BenchmarkWorkload.cs`
-- Modified: existing consolidated audit contract only; no new permanent test entrypoint.
+The older tactic that stopped the whole screen when an Original control left a fixed repeatability band has been superseded. Current source captures time-local Original controls around bounded candidate groups, normalizes decision aggregates back to the session baseline and carries measured movement into uncertainty/Keep thresholds.
 
-**Interfaces:**
-- Consumes: frozen worker map/workload identity and current frame telemetry.
-- Produces: GPU command-batch calibration with synthetic CPU simulation fixed at the existing minimum instead of intentionally calibrating CPU/scheduler pressure into the scored workload.
+Structural evidence failures still fail closed. Effective 1%-low variability above 15% still blocks finalist confirmation and automatic Keep.
 
-- [x] Characterize the current calibration rule: synthetic CPU simulation began at 20,000 iterations and adapted toward a broad 2–12 ms CPU-recording band, up to 4,000,000 iterations.
-- [x] Define the smallest candidate-independent change: keep simulation at existing `MinimumSimulationIterations` (1,000), retain adaptive GPU command-batch calibration, and leave worker map/thread priority/seed/process semantics unchanged.
-- [x] RED through the existing consolidated contract (`35471559271`) showed the old adaptive CPU calibration was still present.
-- [x] GREEN on source commit `38106c2c0199d8b55395636df167fc3537841171` with the existing critical-tests workflow.
-- [x] Keep seed, process lifetime, worker map, resolution, restart/recreation and candidate search semantics frozen across candidates.
-- [x] Owner-hardware development run showed CPU recording was reduced to roughly sub-millisecond medians, while substantial temporal drift still remained; this separated the former synthetic CPU-pressure confounder from the remaining environment drift problem.
+### 4. PresentMon correlation uses the benchmark QPC domain
 
-### Task 3: Detect temporal drift before wasting the full screen — source complete, physical re-validation open
+The standalone pinned PresentMon console is a best-effort independent cross-check. Current source launches it with `--qpc_time`, parses `CPUStartQPC`, and crops rows against the benchmark artifact's `StartedAtQpc` / `EndedAtQpc` interval. `FrameTime` or legacy `MsBetweenPresents` may provide cadence; `MsBetweenAppStart` is not silently substituted as equivalent.
 
-**Files:**
-- Added: `tests/LatencyPilot.CriticalTests/GpuTemporalStabilityContractTests.cs`
-- Modified: `src/LatencyPilot.Benchmarking/Optimization/GpuAutoAffinitySession.cs`
-- Modified: `src/LatencyPilot.Benchmarking/Optimization/GpuAutoAffinityProgressPlan.cs`
-- Modified: `src/LatencyPilot.App/GpuOptimizationProgressWindow.xaml.cs`
-- Modified: `tests/LatencyPilot.CriticalTests/GpuBenchmarkContractTests.cs`
-- Modified: `docs/BENCHMARK_METHODOLOGY.md`
-- Modified: `PROJECT_STATUS.md`
+Missing/empty PresentMon evidence remains visible diagnostic evidence and does not manufacture frame samples. Final Keep depends on ETW placement proof, not PresentMon availability.
 
-**Interfaces:**
-- Consumes: exact Original repeatability/noise model, candidate rollback/original verification, benchmark-owned frame periods, optional PresentMon evidence.
-- Produces: bounded four-candidate screening blocks, time-local Original controls, early drift invalidation, accurate progress budgeting and explicit no-winner UI semantics.
+### 5. Warm-up remains evidence-gated
 
-- [x] Physical development run proved remaining temporal drift was material after the GPU-dominant workload change.
-- [x] RED run `35473866508` proved the old source still screened all six synthetic candidates and the UI lacked an explicit invalidated-result state.
-- [x] Add a fresh Original warm-up + scored control after every four completed screening candidates when more remain.
-- [x] Reuse the existing per-metric noise-aware Original drift bands for 1% low, AVG and frame-p99.
-- [x] On local-control drift: stop future candidates, never start finalist confirmation, never Keep, verify exact Original, and preserve the invalidating control in the report.
-- [x] Make drift-invalidated candidate rows diagnostic-only and show `Measurements invalidated by drift — no valid winner` rather than a false top-ranked result.
-- [x] Update progress planning for intermediate block controls and the real five-finalist cap.
-- [x] Bind `PresentMon=NoSwapChains` semantics: benchmark-owned frame periods remain valid primary evidence, no fake guardrail samples are created, and the collector status remains explicit.
-- [x] GREEN source run `35474222841` after the core drift/UI implementation.
-- [ ] Run the exact final documentation/source HEAD through hosted Tests.
-- [ ] Run the new block-control workflow on owner hardware and confirm early termination on drift or full-sweep comparability when stable.
-- [ ] Inspect transition warm-ups and total runtime; only add stability-based warm-up if physical evidence still demonstrates a transition problem.
+Do **not** replace the 5 s post-transition warm-up with an arbitrary longer delay yet. The benchmark also performs a symmetric 1 s unscored observer-settle immediately before every scored QPC window so collector/JIT/page-in startup is kept outside the score.
 
-### Task 4: Add read-only runtime interrupt topology evidence
+The old physical run suggested transition behavior could still be non-steady, but it predates the combined time-local normalization + QPC PresentMon + observer-settle state. The next exact-revision hardware run must show whether residual warm-up instability still contaminates decisions before a bounded steady-state detector is designed.
 
-**Files:**
-- Modify/create only under `LatencyPilot.Platform.Windows/Devices` and `LatencyPilot.Core/Devices` as required by the existing boundaries.
-- Modify existing runtime-placement/audit tests if a high-blast-radius contract is needed.
-- Update `SYSTEM_DESIGN.md`, methodology/status and an ADR if the evidence model changes architecture.
+If that evidence remains problematic, prefer a bounded observable stability gate over a longer blind sleep. Any threshold must be justified by owner-hardware data and must keep total runtime bounded.
 
-**Interfaces:**
-- Consumes: allocated ConfigMgr interrupt resources and stored interrupt configuration.
-- Produces: explicit read-only evidence that separates stored policy, allocated interrupt resources and runtime placement/topology without guessing MSI/MSI-X semantics from registry state alone.
+### 6. Runtime interrupt topology remains the prerequisite for broader affinity policy search
 
-- [ ] Model only facts Windows APIs actually prove.
-- [ ] Keep mutation unchanged.
-- [ ] Do not add pair/set/spread candidate generation yet.
-- [ ] Use this evidence as the prerequisite for any future MSI-X/multi-processor search design.
+Stored registry configuration and allocated ConfigMgr resources do not by themselves prove runtime interrupt-vector topology or MSI-X queue behavior. Future multi-processor/MSI-X work must first add read-only evidence that clearly separates stored policy, allocated resources and observed runtime placement. No mutation expansion is authorized by this plan.
 
-### Task 5: Final verification and delivery state
+## Completed evidence
 
-- [ ] Review the complete diff from pre-work HEAD `38edfc0c571bf7ff3f176e2eb81e57102d7171cc` against ADR 0006 and AGENTS.md.
-- [ ] Run the existing hosted Tests on the exact final `main` HEAD and require success.
-- [ ] Confirm public mutation remains disabled.
-- [ ] Report exact final HEAD, CI evidence, what remains physically unproven, and the next two stages.
+- `38106c2c0199d8b55395636df167fc3537841171` — benchmark CPU simulation fixed at the existing minimum while GPU calibration remains adaptive.
+- 2026-09-19 owner development run — safe `RestoreOriginal`, exact Original verified/restored with zero unresolved recovery state; severe temporal drift remained and motivated local controls.
+- `d0c8b3f09fa547edb3bee7e94c79bc1d9cba34b4` — time-local screening controls and normalization implemented.
+- `4171b14486401dc26eef9586c48507b5755b8668` — PresentMon correlation moved into the benchmark QPC time domain.
+- Current benchmark source includes a 1 s observer-settle before every scored QPC window.
+- Gate A result presentation now consumes persisted decision ranks/metrics, labels non-Keep comparisons as diagnostic/comparison-only, and preserves restored Original as terminal truth.
+- Source HEAD `29f153b1bfcb15cc452f17a9ffb082be2358852a` passed hosted Tests run `35573555174` (`#1449`) before this documentation reconciliation.
+
+## Still open
+
+### Physical Gate A
+
+One exact clean green revision on the owner Windows 11 machine must still prove:
+
+1. every expected eligible logical CPU is screened;
+2. intermediate/final Original controls are captured and persisted;
+3. normalization removes measured local background level without changing raw trial history;
+4. local movement appears as uncertainty rather than candidate benefit;
+5. >15% effective variability skips finalists and restores Original;
+6. otherwise the bounded shortlist receives the documented re-tests;
+7. final Keep, if any, clears repeatability/uncertainty/frame/interrupt guardrails;
+8. final ETW proves target-only GPU ISR placement;
+9. exact rollback and terminal state verification end with `unresolved=0`;
+10. PresentMon QPC cross-check either produces valid rows or reports a precise bounded diagnostic failure.
+
+### Reproducibility and recovery
+
+After the first authoritative run:
+
+- repeat the whole search to test practical reproducibility;
+- exercise **Stop safely**;
+- exercise one supported failure/recovery path and verify exact Original plus zero unresolved ownership;
+- inspect the rendered result surface in relevant Windows theme/text-scale/keyboard states.
+
+### Warm-up follow-up, only if hardware evidence still requires it
+
+If the new exact-revision run still shows a large warm-up→score transition or systematic residual within-block ordering effect:
+
+1. quantify it from the preserved trial/control evidence;
+2. identify the smallest observable stability signal that tracks the problem;
+3. design a bounded warm-up extension/steady-state gate with a hard maximum runtime;
+4. validate it physically before calling the measurement method closed.
+
+Do not add GPU clock locking or power mutation. Read-only clock/temperature/power telemetry may be considered only if it materially explains unresolved contamination and can be added without turning the v1 path into a vendor-specific dependency.
+
+## Immediate execution ladder
+
+1. Reconcile this handoff and `PROJECT_STATUS.md` with the current source/ADR, then require hosted Tests on the resulting exact documentation/source HEAD.
+2. Run physical Gate A on that exact clean green revision and inspect local controls, normalized aggregates, uncertainty, terminal state, runtime and PresentMon diagnostics.
+3. Repeat the whole search, then run Stop safely + one supported failure/recovery exercise.
+4. Only if the new physical evidence still shows transition contamination, design the smallest bounded steady-state warm-up gate.
+5. Only after physical Gate A closes, continue to product mutation arming and xHCI apply/verify work; runtime interrupt-topology evidence remains a prerequisite for any future broader MSI-X search.

@@ -69,12 +69,12 @@ capture exact Original/default state
 → establish Original scored repeatability/noise (3 runs, one bounded replacement if needed)
 → screen every eligible logical CPU in blocks of at most four:
      apply/restart/verify
-     non-scored warm-up
+     5 s non-scored transition warm-up
      one scored screen
      exact rollback + Original-state verification
      fresh Original block control after each full block when candidates remain
 → fresh Original control after final screening block
-→ normalize rankable screening decision metrics against the time-local controls
+→ normalize rankable screening decision metrics against time-local controls
 → preserve raw trials unchanged and carry control movement as uncertainty
 → if effective 1%-low variability >15%:
      retain diagnostic screening evidence, skip finalists, RestoreOriginal
@@ -95,12 +95,13 @@ Important properties:
 - Ordinary gradual Original-control movement is **not** treated as a structural experiment failure. It is measured, used to normalize candidate decision aggregates and carried forward as uncertainty.
 - Raw candidate/control observations remain separate from normalized decision evidence.
 - Time-local uncertainty raises the final improvement/guardrail threshold; it is never credited as candidate benefit.
-- Effective 1%-low variability above 15% still blocks expensive finalist confirmation and automatic Keep; exact Original is retained.
+- Effective 1%-low variability above 15% blocks expensive finalist confirmation and automatic Keep; exact Original is retained.
 - Structural evidence failures remain fail-closed: invalid artifact/session identity, source/state divergence, failed mutation/recovery ownership, healthy ETW proving wrong placement, or unverified terminal state are not normalized away.
 - No separate SMT sibling-refinement phase and no ABBA/BAAB confirmation loop exist in v1.
 - Final Keep is stricter than screening: missing/unhealthy ETW or missing target-only ISR proof restores Original.
-- PresentMon remains an independent best-effort cross-check. Current `FrameTime` and legacy `MsBetweenPresents` are accepted for cadence; `MsBetweenAppStart` is not treated as equivalent.
+- PresentMon remains an independent best-effort cross-check. It now uses the benchmark QPC domain (`--qpc_time` / `CPUStartQPC`) and crops against the scored artifact QPC interval. Current `FrameTime` and legacy `MsBetweenPresents` are accepted for cadence; `MsBetweenAppStart` is not treated as equivalent.
 - `PresentMonWorkloadCaptureStatus.NoSwapChains` remains explicit diagnostic evidence and cannot fabricate frame/guardrail data.
+- Every scored benchmark run includes a symmetric 1 s unscored observer-settle before the scored QPC window; the 5 s post-transition warm-up remains unchanged pending new physical evidence.
 
 ### Gate A result experience
 
@@ -146,15 +147,17 @@ The result-surface implementation was developed through repeated CI-driven corre
 - packaging was wired after report identity validation;
 - a second RED proved the validated report still was not handed to the in-product result presentation;
 - Overview handoff/charts/evidence actions were added;
-- hosted compilation then exposed a real WinUI `UIElement`/`FrameworkElement` attached-property mismatch and analyzer findings, which were corrected in source.
+- hosted compilation exposed a real WinUI `UIElement`/`FrameworkElement` attached-property mismatch and analyzer findings; those were corrected rather than suppressed.
 
-The **exact final documentation/source HEAD still must be green** before authoritative physical evidence is collected. A prior or intermediate green run is not proof for a later HEAD.
+The exact source HEAD immediately before this documentation reconciliation, `29f153b1bfcb15cc452f17a9ffb082be2358852a`, passed hosted **Tests** run `35573555174` (`#1449`). This proves the current source contracts compile/test on the hosted Windows runner; it does **not** prove physical Gate A. Every later candidate final HEAD still requires its own green hosted Tests run before authoritative physical evidence is accepted.
 
 ### Physical GPU Gate A
 
 Still **OPEN**.
 
 Historical owner runs proved several safety/substrate properties including journal-owned apply/rollback and clean exact-Original restoration. The 2026-09-19 development run was safe but showed severe time/order background movement; raw candidate ranking was therefore not trustworthy and Original was correctly restored. That evidence motivated the current bounded time-local control/normalization method. It did not establish a winning CPU.
+
+That old run also predated the current combination of QPC-domain PresentMon correlation and the per-scored-run observer-settle. Its `NoSwapChains` result therefore must not be treated as proof that the current collector path still fails.
 
 The next authoritative Gate A run must use one exact clean green `main` revision and prove:
 
@@ -169,22 +172,30 @@ The next authoritative Gate A run must use one exact clean green `main` revision
 9. exact rollback succeeds between candidate activations and on failure/cancellation;
 10. final ETW proves target-only GPU ISR placement before Keep;
 11. terminal state is verified with `unresolved=0`;
-12. Stop safely plus one supported failure/recovery path restore exact Original;
-13. a second whole search is practically reproducible or reports instability explicitly;
-14. the rendered result surface is inspected on real Windows in relevant theme/text-scale/keyboard states.
+12. PresentMon either yields QPC-correlated target-process rows or reports a precise bounded diagnostic failure without fabricating samples;
+13. Stop safely plus one supported failure/recovery path restore exact Original;
+14. a second whole search is practically reproducible or reports instability explicitly;
+15. the rendered result surface is inspected on real Windows in relevant theme/text-scale/keyboard states.
 
 Dirty `main` runs remain useful development evidence only: `SourceState=DevelopmentOnly`, `GateAClosureEligible=false`.
 
 Public product mutation remains unarmed until this physical gate passes.
 
+## Measurement questions intentionally left open until the next hardware run
+
+- **Transition warm-up:** keep the current 5 s post-transition warm-up. Do not lengthen it blindly. If the new run still shows a large warm-up→score transition after time-local normalization and observer-settle, design a bounded observable steady-state gate from that evidence.
+- **Within-block interpolation:** current time-local normalization uses candidate position between surrounding block controls. Keep that simple model unless real evidence shows material residual ordering bias that would justify additional timing provenance/time-weighted interpolation.
+- **GPU telemetry:** clock/temperature/power data can help explain contamination, but adding NVIDIA-specific runtime dependencies or clock/power mutation is not justified for v1 before the current cross-vendor measurement method is re-run. Read-only telemetry remains optional follow-up evidence, not a prerequisite.
+- **Broader MSI-X search:** still blocked on explicit read-only runtime interrupt-topology evidence. Stored registry policy and allocated ConfigMgr resources are not enough to infer vector/queue behavior.
+
 ## Roadmap progress snapshot
 
 | Phase | Current source state | What remains |
 | --- | --- | --- |
-| 0 Scope/safety | **Source complete** | Exact-final-HEAD hosted Tests |
+| 0 Scope/safety | **Source complete** | No source item; keep exact-head hosted verification current |
 | 1 Preflight | **Most primitives exist** | Integrated quiet check + combined GPU/xHCI v1 preflight |
 | 2 Baseline | **ETW engine exists** | Wire deep baseline into one-button v1 workflow |
-| 3 GPU search | **Time-local decision method + result source implemented** | Exact-head CI + physical Gate A + repeat |
+| 3 GPU search | **Time-local decision method + result source implemented** | Physical Gate A + whole-search repeat + recovery exercise |
 | 4 GPU Keep | **Internal verified-keep source implemented** | Physical proof, typed product IPC, arming gates |
 | 5 USB selection | **Read-only recommendation implemented** | Representative physical evidence + product rendering |
 | 6 USB apply | **Internal reversible substrate / product-gated** | Integrated physical apply/verify/rollback evidence |
@@ -194,12 +205,13 @@ Public product mutation remains unarmed until this physical gate passes.
 
 ## Immediate execution ladder
 
-1. Get hosted **Tests** green on the exact final `main` HEAD after source/doc reconciliation.
-2. Run the new Gate A path locally and inspect the rendered Overview result, evidence ZIP/actions, light/dark/high-contrast/text-scale behavior and keyboard reachability without yet treating that run as closure if the checkout is dirty.
-3. On one exact clean green revision, run physical Gate A and inspect time-local controls, normalized decision aggregates, uncertainty, terminal state, total runtime and any PresentMon diagnostics.
-4. Repeat the whole search for practical reproducibility.
-5. Exercise Stop safely plus one supported failure/recovery path with `unresolved=0`.
+1. Require hosted **Tests** on this documentation-reconciled exact `main` HEAD; do not reuse run `#1449` as proof for a later SHA.
+2. On one exact clean green revision, run physical Gate A and inspect time-local controls, normalized decision aggregates, uncertainty, terminal state, total runtime, transition behavior and PresentMon QPC diagnostics.
+3. Repeat the whole search for practical reproducibility.
+4. Exercise **Stop safely** plus one supported failure/recovery path with `unresolved=0`, and inspect the rendered result surface on real Windows.
+5. Only if the new physical evidence still shows transition contamination, design the smallest bounded observable steady-state warm-up gate; do not add a blind longer sleep.
 6. Only after physical Gate A passes, arm the typed allowlisted product mutation boundary; then close xHCI/reboot/before-after physical validation.
+7. Runtime interrupt-topology evidence remains a prerequisite for any future broader MSI-X/multi-processor search; it is not part of the current Gate A closure path.
 
 ## Completion rule
 
