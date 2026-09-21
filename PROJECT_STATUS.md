@@ -13,7 +13,7 @@ Last updated: 2026-09-21
 - `ServiceBoundary.MutationAvailable`: **false**.
 - Automatic GPU method: **`gpu-affinity-benchmark-v1`**.
 - Automatic GPU evidence/report: **`latencypilot-gpu-benchmark-v1` / `latencypilot-gpu-auto-affinity-report-v1`**.
-- Current v1 product/design authority: **ADR 0006**, including the 2026-09-20 time-local measurement amendment.
+- Current v1 product/design authority: **ADR 0006**, including the 2026-09-20 time-local measurement amendment and the 2026-09-21 true sequential Original 3-of-up-to-5 correction.
 - Gate A external frame cross-check: pinned standalone **PresentMon console**; a separately installed PresentMon Service/API is not required.
 - Hosted GitHub Actions is **software-contract evidence only**. It cannot prove physical interrupt placement, device restart behavior, rendered UI/accessibility, LocalSystem behavior or package/signing behavior.
 
@@ -66,7 +66,9 @@ The current source follows ADR 0006 plus the temporal-stability hardening learne
 capture exact Original/default state
 → deterministic D3D12 calibration / frozen workload
 → Original non-scored warm-up/reference
-→ establish Original scored repeatability/noise (3 runs, one bounded replacement if needed)
+→ collect three scored Original observations
+→ if no repeatable three-run regime exists, collect scored Original #4 and then #5 as independent observations
+→ select the best valid three-run Original cluster from the bounded set; if none exists after five, verify/retain Original and stop before any candidate mutation
 → screen every eligible logical CPU in blocks of at most four:
      apply/restart/verify
      5 s non-scored transition warm-up
@@ -79,7 +81,7 @@ capture exact Original/default state
 → if effective 1%-low variability >15%:
      retain diagnostic screening evidence, skip finalists, RestoreOriginal
 → otherwise rank normalized decision aggregates and re-test a bounded shortlist
-→ prefer stable 3-of-up-to-4 evidence; otherwise retain all four and carry measured variance
+→ prefer stable finalist 3-of-up-to-4 evidence; otherwise retain all four and carry measured variance
 → fresh Original control after finalist re-tests; merge phase movement into uncertainty
 → evaluate finalists against Original + repeatability + time-local uncertainty + guardrails
 → apply highest-ranked clean winner once
@@ -90,6 +92,9 @@ capture exact Original/default state
 
 Important properties:
 
+- Initial Original acquisition is owned by the core session as a true sequential 3-of-up-to-5 scored-observation policy. Samples four and five are ordinary independent measurements, not synthetic contamination/retry signals.
+- If no valid three-run Original cluster exists after five scored observations, the session verifies/retains Original and exits before the first candidate mutation.
+- Finalist repeatability remains independently bounded at four scored observations and retains its existing noise-aware all-four fallback.
 - Windows default is reference/recovery, not a fixed winner gate.
 - CPU0 and eligible SMT siblings are first-class candidates; no even/odd CPU assumption exists.
 - Ordinary gradual Original-control movement is **not** treated as a structural experiment failure. It is measured, used to normalize candidate decision aggregates and carried forward as uncertainty.
@@ -149,7 +154,7 @@ The result-surface implementation was developed through repeated CI-driven corre
 - Overview handoff/charts/evidence actions were added;
 - hosted compilation exposed a real WinUI `UIElement`/`FrameworkElement` attached-property mismatch and analyzer findings; those were corrected rather than suppressed.
 
-The exact source HEAD immediately before this documentation reconciliation, `29f153b1bfcb15cc452f17a9ffb082be2358852a`, passed hosted **Tests** run `35573555174` (`#1449`). This proves the current source contracts compile/test on the hosted Windows runner; it does **not** prove physical Gate A. Every later candidate final HEAD still requires its own green hosted Tests run before authoritative physical evidence is accepted.
+For the current Original-baseline correction, commit `79886d4d630020380a2338a84706265d0e74294c` intentionally made the existing critical suite RED and hosted Tests run `35574839618` (`#1451`) failed on the missing core 3-of-5 contract. Production source now owns sequential Original acquisition and the Gate A wrapper no longer fabricates `ControlTrialDrifted` to obtain a fifth sample. The exact final documentation-reconciled HEAD still requires its own green hosted Tests run; cancelled superseded runs are not evidence of failure or success.
 
 ### Physical GPU Gate A
 
@@ -161,13 +166,13 @@ That old run also predated the current combination of QPC-domain PresentMon corr
 
 The next authoritative Gate A run must use one exact clean green `main` revision and prove:
 
-1. every expected eligible logical CPU receives one scored screening run;
-2. intermediate/final Original controls are captured and their movement is persisted;
-3. normalized decision aggregates remove measured local background level without altering raw trial history;
-4. local movement appears in uncertainty and raises Keep thresholds rather than becoming candidate benefit;
-5. >15% effective variability restores Original without exhaustive finalist confirmation;
-6. otherwise the bounded shortlist receives the documented independent re-tests;
-7. repeatability remains capped at four scored attempts per Original/finalist decision set;
+1. initial Original acquisition reaches a valid three-run cluster using at most five scored observations, or restores Original before candidate mutation after five misses;
+2. every expected eligible logical CPU receives one scored screening run;
+3. intermediate/final Original controls are captured and their movement is persisted;
+4. normalized decision aggregates remove measured local background level without altering raw trial history;
+5. local movement appears in uncertainty and raises Keep thresholds rather than becoming candidate benefit;
+6. >15% effective variability restores Original without exhaustive finalist confirmation;
+7. otherwise the bounded shortlist receives the documented independent re-tests and finalist repeatability remains capped at four scored observations;
 8. the selected finalist clears Original, repeatability, time-local uncertainty and guardrail thresholds;
 9. exact rollback succeeds between candidate activations and on failure/cancellation;
 10. final ETW proves target-only GPU ISR placement before Keep;
@@ -195,7 +200,7 @@ Public product mutation remains unarmed until this physical gate passes.
 | 0 Scope/safety | **Source complete** | No source item; keep exact-head hosted verification current |
 | 1 Preflight | **Most primitives exist** | Integrated quiet check + combined GPU/xHCI v1 preflight |
 | 2 Baseline | **ETW engine exists** | Wire deep baseline into one-button v1 workflow |
-| 3 GPU search | **Time-local decision method + result source implemented** | Physical Gate A + whole-search repeat + recovery exercise |
+| 3 GPU search | **Time-local decision method + true Original 3-of-5 source implemented** | Exact-head hosted verification + physical Gate A + whole-search repeat + recovery exercise |
 | 4 GPU Keep | **Internal verified-keep source implemented** | Physical proof, typed product IPC, arming gates |
 | 5 USB selection | **Read-only recommendation implemented** | Representative physical evidence + product rendering |
 | 6 USB apply | **Internal reversible substrate / product-gated** | Integrated physical apply/verify/rollback evidence |
@@ -205,8 +210,8 @@ Public product mutation remains unarmed until this physical gate passes.
 
 ## Immediate execution ladder
 
-1. Require hosted **Tests** on this documentation-reconciled exact `main` HEAD; do not reuse run `#1449` as proof for a later SHA.
-2. On one exact clean green revision, run physical Gate A and inspect time-local controls, normalized decision aggregates, uncertainty, terminal state, total runtime, transition behavior and PresentMon QPC diagnostics.
+1. Require hosted **Tests** on this documentation-reconciled exact `main` HEAD; do not reuse an older or cancelled run as proof for a later SHA.
+2. On one exact clean green revision, run physical Gate A and inspect true Original 3-of-5 acquisition, time-local controls, normalized decision aggregates, uncertainty, terminal state, total runtime, transition behavior and PresentMon QPC diagnostics.
 3. Repeat the whole search for practical reproducibility.
 4. Exercise **Stop safely** plus one supported failure/recovery path with `unresolved=0`, and inspect the rendered result surface on real Windows.
 5. Only if the new physical evidence still shows transition contamination, design the smallest bounded observable steady-state warm-up gate; do not add a blind longer sleep.
