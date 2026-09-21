@@ -2,6 +2,7 @@ using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
@@ -32,14 +33,21 @@ public sealed class GateATrialHistoryChart : UserControl
 
         SizeChanged += (_, _) => Render();
         ActualThemeChanged += (_, _) => Render();
-        AutomationProperties.SetName(this, "Gate A control stability history chart");
+        AutomationProperties.SetName(this, "Gate A control stability history");
+        AutomationProperties.SetAutomationId(this, "GateATrialHistoryChart");
+        AutomationProperties.SetAutomationControlType(this, AutomationControlType.Group);
         Clear("No scored Gate A control history is available yet.");
     }
+
+    protected override AutomationPeer OnCreateAutomationPeer() =>
+        new FrameworkElementAutomationPeer(this);
 
     internal void SetData(IReadOnlyList<GateATrialPoint> points, string automationSummary)
     {
         _points = points ?? Array.Empty<GateATrialPoint>();
         AutomationProperties.SetHelpText(this, automationSummary);
+        AutomationProperties.SetItemStatus(this, BuildAutomationStatus(_points));
+        AutomationProperties.SetFullDescription(this, BuildAutomationDescription(_points));
         Render();
     }
 
@@ -48,6 +56,8 @@ public sealed class GateATrialHistoryChart : UserControl
         _points = Array.Empty<GateATrialPoint>();
         _emptyState.SetMessage(message);
         AutomationProperties.SetHelpText(this, message);
+        AutomationProperties.SetItemStatus(this, "No scored Gate A control history is available.");
+        AutomationProperties.SetFullDescription(this, message);
         Render();
     }
 
@@ -267,6 +277,51 @@ public sealed class GateATrialHistoryChart : UserControl
             _canvas.Children.Add(marker);
         }
     }
+
+    private static string BuildAutomationStatus(IReadOnlyList<GateATrialPoint> points)
+    {
+        var valid = ValidPoints(points);
+        if (valid.Length == 0)
+        {
+            return "No scored Gate A control history is available.";
+        }
+
+        var originalCount = valid.Count(static point =>
+            string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase));
+        var candidateCount = valid.Length - originalCount;
+        var attentionCount = valid.Count(static point =>
+            !string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase) &&
+            point.PairVerdict is GpuAutoAffinityPairVerdict.Unstable or GpuAutoAffinityPairVerdict.Inconclusive);
+        return $"{originalCount} Original control observation(s), {candidateCount} candidate observation(s), {attentionCount} attention-state candidate observation(s).";
+    }
+
+    private static string BuildAutomationDescription(IReadOnlyList<GateATrialPoint> points)
+    {
+        var valid = ValidPoints(points);
+        if (valid.Length == 0)
+        {
+            return "No scored Gate A control history is available.";
+        }
+
+        var originals = valid
+            .Where(static point => string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var candidates = valid
+            .Where(static point => !string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var range = originals.Length == 0
+            ? "No scored Original control values are present."
+            : $"Original 1 percent low range is {originals.Min(static point => point.OnePercentLowFps):0.0} to {originals.Max(static point => point.OnePercentLowFps):0.0} FPS across {originals.Length} observation(s).";
+        var attentionCount = candidates.Count(static point =>
+            point.PairVerdict is GpuAutoAffinityPairVerdict.Unstable or GpuAutoAffinityPairVerdict.Inconclusive);
+        return $"{range} Candidate observations: {candidates.Length}; attention-state candidate observations: {attentionCount}. Original controls are connected in run order; candidate CPUs are discrete markers and are never connected into a synthetic series. Raw local-pair evidence and control movement are listed below the chart.";
+    }
+
+    private static GateATrialPoint[] ValidPoints(IReadOnlyList<GateATrialPoint> points) =>
+        points
+            .Where(static point => double.IsFinite(point.OnePercentLowFps) && point.OnePercentLowFps > 0d)
+            .OrderBy(static point => point.RunNumber)
+            .ToArray();
 
     private static Point PositionOf(
         GateATrialPoint point,
