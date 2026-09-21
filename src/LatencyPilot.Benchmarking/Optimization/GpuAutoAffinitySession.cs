@@ -417,7 +417,7 @@ public sealed class GpuAutoAffinitySession
                     cancellationToken.ThrowIfCancellationRequested();
                     var outcome = await MeasureScreeningPairAsync(
                         candidate,
-                        "finalist",
+                        FinalistPhaseName,
                         finalistOriginal,
                         driftBudget,
                         finalistDuration,
@@ -1092,7 +1092,10 @@ public sealed class GpuAutoAffinitySession
                     medianP99,
                     low01.Length == 0 ? null : Median(low01),
                     improvementCapable ? "ImprovementCapable" : "Rejected",
-                    reason);
+                    reason)
+                {
+                    DecisionFloor = decisionFloor,
+                };
             }
 
             reports.Add(report);
