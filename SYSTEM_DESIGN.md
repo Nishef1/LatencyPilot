@@ -3,7 +3,7 @@
 Status: **Authoritative architecture baseline**  
 Last updated: 2026-09-21
 
-`ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence. ADR 0006, including its 2026-09-20 measurement amendment, owns the current v1 interrupt-affinity product direction.
+`ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence. ADR 0006, including its 2026-09-20 measurement amendment and 2026-09-21 Original-baseline correction, owns the current v1 interrupt-affinity product direction.
 
 ## 1. Product model
 
@@ -118,11 +118,12 @@ Hardware-independent interpretation/orchestration:
 - steady `baseline-quality-v2` / `workload-stability-v1`;
 - GPU candidate generation from actual topology;
 - `gpu-affinity-benchmark-v1` evidence interpretation/readiness;
+- true sequential Original 3-of-up-to-5 acquisition owned by the core session before candidate mutation;
 - one scored screen per eligible logical CPU;
 - bounded Original controls around small screening blocks;
 - time-local normalization of decision aggregates while preserving raw trials;
 - explicit local-control uncertainty propagated into shortlist/Keep thresholds;
-- bounded finalist re-tests, low-FPS ranking and repeatability policy;
+- independently bounded finalist re-tests, low-FPS ranking and repeatability policy;
 - progress planning;
 - input/xHCI timing/headroom interpretation;
 - future read-only/policy components that do not enter the v1 critical path.
@@ -241,7 +242,9 @@ The benchmark process remains stable across the complete search. The D3D12 rende
 one adaptive calibration
 → frozen workload
 → Original non-scored warm-up/reference
-→ 3 scored Original runs; one bounded replacement if needed
+→ 3 scored Original observations
+→ if no valid three-run regime exists, collect scored Original #4 and then #5 as independent observations
+→ select the best valid three-run Original cluster from the bounded set; if none exists after five, verify/retain Original and stop before any candidate mutation
 → screen every eligible logical CPU in blocks of at most four:
      apply/restart/verify
      non-scored warm-up
@@ -255,7 +258,7 @@ one adaptive calibration
      retain diagnostic screen, skip finalists, RestoreOriginal
 → otherwise rank by 1% low → AVG → lower p99 → 0.1% low rare-tail context
 → bounded shortlist capped at five, two independent shuffled re-test rounds
-→ prefer stable 3-of-up-to-4 evidence; otherwise retain all four with measured variance
+→ prefer stable finalist 3-of-up-to-4 evidence; otherwise retain all four with measured variance
 → fresh Original control after finalist phase; merge movement into uncertainty
 → walk finalists in rank order through Original/repeatability/time-local/frame/interrupt-tail guardrails
 → apply highest-ranked clean winner
@@ -263,6 +266,8 @@ one adaptive calibration
 → Keep only with clean target-only GPU ISR proof
    else exact RestoreOriginal
 ```
+
+Initial Original acquisition and finalist repeatability intentionally have different terminal semantics. Original may consume at most five scored observations but has no all-runs noise fallback: without a valid three-run cluster after five, mutation never starts. Finalists remain capped at four scored observations and may retain all four with measured variance when their preferred cluster is absent. Real contamination/transient-collector retry is separate from these scored-observation bounds.
 
 Ordinary gradual Original-control movement is a measured background covariate, not an automatic whole-sweep failure. It is normalized out of candidate decision aggregates and simultaneously retained as uncertainty, which raises the threshold for Keep. Structural failures remain fail-closed and are never normalized away.
 
