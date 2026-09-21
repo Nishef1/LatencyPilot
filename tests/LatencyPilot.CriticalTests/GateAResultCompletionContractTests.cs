@@ -72,6 +72,17 @@ public sealed class GateAResultCompletionContractTests
                 StringComparison.Ordinal),
             "The development Gate A completion view must not create a second ranking from metric decimals.");
 
+        var progressFile = File.ReadAllText(FindRepositoryFile(
+            "tools",
+            "LatencyPilot.GateAValidation",
+            "GpuGateAProgressFile.cs"));
+        StringAssert.Contains(progressFile, "PairRetryAdditionalUnits = 6",
+            "A paired retry adds a fresh Original-before warm-up/score plus candidate and Original-after warm-up/score: six progress units.");
+        StringAssert.Contains(progressFile, "-retry-original-before-warmup",
+            "Progress accounting must recognize the bounded pair retry at its fresh Original-before boundary.");
+        Assert.IsFalse(progressFile.Contains("finalistWarmupsStarted", StringComparison.Ordinal),
+            "Finalist warm-up counting must not double-count paired retries after the retry boundary owns the six-unit budget.");
+
         var presentation = File.ReadAllText(FindRepositoryFile(
             "src",
             "LatencyPilot.Benchmarking",
