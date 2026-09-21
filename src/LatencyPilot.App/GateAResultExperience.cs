@@ -54,7 +54,7 @@ public sealed partial class MainWindow
         OverviewView.ChangeView(null, 0d, null, disableAnimation: true);
     }
 
-    private Border BuildGateAResultHero(GateAResultViewModel result)
+    private static Border BuildGateAResultHero(GateAResultViewModel result)
     {
         var card = StyledBorder("ChartCardStyle");
         var stack = new StackPanel { Spacing = 10d };
@@ -130,7 +130,7 @@ public sealed partial class MainWindow
         return card;
     }
 
-    private Grid BuildGateAMetricGrid(GateAResultViewModel result)
+    private static Grid BuildGateAMetricGrid(GateAResultViewModel result)
     {
         var grid = new Grid { ColumnSpacing = 12d, RowSpacing = 12d };
         foreach (var metric in result.Metrics)
@@ -171,7 +171,7 @@ public sealed partial class MainWindow
         return grid;
     }
 
-    private Grid BuildGateAChartsGrid(GateAResultViewModel result)
+    private static Grid BuildGateAChartsGrid(GateAResultViewModel result)
     {
         var candidateChart = new GpuCandidateComparisonChart();
         var originalLow1 = result.Metrics.FirstOrDefault(static metric => metric.Key == "low1")?.OriginalValue;
@@ -199,7 +199,7 @@ public sealed partial class MainWindow
         return grid;
     }
 
-    private Border BuildChartCard(string title, string subtitle, FrameworkElement chart)
+    private static Border BuildChartCard(string title, string subtitle, FrameworkElement chart)
     {
         var card = StyledBorder("ChartCardStyle");
         var stack = new StackPanel { Spacing = 10d };
@@ -216,7 +216,7 @@ public sealed partial class MainWindow
         return card;
     }
 
-    private Border BuildGateADecisionEvidence(GateAResultViewModel result)
+    private static Border BuildGateADecisionEvidence(GateAResultViewModel result)
     {
         var card = StyledBorder("ChartCardStyle");
         var stack = new StackPanel { Spacing = 12d };
@@ -276,7 +276,7 @@ public sealed partial class MainWindow
         return card;
     }
 
-    private Border BuildGateAEvidenceActions(GateAResultViewModel result)
+    private static Border BuildGateAEvidenceActions(GateAResultViewModel result)
     {
         var card = StyledBorder("ChartCardStyle");
         var stack = new StackPanel { Spacing = 10d };
