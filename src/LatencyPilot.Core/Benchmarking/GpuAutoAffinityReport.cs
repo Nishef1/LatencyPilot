@@ -3,6 +3,19 @@ using LatencyPilot.Core.System;
 
 namespace LatencyPilot.Core.Benchmarking;
 
+public enum GpuAutoAffinitySearchScope
+{
+    Full,
+    Custom,
+}
+
+public enum GpuAutoAffinityPairVerdict
+{
+    Valid,
+    Unstable,
+    Inconclusive,
+}
+
 public sealed record GpuAutoAffinityPlacementProof(
     LogicalProcessorId TargetProcessor,
     int TargetIsrEventCount,
@@ -108,6 +121,38 @@ public sealed record GpuAutoAffinityInterruptEvidence(
     int IsrSampleCount,
     int UnresolvedIsrEventCount);
 
+public sealed record GpuAutoAffinityPairReport(
+    int PairNumber,
+    LogicalProcessorId Processor,
+    int PhysicalCoreIndex,
+    string Stage,
+    int Attempt,
+    Guid OriginalBeforeCaptureId,
+    Guid CandidateCaptureId,
+    Guid OriginalAfterCaptureId,
+    double OriginalBeforeOnePercentLowFps,
+    double CandidateOnePercentLowFps,
+    double OriginalAfterOnePercentLowFps,
+    double OnePercentLowEffect,
+    double AvgEffect,
+    double FrameP99Effect,
+    double? Low01PctEffect,
+    double ControlMovement,
+    double DriftBudget,
+    GpuAutoAffinityPairVerdict Verdict,
+    string Reason);
+
+public sealed record GpuAutoAffinityFinalistReport(
+    LogicalProcessorId Processor,
+    int PhysicalCoreIndex,
+    IReadOnlyList<int> PairNumbers,
+    double? MedianOnePercentLowEffect,
+    double? MedianAvgEffect,
+    double? MedianFrameP99Effect,
+    double? MedianLow01PctEffect,
+    string Verdict,
+    string Reason);
+
 public sealed record GpuAutoAffinityCandidateReport(
     string Phase,
     int PhysicalCoreIndex,
@@ -175,9 +220,23 @@ public sealed record GpuAutoAffinityReport(
     UsbAffinityRecommendationReport? UsbRecommendation = null,
     GpuAutoAffinityDecisionBaselineReport? DecisionBaseline = null)
 {
-    public const string SchemaId = "latencypilot-gpu-auto-affinity-report-v1";
+    public const string SchemaId = "latencypilot-gpu-auto-affinity-report-v2";
 
     public string SourceState { get; init; } = "unknown";
 
     public bool GateAClosureEligible { get; init; }
+
+    public GpuAutoAffinitySearchScope SearchScope { get; init; } = GpuAutoAffinitySearchScope.Full;
+
+    public IReadOnlyList<LogicalProcessorId> RequestedProcessors { get; init; } = [];
+
+    public IReadOnlyList<LogicalProcessorId> ValidatedProcessors { get; init; } = [];
+
+    public bool FullTopologyCoverage { get; init; }
+
+    public IReadOnlyList<GpuAutoAffinityPairReport> Pairs { get; init; } = [];
+
+    public IReadOnlyList<GpuAutoAffinityFinalistReport> Finalists { get; init; } = [];
+
+    public bool PracticalTie { get; init; }
 }
