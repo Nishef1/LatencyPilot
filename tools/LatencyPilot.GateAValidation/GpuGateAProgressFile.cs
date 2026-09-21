@@ -11,6 +11,8 @@ internal sealed class GpuGateAProgressFile
 {
     private const int MaximumWriteAttempts = 8;
     private const int RequiredRepeatabilityRuns = 3;
+    private const int PairRetryAdditionalUnits = 6;
+    private const int RecoveryOriginalAdditionalUnits = 2;
     private const int MaximumRepeatabilityObservations = GpuOriginalBaselinePolicy.MaximumScoredObservationCount;
     private static readonly TimeSpan WriteRetryDelay = TimeSpan.FromMilliseconds(25);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -24,7 +26,6 @@ internal sealed class GpuGateAProgressFile
     private readonly Dictionary<LogicalProcessorId, int> screeningCandidates = [];
     private readonly Dictionary<LogicalProcessorId, int> finalistCandidates = [];
     private readonly Dictionary<string, int> candidatePassesStarted = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, int> finalistWarmupsStarted = new(StringComparer.Ordinal);
     private readonly object writeLock = new();
     private int originalScoredPassesStarted;
     private int totalUnits;
@@ -60,7 +61,26 @@ internal sealed class GpuGateAProgressFile
         {
             if (request.RetryAttempt > 0)
             {
+                // CaptureAcceptedAsync adds one extra capture for a transient
+                // benchmark/collector retry. The surrounding pair budget is
+                // unchanged, so only this one additional unit is added here.
                 totalUnits = checked(totalUnits + 1);
+            }
+            else if (request.Phase.EndsWith("-retry-original-before-warmup", StringComparison.Ordinal))
+            {
+                // A statistical pair retry is a complete new local comparison:
+                // fresh Original-before warm-up/score + candidate warm-up/score
+                // + Original-after warm-up/score. Budget all six units at the
+                // first retry boundary so ETA/progress never reports 100% while
+                // the bounded retry is still running.
+                totalUnits = checked(totalUnits + PairRetryAdditionalUnits);
+            }
+            else if (request.Phase.EndsWith("-recovery-original-control-warmup", StringComparison.Ordinal))
+            {
+                // An exhausted/inconclusive pair cannot donate its final Original
+                // as the next chain anchor. The session reacquires a fresh
+                // Original control before continuing with another candidate.
+                totalUnits = checked(totalUnits + RecoveryOriginalAdditionalUnits);
             }
             else if (string.Equals(request.Phase, "screening-original", StringComparison.Ordinal))
             {
@@ -68,17 +88,6 @@ internal sealed class GpuGateAProgressFile
                 if (originalScoredPassesStarted > RequiredRepeatabilityRuns)
                 {
                     totalUnits = checked(totalUnits + 1);
-                }
-            }
-            else if (string.Equals(request.Phase, "screening-finalists-warmup", StringComparison.Ordinal) && request.Candidate is not null)
-            {
-                var key = request.Candidate.Processor.ToString();
-                finalistWarmupsStarted.TryGetValue(key, out var pass);
-                pass++;
-                finalistWarmupsStarted[key] = pass;
-                if (pass > 3)
-                {
-                    totalUnits = checked(totalUnits + 4);
                 }
             }
 
