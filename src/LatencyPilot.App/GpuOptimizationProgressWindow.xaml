@@ -12,7 +12,9 @@
         <Grid x:Name="RootGrid"
               Padding="24"
               Background="{ThemeResource CanvasBrush}">
-            <StackPanel Spacing="16">
+            <StackPanel MaxWidth="860"
+                        HorizontalAlignment="Center"
+                        Spacing="16">
                 <StackPanel Spacing="4">
                     <TextBlock Text="GPU Auto Affinity"
                                Style="{StaticResource SectionTitleTextStyle}" />
@@ -25,10 +27,12 @@
                         <TextBlock x:Name="CandidateText"
                                    Text="Preparing candidates…"
                                    Style="{StaticResource SubsectionTitleTextStyle}"
+                                   TextWrapping="Wrap"
                                    AutomationProperties.Name="GPU affinity candidate" />
                         <TextBlock x:Name="PhaseText"
                                    Text="Initializing benchmark"
                                    Style="{StaticResource MutedBodyTextStyle}"
+                                   TextWrapping="Wrap"
                                    AutomationProperties.Name="GPU optimizer phase" />
                         <Grid ColumnSpacing="12">
                             <Grid.ColumnDefinitions>
@@ -58,7 +62,9 @@
                     </Grid.ColumnDefinitions>
                     <Border Style="{StaticResource MetricTileStyle}">
                         <StackPanel Spacing="4">
-                            <TextBlock Text="Frame p99" Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock x:Name="FrameP99LabelText"
+                                       Text="Latest frame p99"
+                                       Style="{StaticResource CaptionTextStyle}" />
                             <TextBlock x:Name="FrameP99Text"
                                        Text="—"
                                        Style="{StaticResource MetricLabelTextStyle}" />
@@ -66,7 +72,9 @@
                     </Border>
                     <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
                         <StackPanel Spacing="4">
-                            <TextBlock Text="1% low" Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock x:Name="OnePercentLowLabelText"
+                                       Text="Latest 1% low"
+                                       Style="{StaticResource CaptionTextStyle}" />
                             <TextBlock x:Name="OnePercentLowText"
                                        Text="—"
                                        Style="{StaticResource MetricLabelTextStyle}" />
@@ -74,45 +82,58 @@
                     </Border>
                 </Grid>
 
-                <Border Style="{StaticResource MetricTileStyle}">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="GPU ISR placement" Style="{StaticResource CaptionTextStyle}" />
-                        <TextBlock x:Name="IsrPlacementText"
-                                   Text="Not measured"
-                                   Style="{StaticResource MetricLabelTextStyle}"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
-                </Border>
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource MetricTileStyle}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="GPU ISR placement" Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock x:Name="IsrPlacementText"
+                                       Text="Not measured"
+                                       Style="{StaticResource MetricLabelTextStyle}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Last completed candidate"
+                                       Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock x:Name="LastCandidateText"
+                                       Text="None yet"
+                                       Style="{StaticResource BodyTextStyle}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock x:Name="TimingText"
+                                       Text="Elapsed 00:00 · estimating remaining time"
+                                       Style="{StaticResource CaptionTextStyle}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
 
-                <Border Style="{StaticResource SubtleCardStyle}">
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Last completed candidate"
-                                   Style="{StaticResource CaptionTextStyle}" />
-                        <TextBlock x:Name="LastCandidateText"
-                                   Text="None yet"
-                                   Style="{StaticResource BodyTextStyle}" />
-                        <TextBlock x:Name="TimingText"
-                                   Text="Elapsed 00:00 · estimating remaining time"
-                                   Style="{StaticResource CaptionTextStyle}" />
-                    </StackPanel>
-                </Border>
-
-                <Border Style="{StaticResource SubtleCardStyle}">
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Candidate decision evidence (time-local normalized when available)"
-                                   Style="{StaticResource CaptionTextStyle}"
-                                   AutomationProperties.Name="GPU candidate decision evidence" />
+                <Border Style="{StaticResource DashboardCardStyle}">
+                    <StackPanel Spacing="10">
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="Candidate decision evidence"
+                                       Style="{StaticResource SubsectionTitleTextStyle}"
+                                       AutomationProperties.Name="GPU candidate decision evidence" />
+                            <TextBlock Text="Optimizer rank first; time-local decision metrics, uncertainty and raw context remain visible."
+                                       Style="{StaticResource CaptionTextStyle}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
                         <TextBlock x:Name="RankedSummaryText"
                                    Text="Results appear here when the search finishes."
                                    Style="{StaticResource BodyTextStyle}"
                                    TextWrapping="Wrap" />
-                        <StackPanel x:Name="RankedCandidatesPanel" Spacing="8" />
+                        <StackPanel x:Name="RankedCandidatesPanel" Spacing="0" />
                     </StackPanel>
                 </Border>
 
                 <TextBlock x:Name="StatusText"
                            Text="Starting the normal-user benchmark process."
                            Style="{StaticResource MutedBodyTextStyle}"
+                           TextWrapping="Wrap"
                            AutomationProperties.Name="GPU optimizer status" />
 
                 <Button x:Name="StopButton"
