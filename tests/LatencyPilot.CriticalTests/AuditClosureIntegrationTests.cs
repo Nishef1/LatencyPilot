@@ -116,10 +116,10 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(
             benchmarkWorkload,
             "var simulationIterations = MinimumSimulationIterations;",
-            "The v1 benchmark must keep synthetic CPU simulation at its fixed minimum instead of calibrating scheduler pressure into the scored workload.");
+            "The controlled benchmark must keep synthetic CPU simulation at its fixed minimum instead of calibrating scheduler pressure into the scored workload.");
         Assert.IsFalse(
             benchmarkWorkload.Contains("TuneSimulationIterations(", StringComparison.Ordinal),
-            "The v1 benchmark must not adaptively increase CPU simulation based on CPU frame time.");
+            "The controlled benchmark must not adaptively increase CPU simulation based on CPU frame time.");
 
         var bundleRoot = Path.Combine(Path.GetTempPath(), $"latencypilot-gatea-bundle-{Guid.NewGuid():N}");
         var sessionDirectory = Path.Combine(bundleRoot, "gpu-auto-affinity-session");
@@ -277,7 +277,7 @@ public sealed class AuditClosureIntegrationTests
             "C:\\evidence\\session",
             "C:\\evidence\\session\\gpu-auto-affinity-report.json",
             new GateAEvidenceBundleExportResult("C:\\evidence\\session.zip", null));
-        Assert.AreEqual("CPU 7 kept", keepPresentation.Title);
+        Assert.AreEqual("Winner · CPU 7 kept", keepPresentation.Title);
         Assert.AreEqual("Evidence eligible", keepPresentation.EligibilityLabel,
             "Source/evidence eligibility must not be presented as if the whole physical Gate A were already closed.");
         Assert.AreEqual(cpu7, keepPresentation.ComparedProcessor);
@@ -307,7 +307,7 @@ public sealed class AuditClosureIntegrationTests
             "C:\\evidence\\session",
             "C:\\evidence\\session\\gpu-auto-affinity-report.json",
             new GateAEvidenceBundleExportResult(null, "ZIP destination is locked."));
-        Assert.AreEqual("Original kept", restorePresentation.Title);
+        Assert.AreEqual("No measured winner · Original restored", restorePresentation.Title);
         Assert.AreEqual("Development evidence", restorePresentation.EligibilityLabel);
         Assert.AreEqual(cpu7, restorePresentation.ComparedProcessor,
             "Diagnostic comparison must follow the optimizer's persisted decision rank, not candidate execution order.");
@@ -323,6 +323,15 @@ public sealed class AuditClosureIntegrationTests
             "An empty regressed-guardrails list is not structured proof that an unkept candidate passed final guardrails.");
         Assert.IsFalse(restorePresentation.BundleAvailable);
         StringAssert.Contains(restorePresentation.BundleStatus, "could not be packaged");
+
+        var customPresentation = GateAResultPresentation.Create(
+            restoreReport with { SearchScope = GpuAutoAffinitySearchScope.Custom },
+            "C:\\evidence\\session",
+            "C:\\evidence\\session\\gpu-auto-affinity-report.json",
+            new GateAEvidenceBundleExportResult(null, "ZIP destination is locked."));
+        Assert.AreEqual("Custom diagnostic result", customPresentation.Title);
+        StringAssert.Contains(customPresentation.ComparedCandidateLabel, "Best within selected CPUs");
+        StringAssert.Contains(customPresentation.Summary, "Best within selected CPUs");
     }
 
     private static GpuAutoAffinityTrialReport CreateOriginalTrial(
