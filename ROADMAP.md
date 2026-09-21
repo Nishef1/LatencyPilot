@@ -1,9 +1,9 @@
 # LatencyPilot Product Roadmap
 
 Status: **Authoritative completion plan**  
-Last updated: 2026-09-19
+Last updated: 2026-09-21
 
-`PROJECT_STATUS.md` owns current execution/evidence state. This file owns the required product outcomes. Source-complete and physically validated are different claims.
+`PROJECT_STATUS.md` owns current execution/evidence state. This file owns required product outcomes. Source-complete and physically validated are different claims.
 
 ## Product definition — v1
 
@@ -13,7 +13,8 @@ LatencyPilot v1 automates one narrow, reversible Windows 11 workflow:
 preflight / quiet check
 → baseline DPC/ISR evidence
 → benchmark GPU interrupt affinity across every eligible logical CPU
-→ re-test the best up to three and select the best repeatable core
+→ time-local Original controls + normalized decision evidence
+→ bounded finalist confirmation
 → final runtime GPU ISR-placement verification
 → measure remaining per-CPU interrupt headroom
 → resolve the primary input device to its exact xHCI controller
@@ -30,9 +31,9 @@ The manual inspiration is AutoGpuAffinity + LatencyMon/ETW + Interrupt Affinity 
 - processor/device/USB topology discovery;
 - ETW DPC/ISR measurement and per-CPU/module attribution;
 - deterministic D3D12 GPU benchmark;
-- understandable AVG FPS / 1% low / 0.1% low results;
+- understandable AVG FPS / 1% low / 0.1% low / p99 evidence;
 - safe GPU interrupt-affinity mutation, restart and rollback;
-- automatic GPU-core search;
+- automatic GPU logical-CPU search with time-local controls;
 - Raw Input → USB → xHCI route resolution;
 - per-CPU interrupt-headroom analysis for input/xHCI placement;
 - reversible xHCI/controller affinity after the shared mutation substrate is physically proven;
@@ -58,7 +59,8 @@ Canonical current decision: `docs/adr/0006-simple-auto-interrupt-affinity-v1.md`
 - [x] typed observation protocol with public mutation still unarmed;
 - [x] durable SQLite mutation journal and recovery ownership;
 - [x] exact original-state snapshot/restore semantics;
-- [x] current v1 scope removes ABBA/BAAB and Original-vs-candidate fixed winner thresholds; SMT siblings are screened directly rather than handled by a separate refinement phase;
+- [x] current v1 scope removes ABBA/BAAB and fixed Original-vs-candidate winner thresholds;
+- [x] SMT siblings are screened directly rather than handled by a separate refinement phase;
 - [x] NIC/audio/cross-subsystem automatic tuning removed from the v1 critical path.
 
 ### Exit gate
@@ -71,17 +73,17 @@ The v1 workflow, safety boundary and rollback owner are unambiguous without chat
 
 **State: MOST SOURCE EXISTS; INTEGRATED V1 PREFLIGHT OPEN**
 
-Already available:
+Available:
 
 - [x] processor-group-aware physical/logical/SMT topology;
 - [x] PnP GPU/input/USB/xHCI inventory primitives;
 - [x] driver/version and Windows/source provenance;
 - [x] exact GPU affinity stored-state snapshot;
-- [x] CPU-set eligibility handling without assuming even/odd CPU numbers;
+- [x] CPU-set eligibility handling without even/odd assumptions;
 - [x] ambiguity/fail-closed device identity contracts;
 - [x] journal blocks unresolved unsafe follow-on mutation.
 
-Remaining v1 wiring:
+Remaining:
 
 - [ ] one integrated **Optimize Interrupt Affinity** preflight;
 - [ ] quiet/background-load check with actionable warning rather than killing user apps;
@@ -92,20 +94,20 @@ Remaining v1 wiring:
 
 ## Phase 2 — Baseline interrupt evidence
 
-**State: MEASUREMENT ENGINE EXISTS; V1 10-MINUTE BASELINE WORKFLOW OPEN**
+**State: MEASUREMENT ENGINE EXISTS; INTEGRATED V1 DEEP BASELINE OPEN**
 
-Available source:
+Available:
 
 - [x] bounded kernel ETW DPC/ISR capture;
 - [x] per-CPU DPC/ISR counts;
 - [x] DPC/ISR duration distributions and module attribution;
 - [x] integrity/lost-event accounting;
 - [x] read-only evidence export/provenance;
-- [x] existing repeated baseline product remains available for diagnostic/steady analysis.
+- [x] existing repeated steady baseline product.
 
-V1 work:
+Remaining:
 
-- [ ] wire the video-style deep baseline into the automatic workflow (default target: 10 minutes, configurable later);
+- [ ] wire the deep baseline into the automatic workflow;
 - [ ] persist before values needed by final comparison: per-CPU DPC/ISR counts, total duration, tail duration and module attribution;
 - [ ] surface quiet-condition warnings without making background-app closure a blind hard requirement.
 
@@ -115,7 +117,7 @@ LatencyMon is not a dependency; LatencyPilot uses its own ETW evidence.
 
 ## Phase 3 — Automatic GPU core search
 
-**State: SIMPLIFIED V1 SOURCE + HOSTED CRITICAL-TEST CI COMPLETE; PHYSICAL PROOF OPEN**
+**State: SIMPLIFIED V1 SOURCE + HOSTED CONTRACTS IMPLEMENTED; PHYSICAL PROOF OPEN**
 
 Current source workflow:
 
@@ -123,76 +125,85 @@ Current source workflow:
 exact original/default GPU affinity
 → normal-user deterministic D3D12 calibration
 → frozen worker map/workload/seed
-→ 5 s non-scored original warm-up/reference (benchmark only; no PresentMon/ETW)
-→ every eligible logical CPU:
+→ 5 s non-scored Original warm-up/reference
+→ 3 scored Original runs; one bounded replacement if needed
+→ screen every eligible logical CPU in blocks of at most four:
      journaled apply/restart + stored-state verify
-     5 s non-scored warm-up (benchmark only; no PresentMon/ETW)
+     5 s non-scored warm-up
      1 scored 30 s screening run
-     exact rollback
-→ 5 s Original warm-up → fresh scored Original control after the full sweep; abort ranking if it leaves the Original repeatability band
-→ rank by 1% low → AVG → p99 → 0.1% low rare-tail context
-→ if Original 1%-low noise >15% after the sweep/control: keep full screening results, skip exhaustive finalist re-tests, RestoreOriginal
-→ otherwise best three + candidates within min(3%, max(1%, observed Original noise)) of the third-place cutoff, capped at five:
-     two independent deterministically shuffled re-test rounds
-     each candidate gets fresh apply/restart + warm-up + one 30 s score + exact rollback
-     one extra replacement score only if the preferred ±3% 3-run cluster is still missing
-→ prefer the tightest stable 3-of-up-to-4 cluster; if four valid runs still do not cluster, retain all four and carry observed per-metric noise into ranking/guardrails
-→ 5 s Original warm-up → fresh scored Original control after finalist re-tests; reject finalist evidence if 1%/AVG/p99 drift
-→ evaluate finalists in rank order against Original + frame/noise-aware interrupt-tail guardrails
+     exact rollback + Original-state verification
+     fresh Original block control after each full block when candidates remain
+→ final Original control after the last screening block
+→ normalize rankable screening decision metrics against time-local Original controls
+   while preserving raw scored trials unchanged
+→ carry measured control movement as uncertainty
+→ if effective 1%-low variability >15%:
+     retain screening diagnostics, skip finalist confirmation, RestoreOriginal
+→ otherwise rank decision aggregates by 1% low → AVG → lower p99 → 0.1% low rare-tail context
+→ shortlist best three plus candidates within min(3%, max(1%, effective variability)) of third place, capped at five
+→ two independent shuffled finalist re-test rounds
+→ prefer tightest stable 3-of-up-to-4 cluster; otherwise retain all four and carry observed variance
+→ fresh Original control after finalist re-tests; merge phase movement into uncertainty
+→ evaluate finalists against Original + repeatability + time-local uncertainty + frame/interrupt-tail guardrails
 → apply highest-ranked clean winner once
 → final benchmark-only warm-up → ETW verification capture
-→ Keep only with clean target-only runtime GPU ISR placement
+→ Keep only with clean attributable target-only runtime GPU ISR placement
    otherwise exact RestoreOriginal
 ```
 
 Source checklist:
 
-- [x] D3D12 benchmark and GPU timestamp evidence;
+- [x] D3D12 benchmark and queue timestamp evidence;
 - [x] controlled benchmark wall-period AVG / 1% / 0.1% / p99 statistics;
 - [x] all eligible logical-CPU candidates from actual Windows topology, including SMT siblings and CPU0;
 - [x] one scored screening run per candidate;
-- [x] post-sweep Original warm-up + scored control rejects time/thermal/background drift before shortlist ranking;
-- [x] extreme (>15%) Original 1%-low noise stops after full screening/control instead of expanding into exhaustive finalist work;
-- [x] finalist confirmation is bounded to at most five candidates inside min(3%, max(1%, observed Original noise)) of the third-place cutoff;
-- [x] finalist order is deterministically shuffled in each re-test round to reduce time/thermal ordering bias;
-- [x] repeatability is capped at four scores; a stable three-run cluster is preferred, otherwise all four valid runs remain usable with their observed variance carried into decision thresholds;
-- [x] ranking is noise-aware: <=1% differences in 1% low / AVG / p99 are practical ties; 0.1% low only breaks a remaining tie when its relative difference exceeds 5%;
-- [x] a second post-finalist Original warm-up + scored control rejects drift in 1% low / AVG / frame-p99 before Keep;
-- [x] comparable GPU-driver DPC/ISR p99 tails are per-run, median/noise-aware Keep guardrails; a rejected top finalist falls through to the next ranked clean improvement;
-- [x] no separate SMT/hyperthread refinement phase because eligible siblings are first-class candidates;
+- [x] bounded Original block controls during screening plus final screening control;
+- [x] time-local normalization separates candidate decision evidence from gradual background movement;
+- [x] raw candidate/control observations remain preserved for audit/diagnostics;
+- [x] measured local movement raises uncertainty and Keep thresholds rather than being called a candidate win;
+- [x] effective >15% 1%-low variability skips expensive finalist confirmation and restores Original;
+- [x] finalist confirmation capped at five candidates;
+- [x] deterministic finalist-order shuffling reduces ordering bias;
+- [x] repeatability capped at four scores; stable 3-run cluster preferred, otherwise all four valid runs remain usable with observed variance;
+- [x] ranking treats <=1% differences in 1% low / AVG / p99 as practical ties; 0.1% low only breaks a remaining tie above 5%;
+- [x] post-finalist Original control contributes additional time-local uncertainty before Keep evaluation;
+- [x] comparable GPU-driver DPC/ISR p99 tails are median/noise-aware Keep guardrails;
+- [x] rejected top finalist falls through to the next ranked clean improvement;
+- [x] no separate SMT-refinement phase;
 - [x] no ABBA/BAAB confirmation loop;
-- [x] Windows default is recovery/reference state, not a fixed minimum-improvement gate;
-- [x] 5 s non-scored post-transition warm-up;
-- [x] screening PresentMon/ETW outages degrade diagnostics instead of aborting the entire search;
-- [x] healthy ETW proving wrong/off-target placement invalidates that screening candidate;
+- [x] Windows default is exact recovery/reference state, not a fixed minimum-improvement opponent;
+- [x] screening PresentMon/ETW outages degrade diagnostics instead of aborting valid benchmark-owned frame evidence;
+- [x] healthy ETW proving wrong/off-target placement invalidates that candidate;
 - [x] final Keep requires clean ETW + attributable GPU ISR + target-only placement;
 - [x] exact rollback between candidates and on failed final verification/cancellation;
-- [x] standalone pinned PresentMon 2.5.1 remains an independent cross-check, not a separately installed service dependency;
-- [x] PresentMon frame-cadence parsing distinguishes `MsBetweenPresents` from `MsBetweenAppStart`;
+- [x] standalone pinned PresentMon remains an independent cross-check, not a service dependency;
+- [x] PresentMon cadence parsing distinguishes current `FrameTime`, legacy `MsBetweenPresents` and different `MsBetweenAppStart` semantics;
 - [x] failed PresentMon raw diagnostics use bounded retention;
-- [x] progress/result UI ranks by 1% low and displays 0.1%/AVG/p99 context;
-- [x] Gate A distinguishes exact-clean **EvidenceReady** runs from dirty-main **DevelopmentOnly** runs; dirty reports are explicitly non-closure evidence;
-- [x] hosted Tests green for the source-state behavior before final documentation reconciliation;
-- [ ] physical Gate A rerun on the owner machine using one exact clean green revision;
-- [ ] repeat whole search to establish practical reproducibility;
+- [x] development result presentation consumes persisted decision rank/metrics instead of re-ranking shuffled raw data;
+- [x] EvidenceReady / DevelopmentOnly / Blocked source-state policy is shared by App/helper;
+- [x] dirty runs are explicitly non-closure evidence;
+- [ ] one exact clean green physical Gate A run on owner hardware using the current method;
+- [ ] repeat the whole search for practical reproducibility;
 - [ ] Stop safely + supported failure/recovery physical exercise;
-- [ ] rendered/taskbar/keyboard/accessibility inspection.
+- [ ] rendered/taskbar/keyboard/accessibility inspection of the new result surface.
 
 ### GPU physical Gate A
 
-Gate A closes only when the exact clean green revision proves on supported hardware:
+Gate A closes only when one exact clean green revision proves on supported hardware:
 
-1. all expected eligible logical CPUs are screened;
-2. top candidates receive two additional scored runs;
-3. a stable finalist is selected by the documented low-FPS order;
-4. exact rollback occurs between candidate blocks;
-5. final stored state is correct;
-6. final ETW proves GPU ISR target-only placement before Keep;
-7. Stop/failure paths restore and verify the original state with zero unresolved journal state.
+1. every expected eligible logical CPU receives one scored screening run;
+2. Original block/final controls are captured and normalization/uncertainty are persisted correctly;
+3. if effective variability exceeds the finalist-confirmation budget, the run restores Original without manufacturing a Keep winner;
+4. otherwise the shortlist receives the required bounded re-tests;
+5. repeatability never exceeds four scored attempts per Original/finalist decision set;
+6. exact rollback occurs between candidate activations and on failure/cancellation;
+7. the selected finalist clears the documented noise/time-local uncertainty and guardrail thresholds;
+8. final ETW proves target-only GPU ISR placement before Keep;
+9. terminal stored state is verified with zero unresolved journal ownership;
+10. Stop safely plus one supported failure path restore exact Original;
+11. a repeated whole search is practically reproducible or reports uncertainty explicitly.
 
-A dirty `main` checkout may run the same hardware workflow only as explicitly development-only evidence. It can validate behavior during development but cannot close Gate A or arm product mutation, even when the machine-state outcome is otherwise verified.
-
-Product mutation IPC remains unarmed until the authoritative physical substrate gate passes.
+Public mutation IPC remains unarmed until this physical gate passes.
 
 ---
 
@@ -201,7 +212,7 @@ Product mutation IPC remains unarmed until the authoritative physical substrate 
 **State: INTERNAL FINAL-KEEP SOURCE IMPLEMENTED; PRODUCT ARMING GATED**
 
 - [x] internal winner apply and exact stored-state verification;
-- [x] final ETW target-only ISR placement is mandatory for Keep;
+- [x] final ETW target-only ISR placement mandatory for Keep;
 - [x] failure/cancellation rollback preserves exact original state ownership;
 - [ ] Gate A physical proof;
 - [ ] typed allowlisted mutation-specific Service IPC after Gate A;
@@ -214,22 +225,19 @@ Product mutation IPC remains unarmed until the authoritative physical substrate 
 
 **State: READ-ONLY AUTOMATIC RECOMMENDATION SOURCE IMPLEMENTED; PHYSICAL EVIDENCE PENDING**
 
-Available:
-
 - [x] Raw Input identity;
 - [x] PnP ancestry;
 - [x] USB hub/port correlation;
 - [x] exact xHCI controller identity;
 - [x] Raw Input host timing metrics;
-- [x] xHCI DPC/ISR attribution/readiness source.
-
-V1 selection work after GPU winner is fixed:
-
-- [x] run the post-GPU quiet ETW capture used for CPU headroom in Gate A after a verified GPU Keep;
-- [x] exclude the entire physical core containing the GPU winner, including its SMT sibling;
-- [x] rank available CPU headroom from total DPC + ISR duration, then p99 interrupt tail, then event count as context;
-- [x] bind the selected CPU to the exact interrupt-owning xHCI controller, not blindly to the leaf mouse;
-- [x] persist the selected input route/controller/CPU and transparent reason in the Gate A report; normal-user UI rendering remains Phase 9.
+- [x] xHCI DPC/ISR attribution/readiness source;
+- [x] post-GPU quiet ETW headroom capture after verified GPU Keep;
+- [x] exclude the whole physical core containing the GPU winner, including SMT sibling;
+- [x] rank CPU headroom by total DPC+ISR duration, then p99 interrupt tail, then event count context;
+- [x] bind recommendation to the exact interrupt-owning xHCI controller;
+- [x] persist route/controller/CPU and transparent reason in Gate A evidence;
+- [ ] representative physical input/xHCI evidence;
+- [ ] normal-user rendering in the integrated workflow.
 
 ---
 
@@ -240,12 +248,10 @@ V1 selection work after GPU winner is fixed:
 - [x] bounded reversible xHCI/controller-affinity mutation source;
 - [x] exact stored-state snapshot and durable journal integration;
 - [x] restart-required/reboot-pending state plus exact rollback/recovery source;
-- [ ] short post-apply controller-specific ETW runtime-placement verification in the integrated product flow;
+- [ ] controller-specific ETW runtime-placement verification in the integrated product flow;
 - [ ] Raw Input timing sanity check after apply;
-- [ ] integrated rollback of USB/xHCI while preserving the proven GPU winner if USB verification fails;
+- [ ] integrated rollback of USB/xHCI while preserving a proven GPU winner when USB verification fails;
 - [ ] representative high-polling hardware physical evidence.
-
-The internal mutation substrate existing in source does **not** mean the product path is armed. Automatic USB/xHCI remains gated on the shared physical safety proof and the missing integrated runtime verification above.
 
 ---
 
@@ -256,8 +262,8 @@ The internal mutation substrate existing in source does **not** mean the product
 - [x] durable journal survives interruption/restart;
 - [x] recovery re-reads actual machine state;
 - [x] GPU restart/reboot-required detection primitives;
-- [x] generic device-interrupt `ApplyRebootPending` / `RollbackRebootPending` + resume source for MSI/xHCI substrate;
-- [ ] persist one combined GPU+xHCI product pending-verification session;
+- [x] generic device-interrupt apply/rollback reboot-pending + resume source;
+- [ ] persist one combined GPU+xHCI pending-verification product session;
 - [ ] request one product-level reboot when required;
 - [ ] post-login verify stored GPU/xHCI policies as one session;
 - [ ] prove runtime GPU and xHCI interrupt placement;
@@ -269,10 +275,11 @@ The internal mutation substrate existing in source does **not** mean the product
 
 **State: METRIC/REPORT PRIMITIVES EXIST; INTEGRATED V1 REPORT OPEN**
 
-- [ ] repeat the same deep ETW baseline conditions after optimization;
+- [ ] repeat like-for-like deep ETW baseline conditions after optimization;
 - [ ] short GPU verification benchmark;
-- [ ] show GPU CPU, AVG FPS, 1% low, 0.1% low and p99 context before/after where comparable;
-- [ ] show xHCI CPU, DPC/ISR counts, total/tail durations and Raw Input host timing before/after;
+- [ ] show GPU CPU, AVG FPS, 1% low, 0.1% low and p99 context where comparable;
+- [ ] show xHCI CPU, DPC/ISR counts, total/tail durations and Raw Input host timing where comparable;
+- [ ] distinguish raw observations, decision aggregates and verified terminal state;
 - [ ] never label an unmeasured proxy as click-to-photon or network latency;
 - [ ] export provenance and verification state with the result.
 
@@ -280,7 +287,7 @@ The internal mutation substrate existing in source does **not** mean the product
 
 ## Phase 9 — Normal-user v1 UX and release
 
-**State: DEVELOPMENT UI + RELEASE FOUNDATIONS EXIST; FINAL ONE-BUTTON PRODUCT FLOW OPEN**
+**State: DEVELOPMENT RESULT UX + RELEASE FOUNDATIONS EXIST; FINAL ONE-BUTTON PRODUCT FLOW OPEN**
 
 Target normal-user surface:
 
@@ -299,13 +306,17 @@ Restore original settings
 
 - [x] non-elevated WinUI shell;
 - [x] development GPU Gate A progress and safe-stop experience;
-- [x] Gate A source-state UX shows Evidence-ready / Development only / Blocked before launch and keeps dirty-run evidence visibly non-authoritative;
+- [x] Gate A source-state UX shows Evidence-ready / Development only / Blocked;
+- [x] validated Gate A sessions package a shareable evidence ZIP;
+- [x] Overview receives authority-selected Gate A result presentation instead of auto-opening raw JSON;
+- [x] result surface includes candidate comparison, trial history, decision evidence and explicit evidence actions;
 - [x] self-contained Windows 11 x64 App/Service release source;
 - [x] install/upgrade/uninstall recovery checks and signing hooks;
+- [ ] real Windows render inspection of the new result surface in light/dark/high-contrast and text scaling;
 - [ ] integrated normal-user `Optimize Interrupt Affinity` orchestration;
-- [ ] concise before/after result UI;
+- [ ] concise final product before/after result UI;
 - [ ] prominent Restore original settings;
-- [ ] physical accessibility/keyboard/text-scale/high-contrast pass;
+- [ ] physical accessibility/keyboard pass;
 - [ ] signed package, clean-machine install, upgrade/uninstall and recovery validation.
 
 ---
@@ -326,23 +337,13 @@ Any future mutation must independently satisfy the same evidence, attribution an
 ## Permanent-test policy
 
 - Keep the permanent suite small and behavior-focused; do not add one test per implementation detail.
-- The current critical suite is consolidated behind one MSTest entrypoint that invokes the durable `AuditCase` contracts; do not confuse internal audit cases with separate permanent test-method count.
+- The critical suite is consolidated behind one MSTest entrypoint that invokes durable `AuditCase` contracts; internal audit cases are not separate permanent test-method count.
 - The repository default remains 10 permanent automated test methods total; owner-authorized growth to at most 20 remains an exception for genuinely necessary durable boundaries, not a target.
-- Temporary TDD characterization logic must be merged into the canonical contracts or removed once the behavior is represented.
-- Hardware validation and benchmark repetitions are evidence, not automated tests.
+- Temporary TDD characterization logic must be merged into canonical contracts or removed once represented.
+- Hardware validation runs are evidence, not unit tests.
 
-## Definition of done
+## Completion rule
 
-### Repository/source complete
+Repository/source completion requires every v1 source outcome to be implemented or explicitly gated by a documented physical prerequisite, canonical docs to match actual source, public mutation to remain fail-closed until its gate, and the exact final HEAD to be green in hosted Tests.
 
-Every v1 source outcome above is implemented or explicitly blocked by its documented physical safety prerequisite, canonical docs agree with the source, and the exact final HEAD has a green hosted Tests run.
-
-### True v1 / 100%
-
-Only after the physical read-only closure, GPU mutation gates, automatic USB/xHCI apply/verify, combined reboot/recovery, final before/after UX, accessibility/runtime validation and signed package/install/upgrade/uninstall checks are recorded may LatencyPilot be described as v1 complete.
-
-## Audit closure milestone — 2026-09-19
-
-- Source/CI: F1–F11, conservative MSI/xHCI reversible transactions, reboot resume, retained restore, internal Optimize sequence, and fail-closed Gate A source-evidence eligibility are implemented in source; exact-final-HEAD hosted Tests still govern software closure.
-- Physical gate: run exact-revision Intel 16-LP, Intel >16-LP, AMD, primary-input/xHCI, MSI, reboot/resume, before/after, and restore validation before enabling public mutation.
-- Out of scope for this milestone: NIC/RSS mutation, audio tuning, BIOS, HPET, broad power-plan tweaking, and arbitrary registry packs.
+True v1 completion additionally requires physical GPU Gate A, xHCI apply/verify, combined reboot/recovery, final before/after UX, accessibility/runtime validation and signed install/upgrade/uninstall evidence.
