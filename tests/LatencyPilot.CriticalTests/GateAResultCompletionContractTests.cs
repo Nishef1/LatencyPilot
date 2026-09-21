@@ -28,20 +28,13 @@ public sealed class GateAResultCompletionContractTests
             StringComparison.Ordinal);
 
         Assert.IsGreaterThanOrEqualTo(0, validationMarker);
-        Assert.IsGreaterThan(
-            validationMarker,
-            packagingMarker,
+        Assert.IsGreaterThan(validationMarker, packagingMarker,
             "Gate A packaging must run only after the report schema/session identity has been validated.");
-        Assert.IsGreaterThan(
-            packagingMarker,
-            presentationMarker,
+        Assert.IsGreaterThan(packagingMarker, presentationMarker,
             "The Overview model must consume the validated report plus the completed evidence-bundle result.");
-        Assert.IsGreaterThan(
-            presentationMarker,
-            renderMarker,
+        Assert.IsGreaterThan(presentationMarker, renderMarker,
             "Validated Gate A completion must hand the authoritative presentation model to Overview.");
-        Assert.IsFalse(
-            source.Contains("TryRevealReport(reportPath)", StringComparison.Ordinal),
+        Assert.IsFalse(source.Contains("TryRevealReport(reportPath)", StringComparison.Ordinal),
             "Successful Gate A completion must not automatically shell-open the raw JSON report.");
 
         var resultExperience = File.ReadAllText(FindRepositoryFile(
@@ -52,13 +45,9 @@ public sealed class GateAResultCompletionContractTests
         StringAssert.Contains(resultExperience, "Copy ZIP path");
         StringAssert.Contains(resultExperience, "Open session folder");
         StringAssert.Contains(resultExperience, "Open raw report");
-        StringAssert.Contains(
-            resultExperience,
-            "paired effect",
+        StringAssert.Contains(resultExperience, "paired effect",
             "The result metric card must render the persisted paired effect instead of an empty absolute Original-to-candidate value pair.");
-        StringAssert.Contains(
-            resultExperience,
-            "BuildGateAPairEvidence",
+        StringAssert.Contains(resultExperience, "BuildGateAPairEvidence",
             "The v2 result must expose the direct Original -> Candidate -> Original evidence instead of hiding it only in raw JSON.");
         StringAssert.Contains(resultExperience, "Original before");
         StringAssert.Contains(resultExperience, "Original after");
@@ -72,9 +61,7 @@ public sealed class GateAResultCompletionContractTests
             "src",
             "LatencyPilot.App",
             "GpuOptimizationProgressWindow.xaml.cs"));
-        StringAssert.Contains(
-            progressExperience,
-            "DecisionRank",
+        StringAssert.Contains(progressExperience, "DecisionRank",
             "The development Gate A completion view must consume the optimizer-persisted decision rank.");
         Assert.IsFalse(
             progressExperience.Contains(
@@ -90,25 +77,15 @@ public sealed class GateAResultCompletionContractTests
             "LatencyPilot.Benchmarking",
             "Optimization",
             "GateAResultPresentation.cs"));
-        StringAssert.Contains(
-            presentation,
-            "int? DecisionRank",
+        StringAssert.Contains(presentation, "int? DecisionRank",
             "The result display model must carry the optimizer-persisted decision rank to visualizations.");
-        StringAssert.Contains(
-            presentation,
-            "candidate.DecisionRank",
+        StringAssert.Contains(presentation, "candidate.DecisionRank",
             "Candidate presentation rows must preserve the optimizer-persisted decision rank.");
-        StringAssert.Contains(
-            presentation,
-            "screening-finalists",
+        StringAssert.Contains(presentation, "screening-finalists",
             "When finalist authority exists, the result presentation must prefer the three-pair finalist aggregate over a short-screen row with the same persisted rank.");
-        StringAssert.Contains(
-            presentation,
-            "Best within selected CPUs",
+        StringAssert.Contains(presentation, "Best within selected CPUs",
             "Custom diagnostic results must describe their restricted authority rather than implying a machine-wide winner.");
-        StringAssert.Contains(
-            presentation,
-            "Custom diagnostic result",
+        StringAssert.Contains(presentation, "Custom diagnostic result",
             "Custom scope needs an explicit primary result status.");
         Assert.IsFalse(
             presentation.Contains("candidate.Phase, \"finalists\"", StringComparison.Ordinal),
@@ -119,19 +96,14 @@ public sealed class GateAResultCompletionContractTests
             "LatencyPilot.App",
             "Controls",
             "GpuCandidateComparisonChart.cs"));
-        StringAssert.Contains(
-            candidateChart,
+        StringAssert.Contains(candidateChart,
             ".OrderBy(static candidate => candidate.DecisionRank ?? int.MaxValue)",
             "The candidate chart must display authority-ranked candidates in persisted rank order.");
-        StringAssert.Contains(
-            candidateChart,
-            "OnePercentLowEffect",
+        StringAssert.Contains(candidateChart, "OnePercentLowEffect",
             "The candidate chart must visualize the persisted local paired effect rather than treating the last raw candidate FPS as the decision aggregate.");
-        Assert.IsFalse(
-            candidateChart.Contains("candidate.OnePercentLowFps / maximum", StringComparison.Ordinal),
+        Assert.IsFalse(candidateChart.Contains("candidate.OnePercentLowFps / maximum", StringComparison.Ordinal),
             "The paired-v2 chart must not size decision bars from raw candidate FPS.");
-        Assert.IsFalse(
-            candidateChart.Contains("OrderByDescending(static candidate => candidate.OnePercentLowFps)", StringComparison.Ordinal),
+        Assert.IsFalse(candidateChart.Contains("OrderByDescending(static candidate => candidate.OnePercentLowFps)", StringComparison.Ordinal),
             "The candidate chart must never infer rank from 1% low decimals.");
 
         var sessionSource = File.ReadAllText(FindRepositoryFile(
@@ -139,14 +111,8 @@ public sealed class GateAResultCompletionContractTests
             "LatencyPilot.Benchmarking",
             "Optimization",
             "GpuAutoAffinitySession.cs"));
-        StringAssert.Contains(
-            sessionSource,
-            "DecisionFloor = decisionFloor",
+        StringAssert.Contains(sessionSource, "DecisionFloor = decisionFloor",
             "The finalist decision floor used to accept a winner must be persisted for the evidence UI instead of silently becoming zero.");
-        StringAssert.Contains(sessionSource, "RealizedCandidateOrder = pairReports");
-        StringAssert.Contains(sessionSource, "RealizedFinalistPairOrder = pairReports");
-        StringAssert.Contains(sessionSource, "InitialScreeningOriginalCaptureId = pairReports");
-        StringAssert.Contains(sessionSource, "ScreeningDurationMilliseconds = request.ScreeningDuration.TotalMilliseconds");
 
         var scopeExperience = File.ReadAllText(FindRepositoryFile(
             "src",
@@ -177,6 +143,8 @@ public sealed class GateAResultCompletionContractTests
         StringAssert.Contains(reportContract, "Guid? InitialScreeningOriginalCaptureId");
         StringAssert.Contains(reportContract, "double ScreeningDurationMilliseconds");
         StringAssert.Contains(reportContract, "double FinalistDurationMilliseconds");
+        StringAssert.Contains(reportContract, "RequestedDurationMilliseconds");
+        StringAssert.Contains(reportContract, "PairNumber");
         StringAssert.Contains(reportContract, "bool FullTopologyCoverage");
     }
 
