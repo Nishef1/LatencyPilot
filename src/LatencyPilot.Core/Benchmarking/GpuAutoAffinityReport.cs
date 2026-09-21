@@ -122,7 +122,26 @@ public sealed record GpuAutoAffinityCandidateReport(
     double? DecisionFrameP99Milliseconds = null,
     double? DecisionLow01PctFps = null,
     double? LocalControlUncertainty = null,
-    bool UsesTimeLocalNormalization = false);
+    bool UsesTimeLocalNormalization = false,
+    int? DecisionRank = null);
+
+/// <summary>
+/// The exact Original-state aggregate selected by the optimizer for decision-making.
+/// This is persisted so presentation code never reconstructs a different baseline
+/// from the raw audit-trail trials.
+/// </summary>
+public sealed record GpuAutoAffinityDecisionBaselineReport(
+    double OnePercentLowFps,
+    double AvgFps,
+    double FrameP99Milliseconds,
+    double Low01PctFps,
+    double OnePercentLowRelativeNoise,
+    double AvgRelativeNoise,
+    double FrameP99RelativeNoise,
+    double Low01RelativeNoise,
+    int ValidObservationCount,
+    int TotalObservationCount,
+    bool UsedNoiseAwareFallback);
 
 public sealed record UsbAffinityRecommendationReport(
     string Status,
@@ -153,7 +172,8 @@ public sealed record GpuAutoAffinityReport(
     GpuAutoAffinityStoredStateReport? FinalStoredState = null,
     IReadOnlyList<GpuAutoAffinityMutationAuditEntry>? MutationAudit = null,
     string? RecoveryStatus = null,
-    UsbAffinityRecommendationReport? UsbRecommendation = null)
+    UsbAffinityRecommendationReport? UsbRecommendation = null,
+    GpuAutoAffinityDecisionBaselineReport? DecisionBaseline = null)
 {
     public const string SchemaId = "latencypilot-gpu-auto-affinity-report-v1";
 
