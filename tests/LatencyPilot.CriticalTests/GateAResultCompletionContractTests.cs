@@ -73,6 +73,33 @@ public sealed class GateAResultCompletionContractTests
                 ".ThenByDescending(static row => row.DecisionAvgFps)",
                 StringComparison.Ordinal),
             "The development Gate A completion view must not create a second ranking from metric decimals.");
+
+        var presentation = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.Benchmarking",
+            "Optimization",
+            "GateAResultPresentation.cs"));
+        StringAssert.Contains(
+            presentation,
+            "int? DecisionRank",
+            "The result display model must carry the optimizer-persisted decision rank to visualizations.");
+        StringAssert.Contains(
+            presentation,
+            "candidate.DecisionRank",
+            "Candidate presentation rows must preserve the optimizer-persisted decision rank.");
+
+        var candidateChart = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.App",
+            "Controls",
+            "GpuCandidateComparisonChart.cs"));
+        StringAssert.Contains(
+            candidateChart,
+            ".OrderBy(static candidate => candidate.DecisionRank ?? int.MaxValue)",
+            "The candidate chart must display authority-ranked candidates in persisted rank order.");
+        Assert.IsFalse(
+            candidateChart.Contains("OrderByDescending(static candidate => candidate.OnePercentLowFps)", StringComparison.Ordinal),
+            "The candidate chart must never infer rank from 1% low decimals.");
     }
 
     private static string FindRepositoryFile(params string[] relativeParts)
