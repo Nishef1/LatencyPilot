@@ -342,7 +342,7 @@ public sealed class SourceRevisionIdentityTests
             "DXGI_ERROR_DRIVER_INTERNAL_ERROR must be recognized as one bounded renderer-recreation retry.");
         StringAssert.Contains(
             benchmarkControlClientSource,
-            "await RecreateRendererAsync(cancellationToken)",
+            "await RecreateRendererAsync(cancellationToken).ConfigureAwait(false);",
             "The benchmark client must recreate the renderer before retrying a recoverable renderer trial.");
 
         var gateARunnerSource = File.ReadAllText(Path.Combine(
@@ -423,14 +423,17 @@ public sealed class SourceRevisionIdentityTests
             "LatencyPilot.Benchmarking",
             "Optimization",
             "GpuAutoAffinitySession.cs"));
-        StringAssert.Contains(gateASessionSource, "repetitions: 1");
         StringAssert.Contains(
             gateASessionSource,
-            "for (var round = 0; round < 2; round++)",
-            "Top finalists must be re-tested in two independent transition rounds rather than two back-to-back scores under one affinity activation.");
+            "RequiredFinalistPairs = 3",
+            "Paired v2 finalists must be confirmed by three independent local pairs rather than legacy back-to-back repetitions.");
         StringAssert.Contains(
             gateASessionSource,
-            "ShuffleDeterministically(roundCandidates, roundSeed);",
+            "for (var round = 0; round < RequiredFinalistPairs; round++)",
+            "Finalist confirmation must execute the explicit three-pair policy.");
+        StringAssert.Contains(
+            gateASessionSource,
+            "ShuffleDeterministically(",
             "Finalist round order must be deterministically shuffled to reduce time/thermal ordering bias.");
         StringAssert.Contains(
             gateASessionSource,
@@ -438,8 +441,12 @@ public sealed class SourceRevisionIdentityTests
             "GPU ranking must use an explicit practical-equivalence margin instead of false precision.");
         StringAssert.Contains(
             gateASessionSource,
-            "CreateAdaptiveShortlist",
-            "GPU screening must re-test candidates inside the primary-noise margin of the third-place cutoff.");
+            "SelectFinalists(",
+            "GPU paired screening must reduce the search to bounded finalists instead of exhaustively re-running every logical processor.");
+        StringAssert.Contains(
+            gateASessionSource,
+            "MeasureScreeningPairAsync(",
+            "GPU v2 ranking must be derived from measured local Original-Candidate-Original pairs.");
 
         var rendererSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
@@ -502,17 +509,16 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(gateASessionSource, "\"final-verification\"");
         StringAssert.Contains(
             gateASessionSource,
-            "\"screening-control\"",
-            "The v1 GPU session must retain a post-screening Original drift control.");
+            "\"screening-original-control\"",
+            "Paired v2 must capture a fresh scored Original control after qualification before candidate comparison.");
         StringAssert.Contains(
             gateASessionSource,
-            "\"finalist-control\"",
-            "The v1 GPU session must retain a post-finalist Original drift control.");
+            "\"finalist-original-control\"",
+            "Paired v2 must begin finalist confirmation from a fresh long-window Original control.");
         Assert.IsFalse(
-            gateASessionSource.Contains("smt-refinement", StringComparison.Ordinal) ||
-            gateASessionSource.Contains("ABBA", StringComparison.Ordinal) ||
-            gateASessionSource.Contains("BAAB", StringComparison.Ordinal),
-            "The simplified v1 GPU session must not regress to legacy SMT-refinement or ABBA/BAAB paths.");
+            gateASessionSource.Contains("NormalizeScreeningEvaluations", StringComparison.Ordinal) ||
+            gateASessionSource.Contains("ControlPoint.Interpolate", StringComparison.Ordinal),
+            "Paired v2 must not regress to temporal interpolation or pseudo-normalized decision FPS.");
         var keepStartIndex = gateABackendSource.IndexOf(
             "public Task KeepAsync",
             StringComparison.Ordinal);
