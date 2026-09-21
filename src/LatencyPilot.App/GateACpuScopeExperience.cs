@@ -131,7 +131,12 @@ public sealed partial class MainWindow
                 ApplyGateASourceAssessmentUi(assessment);
             }
         }
-        catch (Exception exception) when (exception is Win32Exception or IOException or InvalidOperationException or ArgumentException)
+        catch (Exception exception) when (exception is
+            Win32Exception or
+            IOException or
+            InvalidOperationException or
+            ArgumentException or
+            NotSupportedException)
         {
             Logger.Warning(exception, "GPU CPU scope could not be selected.");
             SetGateAValidationStatus($"CPU selection unavailable: {exception.Message}");
