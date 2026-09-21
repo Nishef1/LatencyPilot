@@ -159,7 +159,7 @@ public sealed class GateATrialHistoryChart : UserControl
     }
 
     private void RenderSeries(
-        IReadOnlyList<GateATrialPoint> points,
+        GateATrialPoint[] points,
         Brush brush,
         Brush ringBrush,
         int minimumRun,
@@ -171,7 +171,7 @@ public sealed class GateATrialHistoryChart : UserControl
         double plotWidth,
         double plotHeight)
     {
-        if (points.Count == 0)
+        if (points.Length == 0)
         {
             return;
         }
