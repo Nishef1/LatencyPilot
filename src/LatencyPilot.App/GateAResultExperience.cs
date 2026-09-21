@@ -27,21 +27,15 @@ public sealed partial class MainWindow
             overviewStack.Children.Remove(_gateAResultRoot);
         }
 
-        var root = new StackPanel
-        {
-            Spacing = ResourceDouble("DashboardGap", 16d),
-        };
+        var root = new StackPanel { Spacing = ResourceDouble("DashboardGap", 16d) };
         AutomationProperties.SetName(root, "GPU optimization result");
         AutomationProperties.SetHelpText(root, result.Summary);
 
         root.Children.Add(BuildGateAResultHero(result));
-
         var metricGrid = BuildGateAMetricGrid(result);
         root.Children.Add(metricGrid);
-
         var chartsGrid = BuildGateAChartsGrid(result);
         root.Children.Add(chartsGrid);
-
         root.Children.Add(BuildGateADecisionEvidence(result));
         root.Children.Add(BuildGateAEvidenceActions(result));
         root.SizeChanged += (_, _) =>
@@ -64,37 +58,36 @@ public sealed partial class MainWindow
     {
         var card = StyledBorder("ChartCardStyle");
         var stack = new StackPanel { Spacing = 10d };
-
         var eyebrowRow = new Grid { ColumnSpacing = 10d };
         eyebrowRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
         eyebrowRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var eyebrow = new TextBlock
+        eyebrowRow.Children.Add(new TextBlock
         {
             Text = "GPU OPTIMIZATION RESULT",
             Style = AppStyle("HeroEyebrowTextStyle"),
             VerticalAlignment = VerticalAlignment.Center,
-        };
-        eyebrowRow.Children.Add(eyebrow);
+        });
+
+        var eligibilityBrush = result.GateAClosureEligible ? "SemanticGoodBrush" : "SemanticAttentionBrush";
+        var eligibilitySoftBrush = result.GateAClosureEligible ? "SemanticGoodSoftBrush" : "SemanticAttentionSoftBrush";
         var eligibility = new Border
         {
-            Grid = { },
             Padding = new Thickness(10d, 5d, 10d, 5d),
             CornerRadius = new CornerRadius(999d),
             BorderThickness = new Thickness(1d),
-            BorderBrush = DashboardThemeResources.Brush(card, result.GateAClosureEligible ? "SemanticGoodBrush" : "SemanticAttentionBrush"),
-            Background = DashboardThemeResources.Brush(card, result.GateAClosureEligible ? "SemanticGoodSoftBrush" : "SemanticAttentionSoftBrush"),
+            BorderBrush = DashboardThemeResources.Brush(card, eligibilityBrush),
+            Background = DashboardThemeResources.Brush(card, eligibilitySoftBrush),
             Child = new TextBlock
             {
                 Text = result.EligibilityLabel,
                 FontSize = 11d,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = DashboardThemeResources.Brush(card, result.GateAClosureEligible ? "SemanticGoodBrush" : "SemanticAttentionBrush"),
+                Foreground = DashboardThemeResources.Brush(card, eligibilityBrush),
             },
         };
         Grid.SetColumn(eligibility, 1);
         eyebrowRow.Children.Add(eligibility);
         stack.Children.Add(eyebrowRow);
-
         stack.Children.Add(new TextBlock
         {
             Text = result.Title,
@@ -117,7 +110,7 @@ public sealed partial class MainWindow
 
         if (!result.BundleAvailable)
         {
-            var bundleWarning = new Border
+            stack.Children.Add(new Border
             {
                 Padding = new Thickness(10d, 8d, 10d, 8d),
                 CornerRadius = new CornerRadius(10d),
@@ -129,8 +122,7 @@ public sealed partial class MainWindow
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = DashboardThemeResources.Brush(card, "SemanticAttentionBrush"),
                 },
-            };
-            stack.Children.Add(bundleWarning);
+            });
         }
 
         card.Child = stack;
@@ -140,12 +132,7 @@ public sealed partial class MainWindow
 
     private Grid BuildGateAMetricGrid(GateAResultViewModel result)
     {
-        var grid = new Grid
-        {
-            ColumnSpacing = 12d,
-            RowSpacing = 12d,
-            Tag = result.Metrics.Count,
-        };
+        var grid = new Grid { ColumnSpacing = 12d, RowSpacing = 12d };
         foreach (var metric in result.Metrics)
         {
             var card = StyledBorder("DashboardMetricStyle");
@@ -196,22 +183,19 @@ public sealed partial class MainWindow
         var trialChart = new GateATrialHistoryChart();
         var originalTrials = result.Trials.Count(static point =>
             string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase));
-        var candidateTrials = result.Trials.Count - originalTrials;
         trialChart.SetData(
             result.Trials,
-            $"Scored 1% low history contains {originalTrials} Original point(s) and {candidateTrials} comparison-candidate point(s). Warm-ups are excluded.");
+            $"Scored 1% low history contains {originalTrials} Original point(s) and {result.Trials.Count - originalTrials} comparison-candidate point(s). Warm-ups are excluded.");
 
         var grid = new Grid { ColumnSpacing = 12d, RowSpacing = 12d };
-        var candidateCard = BuildChartCard(
+        grid.Children.Add(BuildChartCard(
             "Candidate comparison",
-            "Decision aggregates from the optimizer; Original is shown as a reference, not a fake CPU candidate.",
-            candidateChart);
-        var repeatabilityCard = BuildChartCard(
+            "Decision aggregates from the optimizer; Original is a reference, not a synthetic CPU candidate.",
+            candidateChart));
+        grid.Children.Add(BuildChartCard(
             "Repeatability",
-            "Scored 1% low FPS in run order. Non-ready observations remain visible instead of being silently discarded.",
-            trialChart);
-        grid.Children.Add(candidateCard);
-        grid.Children.Add(repeatabilityCard);
+            "Scored 1% low FPS in run order. Non-ready observations stay visible rather than being silently erased.",
+            trialChart));
         return grid;
     }
 
@@ -219,11 +203,7 @@ public sealed partial class MainWindow
     {
         var card = StyledBorder("ChartCardStyle");
         var stack = new StackPanel { Spacing = 10d };
-        stack.Children.Add(new TextBlock
-        {
-            Text = title,
-            Style = AppStyle("SubsectionTitleTextStyle"),
-        });
+        stack.Children.Add(new TextBlock { Text = title, Style = AppStyle("SubsectionTitleTextStyle") });
         stack.Children.Add(new TextBlock
         {
             Text = subtitle,
@@ -240,14 +220,10 @@ public sealed partial class MainWindow
     {
         var card = StyledBorder("ChartCardStyle");
         var stack = new StackPanel { Spacing = 12d };
+        stack.Children.Add(new TextBlock { Text = "Why this decision", Style = AppStyle("SubsectionTitleTextStyle") });
         stack.Children.Add(new TextBlock
         {
-            Text = "Why this decision",
-            Style = AppStyle("SubsectionTitleTextStyle"),
-        });
-        stack.Children.Add(new TextBlock
-        {
-            Text = "These rows render the report's decision facts; the UI does not calculate another winner.",
+            Text = "These rows render report decision facts; the UI does not calculate another winner.",
             Style = AppStyle("CaptionTextStyle"),
             TextWrapping = TextWrapping.Wrap,
         });
@@ -264,15 +240,14 @@ public sealed partial class MainWindow
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160d) });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110d) });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
-            var label = new TextBlock
+            rowGrid.Children.Add(new TextBlock
             {
                 Text = row.Label,
                 FontSize = 12d,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = DashboardThemeResources.Brush(card, "TextBrush"),
                 TextWrapping = TextWrapping.Wrap,
-            };
-            rowGrid.Children.Add(label);
+            });
             var state = new TextBlock
             {
                 Text = row.State,
@@ -305,11 +280,7 @@ public sealed partial class MainWindow
     {
         var card = StyledBorder("ChartCardStyle");
         var stack = new StackPanel { Spacing = 10d };
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Evidence",
-            Style = AppStyle("SubsectionTitleTextStyle"),
-        });
+        stack.Children.Add(new TextBlock { Text = "Evidence", Style = AppStyle("SubsectionTitleTextStyle") });
         stack.Children.Add(new TextBlock
         {
             Text = result.BundleStatus,
@@ -317,16 +288,12 @@ public sealed partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
         });
 
-        var actions = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8d,
-        };
-        var status = new TextBlock
-        {
-            Style = AppStyle("CaptionTextStyle"),
-            TextWrapping = TextWrapping.Wrap,
-        };
+        var actions = new Grid { ColumnSpacing = 8d, RowSpacing = 8d };
+        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+        actions.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        actions.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var status = new TextBlock { Style = AppStyle("CaptionTextStyle"), TextWrapping = TextWrapping.Wrap };
 
         var openZip = ActionButton("Open ZIP", primary: true);
         openZip.IsEnabled = result.BundleAvailable;
@@ -336,14 +303,18 @@ public sealed partial class MainWindow
         var copyZip = ActionButton("Copy ZIP path");
         copyZip.IsEnabled = result.BundleAvailable;
         copyZip.Click += (_, _) => CopyGateAEvidencePath(result.ZipPath, status);
+        Grid.SetColumn(copyZip, 1);
         actions.Children.Add(copyZip);
 
         var openFolder = ActionButton("Open session folder");
         openFolder.Click += (_, _) => OpenGateAEvidencePath(result.SessionDirectory, status, "session folder");
+        Grid.SetRow(openFolder, 1);
         actions.Children.Add(openFolder);
 
         var openReport = ActionButton("Open raw report");
         openReport.Click += (_, _) => OpenGateAEvidencePath(result.ReportPath, status, "raw report");
+        Grid.SetRow(openReport, 1);
+        Grid.SetColumn(openReport, 1);
         actions.Children.Add(openReport);
 
         stack.Children.Add(actions);
@@ -359,6 +330,7 @@ public sealed partial class MainWindow
         {
             Content = text,
             MinHeight = 34d,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             Style = AppStyle(primary ? "PrimaryButtonStyle" : "SecondaryButtonStyle"),
         };
         AutomationProperties.SetName(button, text);
@@ -391,39 +363,28 @@ public sealed partial class MainWindow
         var sideBySide = width >= 900d;
         grid.ColumnDefinitions.Clear();
         grid.RowDefinitions.Clear();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
         if (sideBySide)
         {
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            if (grid.Children.Count > 0)
-            {
-                Grid.SetColumn(grid.Children[0], 0);
-                Grid.SetRow(grid.Children[0], 0);
-            }
-            if (grid.Children.Count > 1)
-            {
-                Grid.SetColumn(grid.Children[1], 1);
-                Grid.SetRow(grid.Children[1], 0);
-            }
-            return;
         }
-
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        else
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        }
         for (var index = 0; index < grid.Children.Count; index++)
         {
-            Grid.SetColumn(grid.Children[index], 0);
-            Grid.SetRow(grid.Children[index], index);
+            Grid.SetColumn(grid.Children[index], sideBySide ? index : 0);
+            Grid.SetRow(grid.Children[index], sideBySide ? 0 : index);
         }
     }
 
     private static string FormatMetricComparison(GateAMetricComparison metric)
     {
-        var original = FormatNumber(metric.OriginalValue, metric.Unit == "ms" ? "0.00" : "0.0");
-        var candidate = FormatNumber(metric.CandidateValue, metric.Unit == "ms" ? "0.00" : "0.0");
-        return $"{original} → {candidate} {metric.Unit}";
+        var format = metric.Unit == "ms" ? "0.00" : "0.0";
+        return $"{FormatNumber(metric.OriginalValue, format)} → {FormatNumber(metric.CandidateValue, format)} {metric.Unit}";
     }
 
     private static string MetricStateLabel(GateAMetricState state) => state switch
@@ -437,8 +398,7 @@ public sealed partial class MainWindow
     private static Brush MetricStateBrush(FrameworkElement owner, GateAMetricState state) =>
         DashboardThemeResources.Brush(owner, state switch
         {
-            GateAMetricState.Improved => "SemanticGoodBrush",
-            GateAMetricState.DecisionGuardrailSatisfied => "SemanticGoodBrush",
+            GateAMetricState.Improved or GateAMetricState.DecisionGuardrailSatisfied => "SemanticGoodBrush",
             GateAMetricState.DiagnosticOnly => "SemanticAttentionBrush",
             _ => "MutedTextBrush",
         });
@@ -463,14 +423,9 @@ public sealed partial class MainWindow
             status.Text = $"{label} is unavailable for this result.";
             return;
         }
-
         try
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = path,
-                UseShellExecute = true,
-            });
+            Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
             status.Text = $"Opened {label}.";
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
@@ -487,7 +442,6 @@ public sealed partial class MainWindow
             status.Text = "ZIP path is unavailable for this result.";
             return;
         }
-
         try
         {
             var package = new DataPackage();
@@ -503,12 +457,16 @@ public sealed partial class MainWindow
         }
     }
 
-    private Border StyledBorder(string styleKey) =>
-        new() { Style = AppStyle(styleKey) };
+    private Border StyledBorder(string styleKey) => new() { Style = AppStyle(styleKey) };
 
-    private static Style AppStyle(string key) =>
-        (Style)(Application.Current.Resources[key]
-            ?? throw new InvalidOperationException($"Application style '{key}' is unavailable."));
+    private static Style AppStyle(string key)
+    {
+        if (Application.Current.Resources.TryGetValue(key, out var value) && value is Style style)
+        {
+            return style;
+        }
+        throw new InvalidOperationException($"Application style '{key}' is unavailable.");
+    }
 
     private static double ResourceDouble(string key, double fallback) =>
         Application.Current.Resources.TryGetValue(key, out var value) && value is double number
@@ -520,8 +478,7 @@ public sealed partial class MainWindow
             ? number.ToString(format, System.Globalization.CultureInfo.InvariantCulture)
             : "—";
 
-    private static string ShortRevision(string revision) =>
-        revision.Length >= 12 ? revision[..12] : revision;
+    private static string ShortRevision(string revision) => revision.Length >= 12 ? revision[..12] : revision;
 
     private static string FormatDuration(TimeSpan duration) =>
         duration.TotalHours >= 1d
