@@ -11,7 +11,7 @@ internal sealed class GpuGateAProgressFile
 {
     private const int MaximumWriteAttempts = 8;
     private const int RequiredRepeatabilityRuns = 3;
-    private const int MaximumRepeatabilityAttempts = GpuOriginalBaselinePolicy.MaximumPhysicalAttemptCount;
+    private const int MaximumRepeatabilityObservations = GpuOriginalBaselinePolicy.MaximumScoredObservationCount;
     private static readonly TimeSpan WriteRetryDelay = TimeSpan.FromMilliseconds(25);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -236,12 +236,12 @@ internal sealed class GpuGateAProgressFile
     {
         if (request.RetryAttempt > 0)
         {
-            return "Retrying this benchmark block once after transient contamination or an unstable Original baseline sample.";
+            return "Retrying this benchmark block once after genuine transient contamination or a transient collector failure.";
         }
 
         if (string.Equals(request.Phase, "screening-original", StringComparison.Ordinal))
         {
-            return $"Original repeatability sample {originalScoredPassesStarted}; target {RequiredRepeatabilityRuns} stable samples, maximum {MaximumRepeatabilityAttempts} physical attempts.";
+            return $"Original repeatability sample {originalScoredPassesStarted}; target {RequiredRepeatabilityRuns} stable samples, maximum {MaximumRepeatabilityObservations} scored observations.";
         }
 
         if (request.Phase.EndsWith("-warmup", StringComparison.Ordinal))
@@ -270,7 +270,7 @@ internal sealed class GpuGateAProgressFile
             }
             return pass <= 2
                 ? $"Scored finalist re-test {pass} / 2."
-                : $"Adaptive replacement re-test {pass}; maximum 4 finalist re-tests.";
+                : $"Adaptive replacement re-test {pass}; maximum 4 finalist scored observations including the initial screen.";
         }
 
         return "Measuring benchmark trial.";
