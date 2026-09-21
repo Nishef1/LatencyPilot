@@ -1,6 +1,6 @@
 # ADR 0006 — Simple automatic interrupt-affinity v1
 
-Status: **Accepted** (owner-directed, 2026-09-18)
+Status: **Accepted** (owner-directed, 2026-09-18; measurement contract amended 2026-09-20)
 
 Supersedes ADR 0005 for ranking order, finalist confirmation and v1 USB/xHCI product direction.
 
@@ -35,26 +35,33 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
 
 ## Candidate search
 
+The 2026-09-20 measurement amendment replaces the earlier rule that treated an ordinary Original-control shift outside a fixed repeatability band as automatic whole-sweep invalidation. The 2026-09-19 owner run showed that this could throw away an otherwise informative full search after time/thermal/background conditions moved gradually. The v1 method now measures that movement with time-local Original controls, normalizes candidate decision metrics against those controls, carries the measured movement into uncertainty, and makes the Keep threshold harder to clear. Structural evidence failures still fail closed.
+
 1. Capture one non-scored original/default warm-up to establish benchmark/workload continuity.
-2. Generate one candidate for every eligible logical processor from Windows topology; do not assume even/odd CPU numbering, do not ban CPU0, and do not silently collapse SMT siblings.
-3. For every logical-CPU candidate:
+2. Establish Original scored repeatability/noise from three observations, with one bounded replacement observation when needed. Prefer the tightest three-run 1%-low cluster within ±3%. If four valid observations still do not form that preferred cluster, retain all four and carry observed per-metric variance into later uncertainty/Keep thresholds rather than manufacturing a stable baseline.
+3. Generate one candidate for every eligible logical processor from Windows topology; do not assume even/odd CPU numbering, do not ban CPU0, and do not silently collapse SMT siblings.
+4. Screen candidates in bounded groups of at most four. For every logical-CPU candidate:
    - apply exact GPU interrupt affinity;
    - restart/activate and verify stored state;
    - run a 5 s non-scored warm-up (benchmark only; no PresentMon/ETW);
    - run **one** scored screening measurement;
    - restore and verify the exact original state.
-4. After the full logical-CPU sweep, run one fresh 5 s non-scored Original warm-up, then capture one fresh scored Original control. If its 1% low leaves the Original ±3% repeatability band, discard the sweep and retain exact Original rather than ranking across time/thermal/background drift.
-5. Rank with explicit practical-equivalence margins rather than false precision:
+5. After each full four-candidate group when candidates remain, capture a fresh Original warm-up + scored block control. After the final screening group, capture one more fresh Original warm-up + scored control. These controls define the time-local background movement around the candidate blocks.
+6. Normalize each rankable screening candidate's decision metrics from its time-local Original level back to the session Original baseline. Preserve raw trial observations separately for diagnostics. Record the measured local control movement as candidate uncertainty; do not relabel gradual background drift as candidate benefit.
+7. Rank normalized valid screening candidates with explicit practical-equivalence margins rather than false precision:
    1. 1% low, treating <=1% relative difference as tied;
    2. AVG FPS, treating <=1% as tied;
    3. lower frame-p99, treating <=1% as tied;
    4. 0.1% low only when the relative difference exceeds 5%;
    5. deterministic passive topology/pressure fallback only if the measured metrics remain tied.
-6. If post-sweep Original 1%-low noise exceeds 15%, retain the complete screening table but skip exhaustive finalist confirmation and RestoreOriginal; otherwise re-test the best three plus candidates within **min(3%, max(1%, observed Original noise))** of the third-place 1%-low cutoff, capped at five finalists. Finalist order is deterministically shuffled and each finalist gets a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback in each round.
-7. Prefer the tightest stable three-run cluster within ±3%. Original/finalist sampling is capped at four scored attempts. If four valid runs still do not form the preferred cluster, retain all four and carry their observed per-metric variance into shortlist, drift and Keep thresholds instead of terminating the search.
-8. Run a second 5 s non-scored Original warm-up after finalist re-tests, then capture a second scored Original control. Its 1% low, AVG and frame-p99 must remain inside the Original repeatability band or finalist evidence is discarded and exact Original is retained.
-9. Evaluate finalists in ranking order against exact Original. AVG, frame-p99 and 0.1% low remain guardrails. When both sides provide at least three usable interrupt-tail runs, GPU-driver DPC/ISR p99 is evaluated per run and the median regression must remain within max(10%, observed Original tail noise, observed finalist tail noise). A rejected first-place finalist does not prevent the next ranked clean improvement from being considered.
-10. Eligible SMT/hyperthread siblings are first-class logical-CPU candidates in the main sweep. There is no separate SMT-refinement phase and no ABBA/BAAB confirmation loop.
+8. Compute effective screening variability as the larger of observed Original 1%-low noise and measured time-local 1%-low control movement. If it exceeds 15%, retain the normalized screening table as diagnostic evidence, skip exhaustive finalist confirmation, verify exact Original and RestoreOriginal. Do not emit a Keep decision from an environment that variable.
+9. Otherwise re-test the best three plus candidates within **min(3%, max(1%, effective screening variability))** of the third-place 1%-low cutoff, capped at five finalists. Finalist order is deterministically shuffled and each finalist gets a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback in each round.
+10. Prefer the tightest stable three-run cluster within ±3%. Original/finalist sampling is capped at four scored attempts. If four valid runs still do not form the preferred cluster, retain all four and carry their observed per-metric variance into ranking/guardrail thresholds.
+11. After finalist re-tests, capture another fresh Original warm-up + scored control. Its movement relative to the preceding screening control is merged into time-local uncertainty rather than automatically discarding otherwise valid finalist evidence.
+12. Evaluate finalists in ranking order against Original using a noise floor that includes practical tolerance, Original/finalist repeatability noise and measured time-local control uncertainty. AVG, frame-p99 and 0.1% low remain noise-aware guardrails. When both sides provide at least three usable interrupt-tail runs, GPU-driver DPC/ISR p99 is evaluated per run and the median regression must remain within max(10%, observed Original tail noise, observed finalist tail noise). A rejected first-place finalist does not prevent the next ranked clean improvement from being considered.
+13. Apply the highest-ranked finalist that clears those decision gates once more, then perform a fresh benchmark-only warm-up and final kernel-ETW verification capture.
+14. Keep only when exact stored candidate state is verified and final runtime ISR placement is proved target-only. Otherwise restore and verify exact Original.
+15. Any structural evidence failure — invalid/mismatched benchmark artifact, source/state divergence, failed apply/rollback ownership, healthy ETW proving wrong placement, unverified terminal state, or equivalent integrity failure — remains fail-closed and is not normalized away.
 
 Windows default is the exact recovery/reference state, not an opponent that every forced CPU must beat by a fixed percentage.
 
@@ -74,6 +81,7 @@ Screening must remain resilient:
 - Missing PresentMon or missing ETW is recorded visibly and does not by itself abort ranking when the controlled benchmark artifact, stored state and continuity are valid.
 - If ETW is healthy and proves wrong/off-target ISR placement, that candidate is invalid.
 - Comparable GPU-driver DPC/ISR p99 evidence participates only as a Keep guardrail; sparse/missing samples are not manufactured into a regression claim.
+- Time-local Original controls are measurement controls, not fake candidates. Their movement is used to normalize decision metrics and quantify uncertainty; raw candidate/control trials remain visible in the audit trail.
 
 **Keep is stricter than screening.** After selecting the ranked winner, LatencyPilot applies it once more and performs a fresh 5 s benchmark-only warm-up and then a final kernel-ETW verification capture. Keep is allowed only when:
 
@@ -90,6 +98,7 @@ The standalone pinned PresentMon collector stays an independent cross-check; a s
 
 PresentMon's documented fields are not interchangeable:
 
+- `FrameTime` is the current CPU frame-time metric in the capture schema;
 - `MsBetweenPresents` is the interval between Present() calls;
 - `MsBetweenAppStart` describes a different CPU frame boundary.
 
@@ -113,4 +122,4 @@ The existing read-only USB/xHCI topology and timing work is reused. Product USB 
 
 The normal-user product should expose a small workflow such as `Optimize Interrupt Affinity`, not internal Gate A/B/C terminology. It should show the selected GPU CPU, selected input/xHCI CPU, relevant before/after numbers, confidence/verification state and a prominent `Restore original settings` action.
 
-The development Gate A UI may retain detailed diagnostics, but ranking bars and summaries must reflect the actual decision order: 1% low first, then AVG FPS, then lower frame-p99, with 0.1% low used only as rare-tail tie context.
+The development Gate A UI may retain detailed diagnostics, but it must distinguish raw measurement history from authority-selected decision evidence. Candidate bars and summaries must use the persisted decision metrics/ranks produced by the optimizer; the UI must not infer a winner from shuffled collection order or turn a RestoreOriginal outcome into a Keep claim.
