@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using LatencyPilot.App.Controls;
 using LatencyPilot.Benchmarking.Optimization;
+using LatencyPilot.Core.Benchmarking;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -36,6 +37,7 @@ public sealed partial class MainWindow
         root.Children.Add(metricGrid);
         var chartsGrid = BuildGateAChartsGrid(result);
         root.Children.Add(chartsGrid);
+        root.Children.Add(BuildGateAPairEvidence(result));
         root.Children.Add(BuildGateADecisionEvidence(result));
         root.Children.Add(BuildGateAEvidenceActions(result));
         root.SizeChanged += (_, _) =>
@@ -68,8 +70,10 @@ public sealed partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center,
         });
 
-        var eligibilityBrush = result.GateAClosureEligible ? "SemanticGoodBrush" : "SemanticAttentionBrush";
-        var eligibilitySoftBrush = result.GateAClosureEligible ? "SemanticGoodSoftBrush" : "SemanticAttentionSoftBrush";
+        // Evidence eligibility describes source/provenance suitability, not the
+        // performance verdict itself, so keep it informational rather than green.
+        var eligibilityBrush = result.GateAClosureEligible ? "ChartAccentPrimaryBrush" : "SemanticAttentionBrush";
+        var eligibilitySoftBrush = result.GateAClosureEligible ? "BrandActionSoftBrush" : "SemanticAttentionSoftBrush";
         var eligibility = new Border
         {
             Padding = new Thickness(10d, 5d, 10d, 5d),
@@ -174,11 +178,10 @@ public sealed partial class MainWindow
     private static Grid BuildGateAChartsGrid(GateAResultViewModel result)
     {
         var candidateChart = new GpuCandidateComparisonChart();
-        var originalLow1 = result.Metrics.FirstOrDefault(static metric => metric.Key == "low1")?.OriginalValue;
         candidateChart.SetData(
             result.Candidates,
-            originalLow1,
-            $"{result.Candidates.Count} GPU affinity candidates. {result.ComparedCandidateLabel}. Original reference {FormatNumber(originalLow1, "0.0")} FPS 1% low.");
+            null,
+            $"{result.Candidates.Count} GPU affinity candidates in persisted authority order. {result.ComparedCandidateLabel}. Bars are paired 1% low effects centered on 0%. Raw local controls are listed below.");
 
         var trialChart = new GateATrialHistoryChart();
         var originalTrials = result.Trials.Count(static point =>
@@ -190,11 +193,11 @@ public sealed partial class MainWindow
         var grid = new Grid { ColumnSpacing = 12d, RowSpacing = 12d };
         grid.Children.Add(BuildChartCard(
             "Candidate comparison",
-            "Decision aggregates from the optimizer; Original is a reference, not a synthetic CPU candidate.",
+            "Persisted paired 1% low effects from the optimizer. Zero means the adjacent Original controls; this chart never reconstructs a second ranking.",
             candidateChart));
         grid.Children.Add(BuildChartCard(
             "Repeatability",
-            "Scored 1% low FPS in run order. Non-ready observations stay visible rather than being silently erased.",
+            "Raw scored 1% low FPS in run order. Non-ready observations stay visible rather than being silently erased.",
             trialChart));
         return grid;
     }
@@ -211,6 +214,108 @@ public sealed partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
         });
         stack.Children.Add(chart);
+        card.Child = stack;
+        CardElevation.Apply(card);
+        return card;
+    }
+
+    private static Border BuildGateAPairEvidence(GateAResultViewModel result)
+    {
+        var card = StyledBorder("ChartCardStyle");
+        var stack = new StackPanel { Spacing = 10d };
+        stack.Children.Add(new TextBlock { Text = "Local pair evidence", Style = AppStyle("SubsectionTitleTextStyle") });
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Direct Original → Candidate → Original measurements. Effects use the two adjacent Original controls; raw FPS stays visible and is never rewritten into pseudo-normalized FPS.",
+            Style = AppStyle("CaptionTextStyle"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        if (result.Finalists.Count > 0)
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Finalist authority",
+                FontSize = 12d,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = DashboardThemeResources.Brush(card, "TextBrush"),
+                Margin = new Thickness(0d, 4d, 0d, 0d),
+            });
+            foreach (var finalist in result.Finalists.OrderBy(static item => item.PairNumbers.Count == 0 ? int.MaxValue : item.PairNumbers.Min()))
+            {
+                var median = finalist.MedianOnePercentLowEffect is { } effect && double.IsFinite(effect)
+                    ? effect.ToString("+0.0%;-0.0%;0.0%", System.Globalization.CultureInfo.InvariantCulture)
+                    : "—";
+                var pairNumbers = finalist.PairNumbers.Count == 0
+                    ? "none"
+                    : string.Join(", ", finalist.PairNumbers);
+                stack.Children.Add(new TextBlock
+                {
+                    Text = $"CPU {finalist.Processor.Number} · median 1% low {median} · decision floor {finalist.DecisionFloor:P1} · {finalist.Verdict} · pairs {pairNumbers}",
+                    Style = AppStyle("CaptionTextStyle"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+            }
+        }
+
+        if (result.Pairs.Count == 0)
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = "No candidate pair was completed in this run.",
+                Style = AppStyle("MutedBodyTextStyle"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+        else
+        {
+            foreach (var pair in result.Pairs
+                         .OrderBy(static item => item.PairNumber)
+                         .ThenBy(static item => item.Attempt))
+            {
+                var row = new Border
+                {
+                    Padding = new Thickness(12d, 10d, 12d, 10d),
+                    CornerRadius = new CornerRadius(10d),
+                    Background = DashboardThemeResources.Brush(card, "SurfaceAltBrush"),
+                };
+                var content = new StackPanel { Spacing = 5d };
+                content.Children.Add(new TextBlock
+                {
+                    Text = $"Pair {pair.PairNumber} · CPU {pair.Processor.Number} · core {pair.PhysicalCoreIndex} · {FormatPairStage(pair.Stage)} · attempt {pair.Attempt}",
+                    FontSize = 12d,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = DashboardThemeResources.Brush(card, "TextBrush"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                content.Children.Add(new TextBlock
+                {
+                    Text = $"Original before {pair.OriginalBeforeOnePercentLowFps:0.0} FPS · Candidate {pair.CandidateOnePercentLowFps:0.0} FPS · Original after {pair.OriginalAfterOnePercentLowFps:0.0} FPS",
+                    Style = AppStyle("CaptionTextStyle"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                content.Children.Add(new TextBlock
+                {
+                    Text = $"Local 1% low effect {pair.OnePercentLowEffect:+0.0%;-0.0%;0.0%} · Control movement {pair.ControlMovement:P1} / budget {pair.DriftBudget:P1} · {pair.Verdict}",
+                    FontSize = 11d,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = PairVerdictBrush(card, pair.Verdict),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                content.Children.Add(new TextBlock
+                {
+                    Text = pair.Reason,
+                    Style = AppStyle("CaptionTextStyle"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                row.Child = content;
+                AutomationProperties.SetName(
+                    row,
+                    $"Pair {pair.PairNumber}, CPU {pair.Processor.Number}, {pair.Verdict}, 1 percent low effect {pair.OnePercentLowEffect:+0.0%;-0.0%;0.0%}");
+                stack.Children.Add(row);
+            }
+        }
+
         card.Child = stack;
         CardElevation.Apply(card);
         return card;
@@ -398,6 +503,14 @@ public sealed partial class MainWindow
         return "—";
     }
 
+    private static string FormatPairStage(string stage) => stage switch
+    {
+        "screening-representative" => "core representative",
+        "screening-sibling" => "SMT sibling refinement",
+        "screening-finalists" => "finalist confirmation",
+        _ => stage,
+    };
+
     private static string MetricStateLabel(GateAMetricState state) => state switch
     {
         GateAMetricState.Improved => "Improved",
@@ -413,6 +526,11 @@ public sealed partial class MainWindow
             GateAMetricState.DiagnosticOnly => "SemanticAttentionBrush",
             _ => "MutedTextBrush",
         });
+
+    private static Brush PairVerdictBrush(FrameworkElement owner, GpuAutoAffinityPairVerdict verdict) =>
+        DashboardThemeResources.Brush(owner, verdict == GpuAutoAffinityPairVerdict.Valid
+            ? "ChartAccentPrimaryBrush"
+            : "SemanticAttentionBrush");
 
     private static Brush DecisionStateBrush(FrameworkElement owner, string state) =>
         DashboardThemeResources.Brush(owner,
@@ -483,11 +601,6 @@ public sealed partial class MainWindow
         Application.Current.Resources.TryGetValue(key, out var value) && value is double number
             ? number
             : fallback;
-
-    private static string FormatNumber(double? value, string format) =>
-        value is { } number && double.IsFinite(number)
-            ? number.ToString(format, System.Globalization.CultureInfo.InvariantCulture)
-            : "—";
 
     private static string ShortRevision(string revision) => revision.Length >= 12 ? revision[..12] : revision;
 
