@@ -64,8 +64,20 @@ public sealed class GpuMeasurementBootstrapContractTests
             "GpuAutoAffinitySession.cs"));
         StringAssert.Contains(
             sessionSource,
-            "originalObservations.Count < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount",
+            "QualifyOriginalAsync(",
+            "The core v2 session must own Original qualification before any candidate mutation.");
+        StringAssert.Contains(
+            sessionSource,
+            "observations.Count < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount",
             "The core session must own the five-observation Original ceiling so attempts four and five remain real eligible measurements.");
+        StringAssert.Contains(
+            sessionSource,
+            "observations.Count < GpuRepeatabilityClusterSelector.RequiredRunCount",
+            "The core session must require three scored Original observations before accepting a repeatable regime.");
+        StringAssert.Contains(
+            sessionSource,
+            "CreateOriginalEvaluation(observations.ToArray())",
+            "Original qualification must evaluate the real scored observations rather than manufacturing replacement samples.");
         StringAssert.Contains(
             sessionSource,
             "observations.Length < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount",
