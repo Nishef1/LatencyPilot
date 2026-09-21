@@ -158,8 +158,8 @@ public sealed partial class MainWindow
             });
             content.Children.Add(new TextBlock
             {
-                Text = metric.ImprovementFraction is { } delta
-                    ? $"{delta:+0.0%;-0.0%;0.0%} improvement-direction delta · local uncertainty {metric.UncertaintyFraction:P1}"
+                Text = metric.ImprovementFraction is not null
+                    ? $"Paired Original → Candidate → Original · decision floor / local uncertainty {metric.UncertaintyFraction:P1}"
                     : "No comparable decision aggregate is available.",
                 Style = AppStyle("CaptionTextStyle"),
                 TextWrapping = TextWrapping.Wrap,
@@ -391,8 +391,11 @@ public sealed partial class MainWindow
 
     private static string FormatMetricComparison(GateAMetricComparison metric)
     {
-        var format = metric.Unit == "ms" ? "0.00" : "0.0";
-        return $"{FormatNumber(metric.OriginalValue, format)} → {FormatNumber(metric.CandidateValue, format)} {metric.Unit}";
+        if (metric.ImprovementFraction is { } effect && double.IsFinite(effect))
+        {
+            return $"{effect:+0.0%;-0.0%;0.0%} paired effect";
+        }
+        return "—";
     }
 
     private static string MetricStateLabel(GateAMetricState state) => state switch
