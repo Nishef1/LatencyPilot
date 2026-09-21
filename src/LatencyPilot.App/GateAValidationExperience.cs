@@ -384,11 +384,21 @@ public sealed partial class MainWindow
                     "A development-only Gate A run was incorrectly marked closure-eligible. The report is rejected fail-closed.");
             }
 
+            var evidenceBundle = await GateAEvidenceBundleExporter.TryCreateAsync(sessionDirectory);
+            if (!evidenceBundle.Succeeded)
+            {
+                Logger.Warning(
+                    "GPU Gate A completed with a valid report, but evidence packaging failed: {EvidenceBundleError}",
+                    evidenceBundle.Error);
+            }
+
             var terminalSummary = BuildGateATerminalSummary(helperExitCode, report);
             var terminalStateVerified = IsGateATerminalStateVerified(helperExitCode, report);
             progressWindow.ShowFinalOutcome(terminalSummary, reportPath, terminalStateVerified, report);
-            SetGateAValidationStatus($"{terminalSummary} Report: {reportPath}");
-            TryRevealReport(reportPath);
+            SetGateAValidationStatus(
+                evidenceBundle.Succeeded
+                    ? $"{terminalSummary} Evidence ZIP: {evidenceBundle.ZipPath}"
+                    : $"{terminalSummary} Evidence bundle could not be packaged: {evidenceBundle.Error}. Report: {reportPath}");
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
@@ -827,22 +837,5 @@ public sealed partial class MainWindow
 
         throw new FileNotFoundException(
             "dotnet.exe could not be resolved for the benchmark/Gate A helper. Install the .NET 10 SDK or ensure DOTNET_ROOT/PATH points to it.");
-    }
-
-    private static void TryRevealReport(string reportPath)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "explorer.exe",
-                Arguments = $"/select,\"{reportPath}\"",
-                UseShellExecute = true,
-            });
-        }
-        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
-        {
-            Logger.Warning(exception, "GPU Gate A report was written, but File Explorer could not reveal it.");
-        }
     }
 }
