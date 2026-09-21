@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using LatencyPilot.Core.Devices;
 using Sylvan.Data.Csv;
 
@@ -8,7 +9,8 @@ namespace LatencyPilot.Platform.Windows.Devices;
 public static class PresentMonConsoleFrameMetricsReader
 {
     private const int MaximumRetainedFailureCaptures = 5;
-    private static readonly TimeSpan StartupProbeDelay = TimeSpan.FromMilliseconds(500);
+    private const string RecordingStartedMessage = "Started recording.";
+    private static readonly TimeSpan StartupReadinessTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan CompletionSlack = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ActiveCaptureGrace = TimeSpan.FromMinutes(5);
 
@@ -60,18 +62,35 @@ public static class PresentMonConsoleFrameMetricsReader
 
         var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("PresentMon console process could not be started.");
-        var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
+        var startupSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stdout = CaptureStandardOutputAsync(process.StandardOutput, startupSignal);
+        var stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
 
         try
         {
-            await Task.Delay(StartupProbeDelay, cancellationToken).ConfigureAwait(false);
-            if (process.HasExited)
+            using var startupDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            startupDeadline.CancelAfter(StartupReadinessTimeout);
+
+            bool recordingStarted;
+            try
+            {
+                recordingStarted = await startupSignal.Task.WaitAsync(startupDeadline.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new InvalidOperationException(
+                    $"PresentMon did not report recording readiness within {StartupReadinessTimeout.TotalSeconds:F0} seconds.");
+            }
+
+            if (!recordingStarted || process.HasExited)
             {
                 var output = await stdout.ConfigureAwait(false);
                 var error = await stderr.ConfigureAwait(false);
+                var exit = process.HasExited
+                    ? $"exit {process.ExitCode}"
+                    : "stdout closed before recording readiness";
                 throw new InvalidOperationException(
-                    $"PresentMon exited before the benchmark started (exit {process.ExitCode}). {error} {output}".Trim());
+                    $"PresentMon was not ready before the benchmark started ({exit}). {Truncate(error)} {Truncate(output)}".Trim());
             }
 
             return new PresentMonConsoleCaptureSession(
@@ -88,6 +107,13 @@ public static class PresentMonConsoleFrameMetricsReader
         catch
         {
             TryTerminate(process);
+            try
+            {
+                await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is TimeoutException or IOException or InvalidOperationException)
+            {
+            }
             process.Dispose();
             TryDeleteDirectory(tempDirectory);
             throw;
@@ -378,6 +404,28 @@ public static class PresentMonConsoleFrameMetricsReader
               double.IsFinite(result) && result >= 0
                 ? result
                 : null;
+    }
+
+    private static async Task<string> CaptureStandardOutputAsync(
+        StreamReader reader,
+        TaskCompletionSource<bool> startupSignal)
+    {
+        var buffer = new StringBuilder();
+        while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
+        {
+            if (buffer.Length > 0)
+            {
+                buffer.AppendLine();
+            }
+            buffer.Append(line);
+            if (string.Equals(line.Trim(), RecordingStartedMessage, StringComparison.Ordinal))
+            {
+                startupSignal.TrySetResult(true);
+            }
+        }
+
+        startupSignal.TrySetResult(false);
+        return buffer.ToString();
     }
 
     private static void TryTerminate(Process process)
