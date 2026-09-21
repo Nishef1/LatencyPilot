@@ -133,7 +133,8 @@ The paired-v2 work is covered by the existing permanent critical-test budget rat
 - unsupported CPU-scope handling;
 - stale progress warm-up semantics;
 - hidden direct pair evidence;
-- custom Canvas-backed result charts that exposed visual/tool-tip evidence without explicit UI Automation peers or concise accessible chart summaries.
+- custom Canvas-backed result charts that exposed visual/tool-tip evidence without explicit UI Automation peers or concise accessible chart summaries;
+- PresentMon startup that treated a live process plus a fixed delay as capture readiness instead of waiting for the pinned console's explicit recording-start marker before the benchmark-owned observer-settle/QPC boundary.
 
 Exact-head hosted **Tests** are mandatory for every revision used as physical closure evidence. Every commit moves HEAD, so GitHub Actions for the exact revision selected for physical work is the CI oracle; an older successful or cancelled run must never be reused as proof for a later SHA.
 
