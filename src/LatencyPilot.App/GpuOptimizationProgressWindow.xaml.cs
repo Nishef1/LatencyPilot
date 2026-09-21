@@ -41,7 +41,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         InitializeComponent();
         RootGrid.RequestedTheme = requestedTheme;
         Title = "GPU Auto Affinity";
-        AppWindow.Resize(new SizeInt32(520, 650));
+        AppWindow.Resize(new SizeInt32(760, 780));
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
         if (File.Exists(iconPath))
         {
@@ -231,7 +231,7 @@ public sealed partial class GpuOptimizationProgressWindow : Window
                 CultureInfo.InvariantCulture,
                 keptWinner
                     ? "Selected and kept: CPU {0} using the optimizer's persisted decision rank. Background variability is modeled rather than treated as a winner; maximum observed local-control uncertainty is {1:P1}."
-                    : "Best measured candidate: CPU {0} by the optimizer's persisted decision rank — not kept. Time-local controls observed background variability, and measured drift raises the Keep threshold. Maximum local-control uncertainty is {1:P1}; Original/default is the verified terminal state unless a finalist clears the full decision and placement gates.",
+                    : "Best measured candidate: CPU {0} by the optimizer's persisted decision rank — not kept. Background movement raised the Keep threshold; maximum observed local-control uncertainty is {1:P1}. Original/default is the verified terminal state.",
                 best.Processor.Number,
                 maximumLocalUncertainty);
             AutomationProperties.SetName(RankedSummaryText, $"Time-local GPU decision evidence. {RankedSummaryText.Text}");
@@ -250,65 +250,73 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             AutomationProperties.SetName(RankedSummaryText, $"GPU candidate decision evidence. {RankedSummaryText.Text}");
         }
 
-        var minimumLow = rows.Min(static row => row.DecisionOnePercentLowFps!.Value);
-        var maximumLow = rows.Max(static row => row.DecisionOnePercentLowFps!.Value);
-        var span = maximumLow - minimumLow;
         foreach (var row in rows)
         {
-            var isFinalist = !screeningInvalidated &&
+            var isFinal = !screeningInvalidated &&
                 report.FinalProcessor is not null &&
                 report.FinalProcessor.Equals(row.Processor);
-            var displayedVerdict = screeningInvalidated ? "Measured · invalidated" : row.Verdict;
-            var rank = row.DecisionRank is { } decisionRank
-                ? $"#{decisionRank} · "
-                : string.Empty;
-            var evidenceMode = row.UsesTimeLocalNormalization
-                ? " · time-local normalized"
-                : string.Empty;
+            var isBest = !screeningInvalidated && row.DecisionRank == 1;
+            var displayedVerdict = screeningInvalidated
+                ? "Measured · invalidated"
+                : isFinal
+                    ? "Kept"
+                    : isBest && !keptWinner
+                        ? "Best measured · not kept"
+                        : row.Verdict;
             var uncertainty = row.LocalControlUncertainty is { } value && double.IsFinite(value) && value > 0d
-                ? string.Create(CultureInfo.InvariantCulture, $" · uncertainty {value:P1}")
-                : string.Empty;
+                ? value.ToString("P1", CultureInfo.InvariantCulture)
+                : "—";
             var rawContext = row.UsesTimeLocalNormalization &&
                 row.RawLow1PctFps is { } raw &&
                 double.IsFinite(raw) &&
                 raw > 0d
-                    ? string.Create(CultureInfo.InvariantCulture, $" · raw 1% {raw:F1}")
+                    ? $" · raw 1% {raw:F1} FPS"
                     : string.Empty;
-            var label = new TextBlock
+
+            var rowBorder = new Border
             {
-                Text = string.Format(
-                    CultureInfo.InvariantCulture,
-                    "{0}CPU {1}{2} · decision 1% {3} · 0.1% {4} · AVG {5} FPS · p99 {6} ms{7}{8}{9} · {10}{11}",
-                    rank,
-                    row.Processor.Number,
-                    row.Core is { } core ? $" · core {core}" : string.Empty,
-                    FormatFps(row.DecisionOnePercentLowFps),
-                    FormatFps(row.DecisionLow01PctFps),
-                    FormatFps(row.DecisionAvgFps),
-                    row.DecisionFrameP99Milliseconds is { } p99 ? p99.ToString("F2", CultureInfo.InvariantCulture) : "—",
-                    evidenceMode,
-                    uncertainty,
-                    rawContext,
-                    displayedVerdict,
-                    isFinalist ? " · finalist" : string.Empty),
+                Padding = new Thickness(8d, 10d, 8d, 10d),
+                BorderThickness = new Thickness(0d, 0d, 0d, 1d),
+                BorderBrush = DashboardThemeResources.Brush(RootGrid, "PremiumOverviewDividerBrush"),
+                Background = isBest
+                    ? DashboardThemeResources.Brush(RootGrid, "BrandActionSoftBrush")
+                    : null,
+                CornerRadius = isBest ? new CornerRadius(10d) : new CornerRadius(0d),
+            };
+            var content = new StackPanel { Spacing = 4d };
+            var titleRow = new Grid { ColumnSpacing = 10d };
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            titleRow.Children.Add(new TextBlock
+            {
+                Text = $"{(row.DecisionRank is { } rank ? $"#{rank} · " : string.Empty)}CPU {row.Processor.Number}{(row.Core is { } core ? $" · core {core}" : string.Empty)}",
                 Style = (Style)Application.Current.Resources["BodyTextStyle"],
+                FontWeight = isBest || isFinal
+                    ? Microsoft.UI.Text.FontWeights.SemiBold
+                    : Microsoft.UI.Text.FontWeights.Normal,
                 TextWrapping = TextWrapping.Wrap,
-            };
-            AutomationProperties.SetName(label, label.Text);
-            var bar = new ProgressBar
+            });
+            var state = new TextBlock
             {
-                Minimum = 0,
-                Maximum = 100,
-                Value = span > 0 ? (row.DecisionOnePercentLowFps!.Value - minimumLow) / span * 100d : 100d,
-                Height = 8,
+                Text = displayedVerdict,
+                Style = (Style)Application.Current.Resources["CaptionTextStyle"],
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = DashboardThemeResources.Brush(
+                    RootGrid,
+                    isFinal ? "SemanticGoodBrush" : isBest ? "BrandActionBrush" : "MutedTextBrush"),
             };
-            AutomationProperties.SetName(
-                bar,
-                string.Create(CultureInfo.InvariantCulture, $"CPU {row.Processor.Number} relative decision 1 percent low bar"));
-            var container = new StackPanel { Spacing = 2 };
-            container.Children.Add(label);
-            container.Children.Add(bar);
-            RankedCandidatesPanel.Children.Add(container);
+            Grid.SetColumn(state, 1);
+            titleRow.Children.Add(state);
+            content.Children.Add(titleRow);
+            content.Children.Add(new TextBlock
+            {
+                Text = $"1% low {FormatFps(row.DecisionOnePercentLowFps)} FPS · AVG {FormatFps(row.DecisionAvgFps)} FPS · p99 {(row.DecisionFrameP99Milliseconds is { } p99 ? p99.ToString("F2", CultureInfo.InvariantCulture) : "—")} ms · 0.1% low {FormatFps(row.DecisionLow01PctFps)} FPS · uncertainty {uncertainty}{rawContext}",
+                Style = (Style)Application.Current.Resources["CaptionTextStyle"],
+                TextWrapping = TextWrapping.Wrap,
+            });
+            rowBorder.Child = content;
+            AutomationProperties.SetName(rowBorder, $"CPU {row.Processor.Number}. {displayedVerdict}. {content.Children.OfType<TextBlock>().LastOrDefault()?.Text}");
+            RankedCandidatesPanel.Children.Add(rowBorder);
         }
     }
 
@@ -423,6 +431,14 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             : $"{FormatPhase(snapshot.Phase)} · {snapshot.Message}";
         OptimizationProgressBar.Value = snapshot.PercentComplete;
         ProgressPercentText.Text = $"{snapshot.PercentComplete:F0}%";
+
+        var metricScope = snapshot.Processor is not null
+            ? "Candidate"
+            : snapshot.IsTerminal
+                ? "Final Original"
+                : "Original control";
+        FrameP99LabelText.Text = $"{metricScope} frame p99";
+        OnePercentLowLabelText.Text = $"{metricScope} 1% low";
         FrameP99Text.Text = snapshot.FrameP99Milliseconds is { } frameP99 && double.IsFinite(frameP99)
             ? string.Create(CultureInfo.InvariantCulture, $"{frameP99:F2} ms")
             : "—";
