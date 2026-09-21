@@ -117,7 +117,7 @@ public static class GateAResultPresentation
             ? "No authoritative comparison candidate"
             : verifiedKeep
                 ? $"CPU {compared.Processor.Number} · kept"
-                : $"CPU {compared.Processor.Number} · best measured · not kept";
+                : $"CPU {compared.Processor.Number} · best measured · comparison only · not kept";
         var bundleStatus = bundle.Succeeded
             ? "Shareable evidence ZIP is ready."
             : string.IsNullOrWhiteSpace(bundle.Error)
