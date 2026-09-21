@@ -78,6 +78,8 @@ public sealed record GateAResultViewModel(
 
 public static class GateAResultPresentation
 {
+    private const string FinalistPhaseName = "screening-finalists";
+
     public static GateAResultViewModel Create(
         GpuAutoAffinityReport report,
         string sessionDirectory,
@@ -168,18 +170,21 @@ public static class GateAResultPresentation
         {
             return report.Candidates
                 .Where(candidate => candidate.Processor == finalProcessor && HasDecisionMetrics(candidate))
-                .LastOrDefault();
+                .OrderByDescending(static candidate =>
+                    string.Equals(candidate.Phase, FinalistPhaseName, StringComparison.Ordinal))
+                .FirstOrDefault();
         }
 
         // Candidate collection order is measurement order and is deliberately
         // shuffled. A diagnostic comparison is only safe when the optimizer has
         // persisted an explicit decision rank; never infer a winner from list order.
+        // When both screening and finalist aggregates carry rank #1, the three-pair
+        // finalist aggregate is the higher-authority comparison.
         return report.Candidates
-            .Where(static candidate =>
-                candidate.DecisionRank == 1)
+            .Where(static candidate => candidate.DecisionRank == 1)
             .Where(HasDecisionMetrics)
             .OrderByDescending(static candidate =>
-                string.Equals(candidate.Phase, "finalists", StringComparison.Ordinal))
+                string.Equals(candidate.Phase, FinalistPhaseName, StringComparison.Ordinal))
             .FirstOrDefault();
     }
 
