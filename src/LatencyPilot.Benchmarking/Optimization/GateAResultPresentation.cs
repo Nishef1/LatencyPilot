@@ -117,7 +117,7 @@ public static class GateAResultPresentation
                 : "Result needs attention";
         var summary = BuildSummary(report, compared, verifiedKeep);
         var eligibilityLabel = report.GateAClosureEligible
-            ? "Closure eligible"
+            ? "Evidence eligible"
             : "Development evidence";
         var comparedLabel = compared is null
             ? "No authoritative comparison candidate"
