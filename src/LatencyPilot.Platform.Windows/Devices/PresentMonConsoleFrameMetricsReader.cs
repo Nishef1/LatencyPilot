@@ -109,7 +109,9 @@ public static class PresentMonConsoleFrameMetricsReader
             TryTerminate(process);
             try
             {
-                await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+                await Task.WhenAll(stdout, stderr)
+                    .WaitAsync(TimeSpan.FromSeconds(1), CancellationToken.None)
+                    .ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is TimeoutException or IOException or InvalidOperationException)
             {
