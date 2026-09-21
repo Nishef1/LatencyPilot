@@ -243,23 +243,21 @@ public sealed class GpuAutoAffinitySessionTests
         var persistentOriginal = await new GpuAutoAffinitySession(persistentOriginalBackend).RunAsync(request);
         Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, persistentOriginal.Recommendation);
         Assert.IsTrue(persistentOriginal.Report.OriginalStateRestored);
+        Assert.IsTrue(persistentOriginal.Report.FinalStateVerified);
         Assert.AreEqual(
-            4,
+            5,
             persistentOriginalBackend.Events.Count(static item =>
                 item.StartsWith("original:screening-original:", StringComparison.Ordinal)),
-            "Original sampling must stop after four scored attempts when no stable 3-run cluster exists.");
-        Assert.IsTrue(persistentOriginalBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)),
-            "A noisy but valid four-run Original baseline must still screen every CPU once.");
+            "Original sampling must exhaust the bounded five scored observations when no stable 3-run cluster exists.");
+        Assert.IsFalse(
+            persistentOriginalBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)),
+            "A broadly unstable Original baseline must fail closed before the first candidate mutation.");
         Assert.IsFalse(persistentOriginalBackend.Events.Any(static item =>
             item.Contains("screening-finalists", StringComparison.Ordinal)),
-            "Extreme Original noise must not expand into exhaustive finalist re-tests.");
+            "An unrankable Original baseline must not reach finalist re-tests.");
         Assert.IsTrue(persistentOriginal.Report.Reasons.Any(static reason =>
-            reason.Contains("search continued", StringComparison.OrdinalIgnoreCase) &&
-            reason.Contains("noise", StringComparison.OrdinalIgnoreCase)),
-            "The report must disclose that the strict cluster was unavailable and that observed noise was carried into the screen.");
-        Assert.IsTrue(persistentOriginal.Report.Reasons.Any(static reason =>
-            reason.Contains("exhaustive-confirmation budget", StringComparison.OrdinalIgnoreCase)),
-            "Extreme baseline noise must explain why bounded finalist confirmation was skipped.");
+            reason.Contains("not repeatable enough", StringComparison.OrdinalIgnoreCase)),
+            "The report must explain that Original repeatability failed after the bounded five-observation acquisition.");
 
         var recoverableFinalistBackend = new RecordingBackend(recoverableFinalistOutlier: true);
         var recoverableFinalist = await new GpuAutoAffinitySession(recoverableFinalistBackend).RunAsync(request);
