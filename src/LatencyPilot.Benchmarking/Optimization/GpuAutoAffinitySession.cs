@@ -137,6 +137,7 @@ public sealed class GpuAutoAffinitySession
         }
 
         ShuffleDeterministically(candidates, request.ShuffleSeed);
+        GpuAutoAffinityDecisionBaselineReport? decisionBaseline = null;
 
         try
         {
@@ -188,6 +189,7 @@ public sealed class GpuAutoAffinitySession
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
                     originalVerified, originalVerified, candidateReports, trialReports, reasons);
             }
+            decisionBaseline = ToDecisionBaseline(original);
             if (original.UsedNoiseAwareFallback)
             {
                 reasons.Add(string.Create(
@@ -308,6 +310,7 @@ public sealed class GpuAutoAffinitySession
             screeningEvaluations.Clear();
             screeningEvaluations.AddRange(normalizedScreening);
             RefreshScreeningCandidateReports(candidateReports, screeningEvaluations);
+            ApplyDecisionRanks(candidateReports, "screening", screeningEvaluations);
 
             var effectiveScreeningVariability = Math.Max(
                 original.PrimaryRelativeNoise,
@@ -320,7 +323,8 @@ public sealed class GpuAutoAffinitySession
                 var originalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
                 return CreateResult(
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
-                    originalVerified, originalVerified, candidateReports, trialReports, reasons);
+                    originalVerified, originalVerified, candidateReports, trialReports, reasons,
+                    decisionBaseline);
             }
 
             var finalists = await RescreenTopCandidatesAsync(
@@ -332,6 +336,7 @@ public sealed class GpuAutoAffinitySession
                 trialReports,
                 () => ++nextRunNumber,
                 cancellationToken).ConfigureAwait(false);
+            ApplyDecisionRanks(candidateReports, FinalistPhaseName, finalists);
 
             await CaptureAcceptedAsync(
                 () => ++nextRunNumber,
@@ -397,7 +402,8 @@ public sealed class GpuAutoAffinitySession
                     restored,
                     candidateReports,
                     trialReports,
-                    reasons);
+                    reasons,
+                    decisionBaseline);
             }
 
             reasons.Add(string.Create(
@@ -407,6 +413,7 @@ public sealed class GpuAutoAffinitySession
             return await VerifyAndKeepFinalistAsync(
                 request,
                 startedAtUtc,
+                decisionBaseline,
                 finalist.Candidate,
                 reference,
                 () => ++nextRunNumber,
@@ -433,7 +440,8 @@ public sealed class GpuAutoAffinitySession
                 restored,
                 candidateReports,
                 trialReports,
-                reasons);
+                reasons,
+                decisionBaseline);
         }
     }
 
@@ -643,6 +651,7 @@ public sealed class GpuAutoAffinitySession
     private async Task<GpuAutoAffinitySessionResult> VerifyAndKeepFinalistAsync(
         GpuAutoAffinitySessionRequest request,
         DateTimeOffset startedAtUtc,
+        GpuAutoAffinityDecisionBaselineReport decisionBaseline,
         GpuAffinityCandidate finalist,
         GpuBenchmarkEvidence reference,
         Func<int> nextRunNumber,
@@ -699,7 +708,8 @@ public sealed class GpuAutoAffinitySession
                     restored,
                     candidateReports,
                     trialReports,
-                    reasons);
+                    reasons,
+                    decisionBaseline);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -711,7 +721,8 @@ public sealed class GpuAutoAffinitySession
                 reasons.Add("The selected processor already represented the exact original stored policy, so no write or Keep terminalization was necessary.");
                 return CreateResult(
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, finalist,
-                    originalVerified, originalVerified, candidateReports, trialReports, reasons);
+                    originalVerified, originalVerified, candidateReports, trialReports, reasons,
+                    decisionBaseline);
             }
 
             await backend.KeepAsync(keptId, CancellationToken.None).ConfigureAwait(false);
@@ -727,7 +738,8 @@ public sealed class GpuAutoAffinitySession
                 originalStateRestored: false,
                 candidateReports,
                 trialReports,
-                reasons);
+                reasons,
+                decisionBaseline);
         }
         catch (Exception failure) when (activeExperiment is not null)
         {
@@ -1155,6 +1167,20 @@ public sealed class GpuAutoAffinitySession
             null);
     }
 
+    private static GpuAutoAffinityDecisionBaselineReport ToDecisionBaseline(OriginalEvaluation original) =>
+        new(
+            original.MedianLow1Fps,
+            original.MedianAvgFps,
+            original.MedianFrameP99Milliseconds,
+            original.MedianLow01Fps,
+            original.PrimaryRelativeNoise,
+            original.AvgRelativeNoise,
+            original.FrameP99RelativeNoise,
+            original.Low01RelativeNoise,
+            original.ValidObservationCount,
+            original.TotalObservationCount,
+            original.UsedNoiseAwareFallback);
+
     private static CandidateEvaluation[] NormalizeScreeningEvaluations(
         IReadOnlyList<CandidateEvaluation> evaluations,
         OriginalEvaluation original,
@@ -1290,6 +1316,30 @@ public sealed class GpuAutoAffinitySession
 
             var existing = candidateReports[index];
             candidateReports[index] = ToReport("screening", evaluation, existing.TrialCount);
+        }
+    }
+
+    private static void ApplyDecisionRanks(
+        List<GpuAutoAffinityCandidateReport> candidateReports,
+        string phase,
+        IReadOnlyList<CandidateEvaluation> evaluations)
+    {
+        var ranked = OrderRankableCandidates(evaluations).ToArray();
+        for (var rankIndex = 0; rankIndex < ranked.Length; rankIndex++)
+        {
+            var evaluation = ranked[rankIndex];
+            var reportIndex = candidateReports.FindLastIndex(report =>
+                string.Equals(report.Phase, phase, StringComparison.Ordinal) &&
+                report.Processor == evaluation.Candidate.Processor);
+            if (reportIndex < 0)
+            {
+                continue;
+            }
+
+            candidateReports[reportIndex] = candidateReports[reportIndex] with
+            {
+                DecisionRank = rankIndex + 1,
+            };
         }
     }
 
@@ -1626,7 +1676,8 @@ public sealed class GpuAutoAffinitySession
         bool originalStateRestored,
         List<GpuAutoAffinityCandidateReport> candidateReports,
         List<GpuAutoAffinityTrialReport> trialReports,
-        List<string> reasons)
+        List<string> reasons,
+        GpuAutoAffinityDecisionBaselineReport? decisionBaseline = null)
     {
         // Finalist/FinalProcessor means the processor that is actually kept in
         // terminal machine state. Ranked-but-rejected candidates remain in the
@@ -1646,7 +1697,8 @@ public sealed class GpuAutoAffinitySession
             terminalFinalist?.Processor,
             finalStateVerified,
             originalStateRestored,
-            reasons.AsReadOnly());
+            reasons.AsReadOnly(),
+            DecisionBaseline: decisionBaseline);
         return new GpuAutoAffinitySessionResult(recommendation, terminalFinalist, report);
     }
 
