@@ -6,20 +6,29 @@ LatencyPilot follows one rule:
 
 > **Measure → Apply one supported change → Verify → Keep or Revert**
 
-It is not a registry-tweak pack, debloater, generic FPS booster or a list of settings assumed to be universally better. The current v1 goal is deliberately narrow: automate the useful manual GPU + input/USB interrupt-affinity workflow while preserving exact rollback and proving effective runtime placement.
+It is not a registry-tweak pack, debloater, generic FPS booster, or a list of settings assumed to be universally better. The current v1 product goal is deliberately narrow: automate a reversible GPU + input/USB interrupt-affinity workflow while preserving exact rollback and proving effective runtime placement.
 
 > [!IMPORTANT]
-> LatencyPilot is **0.0.2 pre-alpha**. Public protocol v6 remains observation-only and user-reachable mutation is unavailable. The GPU search/result source exists, but exact-head CI plus physical GPU Gate A must pass before product mutation can be armed. Automatic USB/xHCI mutation follows only after that shared substrate is physically proven.
+> LatencyPilot is **0.0.2 pre-alpha**. Public protocol v6 remains observation-only and user-reachable mutation is unavailable. The current GPU search method is implemented in source, but physical GPU Gate A must pass before product mutation can be armed. Automatic USB/xHCI mutation follows only after the shared mutation/recovery substrate is physically proven.
+
+## Current authority
+
+- Product scope, mutation ownership, recovery and v1 sequencing: [`docs/adr/0006-simple-auto-interrupt-affinity-v1.md`](docs/adr/0006-simple-auto-interrupt-affinity-v1.md)
+- GPU measurement/search/ranking: [`docs/adr/0007-paired-local-control-gpu-affinity-v2.md`](docs/adr/0007-paired-local-control-gpu-affinity-v2.md)
+- Live execution/evidence state: [`PROJECT_STATUS.md`](PROJECT_STATUS.md)
+- Required completion outcomes: [`ROADMAP.md`](ROADMAP.md)
+
+ADR 0007 supersedes only the GPU measurement, screening and ranking portions of ADR 0006.
 
 ## v1 workflow
 
 ```text
 preflight / quiet check
 → deep ETW baseline
-→ benchmark GPU interrupt affinity on every eligible logical CPU
-→ use time-local Original controls to normalize gradual background movement
-→ bounded finalist confirmation when variability permits
-→ choose by 1% low → AVG FPS → lower p99 → 0.1% low rare-tail context
+→ bounded Original qualification
+→ paired GPU screening: Original before → Candidate → Original after
+→ physical-core representatives → promising SMT siblings → up to 3 finalists
+→ three independent 30 s local pairs per finalist
 → final ETW target-only GPU ISR placement proof
 → measure remaining per-CPU interrupt headroom
 → Raw Input → USB → exact xHCI controller
@@ -30,113 +39,158 @@ preflight / quiet check
 → Restore original settings
 ```
 
-The workflow is inspired by the manual combination of AutoGpuAffinity, LatencyMon/ETW and Interrupt Affinity Policy Tool, but LatencyPilot replaces manual device matching and blind affinity guesses with Windows topology, controlled measurement, explicit verification and journal-owned rollback.
-
-Current product authority: [`docs/adr/0006-simple-auto-interrupt-affinity-v1.md`](docs/adr/0006-simple-auto-interrupt-affinity-v1.md).
+NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, power-plan tuning, generic debloating and a generic cross-subsystem optimizer are outside the v1 automatic path.
 
 ## Current state
 
 - Scope/safety/recovery foundations: **source complete**
 - Read-only ETW/topology/device evidence: **source substantially complete; physical closure remains**
-- GPU auto-affinity search: **time-local decision method implemented; physical Gate A open**
-- Gate A result UX: **validated report → evidence ZIP → Overview result source implemented; physical render/accessibility inspection remains**
+- GPU paired-v2 search: **implemented in source; physical Gate A open**
+- Gate A result UX: **authoritative report → evidence ZIP → Overview result implemented; real render/accessibility inspection remains**
 - Final GPU Keep: **internal source requires hard ETW target-only ISR proof**
 - USB/input route + xHCI read-only evidence: **source exists**
-- Automatic USB CPU selection: **read-only post-GPU recommendation implemented; physical evidence/product integration open**
+- Automatic USB CPU selection: **read-only recommendation source exists; physical/product integration remains**
 - Reversible xHCI mutation substrate: **internal/product-gated**
 - Combined reboot verification / before-after product UX: **open**
 - Public protocol: **v6**, `GetStatus` + `CaptureKernelLatency` only
 - `ServiceBoundary.MutationAvailable`: **false**
 - Hosted CI: **software-contract evidence only**
 
-[`PROJECT_STATUS.md`](PROJECT_STATUS.md) is the live execution ledger. [`ROADMAP.md`](ROADMAP.md) is the authoritative v1 phase plan.
+## GPU paired-v2 measurement
 
-## What v1 intentionally does not automate
+New GPU evidence uses method id `gpu-affinity-benchmark-v2` and report schema `latencypilot-gpu-auto-affinity-report-v2`. Historical v1 reports remain historical and are never reinterpreted as v2.
 
-NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, power-plan tuning, generic debloating and a cross-subsystem/Pareto auto-optimizer are outside the v1 automatic path. Existing read-only/future/recovery source can remain without entering or gating the v1 automatic workflow.
+### 1. Original qualification
 
-## GPU search semantics
-
-The built-in normal-user `LatencyPilot.GpuBenchmark` process performs deterministic D3D12 work. One startup calibration freezes worker mapping, simulation work, command workload, seed and resolution.
-
-Every eligible logical CPU receives:
+Before any candidate mutation:
 
 ```text
-apply/restart/verify
-→ 5 s non-scored warm-up
-→ 1 scored 30 s screening run
-→ exact rollback + Original-state verification
+5 s non-scored Original warm-up
+→ 10 s scored Original observations
+→ require a 3-observation 1%-low cluster
+   preferred band: ±3% of cluster median
+   bounded recovery after observations 4/5: up to ±6%
+→ no valid cluster after 5 scored observations = retain Original, no candidate mutation
 ```
 
-Original is measured repeatedly before screening. Screening then runs in blocks of at most four candidates, with fresh Original block controls between full blocks and a final Original control after the last block. These controls are not fake candidates and ordinary gradual movement is not automatically a failed experiment. The optimizer:
+Every observation remains in the audit trail. The accepted qualification cluster establishes a usable measurement substrate; it is not reused as a candidate pair control.
 
-1. preserves raw scored candidate/control trials unchanged;
-2. normalizes rankable candidate **decision aggregates** from their time-local Original level back to the session Original baseline;
-3. records the measured local movement as uncertainty;
-4. raises shortlist/Keep thresholds using that uncertainty rather than crediting drift as candidate benefit.
+### 2. Direct local pairs
 
-If effective 1%-low variability — the larger of Original repeatability noise and time-local control movement — exceeds 15%, the complete screening evidence remains diagnostic but exhaustive finalist confirmation is skipped and exact Original is retained.
-
-Otherwise the best three candidates plus additional candidates inside the bounded noise-aware third-place cutoff enter two independent re-test rounds, capped at five finalists. Each round deterministically shuffles finalist order; every finalist receives a fresh apply/restart/warm-up, one scored run, and exact rollback. A single replacement score is allowed when the preferred ±3% three-run cluster is missing. If four valid runs still do not form that preferred cluster, all four remain usable and their observed per-metric variance becomes part of the decision floor.
-
-Candidate decision evidence is ranked transparently by:
-
-1. median **1% low**, with <=1% relative differences treated as ties;
-2. median **AVG FPS**, also with a 1% tie margin;
-3. lower median **frame-p99**, also with a 1% tie margin;
-4. median **0.1% low** only when the remaining rare-tail difference exceeds 5%;
-5. deterministic passive fallback only if measured metrics remain practically tied.
-
-There is no fixed “must beat Windows default by 3%” rule, no separate SMT/hyperthread refinement phase and no ABBA/BAAB confirmation loop. CPU0 and eligible SMT siblings are first-class logical-processor candidates. Windows default is the exact reference/recovery state.
-
-Before Keep, finalists are checked in rank order against Original repeatability noise, time-local uncertainty and frame/interrupt-tail guardrails. A bad top finalist can fall through to the next clean improvement.
-
-The benchmark process intentionally stays alive for the whole search. The renderer uses a three-buffer flip chain with two frame contexts. After each GPU configuration restart, the D3D12 renderer/device is recreated before the next measurement block, while process identity, frozen workload, seed and worker map remain constant so process-start/JIT/cold-cache effects are not reintroduced for every CPU.
-
-The benchmark records its own controlled wall-clock loop periods. They are a deterministic comparison signal for this workload; they are not claimed to be arbitrary-game end-to-end frametime.
-
-## Screening versus final Keep
-
-Screening is resilient: standalone PresentMon and kernel ETW are independent cross-checks/guardrails. If they are unavailable, the absence is explicit and valid benchmark-owned controlled-frame evidence can continue under verified stored state. If healthy ETW proves an off-target candidate, that candidate is invalid.
-
-Structural failures are never normalized away: invalid/mismatched benchmark evidence, state/source divergence, failed mutation/recovery ownership, healthy ETW proving wrong placement, or an unverified terminal state remains fail-closed.
-
-Final Keep is stricter. A ranked GPU winner is kept only after a fresh verification capture proves:
+After qualification, LatencyPilot captures a fresh Original control and screens with chained local pairs:
 
 ```text
-stored winner state verified before/after
-ETW integrity clean
-ETW lost events = 0
+O0 → C1 → O1 → C2 → O2 → ...
+```
+
+For higher-is-better metrics such as 1% low and AVG:
+
+```text
+reference = sqrt(originalBefore * originalAfter)
+effect    = candidate / reference - 1
+```
+
+For lower-is-better frame p99:
+
+```text
+effect = reference / candidate - 1
+```
+
+Positive effect always means improvement-directed movement. Raw observations are preserved unchanged; the optimizer does not manufacture pseudo-normalized FPS values.
+
+### 3. Pair stability
+
+The pair drift budget is:
+
+```text
+clamp(max(6%, 2 × accepted Original 1%-low noise), 6%, 10%)
+```
+
+A pair above that budget is unstable and cannot rank the candidate. One fresh retry is allowed. A second unstable attempt makes that candidate inconclusive. Two consecutive candidates that exhaust the retry stop the search safely and retain exact Original.
+
+Structural evidence failures remain fail-closed immediately.
+
+### 4. Full-search strategy
+
+Full search does **not** blindly score every SMT sibling for the full tournament:
+
+1. **Stage A — physical-core representatives:** screen one eligible logical processor per physical core using current CPU-set eligibility, lower observed pressure, then deterministic processor-number fallback.
+2. **Stage B — sibling refinement:** keep the best two physical-core hypotheses, plus a third only when it is within the 1% practical-equivalence margin; screen any still-untested eligible siblings on those cores.
+3. **Stage C — finalists:** advance the best two logical CPUs, plus one additional CPU only when it is within the same 1% margin; hard cap three finalists.
+
+CPU0 is not globally banned and no even/odd SMT assumption is permitted.
+
+Short-screen scored windows are exactly **10 seconds**. The primary ranking signal is paired 1%-low effect; AVG and frame p99 are guardrail/context metrics and 0.1% low remains diagnostic.
+
+### 5. Finalist confirmation
+
+Each finalist must obtain **three independent valid 30-second local pairs**. Finalist order is deterministically shuffled per round.
+
+A finalist is improvement-capable only when:
+
+- at least two of three 1%-low pair effects are positive;
+- median paired 1%-low effect exceeds `max(1%, median finalist pair movement)`;
+- no valid pair shows a material primary regression beyond that floor;
+- AVG, frame-p99 and sufficiently supported GPU-driver interrupt-tail guardrails do not materially regress.
+
+Finalists within one percentage point are a **practical tie**. Passive pressure/topology ordering may choose the operational target inside a tie, but the UI must not claim that target proved faster than tied peers.
+
+## Final Keep is stricter than ranking
+
+A measured performance winner is not enough. Before Keep, LatencyPilot applies the selected candidate once more and requires:
+
+```text
+stored winner state verified
+clean kernel ETW
+lost events = 0
 attributable GPU ISR samples > 0
-ISR target = selected CPU
+ISR target = selected logical CPU
 resolved off-target ISR = 0
+terminal stored state verified
 ```
 
-If final placement cannot be proved, exact Original is restored.
+If final runtime placement cannot be proved, exact Original is restored.
 
-## PresentMon boundary
+Microsoft documents interrupt affinity as a device affinity policy and `AssignmentSetOverride` as a `KAFFINITY` processor mask when the specified-processors policy is used. LatencyPilot treats that stored policy as configuration evidence only; runtime ETW placement remains a separate verification layer.
 
-Gate A uses a pinned official standalone PresentMon console collector; users do not need a separately installed PresentMon Service/API for this path.
+## Diagnostic GPU scopes
 
-PresentMon remains an independent frame-cadence cross-check rather than the primary ranking dependency. CSV parsing keeps timing semantics distinct: current `FrameTime` or legacy `MsBetweenPresents` may provide cadence; `MsBetweenAppStart` is not silently substituted as the same metric. Failed diagnostic CSV retention is bounded.
+The developer UI also supports bounded diagnostic paths:
+
+- **Selected CPUs · restore Original** — runs real paired screening only on the selected CPUs, skips the machine-wide finalist tournament, never Keeps, always restores Original and cannot close Gate A.
+- **Original only · no system changes** — captures the bounded Original-only sample set with no affinity mutation or device restart.
+
+These are methodology/debugging tools, not shortcuts around the full physical gate.
 
 ## Gate A result evidence
 
-After a report passes schema/session/source validation, LatencyPilot attempts to package the complete session evidence into a shareable ZIP and builds the Overview result from the authoritative report.
+After a report passes schema/session/source validation, LatencyPilot attempts to package the complete session into a shareable ZIP and builds the Overview result from the authoritative report.
 
-The development result surface separates:
+The result surface keeps these layers distinct:
 
 ```text
-raw scored trial history
-!= persisted decision aggregates/rank
+raw scored trials / local pairs
+!= persisted decision rank/finalist authority
 != verified terminal machine state
 ```
 
-It shows Original/candidate decision metrics, candidate comparison, repeatability history, decision evidence and explicit evidence actions. A RestoreOriginal outcome cannot be rendered as a kept winner merely because one candidate measured fastest in a raw or shuffled sample.
+It shows:
 
-Raw JSON remains available through an explicit **Open raw report** action rather than being automatically opened when a run completes.
+- terminal Keep/Restore/practical-tie outcome;
+- `Evidence eligible` versus development evidence without implying physical Gate A is already closed;
+- direct `Original before → Candidate → Original after` pair evidence;
+- paired effect, local control movement, drift budget and pair verdict;
+- candidate/finalist comparison using persisted decision authority;
+- runtime placement/final-state evidence;
+- evidence ZIP/session/raw-report actions.
 
-## ETW / DPC / ISR evidence
+Presentation code must never re-rank shuffled execution data or turn a non-Keep candidate into a winner.
+
+## PresentMon and ETW boundaries
+
+The built-in D3D12 benchmark owns the primary controlled frame-period signal for GPU search. Standalone PresentMon remains an independent best-effort frame-cadence cross-check. Screening can continue when optional external collectors are unavailable if benchmark evidence and stored state remain valid; healthy ETW that contradicts the requested placement invalidates the candidate.
+
+Final Keep is different: clean attributable target-only ISR evidence is mandatory.
 
 LatencyPilot keeps these layers separate:
 
@@ -146,13 +200,11 @@ stored interrupt configuration
 ≠ runtime DPC/ISR behavior
 ```
 
-DPC/ISR counts are visible but do not represent CPU cost alone; duration and tail behavior also matter. CPU0 is not universally banned.
-
-The built-in ETW engine provides per-CPU and module attribution and replaces a mandatory LatencyMon dependency for the automatic workflow.
+DPC/ISR counts are context, not CPU cost by themselves; duration and tail behavior also matter.
 
 ## Input / USB direction
 
-Read-only source already resolves:
+Read-only source resolves:
 
 ```text
 Raw Input device
@@ -161,11 +213,9 @@ Raw Input device
 → exact xHCI controller
 ```
 
-and can capture host-observable Raw Input timing plus xHCI-attributed interrupt evidence.
+After a verified GPU Keep, v1 can choose a separate CPU from remaining interrupt headroom using DPC duration + ISR duration + tail spikes, with counts as context. The selected mutation target is the interrupt-owning xHCI/controller rather than blindly the leaf mouse.
 
-After a verified GPU Keep, v1 can choose a separate CPU from remaining interrupt headroom using DPC duration + ISR duration + tail spikes, with counts as context. The selected target is the interrupt-owning xHCI/controller, not blindly the leaf mouse.
-
-System-changing xHCI affinity is part of v1 but remains product-unarmed until GPU Gate A proves the shared privileged mutation/recovery substrate physically and the integrated xHCI runtime-verification path closes.
+System-changing xHCI affinity remains product-unarmed until GPU Gate A physically proves the shared mutation/recovery substrate and the integrated xHCI runtime-verification path closes.
 
 ## Architecture
 
@@ -180,43 +230,17 @@ src/
   LatencyPilot.App/
   LatencyPilot.GpuBenchmark/
 
+tools/
+  LatencyPilot.GateAValidation/
+  LatencyPilot.PhysicalValidation/
+
 tests/
   LatencyPilot.CriticalTests/
 ```
 
-Responsibilities remain narrow:
-
-- `Core` — stable domain concepts/invariants;
-- `Benchmarking` — measurement interpretation and v1 GPU/input decision policy;
-- `Protocol` — typed/versioned local IPC only;
-- `Platform.Windows` — ETW, SetupAPI/ConfigMgr, DXGI, PresentMon, USB hub IOCTLs, Raw Input and Windows-specific mechanisms;
-- `Persistence` — SQLite mutation journal/recovery ownership;
-- `Service` — privileged observation boundary and future typed mutation boundary;
-- `GpuBenchmark` — non-elevated deterministic D3D12 workload;
-- `App` — non-elevated WinUI orchestration/result UX;
-- `CriticalTests` — focused durable high-blast-radius contracts.
+Responsibilities stay narrow: Core owns stable domain invariants, Benchmarking owns measurement/decision policy, Platform.Windows owns Windows mechanisms, Persistence owns durable recovery state, Service owns the privileged boundary, GpuBenchmark owns the non-elevated deterministic workload, App owns orchestration/result UX, and CriticalTests owns a deliberately small set of high-blast-radius contracts.
 
 There is no generic privileged shell/process/registry execution surface.
-
-## Measurement products
-
-### Quick diagnostic
-
-```text
-1 × 5 seconds
-```
-
-Used for integrity, attribution, CPU concentration and hypothesis generation only.
-
-### Steady repeated baseline
-
-`baseline-quality-v2` + `workload-stability-v1` remain available for repeated RealWorld/manual evidence. They are intentionally separate from the synthetic GPU-search method.
-
-### Deep v1 baseline
-
-The final one-button v1 workflow will use the ETW engine for a long comparable before/after baseline. LatencyMon itself is not a dependency.
-
-See [`docs/BENCHMARK_METHODOLOGY.md`](docs/BENCHMARK_METHODOLOGY.md).
 
 ## Safety and recovery
 
@@ -228,16 +252,10 @@ snapshot exact original
 → apply narrow supported change
 → verify stored/runtime state
 → Keep or exact Restore
-→ verify final state
+→ verify terminal state
 ```
 
 Cancellation is rollback-biased. Upgrade/uninstall must not remove recovery tools while LatencyPilot still owns an unresolved or retained change.
-
-## Testing and evidence policy
-
-Hosted CI runs the critical test project. It does not prove WinUI rendering, LocalSystem behavior, physical interrupt placement, GPU restart timing, installer/package behavior, signing or accessibility. Those require owner-local physical evidence.
-
-No new permanent test method should be added for every implementation detail. Temporary TDD characterization should be folded into canonical contracts or removed once represented.
 
 ## Local workflows
 
@@ -265,7 +283,10 @@ For XAML Hot Reload/Live Visual Tree, Visual Studio `F5` remains the preferred U
 
 ```text
 exact-head green CI
-→ GPU Gate A physical search/restart/placement/rollback proof
+→ paired-v2 GPU Gate A physical search/restart/placement/rollback proof
+→ repeat whole search
+→ Stop safely + supported recovery exercise
+→ real Windows result/accessibility inspection
 → typed allowlisted mutation-specific IPC
 → physical App → Service mutation proof
 → normal-user GPU arming
@@ -274,13 +295,11 @@ exact-head green CI
 → signed package/accessibility/recovery closure
 ```
 
-MSI-mode mutation is not part of this v1 automatic path.
-
-See [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for current blockers.
+Hosted CI proves software contracts only. It cannot prove physical interrupt placement, device restart behavior, real WinUI rendering/accessibility, LocalSystem behavior or package/signing behavior.
 
 ## What “done” means
 
-Repository/source completion and true v1 completion are separate claims. True v1 requires physical GPU Gate A, automatic USB/xHCI apply/verify, reboot/recovery, final before/after UX, accessibility/runtime validation and signed package/install/upgrade/uninstall evidence on recorded artifacts.
+Repository/source completion and true v1 completion are different claims. True v1 completion requires physical GPU Gate A, automatic USB/xHCI apply/verify, combined reboot/recovery, final before/after UX, accessibility/runtime validation and signed package/install/upgrade/uninstall evidence on recorded artifacts.
 
 ## Contributing / license / security
 
