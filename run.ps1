@@ -9,8 +9,10 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $appProject = Join-Path $repoRoot 'src\LatencyPilot.App\LatencyPilot.App.csproj'
 $serviceProject = Join-Path $repoRoot 'src\LatencyPilot.Service\LatencyPilot.Service.csproj'
+$gateAProject = Join-Path $repoRoot 'tools\LatencyPilot.GateAValidation\LatencyPilot.GateAValidation.csproj'
 $appAssets = Join-Path $repoRoot 'src\LatencyPilot.App\obj\project.assets.json'
 $serviceAssets = Join-Path $repoRoot 'src\LatencyPilot.Service\obj\project.assets.json'
+$gateAAssets = Join-Path $repoRoot 'tools\LatencyPilot.GateAValidation\obj\project.assets.json'
 $serviceOutput = Join-Path $repoRoot 'src\LatencyPilot.Service\bin\Debug\net10.0-windows10.0.26100.0\win-x64'
 $installServiceScript = Join-Path $repoRoot 'scripts\Install-Service.ps1'
 $serviceStartupReadinessScript = Join-Path $repoRoot 'scripts\ServiceStartupReadiness.ps1'
@@ -53,12 +55,14 @@ Push-Location $repoRoot
 try {
     $needsRestore = $ForceRestore -or
         -not (Test-Path -LiteralPath $appAssets) -or
-        -not (Test-Path -LiteralPath $serviceAssets)
+        -not (Test-Path -LiteralPath $serviceAssets) -or
+        -not (Test-Path -LiteralPath $gateAAssets)
 
     if ($needsRestore) {
-        Write-Host 'Restoring App and Service...'
+        Write-Host 'Restoring App, Service, and Gate A helper...'
         Invoke-DotNet restore $serviceProject
         Invoke-DotNet restore $appProject
+        Invoke-DotNet restore $gateAProject
     }
 
     Write-Host 'Building Service...'
@@ -66,6 +70,9 @@ try {
 
     Write-Host 'Building App...'
     Invoke-DotNet build $appProject --configuration Debug --no-restore
+
+    Write-Host 'Building Gate A helper...'
+    Invoke-DotNet build $gateAProject --configuration Release --no-restore
 
     $serviceExe = Join-Path $serviceOutput 'LatencyPilot.Service.exe'
     if (-not (Test-Path -LiteralPath $serviceExe -PathType Leaf)) {
