@@ -1,6 +1,6 @@
 # ADR 0006 — Simple automatic interrupt-affinity v1
 
-Status: **Accepted** (owner-directed, 2026-09-18; measurement contract amended 2026-09-20)
+Status: **Accepted** (owner-directed, 2026-09-18; measurement contract amended 2026-09-20; Original baseline corrected 2026-09-21)
 
 Supersedes ADR 0005 for ranking order, finalist confirmation and v1 USB/xHCI product direction.
 
@@ -37,8 +37,10 @@ LatencyPilot defines lows from the controlled benchmark's frame-period distribut
 
 The 2026-09-20 measurement amendment replaces the earlier rule that treated an ordinary Original-control shift outside a fixed repeatability band as automatic whole-sweep invalidation. The 2026-09-19 owner run showed that this could throw away an otherwise informative full search after time/thermal/background conditions moved gradually. The v1 method now measures that movement with time-local Original controls, normalizes candidate decision metrics against those controls, carries the measured movement into uncertainty, and makes the Keep threshold harder to clear. Structural evidence failures still fail closed.
 
+The 2026-09-21 correction separates initial Original-baseline acquisition from finalist repeatability. Original must establish a real three-run regime before any candidate mutation, using at most five independent scored Original observations. Finalists remain bounded at four scored observations and keep their existing noise-aware all-four fallback.
+
 1. Capture one non-scored original/default warm-up to establish benchmark/workload continuity.
-2. Establish Original scored repeatability/noise from three observations, with one bounded replacement observation when needed. Prefer the tightest three-run 1%-low cluster within ±3%. If four valid observations still do not form that preferred cluster, retain all four and carry observed per-metric variance into later uncertainty/Keep thresholds rather than manufacturing a stable baseline.
+2. Establish Original scored repeatability from three observations. Evaluate every three-observation combination and prefer the tightest 1%-low cluster whose members are within ±3% of that cluster median. If no valid cluster exists, collect scored Original observation #4 and re-evaluate; if still absent, collect scored Original observation #5 and re-evaluate. Observations four and five are ordinary independent measurements, not fabricated contamination/retry signals. If no valid three-run Original cluster exists after five scored observations, verify/retain exact Original and stop **before the first candidate mutation**. A valid three-run cluster may therefore exclude up to two of the five scored Original observations; excluded observations remain in the audit trail. There is no all-runs noise fallback for initial Original acquisition.
 3. Generate one candidate for every eligible logical processor from Windows topology; do not assume even/odd CPU numbering, do not ban CPU0, and do not silently collapse SMT siblings.
 4. Screen candidates in bounded groups of at most four. For every logical-CPU candidate:
    - apply exact GPU interrupt affinity;
@@ -56,12 +58,14 @@ The 2026-09-20 measurement amendment replaces the earlier rule that treated an o
    5. deterministic passive topology/pressure fallback only if the measured metrics remain tied.
 8. Compute effective screening variability as the larger of observed Original 1%-low noise and measured time-local 1%-low control movement. If it exceeds 15%, retain the normalized screening table as diagnostic evidence, skip exhaustive finalist confirmation, verify exact Original and RestoreOriginal. Do not emit a Keep decision from an environment that variable.
 9. Otherwise re-test the best three plus candidates within **min(3%, max(1%, effective screening variability))** of the third-place 1%-low cutoff, capped at five finalists. Finalist order is deterministically shuffled and each finalist gets a fresh apply/restart/warm-up, one 30 s scored run, and exact rollback in each round.
-10. Prefer the tightest stable three-run cluster within ±3%. Original/finalist sampling is capped at four scored attempts. If four valid runs still do not form the preferred cluster, retain all four and carry their observed per-metric variance into ranking/guardrail thresholds.
+10. Finalist repeatability uses the initial screen plus two independent re-tests, with one bounded replacement only when a preferred three-run cluster is still missing. Prefer the tightest stable three-run cluster within ±3%. Finalist sampling is capped at four scored observations. If four valid finalist runs still do not form the preferred cluster, retain all four and carry their observed per-metric variance into ranking/guardrail thresholds. This all-four fallback does **not** apply to initial Original acquisition.
 11. After finalist re-tests, capture another fresh Original warm-up + scored control. Its movement relative to the preceding screening control is merged into time-local uncertainty rather than automatically discarding otherwise valid finalist evidence.
 12. Evaluate finalists in ranking order against Original using a noise floor that includes practical tolerance, Original/finalist repeatability noise and measured time-local control uncertainty. AVG, frame-p99 and 0.1% low remain noise-aware guardrails. When both sides provide at least three usable interrupt-tail runs, GPU-driver DPC/ISR p99 is evaluated per run and the median regression must remain within max(10%, observed Original tail noise, observed finalist tail noise). A rejected first-place finalist does not prevent the next ranked clean improvement from being considered.
 13. Apply the highest-ranked finalist that clears those decision gates once more, then perform a fresh benchmark-only warm-up and final kernel-ETW verification capture.
 14. Keep only when exact stored candidate state is verified and final runtime ISR placement is proved target-only. Otherwise restore and verify exact Original.
 15. Any structural evidence failure — invalid/mismatched benchmark artifact, source/state divergence, failed apply/rollback ownership, healthy ETW proving wrong placement, unverified terminal state, or equivalent integrity failure — remains fail-closed and is not normalized away.
+
+Real contamination or a transient collector/device failure may still receive the separately bounded retry already defined by the capture contract. Such retry attempts do not turn a clean scored Original observation into contamination and do not replace the scored-observation policy above.
 
 Windows default is the exact recovery/reference state, not an opponent that every forced CPU must beat by a fixed percentage.
 
