@@ -132,7 +132,7 @@ The paired-v2 work is covered by the existing permanent critical-test budget rat
 - stale progress warm-up semantics;
 - hidden direct pair evidence.
 
-The exact final documentation-reconciled HEAD still needs its own successful hosted Tests run. Older successful or cancelled runs are not proof for a later SHA.
+Exact-head hosted **Tests** are mandatory for every revision used as physical closure evidence. Every commit moves HEAD, so GitHub Actions for the exact revision selected for physical work is the CI oracle; an older successful or cancelled run must never be reused as proof for a later SHA.
 
 ### Physical GPU Gate A
 
@@ -167,7 +167,7 @@ Public mutation remains unarmed until this physical gate passes.
 | 0 Scope/safety | **Source complete** | Keep exact-head verification current |
 | 1 Preflight | **Most primitives exist** | Integrated quiet check + combined GPU/xHCI preflight |
 | 2 Baseline | **ETW engine exists** | Wire deep comparable baseline into one-button workflow |
-| 3 GPU search | **Paired-v2 source/result contracts implemented** | Exact-head CI + physical Gate A + repeat + recovery/render inspection |
+| 3 GPU search | **Paired-v2 source/result contracts implemented** | Physical Gate A + repeat + recovery/render inspection; chosen physical revision must be exact-head green |
 | 4 GPU Keep | **Internal verified-Keep source implemented** | Physical proof, typed product IPC, arming gates |
 | 5 USB selection | **Read-only recommendation implemented** | Representative physical evidence + product rendering |
 | 6 USB apply | **Internal reversible substrate / product-gated** | Integrated physical apply/verify/rollback evidence |
@@ -177,8 +177,8 @@ Public mutation remains unarmed until this physical gate passes.
 
 ## Immediate execution ladder
 
-1. Obtain hosted **Tests** success on the exact final `main` HEAD after source/docs reconciliation.
-2. Run Original-only and a small selected-CPU diagnostic on that exact clean revision to check physical measurement/restart/recovery behavior quickly.
+1. Before physical work, require hosted **Tests** success on the exact clean `main` revision that will be tested.
+2. Run Original-only and a small selected-CPU diagnostic on that exact revision to check physical measurement/restart/recovery behavior quickly.
 3. Run one full paired-v2 Gate A search and inspect report, direct pair evidence, terminal state, renderer/device restart behavior and result UI.
 4. Repeat the full search for practical reproducibility.
 5. Exercise **Stop safely** plus one supported failure/recovery path with `unresolved=0` and verify exact Original.
