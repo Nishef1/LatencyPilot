@@ -23,7 +23,10 @@ public sealed class GpuTemporalStabilityContractTests
         StringAssert.Contains(source, "GpuAutoAffinityPairVerdict.Unstable");
         StringAssert.Contains(source, "MaximumPairAttempts = 2");
         StringAssert.Contains(source, "MaximumConsecutiveUnstableCandidates = 2");
-        StringAssert.Contains(source, "originalBefore = pair.OriginalAfter");
+        StringAssert.Contains(source, "retry-original-before");
+        Assert.IsFalse(
+            source.Contains("originalBefore = pair.OriginalAfter", StringComparison.Ordinal),
+            "An unstable OriginalAfter must not silently become the next pair or retry anchor.");
         Assert.IsFalse(
             source.Contains("NormalizeScreeningEvaluations", StringComparison.Ordinal),
             "v2 must not normalize a candidate back to a distant session baseline.");
