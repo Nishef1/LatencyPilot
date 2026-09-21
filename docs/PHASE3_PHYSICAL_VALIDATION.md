@@ -134,7 +134,9 @@ Expected current v1 flow:
 normal-user benchmark + one UAC owner helper
 → exact Original-state capture
 → Original non-scored warm-up/reference
-→ three scored Original observations; one bounded replacement if needed
+→ three scored Original observations
+→ if no repeatable three-run regime exists, collect scored Original #4 and then #5 as independent observations
+→ select the best valid three-run cluster from the bounded set; if none exists after five, verify/retain Original and stop before any candidate mutation
 → every eligible logical processor, in bounded blocks of at most four:
      apply/restart/verify stored candidate state
      non-scored benchmark warm-up
@@ -153,7 +155,7 @@ normal-user benchmark + one UAC owner helper
 → otherwise rank normalized decision evidence by 1% low → AVG → lower p99 → 0.1% rare-tail context
 → shortlist best three plus candidates inside the bounded noise-aware cutoff, capped at five
 → two independent shuffled finalist re-test rounds
-→ one bounded replacement score only when a preferred three-run cluster is still missing
+→ one bounded replacement score only when a preferred three-run finalist cluster is still missing
 → fresh Original control after finalist phase; merge phase movement into uncertainty
 → evaluate finalists against Original + repeatability + time-local uncertainty + frame/interrupt-tail guardrails
 → apply highest-ranked clean finalist once
@@ -183,6 +185,9 @@ There is no fixed “must beat Original by 3%” rule. There is no separate SMT-
 
 The Original controls are not candidates and ordinary drift is not automatically a failed experiment. Check that:
 
+- initial Original acquisition is a true sequential 3-of-up-to-5 scored-observation policy owned by the core session;
+- observations four and five are ordinary measurements, not synthetic contamination/retry signals;
+- five scored Original observations without a valid three-run cluster stop before the first candidate mutation and retain Original;
 - raw candidate/control measurements remain preserved;
 - decision aggregates use the persisted time-local normalization result rather than raw collection order;
 - measured control movement is visible as uncertainty;
@@ -313,19 +318,20 @@ Gate A passes only when one exact clean green revision physically proves:
 1. normal App/Service development path works;
 2. journal starts/ends with zero unresolved state;
 3. D3D12 benchmark smoke works without mutation;
-4. every eligible logical processor receives one scored screening run;
-5. Original block/final controls are captured and time-local normalization/uncertainty are persisted correctly;
-6. effective variability above the exhaustive-confirmation budget safely retains Original without manufacturing a Keep winner;
-7. otherwise the documented bounded shortlist receives its required independent re-tests;
-8. ranking follows the ADR 0006 decision order using persisted decision aggregates;
-9. exact rollback succeeds between candidate activations;
-10. final Keep occurs only after clean target-only GPU ISR placement proof;
-11. failed/unverified final placement restores exact Original;
-12. Stop safely restores/verifies Original;
-13. one supported failure/recovery path is proven;
-14. repeated whole searches are reproducible/equivalent or explicitly uncertain;
-15. Overview result/evidence actions and accessibility behavior are physically sane;
-16. final machine state is known and verified.
+4. initial Original acquisition is a real 3-of-up-to-5 scored-observation sequence and a five-observation miss restores Original before candidate mutation;
+5. every eligible logical processor receives one scored screening run;
+6. Original block/final controls are captured and time-local normalization/uncertainty are persisted correctly;
+7. effective variability above the exhaustive-confirmation budget safely retains Original without manufacturing a Keep winner;
+8. otherwise the documented bounded shortlist receives its required independent re-tests, with finalist repeatability still capped at four scored observations;
+9. ranking follows the ADR 0006 decision order using persisted decision aggregates;
+10. exact rollback succeeds between candidate activations;
+11. final Keep occurs only after clean target-only GPU ISR placement proof;
+12. failed/unverified final placement restores exact Original;
+13. Stop safely restores/verifies Original;
+14. one supported failure/recovery path is proven;
+15. repeated whole searches are reproducible/equivalent or explicitly uncertain;
+16. Overview result/evidence actions and accessibility behavior are physically sane;
+17. final machine state is known and verified.
 
 Passing GPU Gate A authorizes the next mutation-boundary work; it does not arm public mutation by itself.
 
