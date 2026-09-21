@@ -100,6 +100,22 @@ public sealed class GateAResultCompletionContractTests
         Assert.IsFalse(
             candidateChart.Contains("OrderByDescending(static candidate => candidate.OnePercentLowFps)", StringComparison.Ordinal),
             "The candidate chart must never infer rank from 1% low decimals.");
+
+        var reportContract = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.Core",
+            "Benchmarking",
+            "GpuAutoAffinityReport.cs"));
+        StringAssert.Contains(reportContract, "latencypilot-gpu-auto-affinity-report-v2");
+        StringAssert.Contains(reportContract, "GpuAutoAffinitySearchScope");
+        StringAssert.Contains(reportContract, "GpuAutoAffinityPairVerdict");
+        StringAssert.Contains(reportContract, "GpuAutoAffinityPairReport");
+        StringAssert.Contains(reportContract, "GpuAutoAffinityFinalistReport");
+        StringAssert.Contains(reportContract, "IReadOnlyList<GpuAutoAffinityPairReport> Pairs");
+        StringAssert.Contains(reportContract, "IReadOnlyList<GpuAutoAffinityFinalistReport> Finalists");
+        StringAssert.Contains(reportContract, "IReadOnlyList<LogicalProcessorId> RequestedProcessors");
+        StringAssert.Contains(reportContract, "IReadOnlyList<LogicalProcessorId> ValidatedProcessors");
+        StringAssert.Contains(reportContract, "bool FullTopologyCoverage");
     }
 
     private static string FindRepositoryFile(params string[] relativeParts)
