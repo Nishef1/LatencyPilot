@@ -246,6 +246,11 @@ internal sealed class GpuGateAProgressFile
             return $"Original repeatability sample {originalScoredPassesStarted}; target {RequiredRepeatabilityRuns} stable samples, maximum {MaximumRepeatabilityObservations} scored observations.";
         }
 
+        if (string.Equals(request.Phase, "screening-warmup", StringComparison.Ordinal))
+        {
+            return "Original-state startup warm-up/reference; not scored and never used as a decision control.";
+        }
+
         if (request.Phase.EndsWith("-warmup", StringComparison.Ordinal))
         {
             return request.Candidate is null
