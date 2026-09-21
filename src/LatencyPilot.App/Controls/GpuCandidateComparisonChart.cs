@@ -1,6 +1,7 @@
 using LatencyPilot.Benchmarking.Optimization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
@@ -31,9 +32,14 @@ public sealed class GpuCandidateComparisonChart : UserControl
 
         SizeChanged += (_, _) => Render();
         ActualThemeChanged += (_, _) => Render();
-        AutomationProperties.SetName(this, "GPU candidate comparison chart");
+        AutomationProperties.SetName(this, "GPU candidate comparison");
+        AutomationProperties.SetAutomationId(this, "GpuCandidateComparisonChart");
+        AutomationProperties.SetAutomationControlType(this, AutomationControlType.Group);
         Clear("No Gate A candidate measurement has been completed yet.");
     }
+
+    protected override AutomationPeer OnCreateAutomationPeer() =>
+        new FrameworkElementAutomationPeer(this);
 
     internal void SetData(
         IReadOnlyList<GateACandidateBar> candidates,
@@ -49,9 +55,11 @@ public sealed class GpuCandidateComparisonChart : UserControl
         MinHeight = desiredHeight;
         Height = desiredHeight;
         _emptyState.SetMessage(string.IsNullOrWhiteSpace(emptyMessage)
-            ? "No decision-grade candidate could be charted. Measured local pairs remain available below with their drift and retry outcomes."
+            ? "No decision-grade candidate could be charted. Measured local pairs remain available below with their control-movement and retry evidence."
             : emptyMessage);
         AutomationProperties.SetHelpText(this, automationSummary);
+        AutomationProperties.SetItemStatus(this, BuildAutomationStatus(_candidates));
+        AutomationProperties.SetFullDescription(this, BuildAutomationDescription(_candidates));
         Render();
     }
 
@@ -63,6 +71,8 @@ public sealed class GpuCandidateComparisonChart : UserControl
         Height = MinimumChartHeight;
         _emptyState.SetMessage(message);
         AutomationProperties.SetHelpText(this, message);
+        AutomationProperties.SetItemStatus(this, "No decision-grade GPU candidate data is available.");
+        AutomationProperties.SetFullDescription(this, message);
         Render();
     }
 
@@ -229,6 +239,57 @@ public sealed class GpuCandidateComparisonChart : UserControl
             _canvas.Children.Add(state);
         }
     }
+
+    private static string BuildAutomationStatus(IReadOnlyList<GateACandidateBar> candidates)
+    {
+        var ranked = OrderDecisionCandidates(candidates);
+        if (ranked.Length == 0)
+        {
+            return "No decision-grade GPU candidate bars are available.";
+        }
+
+        var kept = ranked.FirstOrDefault(static candidate => candidate.IsKept);
+        if (kept is not null)
+        {
+            return $"{ranked.Length} decision-grade candidate(s). CPU {kept.Processor.Number} is kept.";
+        }
+
+        var compared = ranked.FirstOrDefault(static candidate => candidate.IsCompared);
+        return compared is not null
+            ? $"{ranked.Length} decision-grade candidate(s). CPU {compared.Processor.Number} is the best measured comparison candidate and was not kept."
+            : $"{ranked.Length} decision-grade candidate(s). No candidate is marked as kept or compared.";
+    }
+
+    private static string BuildAutomationDescription(IReadOnlyList<GateACandidateBar> candidates)
+    {
+        var ranked = OrderDecisionCandidates(candidates);
+        if (ranked.Length == 0)
+        {
+            return "No decision-grade candidate bar is available. Measured local-pair evidence, when present, is listed below the chart with control movement and retry outcomes.";
+        }
+
+        return string.Join(
+            " ",
+            ranked.Select(static candidate =>
+            {
+                var rank = candidate.DecisionRank is > 0 ? $"Rank {candidate.DecisionRank}" : "Unranked";
+                var effect = candidate.OnePercentLowEffect!.Value.ToString(
+                    "+0.0%;-0.0%;0.0%",
+                    System.Globalization.CultureInfo.InvariantCulture);
+                var uncertainty = candidate.LocalControlUncertainty is { } local && double.IsFinite(local) && local >= 0d
+                    ? local.ToString("P1", System.Globalization.CultureInfo.InvariantCulture)
+                    : "unavailable";
+                return $"{rank}, CPU {candidate.Processor.Number}: paired 1 percent low effect {effect}; state {candidate.StateLabel}; local uncertainty {uncertainty}.";
+            }));
+    }
+
+    private static GateACandidateBar[] OrderDecisionCandidates(IReadOnlyList<GateACandidateBar> candidates) =>
+        candidates
+            .Where(static candidate => candidate.OnePercentLowEffect is { } effect && double.IsFinite(effect))
+            .OrderBy(static candidate => candidate.DecisionRank ?? int.MaxValue)
+            .ThenBy(static candidate => candidate.Processor.Group)
+            .ThenBy(static candidate => candidate.Processor.Number)
+            .ToArray();
 
     private static string BuildToolTip(GateACandidateBar candidate)
     {
