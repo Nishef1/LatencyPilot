@@ -126,7 +126,9 @@ exact original/default GPU affinity
 → normal-user deterministic D3D12 calibration
 → frozen worker map/workload/seed
 → 5 s non-scored Original warm-up/reference
-→ 3 scored Original runs; one bounded replacement if needed
+→ 3 scored Original runs
+→ if no repeatable three-run regime exists, collect scored Original #4 and then #5 as independent observations
+→ select the best valid three-run Original cluster from the bounded set; if none exists after five, verify/retain Original and stop before any candidate mutation
 → screen every eligible logical CPU in blocks of at most four:
      journaled apply/restart + stored-state verify
      5 s non-scored warm-up
@@ -142,7 +144,7 @@ exact original/default GPU affinity
 → otherwise rank decision aggregates by 1% low → AVG → lower p99 → 0.1% low rare-tail context
 → shortlist best three plus candidates within min(3%, max(1%, effective variability)) of third place, capped at five
 → two independent shuffled finalist re-test rounds
-→ prefer tightest stable 3-of-up-to-4 cluster; otherwise retain all four and carry observed variance
+→ prefer tightest stable 3-of-up-to-4 finalist cluster; otherwise retain all four and carry observed variance
 → fresh Original control after finalist re-tests; merge phase movement into uncertainty
 → evaluate finalists against Original + repeatability + time-local uncertainty + frame/interrupt-tail guardrails
 → apply highest-ranked clean winner once
@@ -157,6 +159,7 @@ Source checklist:
 - [x] controlled benchmark wall-period AVG / 1% / 0.1% / p99 statistics;
 - [x] all eligible logical-CPU candidates from actual Windows topology, including SMT siblings and CPU0;
 - [x] one scored screening run per candidate;
+- [x] initial Original acquisition is a true sequential 3-of-up-to-5 policy owned by the core session; samples four/five are ordinary measurements and five without a valid cluster restores Original before candidate mutation;
 - [x] bounded Original block controls during screening plus final screening control;
 - [x] time-local normalization separates candidate decision evidence from gradual background movement;
 - [x] raw candidate/control observations remain preserved for audit/diagnostics;
@@ -164,7 +167,7 @@ Source checklist:
 - [x] effective >15% 1%-low variability skips expensive finalist confirmation and restores Original;
 - [x] finalist confirmation capped at five candidates;
 - [x] deterministic finalist-order shuffling reduces ordering bias;
-- [x] repeatability capped at four scores; stable 3-run cluster preferred, otherwise all four valid runs remain usable with observed variance;
+- [x] finalist repeatability capped at four scores; stable 3-run cluster preferred, otherwise all four valid runs remain usable with observed variance;
 - [x] ranking treats <=1% differences in 1% low / AVG / p99 as practical ties; 0.1% low only breaks a remaining tie above 5%;
 - [x] post-finalist Original control contributes additional time-local uncertainty before Keep evaluation;
 - [x] comparable GPU-driver DPC/ISR p99 tails are median/noise-aware Keep guardrails;
@@ -195,7 +198,7 @@ Gate A closes only when one exact clean green revision proves on supported hardw
 2. Original block/final controls are captured and normalization/uncertainty are persisted correctly;
 3. if effective variability exceeds the finalist-confirmation budget, the run restores Original without manufacturing a Keep winner;
 4. otherwise the shortlist receives the required bounded re-tests;
-5. repeatability never exceeds four scored attempts per Original/finalist decision set;
+5. initial Original acquisition uses at most five scored observations and must produce a valid three-run cluster before any candidate mutation; finalist decision sets remain capped at four scored observations;
 6. exact rollback occurs between candidate activations and on failure/cancellation;
 7. the selected finalist clears the documented noise/time-local uncertainty and guardrail thresholds;
 8. final ETW proves target-only GPU ISR placement before Keep;
