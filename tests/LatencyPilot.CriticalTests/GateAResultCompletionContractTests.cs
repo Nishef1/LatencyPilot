@@ -56,6 +56,23 @@ public sealed class GateAResultCompletionContractTests
             resultExperience.Contains("DecisionRank", StringComparison.Ordinal) ||
             resultExperience.Contains("OrderByDescending", StringComparison.Ordinal),
             "The WinUI result renderer must consume the presentation model and must not re-rank GPU candidates.");
+
+        var progressExperience = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.App",
+            "GpuOptimizationProgressWindow.xaml.cs"));
+        StringAssert.Contains(
+            progressExperience,
+            "DecisionRank",
+            "The development Gate A completion view must consume the optimizer-persisted decision rank.");
+        Assert.IsFalse(
+            progressExperience.Contains(
+                ".OrderByDescending(static row => row.DecisionOnePercentLowFps)",
+                StringComparison.Ordinal) ||
+            progressExperience.Contains(
+                ".ThenByDescending(static row => row.DecisionAvgFps)",
+                StringComparison.Ordinal),
+            "The development Gate A completion view must not create a second ranking from metric decimals.");
     }
 
     private static string FindRepositoryFile(params string[] relativeParts)
