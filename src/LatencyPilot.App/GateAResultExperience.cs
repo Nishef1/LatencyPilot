@@ -178,17 +178,21 @@ public sealed partial class MainWindow
     private static Grid BuildGateAChartsGrid(GateAResultViewModel result)
     {
         var candidateChart = new GpuCandidateComparisonChart();
+        var measuredProcessors = result.Pairs.Select(static pair => pair.Processor).Distinct().Count();
         candidateChart.SetData(
             result.Candidates,
             null,
-            $"{result.Candidates.Count} GPU affinity candidates in persisted authority order. {result.ComparedCandidateLabel}. Bars are paired 1% low effects centered on 0%. Raw local controls are listed below.");
+            $"{measuredProcessors} measured CPU candidate(s); {result.Candidates.Count} candidate(s) have persisted decision aggregates. {result.ComparedCandidateLabel}. Bars are paired 1% low effects centered on 0%. Raw local controls are listed below.",
+            result.Pairs.Count > 0 && result.Candidates.Count == 0
+                ? "No decision-grade candidate could be charted. Measured local pairs remain available below with their drift and retry outcomes."
+                : null);
 
         var trialChart = new GateATrialHistoryChart();
         var originalTrials = result.Trials.Count(static point =>
             string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase));
         trialChart.SetData(
             result.Trials,
-            $"Scored 1% low history contains {originalTrials} Original point(s) and {result.Trials.Count - originalTrials} comparison-candidate point(s). Warm-ups are excluded.");
+            $"Scored 1% low history contains {originalTrials} Original control point(s) and {result.Trials.Count - originalTrials} candidate observation(s). Original controls are connected; candidate observations are discrete markers so different CPUs are never presented as one synthetic series.");
 
         var grid = new Grid { ColumnSpacing = 12d, RowSpacing = 12d };
         grid.Children.Add(BuildChartCard(
@@ -196,8 +200,8 @@ public sealed partial class MainWindow
             "Persisted paired 1% low effects from the optimizer. Zero means the adjacent Original controls; this chart never reconstructs a second ranking.",
             candidateChart));
         grid.Children.Add(BuildChartCard(
-            "Repeatability",
-            "Raw scored 1% low FPS in run order. Non-ready observations stay visible rather than being silently erased.",
+            "Control stability",
+            "Raw scored 1% low FPS in run order. Original controls are connected; candidate measurements are discrete markers, and unstable or inconclusive pairs use the attention state.",
             trialChart));
         return grid;
     }
@@ -226,7 +230,7 @@ public sealed partial class MainWindow
         stack.Children.Add(new TextBlock { Text = "Local pair evidence", Style = AppStyle("SubsectionTitleTextStyle") });
         stack.Children.Add(new TextBlock
         {
-            Text = "Direct Original → Candidate → Original measurements. Effects use the two adjacent Original controls; raw FPS stays visible and is never rewritten into pseudo-normalized FPS.",
+            Text = "Direct Original → Candidate → Original measurements. The compact header keeps effect, drift and verdict visible; expand a row for raw FPS and the full reason.",
             Style = AppStyle("CaptionTextStyle"),
             TextWrapping = TextWrapping.Wrap,
         });
@@ -273,14 +277,8 @@ public sealed partial class MainWindow
                          .OrderBy(static item => item.PairNumber)
                          .ThenBy(static item => item.Attempt))
             {
-                var row = new Border
-                {
-                    Padding = new Thickness(12d, 10d, 12d, 10d),
-                    CornerRadius = new CornerRadius(10d),
-                    Background = DashboardThemeResources.Brush(card, "SurfaceAltBrush"),
-                };
-                var content = new StackPanel { Spacing = 5d };
-                content.Children.Add(new TextBlock
+                var header = new StackPanel { Spacing = 3d };
+                header.Children.Add(new TextBlock
                 {
                     Text = $"Pair {pair.PairNumber} · CPU {pair.Processor.Number} · core {pair.PhysicalCoreIndex} · {FormatPairStage(pair.Stage)} · attempt {pair.Attempt}",
                     FontSize = 12d,
@@ -288,31 +286,41 @@ public sealed partial class MainWindow
                     Foreground = DashboardThemeResources.Brush(card, "TextBrush"),
                     TextWrapping = TextWrapping.Wrap,
                 });
-                content.Children.Add(new TextBlock
+                header.Children.Add(new TextBlock
                 {
-                    Text = $"Original before {pair.OriginalBeforeOnePercentLowFps:0.0} FPS · Candidate {pair.CandidateOnePercentLowFps:0.0} FPS · Original after {pair.OriginalAfterOnePercentLowFps:0.0} FPS",
-                    Style = AppStyle("CaptionTextStyle"),
-                    TextWrapping = TextWrapping.Wrap,
-                });
-                content.Children.Add(new TextBlock
-                {
-                    Text = $"Local 1% low effect {pair.OnePercentLowEffect:+0.0%;-0.0%;0.0%} · Control movement {pair.ControlMovement:P1} / budget {pair.DriftBudget:P1} · {pair.Verdict}",
+                    Text = $"1% low effect {pair.OnePercentLowEffect:+0.0%;-0.0%;0.0%} · drift {pair.ControlMovement:P1} / {pair.DriftBudget:P1} budget · {pair.Verdict}",
                     FontSize = 11d,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                     Foreground = PairVerdictBrush(card, pair.Verdict),
                     TextWrapping = TextWrapping.Wrap,
                 });
-                content.Children.Add(new TextBlock
+
+                var details = new StackPanel { Spacing = 6d, Padding = new Thickness(0d, 4d, 0d, 4d) };
+                details.Children.Add(new TextBlock
+                {
+                    Text = $"Original before {pair.OriginalBeforeOnePercentLowFps:0.0} FPS · Candidate {pair.CandidateOnePercentLowFps:0.0} FPS · Original after {pair.OriginalAfterOnePercentLowFps:0.0} FPS",
+                    Style = AppStyle("CaptionTextStyle"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                details.Children.Add(new TextBlock
                 {
                     Text = pair.Reason,
                     Style = AppStyle("CaptionTextStyle"),
                     TextWrapping = TextWrapping.Wrap,
                 });
-                row.Child = content;
+
+                var expander = new Expander
+                {
+                    Header = header,
+                    Content = details,
+                    IsExpanded = false,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                };
                 AutomationProperties.SetName(
-                    row,
-                    $"Pair {pair.PairNumber}, CPU {pair.Processor.Number}, {pair.Verdict}, 1 percent low effect {pair.OnePercentLowEffect:+0.0%;-0.0%;0.0%}");
-                stack.Children.Add(row);
+                    expander,
+                    $"Pair {pair.PairNumber}, CPU {pair.Processor.Number}, {pair.Verdict}, 1 percent low effect {pair.OnePercentLowEffect:+0.0%;-0.0%;0.0%}, control movement {pair.ControlMovement:P1}");
+                stack.Children.Add(expander);
             }
         }
 
