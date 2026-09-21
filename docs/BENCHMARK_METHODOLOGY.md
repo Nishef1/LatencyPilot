@@ -107,13 +107,15 @@ Current v1 sequence:
 exact original/default state
 → 5 s non-scored original warm-up/reference (benchmark only; no PresentMon/ETW)
 → collect 3 scored 30 s Original runs
-   if no stable 3-run 1%-low cluster exists within ±3% of its cluster median:
+   require the preferred 3-run 1%-low cluster within ±3% of its cluster median
+   if absent:
      collect scored Original run 4 and re-evaluate every 3-run combination
+     prefer ±3%; from run 4 onward permit the bounded recovery band up to ±6%
    if still absent:
-     collect scored Original run 5 and re-evaluate every 3-run combination
-   if no valid 3-run cluster exists after 5 scored Original observations:
+     collect scored Original run 5 and re-evaluate under the same preferred-then-recovery rule
+   if no bounded 3-run cluster exists after 5 scored Original observations:
      verify/retain exact Original and stop before any candidate mutation
-   otherwise use the selected 3-run Original cluster; excluded observations remain in the audit trail
+   otherwise use the selected tightest 3-run Original cluster; excluded observations remain in the audit trail
 → screen every eligible logical CPU in bounded blocks of at most four candidates:
      for each candidate:
        journaled apply/restart + stored-state verify
@@ -138,10 +140,10 @@ exact original/default state
 → shortlisted candidates:
      two independent re-test rounds are mandatory
      each finalist gets fresh apply/restart + stored-state verify, warm-up, scored run, exact rollback
-     only finalists still lacking a stable 3-run cluster receive one replacement round
-→ finalist repeatability prefers the tightest stable 3-run cluster selected from at most 4 scored observations
-   at most one finalist observation is excluded when such a cluster exists
-   if four valid finalist runs still do not cluster, retain all four and use their observed variance in decision thresholds
+     only finalists still lacking a preferred 3-run cluster receive one replacement round
+→ finalist repeatability with 3 scores requires the preferred ±3% cluster
+   on score 4, re-evaluate every 3-run combination, preferring ±3% and permitting the bounded recovery band up to ±6%
+   if four valid finalist runs still form no bounded cluster, retain all four and use their observed variance in decision thresholds
 → 5 s non-scored Original warm-up
 → collect one fresh scored Original control after finalist re-tests
    merge this phase's control movement into time-local uncertainty
@@ -154,7 +156,7 @@ exact original/default state
    otherwise exact RestoreOriginal
 ```
 
-The initial Original acquisition is a core-session **3-of-up-to-5 scored-observation** policy, not a contamination trick. Scored Original observations four and five are ordinary independent measurements. Real transient contamination or collector/device failure uses the separate bounded retry path and does not relabel a clean scored observation as contaminated merely to obtain another sample.
+The initial Original acquisition is a core-session **3-of-up-to-5 scored-observation** policy, not a contamination trick. Scored Original observations four and five are ordinary independent measurements. The preferred repeatability band remains ±3%; only after an additional observation exists may the selector use its bounded recovery band up to ±6%, and it still chooses the tightest eligible three-run combination. Real transient contamination or collector/device failure uses the separate bounded retry path and does not relabel a clean scored observation as contaminated merely to obtain another sample.
 
 The Original block controls are **measurement controls, not abort triggers for ordinary gradual drift and not candidate observations**. They let the optimizer separate a candidate's measured effect from background movement that occurs as a long search proceeds. For each rankable screening candidate, the decision metric is normalized by the relevant local Original level relative to the session Original baseline. The raw scored observation remains unchanged and visible for diagnostics.
 
@@ -185,9 +187,11 @@ Repeatability no longer uses raw `(max - min) / min` spread. A single multitaski
 LatencyPilot uses bounded robust sampling with **different terminal semantics for initial Original acquisition and finalist confirmation**:
 
 - 1% low is the primary repeatability signal.
-- For any cluster search, evaluate every 3-observation combination and select the **tightest** cluster whose members are each within **±3% of that cluster's median 1% low**.
-- **Initial Original:** start with three scored observations. If no preferred cluster exists, collect scored observation #4 and re-evaluate; if still absent, collect scored observation #5 and re-evaluate. Five scored Original observations are the hard ceiling. A valid Original cluster may exclude up to two scored observations, which remain in the audit trail. If no valid three-run cluster exists after five, Original is not decision-grade and the session verifies/retains exact Original **before any candidate mutation**. There is no all-runs noise fallback for initial Original acquisition.
-- **Finalists:** the initial screen plus two independent fresh re-tests provide three scored observations. Only a finalist still lacking a preferred cluster receives one bounded replacement, so four scored finalist observations are the hard ceiling. If a preferred finalist cluster exists, at most one scored observation may be excluded. If four valid finalist observations still do not form the preferred cluster, retain all four and use their observed per-metric variance in later decision thresholds.
+- For any cluster search, evaluate every 3-observation combination and choose the tightest eligible cluster by maximum median-relative deviation, then total deviation.
+- **Preferred band:** with the first three observations, a cluster is eligible only when every member is within **±3%** of its cluster median.
+- **Bounded recovery band:** after observation #4 exists, if no preferred ±3% cluster is available, the selector may accept the tightest three-run cluster within **±6%**. The band never widens beyond ±6%; it is a bounded recovery mechanism for one or two early/cold/background outliers, not a claim that 6% variance is generally good.
+- **Initial Original:** start with three scored observations. If no eligible cluster exists, collect scored observation #4 and re-evaluate; if still absent, collect scored observation #5 and re-evaluate. Five scored Original observations are the hard ceiling. A valid Original cluster may exclude up to two scored observations, which remain in the audit trail. If no bounded three-run cluster exists after five, Original is not decision-grade and the session verifies/retains exact Original **before any candidate mutation**. There is no all-runs noise fallback for initial Original acquisition.
+- **Finalists:** the initial screen plus two independent fresh re-tests provide three scored observations. Only a finalist still lacking the preferred cluster receives one bounded replacement. On that fourth score, the selector re-evaluates under the same preferred ±3% / recovery ±6% rule. Four scored finalist observations are the hard ceiling. If no bounded cluster exists after four, retain all four and use their observed per-metric variance in later decision thresholds.
 - Real transient contamination or collector/device failure uses the separate bounded capture retry contract. It does not count as justification to manufacture contamination and does not alter the scored-observation ceilings above.
 - AVG FPS and frame-p99 remain decision guardrails; 0.1% low remains rare-tail diagnostic/regression context rather than the outlier detector.
 - Time-local Original-control movement is tracked separately from within-state repeatability noise. The optimizer carries both into decision thresholds rather than pretending they are the same phenomenon.
@@ -195,7 +199,7 @@ LatencyPilot uses bounded robust sampling with **different terminal semantics fo
 - When both Original and finalist provide at least three scored runs with enough attributable samples, GPU-driver DPC/ISR p99 is computed per run. Median tail regression is compared against a noise-aware limit of `max(10%, Original run-to-run tail noise, finalist run-to-run tail noise)`; a regression beyond that limit rejects that finalist without preventing the next ranked finalist from being considered.
 - The final winner's 1%-low gain must clear `max(1%, Original 1%-low noise, finalist 1%-low noise, time-local control uncertainty)` before guardrails and final ETW placement verification are considered.
 
-The ±3% band is a **preferred-cluster rule**, not a universal claim about Windows variance. During initial Original acquisition it is intentionally a pre-mutation safety gate: no stable three-run regime after five scored observations means no candidate mutation. After Original is established, gradual time-local control movement during screening is normalized and recorded as uncertainty rather than treated as structural failure. Finalist evidence has its own bounded four-observation fallback because candidate mutations have already been measured and the observed variance can safely make Keep harder to earn rather than inventing a stable baseline.
+The ±3% band remains the preferred repeatability target; the ±6% band is only a bounded recovery after additional observations. During initial Original acquisition, absence of any bounded three-run regime after five scored observations is intentionally a pre-mutation safety stop. After Original is established, gradual time-local control movement during screening is normalized and recorded as uncertainty rather than treated as structural failure. Finalist evidence has its own bounded four-observation fallback because candidate mutations have already been measured and the observed variance can safely make Keep harder to earn rather than inventing a stable baseline.
 
 ### 6.3 Adaptive finalist cutoff
 
@@ -259,7 +263,7 @@ For a single-adapter WDDM system, display-KMD attribution is preferred; a labell
 
 Mutation ownership starts before state is changed and remains owned until exact Keep or Revert terminalization. Before every candidate write, stored affinity and display-driver version must still match the exact session-original snapshot. Transaction preparation repeats that same comparison inside the mutation lock, and the existing immediate-prewrite reread rejects any later TOCTOU drift before registry write.
 
-- Original baseline fails to form a valid three-run cluster after five scored observations → verify exact Original, RestoreOriginal, and stop before the first candidate mutation.
+- Original baseline fails to form a valid bounded three-run cluster after five scored observations → verify exact Original, RestoreOriginal, and stop before the first candidate mutation.
 - External affinity/driver drift before apply → refuse before write.
 - Candidate failure after apply → exact rollback + original verification.
 - Cancellation before Keep → exact rollback + original verification.
