@@ -1,6 +1,7 @@
 using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Optimization;
+using LatencyPilot.Core.Results;
 
 namespace LatencyPilot.GateAValidation;
 
