@@ -63,6 +63,14 @@ public sealed class GateAResultCompletionContractTests
             "GpuOptimizationProgressWindow.xaml.cs"));
         StringAssert.Contains(progressExperience, "DecisionRank",
             "The development Gate A completion view must consume the optimizer-persisted decision rank.");
+        StringAssert.Contains(progressExperience, "Open report",
+            "Terminal progress must expose the raw report as an action instead of printing a filesystem path into the status paragraph.");
+        StringAssert.Contains(progressExperience, "Copy report path",
+            "Terminal progress must let the owner copy the report path without displaying the full path inline.");
+        StringAssert.Contains(progressExperience, "not reached",
+            "Restricted runs must disclose selected/tested/not-reached coverage when early instability stops the search.");
+        Assert.IsFalse(progressExperience.Contains("Report: {reportPath}", StringComparison.Ordinal),
+            "The terminal status paragraph must not append the raw report path.");
         Assert.IsFalse(
             progressExperience.Contains(
                 ".OrderByDescending(static row => row.DecisionOnePercentLowFps)",
@@ -98,6 +106,14 @@ public sealed class GateAResultCompletionContractTests
             "Custom diagnostic results must describe their restricted authority rather than implying a machine-wide winner.");
         StringAssert.Contains(presentation, "Custom diagnostic result",
             "Custom scope needs an explicit primary result status.");
+        StringAssert.Contains(presentation, "selected ·",
+            "Custom diagnostic summary must state how many CPUs were selected.");
+        StringAssert.Contains(presentation, "tested ·",
+            "Custom diagnostic summary must state how many selected CPUs were actually tested.");
+        StringAssert.Contains(presentation, "not reached",
+            "Custom diagnostic summary must disclose CPUs not reached after an early instability stop.");
+        StringAssert.Contains(presentation, "trial.Role, \"Candidate\"",
+            "Trial history must retain scored candidate observations even when no candidate is authority-ranked.");
         Assert.IsFalse(
             presentation.Contains("candidate.Phase, \"finalists\"", StringComparison.Ordinal),
             "The result presentation must use the actual persisted finalist phase name.");
@@ -112,10 +128,22 @@ public sealed class GateAResultCompletionContractTests
             "The candidate chart must display authority-ranked candidates in persisted rank order.");
         StringAssert.Contains(candidateChart, "OnePercentLowEffect",
             "The candidate chart must visualize the persisted local paired effect rather than treating the last raw candidate FPS as the decision aggregate.");
+        StringAssert.Contains(candidateChart, "No decision-grade candidate could be charted",
+            "A completed run with unrankable pairs must not claim that no candidate evidence exists.");
         Assert.IsFalse(candidateChart.Contains("candidate.OnePercentLowFps / maximum", StringComparison.Ordinal),
             "The paired-v2 chart must not size decision bars from raw candidate FPS.");
         Assert.IsFalse(candidateChart.Contains("OrderByDescending(static candidate => candidate.OnePercentLowFps)", StringComparison.Ordinal),
             "The candidate chart must never infer rank from 1% low decimals.");
+
+        var trialHistory = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.App",
+            "Controls",
+            "GateATrialHistoryChart.cs"));
+        StringAssert.Contains(trialHistory, "RenderCandidateMarkers",
+            "Candidate measurements from different CPUs must be rendered as discrete observations, not connected into a synthetic time series.");
+        StringAssert.Contains(trialHistory, "SemanticAttentionBrush",
+            "Unstable/inconclusive paired attempts need an explicit visual state in the diagnostic history.");
 
         var sessionSource = File.ReadAllText(FindRepositoryFile(
             "src",
