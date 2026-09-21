@@ -44,7 +44,7 @@ public sealed class GpuCandidateComparisonChart : UserControl
         _originalOnePercentLowFps = IsFinitePositive(originalOnePercentLowFps)
             ? originalOnePercentLowFps
             : null;
-        var desiredHeight = Math.Max(MinimumChartHeight, 54d + (_candidates.Count * RowHeight));
+        var desiredHeight = Math.Max(MinimumChartHeight, 58d + (_candidates.Count * RowHeight));
         MinHeight = desiredHeight;
         Height = desiredHeight;
         AutomationProperties.SetHelpText(this, automationSummary);
@@ -66,12 +66,13 @@ public sealed class GpuCandidateComparisonChart : UserControl
     {
         _canvas.Children.Clear();
         var valid = _candidates
-            .Where(static candidate => double.IsFinite(candidate.OnePercentLowFps) && candidate.OnePercentLowFps > 0d)
+            .Where(static candidate =>
+                candidate.OnePercentLowEffect is { } effect && double.IsFinite(effect))
             .OrderBy(static candidate => candidate.DecisionRank ?? int.MaxValue)
             .ThenBy(static candidate => candidate.Processor.Group)
             .ThenBy(static candidate => candidate.Processor.Number)
             .ToArray();
-        if (valid.Length == 0 || ActualWidth < 260d || ActualHeight < 120d)
+        if (valid.Length == 0 || ActualWidth < 300d || ActualHeight < 120d)
         {
             _emptyState.Visibility = Visibility.Visible;
             return;
@@ -79,17 +80,15 @@ public sealed class GpuCandidateComparisonChart : UserControl
 
         _emptyState.Visibility = Visibility.Collapsed;
         const double labelWidth = 86d;
-        const double stateWidth = 76d;
-        const double top = 28d;
+        const double stateWidth = 82d;
+        const double top = 32d;
         const double right = 10d;
         var plotLeft = labelWidth;
-        var plotWidth = Math.Max(60d, ActualWidth - plotLeft - stateWidth - right);
-        var maximum = valid.Max(static candidate => candidate.OnePercentLowFps);
-        if (_originalOnePercentLowFps is { } original)
-        {
-            maximum = Math.Max(maximum, original);
-        }
-        maximum = Math.Max(1d, maximum * 1.05d);
+        var plotWidth = Math.Max(100d, ActualWidth - plotLeft - stateWidth - right);
+        var zeroX = plotLeft + (plotWidth / 2d);
+        var halfPlotWidth = plotWidth / 2d;
+        var maximumMagnitude = valid.Max(static candidate => Math.Abs(candidate.OnePercentLowEffect!.Value));
+        maximumMagnitude = Math.Max(0.01d, maximumMagnitude * 1.12d);
 
         var gridBrush = DashboardThemeResources.Brush(this, "ChartGridBrush");
         var textBrush = DashboardThemeResources.Brush(this, "TextBrush");
@@ -98,46 +97,69 @@ public sealed class GpuCandidateComparisonChart : UserControl
         var comparedBrush = DashboardThemeResources.Brush(this, "ChartAccentPrimaryBrush");
         var ordinaryBrush = DashboardThemeResources.Brush(this, "ChartAccentTertiaryBrush");
 
-        var axis = new Line
+        _canvas.Children.Add(new Line
         {
             X1 = plotLeft,
             X2 = plotLeft + plotWidth,
-            Y1 = top - 8d,
-            Y2 = top - 8d,
+            Y1 = top - 9d,
+            Y2 = top - 9d,
             Stroke = gridBrush,
             StrokeThickness = 1d,
-        };
-        _canvas.Children.Add(axis);
-
-        if (_originalOnePercentLowFps is { } originalValue)
+        });
+        _canvas.Children.Add(new Line
         {
-            var originalX = plotLeft + (plotWidth * Math.Clamp(originalValue / maximum, 0d, 1d));
-            _canvas.Children.Add(new Line
-            {
-                X1 = originalX,
-                X2 = originalX,
-                Y1 = top - 12d,
-                Y2 = top + (valid.Length * RowHeight) - 3d,
-                Stroke = textBrush,
-                StrokeThickness = 1.5d,
-                Opacity = 0.72d,
-            });
-            var originalLabel = new TextBlock
-            {
-                Text = $"Original {originalValue:0.0}",
-                FontSize = 10d,
-                Foreground = mutedBrush,
-            };
-            Canvas.SetLeft(originalLabel, Math.Clamp(originalX - 30d, plotLeft, plotLeft + plotWidth - 65d));
-            Canvas.SetTop(originalLabel, 0d);
-            _canvas.Children.Add(originalLabel);
-        }
+            X1 = zeroX,
+            X2 = zeroX,
+            Y1 = top - 14d,
+            Y2 = top + (valid.Length * RowHeight) - 3d,
+            Stroke = textBrush,
+            StrokeThickness = 1.5d,
+            Opacity = 0.72d,
+        });
+
+        var referenceText = _originalOnePercentLowFps is { } originalValue
+            ? $"Original reference · 0% paired effect · {originalValue:0.0} FPS baseline"
+            : "Original reference · 0% paired effect";
+        var referenceLabel = new TextBlock
+        {
+            Text = referenceText,
+            FontSize = 10d,
+            Foreground = mutedBrush,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxWidth = Math.Max(120d, plotWidth - 8d),
+        };
+        Canvas.SetLeft(referenceLabel, plotLeft + 4d);
+        Canvas.SetTop(referenceLabel, 0d);
+        _canvas.Children.Add(referenceLabel);
+
+        var leftScale = new TextBlock
+        {
+            Text = $"{-maximumMagnitude:P0}",
+            FontSize = 9d,
+            Foreground = mutedBrush,
+        };
+        Canvas.SetLeft(leftScale, plotLeft);
+        Canvas.SetTop(leftScale, top - 24d);
+        _canvas.Children.Add(leftScale);
+
+        var rightScale = new TextBlock
+        {
+            Text = $"+{maximumMagnitude:P0}",
+            FontSize = 9d,
+            Foreground = mutedBrush,
+        };
+        Canvas.SetLeft(rightScale, Math.Max(plotLeft, plotLeft + plotWidth - 31d));
+        Canvas.SetTop(rightScale, top - 24d);
+        _canvas.Children.Add(rightScale);
 
         for (var index = 0; index < valid.Length; index++)
         {
             var candidate = valid[index];
+            var effect = candidate.OnePercentLowEffect!.Value;
             var y = top + (index * RowHeight);
-            var barWidth = Math.Max(2d, plotWidth * Math.Clamp(candidate.OnePercentLowFps / maximum, 0d, 1d));
+            var effectWidth = Math.Max(
+                2d,
+                halfPlotWidth * Math.Clamp(Math.Abs(effect) / maximumMagnitude, 0d, 1d));
             var brush = candidate.IsKept
                 ? keptBrush
                 : candidate.IsCompared
@@ -163,7 +185,7 @@ public sealed class GpuCandidateComparisonChart : UserControl
 
             var bar = new Rectangle
             {
-                Width = barWidth,
+                Width = effectWidth,
                 Height = 18d,
                 RadiusX = 5d,
                 RadiusY = 5d,
@@ -173,17 +195,20 @@ public sealed class GpuCandidateComparisonChart : UserControl
                 StrokeThickness = candidate.IsCompared && !candidate.IsKept ? 1.5d : 0d,
             };
             ToolTipService.SetToolTip(bar, BuildToolTip(candidate));
-            Canvas.SetLeft(bar, plotLeft);
+            Canvas.SetLeft(bar, effect >= 0d ? zeroX : zeroX - effectWidth);
             Canvas.SetTop(bar, y + 3d);
             _canvas.Children.Add(bar);
 
             var value = new TextBlock
             {
-                Text = candidate.OnePercentLowFps.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture),
+                Text = effect.ToString("+0.0%;-0.0%;0.0%", System.Globalization.CultureInfo.InvariantCulture),
                 FontSize = 10d,
                 Foreground = textBrush,
             };
-            Canvas.SetLeft(value, Math.Min(plotLeft + barWidth + 5d, plotLeft + plotWidth - 34d));
+            var valueLeft = effect >= 0d
+                ? Math.Min(zeroX + effectWidth + 5d, plotLeft + plotWidth - 43d)
+                : Math.Max(plotLeft, zeroX - effectWidth - 43d);
+            Canvas.SetLeft(value, valueLeft);
             Canvas.SetTop(value, y + 5d);
             _canvas.Children.Add(value);
 
@@ -207,6 +232,10 @@ public sealed class GpuCandidateComparisonChart : UserControl
             value is { } number && double.IsFinite(number)
                 ? $"{number.ToString(format, System.Globalization.CultureInfo.InvariantCulture)} {unit}"
                 : "—";
+        static string Effect(double? value) =>
+            value is { } number && double.IsFinite(number)
+                ? number.ToString("+0.0%;-0.0%;0.0%", System.Globalization.CultureInfo.InvariantCulture)
+                : "—";
 
         var uncertainty = candidate.LocalControlUncertainty is { } value && double.IsFinite(value)
             ? value.ToString("P1", System.Globalization.CultureInfo.InvariantCulture)
@@ -215,9 +244,10 @@ public sealed class GpuCandidateComparisonChart : UserControl
             ? $"Rank #{candidate.DecisionRank} · "
             : string.Empty;
         return $"{rank}CPU {candidate.Processor.Number} · physical core {candidate.PhysicalCoreIndex} · {candidate.StateLabel}\n" +
-               $"1% low {candidate.OnePercentLowFps:0.0} FPS · AVG {Metric(candidate.AvgFps, "0.0", "FPS")}\n" +
+               $"Paired 1% low effect {Effect(candidate.OnePercentLowEffect)} · local uncertainty {uncertainty}\n" +
+               $"Raw candidate: 1% low {candidate.OnePercentLowFps:0.0} FPS · AVG {Metric(candidate.AvgFps, "0.0", "FPS")}\n" +
                $"p99 {Metric(candidate.FrameP99Milliseconds, "0.00", "ms")} · 0.1% low {Metric(candidate.Low01PctFps, "0.0", "FPS")}\n" +
-               $"Trials {candidate.TrialCount} · verdict {candidate.Verdict} · local uncertainty {uncertainty}";
+               $"Trials {candidate.TrialCount} · verdict {candidate.Verdict}";
     }
 
     private static bool IsFinitePositive(double? value) =>
