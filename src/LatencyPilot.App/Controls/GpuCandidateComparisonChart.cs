@@ -67,6 +67,9 @@ public sealed class GpuCandidateComparisonChart : UserControl
         _canvas.Children.Clear();
         var valid = _candidates
             .Where(static candidate => double.IsFinite(candidate.OnePercentLowFps) && candidate.OnePercentLowFps > 0d)
+            .OrderBy(static candidate => candidate.DecisionRank ?? int.MaxValue)
+            .ThenBy(static candidate => candidate.Processor.Group)
+            .ThenBy(static candidate => candidate.Processor.Number)
             .ToArray();
         if (valid.Length == 0 || ActualWidth < 260d || ActualHeight < 120d)
         {
@@ -75,8 +78,8 @@ public sealed class GpuCandidateComparisonChart : UserControl
         }
 
         _emptyState.Visibility = Visibility.Collapsed;
-        const double labelWidth = 70d;
-        const double stateWidth = 92d;
+        const double labelWidth = 86d;
+        const double stateWidth = 76d;
         const double top = 28d;
         const double right = 10d;
         var plotLeft = labelWidth;
@@ -91,9 +94,9 @@ public sealed class GpuCandidateComparisonChart : UserControl
         var gridBrush = DashboardThemeResources.Brush(this, "ChartGridBrush");
         var textBrush = DashboardThemeResources.Brush(this, "TextBrush");
         var mutedBrush = DashboardThemeResources.Brush(this, "MutedTextBrush");
-        var keptBrush = DashboardThemeResources.Brush(this, "ChartAccentPrimaryBrush");
-        var comparedBrush = DashboardThemeResources.Brush(this, "ChartAccentSecondaryBrush");
-        var ordinaryBrush = DashboardThemeResources.Brush(this, "ChartWarmBrush");
+        var keptBrush = DashboardThemeResources.Brush(this, "SemanticGoodBrush");
+        var comparedBrush = DashboardThemeResources.Brush(this, "ChartAccentPrimaryBrush");
+        var ordinaryBrush = DashboardThemeResources.Brush(this, "ChartAccentTertiaryBrush");
 
         var axis = new Line
         {
@@ -142,10 +145,11 @@ public sealed class GpuCandidateComparisonChart : UserControl
                     : string.Equals(candidate.Verdict, "Inconclusive", StringComparison.OrdinalIgnoreCase)
                         ? mutedBrush
                         : ordinaryBrush;
+            var rankPrefix = candidate.DecisionRank is > 0 and var rank ? $"#{rank}  " : string.Empty;
 
             var cpu = new TextBlock
             {
-                Text = $"CPU {candidate.Processor.Number}",
+                Text = $"{rankPrefix}CPU {candidate.Processor.Number}",
                 FontSize = 11d,
                 FontWeight = candidate.IsKept || candidate.IsCompared
                     ? Microsoft.UI.Text.FontWeights.SemiBold
@@ -164,9 +168,9 @@ public sealed class GpuCandidateComparisonChart : UserControl
                 RadiusX = 5d,
                 RadiusY = 5d,
                 Fill = brush,
-                Opacity = candidate.IsKept ? 0.92d : candidate.IsCompared ? 0.68d : 0.42d,
+                Opacity = candidate.IsKept ? 0.92d : candidate.IsCompared ? 0.82d : 0.34d,
                 Stroke = candidate.IsCompared && !candidate.IsKept ? comparedBrush : null,
-                StrokeThickness = candidate.IsCompared && !candidate.IsKept ? 2d : 0d,
+                StrokeThickness = candidate.IsCompared && !candidate.IsKept ? 1.5d : 0d,
             };
             ToolTipService.SetToolTip(bar, BuildToolTip(candidate));
             Canvas.SetLeft(bar, plotLeft);
@@ -207,7 +211,10 @@ public sealed class GpuCandidateComparisonChart : UserControl
         var uncertainty = candidate.LocalControlUncertainty is { } value && double.IsFinite(value)
             ? value.ToString("P1", System.Globalization.CultureInfo.InvariantCulture)
             : "—";
-        return $"CPU {candidate.Processor.Number} · {candidate.StateLabel}\n" +
+        var rank = candidate.DecisionRank is > 0
+            ? $"Rank #{candidate.DecisionRank} · "
+            : string.Empty;
+        return $"{rank}CPU {candidate.Processor.Number} · physical core {candidate.PhysicalCoreIndex} · {candidate.StateLabel}\n" +
                $"1% low {candidate.OnePercentLowFps:0.0} FPS · AVG {Metric(candidate.AvgFps, "0.0", "FPS")}\n" +
                $"p99 {Metric(candidate.FrameP99Milliseconds, "0.00", "ms")} · 0.1% low {Metric(candidate.Low01PctFps, "0.0", "FPS")}\n" +
                $"Trials {candidate.TrialCount} · verdict {candidate.Verdict} · local uncertainty {uncertainty}";
