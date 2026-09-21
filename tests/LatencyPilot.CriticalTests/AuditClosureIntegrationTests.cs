@@ -162,6 +162,28 @@ public sealed class AuditClosureIntegrationTests
             CreateOriginalTrial(2, 151d, 161d, 6.20d, 101d),
             CreateOriginalTrial(3, 150d, 159d, 6.25d, 100d),
         };
+        var screeningLeader = new GpuAutoAffinityCandidateReport(
+            "screening",
+            3,
+            cpu7,
+            1,
+            "Ranked",
+            null,
+            [],
+            "CPU 7 led the short screen before finalist confirmation.",
+            164d,
+            171d,
+            5.95d,
+            111d,
+            0.03d,
+            false,
+            DecisionRank: 1)
+        {
+            DecisionOnePercentLowEffect = 0.08d,
+            DecisionAvgEffect = 0.07d,
+            DecisionFrameP99Effect = 0.06d,
+            DecisionLow01PctEffect = 0.03d,
+        };
         var executionFirstButRankedSecond = new GpuAutoAffinityCandidateReport(
             "screening-finalists",
             2,
@@ -170,14 +192,20 @@ public sealed class AuditClosureIntegrationTests
             "Ranked",
             null,
             [],
-            "Measured before the decision leader because screening order is shuffled.",
+            "Measured before the decision leader because finalist order is shuffled.",
             162d,
             170d,
             6.00d,
             109d,
             0.03d,
-            true,
-            DecisionRank: 2);
+            false,
+            DecisionRank: 2)
+        {
+            DecisionOnePercentLowEffect = 0.09d,
+            DecisionAvgEffect = 0.06d,
+            DecisionFrameP99Effect = 0.05d,
+            DecisionLow01PctEffect = 0.02d,
+        };
         var decisionLeader = new GpuAutoAffinityCandidateReport(
             "screening-finalists",
             3,
@@ -186,14 +214,20 @@ public sealed class AuditClosureIntegrationTests
             "Ranked",
             null,
             [],
-            "Decision authority ranked this candidate first after finalist measurement.",
+            "Three local finalist pairs established the persisted decision leader.",
             165d,
             172d,
             5.90d,
             112d,
             0.02d,
-            true,
-            DecisionRank: 1);
+            false,
+            DecisionRank: 1)
+        {
+            DecisionOnePercentLowEffect = 0.12d,
+            DecisionAvgEffect = 0.09d,
+            DecisionFrameP99Effect = 0.08d,
+            DecisionLow01PctEffect = 0.04d,
+        };
         var decisionBaseline = new GpuAutoAffinityDecisionBaselineReport(
             145d,
             158d,
@@ -206,23 +240,37 @@ public sealed class AuditClosureIntegrationTests
             3,
             4,
             false);
+        var finalist = new GpuAutoAffinityFinalistReport(
+            cpu7,
+            3,
+            [101, 102, 103],
+            0.12d,
+            0.09d,
+            0.08d,
+            0.04d,
+            "ImprovementCapable",
+            "Three valid paired observations cleared the decision floor.")
+        {
+            DecisionFloor = 0.025d,
+        };
         var keepReport = new GpuAutoAffinityReport(
             GpuAutoAffinityReport.SchemaId,
             Guid.NewGuid(),
             now,
             now.AddMinutes(12),
             42,
-            [executionFirstButRankedSecond, decisionLeader],
+            [screeningLeader, executionFirstButRankedSecond, decisionLeader],
             originalTrials,
             GpuOptimizationRecommendation.KeepCandidate.ToString(),
             cpu7,
             true,
             false,
-            ["CPU 7 cleared Original/noise and guardrail checks."],
+            ["CPU 7 cleared paired improvement/noise and guardrail checks."],
             DecisionBaseline: decisionBaseline)
         {
             GateAClosureEligible = true,
             SourceState = "evidence-ready",
+            Finalists = [finalist],
         };
         var keepPresentation = GateAResultPresentation.Create(
             keepReport,
@@ -230,16 +278,20 @@ public sealed class AuditClosureIntegrationTests
             "C:\\evidence\\session\\gpu-auto-affinity-report.json",
             new GateAEvidenceBundleExportResult("C:\\evidence\\session.zip", null));
         Assert.AreEqual("CPU 7 kept", keepPresentation.Title);
-        Assert.AreEqual("Closure eligible", keepPresentation.EligibilityLabel);
+        Assert.AreEqual("Evidence eligible", keepPresentation.EligibilityLabel,
+            "Source/evidence eligibility must not be presented as if the whole physical Gate A were already closed.");
         Assert.AreEqual(cpu7, keepPresentation.ComparedProcessor);
         Assert.IsTrue(keepPresentation.BundleAvailable);
         Assert.AreEqual(4, keepPresentation.Metrics.Count);
-        Assert.AreEqual(145d, keepPresentation.Metrics.Single(metric => metric.Key == "low1").OriginalValue,
-            "Presentation must use the optimizer-selected Original decision baseline rather than recomputing a median from every raw Original trial.");
-        Assert.AreEqual(GateAMetricState.Improved, keepPresentation.Metrics.Single(metric => metric.Key == "low1").State,
-            "A verified Keep proves that the primary 1%-low metric cleared the optimizer's authoritative threshold.");
+        var keptLow1 = keepPresentation.Metrics.Single(metric => metric.Key == "low1");
+        Assert.AreEqual(0.12d, keptLow1.ImprovementFraction,
+            "Presentation must use the optimizer-persisted finalist paired effect rather than reconstructing an absolute-baseline delta.");
+        Assert.AreEqual(0.025d, keptLow1.UncertaintyFraction,
+            "Presentation uncertainty must carry the persisted finalist decision floor.");
+        Assert.AreEqual(GateAMetricState.Improved, keptLow1.State,
+            "A verified Keep proves that the primary paired 1%-low effect cleared the optimizer's authoritative threshold.");
         Assert.AreEqual(GateAMetricState.DecisionGuardrailSatisfied, keepPresentation.Metrics.Single(metric => metric.Key == "p99").State,
-            "A secondary metric may be shown as measured delta, but the presentation must not independently invent statistical significance; verified Keep only proves that this guardrail stayed inside the authority's allowed envelope.");
+            "A secondary metric may be shown as measured paired effect, but the presentation must not independently invent statistical significance; verified Keep only proves that this guardrail stayed inside the authority's allowed envelope.");
 
         var restoreReport = keepReport with
         {
@@ -259,11 +311,13 @@ public sealed class AuditClosureIntegrationTests
         Assert.AreEqual("Development evidence", restorePresentation.EligibilityLabel);
         Assert.AreEqual(cpu7, restorePresentation.ComparedProcessor,
             "Diagnostic comparison must follow the optimizer's persisted decision rank, not candidate execution order.");
+        Assert.AreEqual(0.12d, restorePresentation.Metrics.Single(metric => metric.Key == "low1").ImprovementFraction,
+            "When both a short-screen and a finalist aggregate exist for the same rank, diagnostic presentation must prefer the three-pair finalist authority.");
         Assert.IsTrue(restorePresentation.ComparedCandidateIsDiagnosticOnly);
         StringAssert.Contains(restorePresentation.ComparedCandidateLabel, "comparison only");
         Assert.IsTrue(restorePresentation.Metrics.All(metric =>
             metric.State is GateAMetricState.DiagnosticOnly or GateAMetricState.Unavailable),
-            "A restored run may display measured deltas, but it must not turn them into independent pass/fail decisions.");
+            "A restored run may display measured paired effects, but it must not turn them into independent pass/fail decisions.");
         var restoredGuardrail = restorePresentation.DecisionEvidence.Single(row => row.Label == "Performance guardrails");
         Assert.AreEqual("Diagnostic only", restoredGuardrail.State,
             "An empty regressed-guardrails list is not structured proof that an unkept candidate passed final guardrails.");

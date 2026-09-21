@@ -52,6 +52,10 @@ public sealed class GateAResultCompletionContractTests
         StringAssert.Contains(resultExperience, "Copy ZIP path");
         StringAssert.Contains(resultExperience, "Open session folder");
         StringAssert.Contains(resultExperience, "Open raw report");
+        StringAssert.Contains(
+            resultExperience,
+            "paired effect",
+            "The result metric card must render the persisted paired effect instead of an empty absolute Original-to-candidate value pair.");
         Assert.IsFalse(
             resultExperience.Contains("DecisionRank", StringComparison.Ordinal) ||
             resultExperience.Contains("OrderByDescending", StringComparison.Ordinal),
@@ -87,6 +91,13 @@ public sealed class GateAResultCompletionContractTests
             presentation,
             "candidate.DecisionRank",
             "Candidate presentation rows must preserve the optimizer-persisted decision rank.");
+        StringAssert.Contains(
+            presentation,
+            "screening-finalists",
+            "When finalist authority exists, the result presentation must prefer the three-pair finalist aggregate over a short-screen row with the same persisted rank.");
+        Assert.IsFalse(
+            presentation.Contains("candidate.Phase, \"finalists\"", StringComparison.Ordinal),
+            "The result presentation must use the actual persisted finalist phase name.");
 
         var candidateChart = File.ReadAllText(FindRepositoryFile(
             "src",
@@ -97,9 +108,36 @@ public sealed class GateAResultCompletionContractTests
             candidateChart,
             ".OrderBy(static candidate => candidate.DecisionRank ?? int.MaxValue)",
             "The candidate chart must display authority-ranked candidates in persisted rank order.");
+        StringAssert.Contains(
+            candidateChart,
+            "OnePercentLowEffect",
+            "The candidate chart must visualize the persisted local paired effect rather than treating the last raw candidate FPS as the decision aggregate.");
+        Assert.IsFalse(
+            candidateChart.Contains("candidate.OnePercentLowFps / maximum", StringComparison.Ordinal),
+            "The paired-v2 chart must not size decision bars from raw candidate FPS.");
         Assert.IsFalse(
             candidateChart.Contains("OrderByDescending(static candidate => candidate.OnePercentLowFps)", StringComparison.Ordinal),
             "The candidate chart must never infer rank from 1% low decimals.");
+
+        var sessionSource = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.Benchmarking",
+            "Optimization",
+            "GpuAutoAffinitySession.cs"));
+        StringAssert.Contains(
+            sessionSource,
+            "DecisionFloor = decisionFloor",
+            "The finalist decision floor used to accept a winner must be persisted for the evidence UI instead of silently becoming zero.");
+
+        var scopeExperience = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.App",
+            "GateACpuScopeExperience.cs"));
+        StringAssert.Contains(scopeExperience, "ContentDialog");
+        StringAssert.Contains(scopeExperience, "XamlRoot");
+        StringAssert.Contains(scopeExperience, "NotSupportedException");
+        StringAssert.Contains(scopeExperience, "Original only · no system changes");
+        StringAssert.Contains(scopeExperience, "Selected CPUs · restore Original");
 
         var reportContract = File.ReadAllText(FindRepositoryFile(
             "src",
