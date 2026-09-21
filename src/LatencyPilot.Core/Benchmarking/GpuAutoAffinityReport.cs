@@ -238,6 +238,8 @@ public sealed record GpuAutoAffinityReport(
     UsbAffinityRecommendationReport? UsbRecommendation = null,
     GpuAutoAffinityDecisionBaselineReport? DecisionBaseline = null)
 {
+    private const string FinalistPhaseName = "screening-finalists";
+
     public const string SchemaId = "latencypilot-gpu-auto-affinity-report-v2";
 
     public string SourceState { get; init; } = "unknown";
@@ -259,4 +261,45 @@ public sealed record GpuAutoAffinityReport(
     public bool PracticalTie { get; init; }
 
     public GpuOriginalDiagnosticReport? OriginalDiagnostic { get; init; }
+
+    // These execution facts are deliberately derived from the persisted raw
+    // trial/pair evidence. System.Text.Json serializes public getter properties,
+    // so a report carries the explicit v2 execution metadata without a second
+    // mutable source of truth that could drift from the underlying evidence.
+    public double ScreeningDurationMilliseconds => Trials
+        .Where(static trial =>
+            !trial.Phase.EndsWith("-warmup", StringComparison.Ordinal) &&
+            (string.Equals(trial.Phase, "screening-original", StringComparison.Ordinal) ||
+             string.Equals(trial.Phase, "diagnostic-original", StringComparison.Ordinal) ||
+             string.Equals(trial.Phase, "screening-representative", StringComparison.Ordinal) ||
+             string.Equals(trial.Phase, "screening-sibling", StringComparison.Ordinal)))
+        .Select(static trial => trial.RequestedDurationMilliseconds)
+        .FirstOrDefault();
+
+    public double FinalistDurationMilliseconds => Trials
+        .Where(static trial => string.Equals(trial.Phase, FinalistPhaseName, StringComparison.Ordinal))
+        .Select(static trial => trial.RequestedDurationMilliseconds)
+        .FirstOrDefault();
+
+    public Guid? InitialScreeningOriginalCaptureId => Pairs
+        .Where(static pair => !string.Equals(pair.Stage, FinalistPhaseName, StringComparison.Ordinal))
+        .OrderBy(static pair => pair.PairNumber)
+        .ThenBy(static pair => pair.Attempt)
+        .Select(static pair => (Guid?)pair.OriginalBeforeCaptureId)
+        .FirstOrDefault();
+
+    public IReadOnlyList<LogicalProcessorId> RealizedCandidateOrder => Pairs
+        .Where(static pair => !string.Equals(pair.Stage, FinalistPhaseName, StringComparison.Ordinal))
+        .OrderBy(static pair => pair.PairNumber)
+        .ThenBy(static pair => pair.Attempt)
+        .Select(static pair => pair.Processor)
+        .Distinct()
+        .ToArray();
+
+    public IReadOnlyList<LogicalProcessorId> RealizedFinalistPairOrder => Pairs
+        .Where(static pair => string.Equals(pair.Stage, FinalistPhaseName, StringComparison.Ordinal))
+        .OrderBy(static pair => pair.PairNumber)
+        .ThenBy(static pair => pair.Attempt)
+        .Select(static pair => pair.Processor)
+        .ToArray();
 }
