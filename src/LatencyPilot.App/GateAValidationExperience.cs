@@ -760,8 +760,8 @@ public sealed partial class MainWindow
         var values = report.Trials
             .Where(trial =>
                 trial.Processor is { } trialProcessor && trialProcessor.Equals(processor) &&
-                (string.Equals(trial.Phase, "screening", StringComparison.Ordinal) ||
-                 string.Equals(trial.Phase, "screening-finalists", StringComparison.Ordinal)))
+                trial.Phase.StartsWith("screening-", StringComparison.Ordinal) &&
+                !trial.Phase.EndsWith("-warmup", StringComparison.Ordinal))
             .Select(selector)
             .Where(static value => value is { } item && double.IsFinite(item) && item > 0)
             .Select(static value => value!.Value)
