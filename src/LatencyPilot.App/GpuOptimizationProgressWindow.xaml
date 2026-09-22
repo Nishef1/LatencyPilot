@@ -89,7 +89,7 @@
                     </Grid.ColumnDefinitions>
                     <Border Style="{StaticResource MetricTileStyle}">
                         <StackPanel Spacing="4">
-                            <TextBlock Text="GPU ISR placement" Style="{StaticResource CaptionTextStyle}" />
+                            <TextBlock Text="Affinity / ISR state" Style="{StaticResource CaptionTextStyle}" />
                             <TextBlock x:Name="IsrPlacementText"
                                        Text="Not measured"
                                        Style="{StaticResource MetricLabelTextStyle}"
@@ -115,10 +115,10 @@
                 <Border Style="{StaticResource DashboardCardStyle}">
                     <StackPanel Spacing="10">
                         <StackPanel Spacing="3">
-                            <TextBlock Text="Candidate decision evidence"
+                            <TextBlock Text="Candidate evidence"
                                        Style="{StaticResource SubsectionTitleTextStyle}"
-                                       AutomationProperties.Name="GPU candidate decision evidence" />
-                            <TextBlock Text="Optimizer rank first; time-local decision metrics, uncertainty and raw context remain visible."
+                                       AutomationProperties.Name="GPU candidate evidence" />
+                            <TextBlock Text="Persisted decision aggregates are shown when available; otherwise raw attempts stay visible without inventing a rank."
                                        Style="{StaticResource CaptionTextStyle}"
                                        TextWrapping="Wrap" />
                         </StackPanel>
