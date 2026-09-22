@@ -1108,7 +1108,7 @@ public sealed class GpuAutoAffinitySession
                 candidate.PhysicalCoreIndex,
                 candidate.Processor,
                 pairs.Count,
-                improvementCapable ? "Ranked" : "Inconclusive",
+                improvementCapable ? "Ranked" : "Rejected",
                 report.MedianFrameP99Effect,
                 [],
                 report.Reason,
@@ -1604,7 +1604,11 @@ public sealed class GpuAutoAffinitySession
             double.IsFinite(interpretation.FrameP99Milliseconds) ? interpretation.FrameP99Milliseconds : null,
             double.IsFinite(interpretation.OnePercentLowFps) ? interpretation.OnePercentLowFps : null,
             request.Duration.TotalMilliseconds,
-            observation.Evidence.PresentMonCapture.ActualWindowMilliseconds,
+            observation.Evidence.PresentMonCapture is { IsAvailable: true } presentMon &&
+            double.IsFinite(presentMon.ActualWindowMilliseconds) &&
+            presentMon.ActualWindowMilliseconds > 0
+                ? presentMon.ActualWindowMilliseconds
+                : request.Duration.TotalMilliseconds,
             reasons,
             InterruptEvidence: observation.InterruptEvidence,
             AvgFps: interpretation.VideoStats is { } video && double.IsFinite(video.AvgFps) ? video.AvgFps : null,

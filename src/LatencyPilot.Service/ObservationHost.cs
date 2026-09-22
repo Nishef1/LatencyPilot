@@ -78,10 +78,9 @@ internal sealed class ObservationHost : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            using var server = CreateServer();
-
             try
             {
+                using var server = CreateServer();
                 await server.WaitForConnectionAsync(stoppingToken).ConfigureAwait(false);
                 if (!IsAuthorizedClientSession(server))
                 {
@@ -100,7 +99,29 @@ internal sealed class ObservationHost : BackgroundService
             }
             catch (IOException exception)
             {
-                PipeRequestRejected(logger, "broken pipe or client disconnect", exception);
+                // CreateServer can throw here too (pipe-name squat / transient busy).
+                // Keep observation alive instead of faulting the whole host.
+                PipeRequestRejected(logger, "broken pipe, client disconnect, or pipe creation failure", exception);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                PipeRequestRejected(logger, "pipe creation refused by ACL or existing instance", exception);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
             }
             catch (InvalidDataException exception)
             {

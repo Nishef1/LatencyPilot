@@ -75,12 +75,17 @@ internal static class DeviceInterruptRecoveryInspector
                     DeviceInterruptRecoveryAction.ResumeAfterReboot,
                     "The journal is explicitly waiting for post-reboot state verification.");
             }
-            if (entry.State == MutationJournalState.Prepared &&
-                relation is MutationStoredStateRelation.MatchesOriginal or MutationStoredStateRelation.MatchesOriginalAndCandidate)
+            if (entry.State == MutationJournalState.Prepared)
             {
-                return new DeviceInterruptRecoveryInspection(entry, relation, true,
-                    DeviceInterruptRecoveryAction.AbortPreparedWithoutWrite,
-                    "Prepared experiment still matches the original state and can terminate without a machine write.");
+                if (relation is MutationStoredStateRelation.MatchesOriginal or MutationStoredStateRelation.MatchesOriginalAndCandidate)
+                {
+                    return new DeviceInterruptRecoveryInspection(entry, relation, true,
+                        DeviceInterruptRecoveryAction.AbortPreparedWithoutWrite,
+                        "Prepared experiment still matches the original state and can terminate without a machine write.");
+                }
+
+                return Manual(entry, relation, true,
+                    "A Prepared journal entry unexpectedly observes candidate state; do not infer who changed the device.");
             }
             if (relation == MutationStoredStateRelation.MatchesCandidate)
             {
@@ -97,7 +102,16 @@ internal static class DeviceInterruptRecoveryInspector
 
             return Manual(entry, relation, true, "No safe automatic recovery action was established.");
         }
-        catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or NotSupportedException or IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (
+            exception is InvalidDataException or
+            InvalidOperationException or
+            NotSupportedException or
+            IOException or
+            UnauthorizedAccessException or
+            System.Security.SecurityException or
+            System.Text.Json.JsonException or
+            ArgumentException or
+            FormatException)
         {
             return Manual(entry, MutationStoredStateRelation.Unknown, false,
                 $"{exception.GetType().Name}: {exception.Message}");

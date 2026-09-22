@@ -150,12 +150,33 @@ public static class GpuInterruptAffinityPolicyStore
                 }
 
                 transaction.DeleteKey(RegistryHive.LocalMachine, affinityPolicyPath);
+                TryDeleteEmptyInterruptManagementParent(transaction, original.DeviceInstanceId);
             }
 
             transaction.Commit();
         }
 
         VerifyRestored(original);
+    }
+
+    private static void TryDeleteEmptyInterruptManagementParent(TransactionalRegistry transaction, string deviceInstanceId)
+    {
+        try
+        {
+            var parentPath = $"SYSTEM\\CurrentControlSet\\Enum\\{deviceInstanceId}\\{InterruptManagementSubKey}";
+            using var parent = transaction.CreateOrOpenKey(RegistryHive.LocalMachine, parentPath);
+            var counts = parent.GetCounts();
+            if (counts.SubKeyCount == 0 && counts.ValueCount == 0)
+            {
+                transaction.DeleteKey(RegistryHive.LocalMachine, parentPath);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     public static bool IsCandidateStored(
@@ -346,6 +367,7 @@ public static class GpuInterruptAffinityPolicyStore
                 return true;
             case RegistryValueKind.Binary when value.Data.Length is > 0 and <= sizeof(ulong):
                 Span<byte> padded = stackalloc byte[sizeof(ulong)];
+                padded.Clear();
                 value.Data.AsSpan().CopyTo(padded);
                 result = BinaryPrimitives.ReadUInt64LittleEndian(padded);
                 return true;

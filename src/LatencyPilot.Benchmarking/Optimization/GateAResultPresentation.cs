@@ -258,6 +258,18 @@ public static class GateAResultPresentation
     private static bool HasDecisionMetrics(GpuAutoAffinityCandidateReport candidate) =>
         IsFinite(candidate.DecisionOnePercentLowEffect);
 
+    private static bool PreferCandidateBarEntry(GpuAutoAffinityCandidateReport candidate, GpuAutoAffinityCandidateReport existing)
+    {
+        var candidateFinalist = string.Equals(candidate.Phase, FinalistPhaseName, StringComparison.Ordinal);
+        var existingFinalist = string.Equals(existing.Phase, FinalistPhaseName, StringComparison.Ordinal);
+        if (candidateFinalist != existingFinalist)
+        {
+            return candidateFinalist;
+        }
+
+        return HasDecisionMetrics(candidate) && !HasDecisionMetrics(existing);
+    }
+
     private static GateAMetricComparison[] BuildMetricComparisons(
         GpuAutoAffinityCandidateReport? candidate,
         double localControlUncertainty,
@@ -361,11 +373,15 @@ public static class GateAResultPresentation
         var order = new List<LogicalProcessorId>();
         foreach (var candidate in report.Candidates)
         {
-            if (!latestByProcessor.ContainsKey(candidate.Processor))
+            if (!latestByProcessor.TryGetValue(candidate.Processor, out var existing) ||
+                PreferCandidateBarEntry(candidate, existing))
             {
-                order.Add(candidate.Processor);
+                if (!latestByProcessor.ContainsKey(candidate.Processor))
+                {
+                    order.Add(candidate.Processor);
+                }
+                latestByProcessor[candidate.Processor] = candidate;
             }
-            latestByProcessor[candidate.Processor] = candidate;
         }
 
         return order.Where(processor => HasDecisionMetrics(latestByProcessor[processor])).Select(processor =>
@@ -377,9 +393,11 @@ public static class GateAResultPresentation
                 ? "Kept"
                 : isCompared
                     ? "Not kept"
-                    : string.Equals(candidate.Verdict, "Inconclusive", StringComparison.OrdinalIgnoreCase)
-                        ? "Inconclusive"
-                        : "Tested";
+                    : candidate.Verdict.Equals("Rejected", StringComparison.OrdinalIgnoreCase)
+                        ? "Rejected"
+                        : string.Equals(candidate.Verdict, "Inconclusive", StringComparison.OrdinalIgnoreCase)
+                            ? "Inconclusive"
+                            : "Tested";
             return new GateACandidateBar(
                 processor,
                 candidate.PhysicalCoreIndex,
@@ -514,9 +532,14 @@ public static class GateAResultPresentation
                 string.Equals(trial.Phase, "final-verification", StringComparison.Ordinal) &&
                 (report.FinalProcessor is null || trial.Processor == report.FinalProcessor))
             .LastOrDefault();
-        var placementState = finalPlacement?.Placement is { ConfirmsRequestedPlacement: true }
-            ? "Passed"
-            : report.FinalProcessor is null ? "Not required" : "Unavailable";
+        var placementState =
+            report.FinalProcessor is null
+                ? "Not required"
+                : finalPlacement?.Placement is { ConfirmsRequestedPlacement: true }
+                    ? "Passed"
+                    : finalPlacement?.Placement is not null
+                        ? "Failed"
+                        : "Unavailable";
         var finalState = report.FinalStateVerified &&
                          (report.FinalProcessor is not null || report.OriginalStateRestored)
             ? "Passed"

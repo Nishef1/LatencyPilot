@@ -328,6 +328,8 @@ public sealed partial class MainWindow
             return;
         }
 
+        RenderDashboardCapture(capture);
+
         var integrityIssue = GetCaptureIntegrityIssue(capture);
         var signal = integrityIssue is null
             ? GetSnapshotSignal(capture)
@@ -574,6 +576,7 @@ public sealed partial class MainWindow
     private void ClearPremiumCapture()
     {
         _lastPremiumCapture = null;
+        ClearDashboardCaptureVisuals();
         if (_snapshotEvidenceBadge is null ||
             _snapshotEvidenceBadgeText is null ||
             _snapshotEvidenceTitleText is null ||

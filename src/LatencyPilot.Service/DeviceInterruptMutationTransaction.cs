@@ -56,6 +56,17 @@ internal sealed class DeviceInterruptMutationTransaction
         var applying = journal.Transition(prepared.ExperimentId, prepared.Revision, MutationJournalState.Prepared, MutationJournalState.Applying);
         try
         {
+            // Registry state is external to the SQLite transaction. Re-read after
+            // the durable state transition and immediately before the write so an
+            // external change is never attributed to LatencyPilot.
+            var immediatelyBeforeWrite = DeviceInterruptConfigurationStore.Capture(original.DeviceInstanceId);
+            if (!DeviceInterruptConfigurationStore.MatchesOriginal(immediatelyBeforeWrite, original, candidate.Operation))
+            {
+                var preWriteAbort = journal.Transition(applying.ExperimentId, applying.Revision, MutationJournalState.Applying,
+                    MutationJournalState.AbortedBeforeApply,
+                    "Interrupt configuration changed after preflight and immediately before the candidate write; no write was attempted.");
+                return new(preWriteAbort, null, false);
+            }
             ApplyCandidate(original, candidate);
             var restart = DeviceConfigurationRestartCoordinator.RestartAfterConfigurationChange(original.DeviceInstanceId);
             if (restart.SystemRestartRequired)
@@ -86,8 +97,23 @@ internal sealed class DeviceInterruptMutationTransaction
         using var guard = MutationOperationLock.Acquire();
         if (!measurementVerified) throw new InvalidOperationException("Candidate cannot be kept without an explicit verified measurement stage.");
         var applied = GetEntry(experimentId, MutationJournalState.Applied);
+        var original = DeviceInterruptMutationJournalCodec.DeserializeOriginal(applied.OriginalStateJson);
+        var candidate = DeviceInterruptMutationJournalCodec.DeserializeCandidate(applied.CandidateStateJson);
+        // Re-read actual machine state before Kept so the journal never closes
+        // a kept experiment whose candidate is no longer active.
+        if (!CandidateStored(original.DeviceInstanceId, candidate))
+        {
+            throw new InvalidOperationException(
+                "Candidate cannot be kept because the actual interrupt configuration no longer matches the journaled candidate.");
+        }
         var measuring = journal.Transition(applied.ExperimentId, applied.Revision, MutationJournalState.Applied, MutationJournalState.Measuring);
         var decision = journal.Transition(measuring.ExperimentId, measuring.Revision, MutationJournalState.Measuring, MutationJournalState.AwaitingDecision);
+        var reVerified = DeviceInterruptConfigurationStore.Capture(original.DeviceInstanceId);
+        if (!DeviceInterruptConfigurationStore.MatchesCandidate(reVerified, original, candidate))
+        {
+            throw new InvalidOperationException(
+                "Candidate cannot be kept because the interrupt configuration changed between measurement and the keep decision.");
+        }
         return journal.Transition(decision.ExperimentId, decision.Revision, MutationJournalState.AwaitingDecision, MutationJournalState.Kept);
     }
 
@@ -145,7 +171,22 @@ internal sealed class DeviceInterruptMutationTransaction
             journal.Transition(entry.ExperimentId, entry.Revision, entry.State, MutationJournalState.Reverting);
         try
         {
-            Restore(original, candidate.Operation);
+            // Re-read after the Reverting transition so a change that appeared
+            // during journal bookkeeping is never silently overwritten.
+            var immediatelyBeforeRestore = DeviceInterruptConfigurationStore.Capture(original.DeviceInstanceId);
+            var restoreMatchesOriginal = DeviceInterruptConfigurationStore.MatchesOriginal(immediatelyBeforeRestore, original, candidate.Operation);
+            var restoreMatchesCandidate = DeviceInterruptConfigurationStore.MatchesCandidate(immediatelyBeforeRestore, original, candidate);
+            if (!restoreMatchesOriginal && !restoreMatchesCandidate)
+            {
+                var recovery = journal.Transition(reverting.ExperimentId, reverting.Revision, MutationJournalState.Reverting,
+                    MutationJournalState.RecoveryRequired,
+                    "Rollback refused because interrupt configuration changed to match neither the captured original nor the LatencyPilot candidate.");
+                return new(recovery, null, false);
+            }
+            if (!restoreMatchesOriginal)
+            {
+                Restore(original, candidate.Operation);
+            }
             var restart = DeviceConfigurationRestartCoordinator.RestartAfterConfigurationChange(original.DeviceInstanceId);
             if (restart.SystemRestartRequired)
             {

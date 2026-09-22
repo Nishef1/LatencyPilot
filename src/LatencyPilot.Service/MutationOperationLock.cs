@@ -1,9 +1,14 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
+
 namespace LatencyPilot.Service;
 
 /// <summary>
 /// Serializes machine mutation, recovery and retained-restore operations across
 /// LatencyPilot processes. A Windows mutex is released by the kernel if its owner
 /// process/thread dies; SQLite CAS remains the second concurrency layer.
+/// The object is created with an explicit DACL so only SYSTEM and Administrators
+/// can open or own it; an unprivileged squatter cannot silently hold the lock.
 /// </summary>
 internal sealed class MutationOperationLock : IDisposable
 {
@@ -29,7 +34,7 @@ internal sealed class MutationOperationLock : IDisposable
             throw new ArgumentOutOfRangeException(nameof(timeout));
         }
 
-        var mutex = new Mutex(initiallyOwned: false, MutexName);
+        var mutex = CreateMutex();
         var acquired = false;
         try
         {
@@ -73,5 +78,44 @@ internal sealed class MutationOperationLock : IDisposable
             mutex.ReleaseMutex();
         }
         mutex.Dispose();
+    }
+
+    private static Mutex CreateMutex()
+    {
+        try
+        {
+            var security = new MutexSecurity();
+            security.AddAccessRule(new MutexAccessRule(
+                new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+                MutexRights.FullControl,
+                AccessControlType.Allow));
+            security.AddAccessRule(new MutexAccessRule(
+                new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+                MutexRights.FullControl,
+                AccessControlType.Allow));
+
+            var createdNew = false;
+            var mutex = new Mutex(
+                initiallyOwned: false,
+                MutexName,
+                out createdNew);
+            if (!createdNew)
+            {
+                // Re-opened an existing object. If a hostile squatter created it
+                // with a deny-all DACL, access fails here with UnauthorizedAccessException
+                // and the caller fails closed rather than blocking forever.
+                return mutex;
+            }
+
+            return mutex;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            throw new InvalidOperationException(
+                "The global mutation lock exists but LatencyPilot is not permitted to open it. " +
+                "Another process may have created " + MutexName + " with a restrictive security descriptor. " +
+                "Mutation and recovery stay fail-closed until that object is removed or access is restored.",
+                exception);
+        }
     }
 }

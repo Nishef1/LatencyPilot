@@ -547,6 +547,8 @@ public static class PresentMonConsoleFrameMetricsReader
             if (completed) throw new InvalidOperationException("PresentMon capture was already completed.");
             completed = true;
 
+            try
+            {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(requestedWindow + CompletionSlack);
             PresentMonFrameCaptureSnapshot snapshot;
@@ -601,6 +603,14 @@ public static class PresentMonConsoleFrameMetricsReader
             }
 
             return snapshot;
+            }
+            catch
+            {
+                // completed is already true, so DisposeAsync will not clean up;
+                // remove the capture directory on cancellation/failure so temp is not leaked.
+                TryDeleteDirectory(tempDirectory);
+                throw;
+            }
         }
 
         public ValueTask DisposeAsync()

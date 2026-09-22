@@ -154,7 +154,7 @@ public sealed record GpuAutoAffinityFinalistReport(
     string Verdict,
     string Reason)
 {
-    public double DecisionFloor { get; init; }
+    public double? DecisionFloor { get; init; }
 }
 
 public sealed record GpuAutoAffinityCandidateReport(

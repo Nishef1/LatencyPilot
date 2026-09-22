@@ -60,6 +60,10 @@ internal static class InterruptResourceReader
                     if (freeResult != ConfigurationManager.Success)
                     {
                         failureStatus = freeResult;
+                        if (result == ConfigurationManager.Success && nextDescriptor != 0)
+                        {
+                            _ = ConfigurationManager.CM_Free_Res_Des_Handle(nextDescriptor);
+                        }
                         break;
                     }
                 }

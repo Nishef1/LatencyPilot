@@ -344,7 +344,7 @@ public sealed partial class MainWindow
                 var pairNumbers = finalist.PairNumbers.Count == 0 ? "none" : string.Join(", ", finalist.PairNumbers);
                 stack.Children.Add(new TextBlock
                 {
-                    Text = $"CPU {finalist.Processor.Number} · median 1% low {median} · decision floor {finalist.DecisionFloor:P1} · {finalist.Verdict} · pairs {pairNumbers}",
+                    Text = $"CPU {finalist.Processor.Number} · median 1% low {median} · decision floor {(finalist.DecisionFloor is { } floor ? floor.ToString("P1", System.Globalization.CultureInfo.InvariantCulture) : "—")} · {finalist.Verdict} · pairs {pairNumbers}",
                     Style = AppStyle("CaptionTextStyle"),
                     TextWrapping = TextWrapping.Wrap,
                 });

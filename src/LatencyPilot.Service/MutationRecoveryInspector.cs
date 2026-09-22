@@ -209,5 +209,9 @@ internal sealed class MutationRecoveryInspector : IHostedService
         SecurityException or
         InvalidDataException or
         InvalidOperationException or
+        FormatException or
+        OverflowException or
+        ArgumentException or
+        System.Text.Json.JsonException or
         Microsoft.Data.Sqlite.SqliteException;
 }

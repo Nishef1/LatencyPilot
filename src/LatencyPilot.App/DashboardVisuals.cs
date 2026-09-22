@@ -27,6 +27,7 @@ public sealed partial class MainWindow
         ApplyDashboardCompaction();
         ClearDashboardCaptureVisuals();
         UpdateDashboardBaselineVisuals();
+        UpdateScenarioSelectionEnabledState();
 
         if (_snapshotEvidenceBadgeText is not null)
         {

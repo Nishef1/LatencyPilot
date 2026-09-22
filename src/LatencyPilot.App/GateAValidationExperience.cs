@@ -524,10 +524,7 @@ public sealed partial class MainWindow
         _gateAValidationRunning = busy;
         UpdateGateAScopeUi();
         SetObservationControlsBusy(_measurementBusy);
-        if (_measurementScenarioComboBox is not null)
-        {
-            _measurementScenarioComboBox.IsEnabled = !busy && !_measurementBusy;
-        }
+        UpdateScenarioSelectionEnabledState();
 
         UpdateMeasurementReadinessState();
     }

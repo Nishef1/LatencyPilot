@@ -436,6 +436,10 @@ public sealed partial class GpuOptimizationProgressWindow : Window
             {
                 return false;
             }
+            if (terminal && !snapshot.IsTerminal)
+            {
+                return false;
+            }
             ApplySnapshot(snapshot);
             if (snapshot.IsTerminal)
             {

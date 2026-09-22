@@ -31,15 +31,35 @@ public static class BenchmarkComparer
             return Inconclusive("Primary metric percentile is non-finite; numerical evidence cannot be compared.");
         }
 
+
+        double relativeImprovement;
         if (baselineValue == 0)
         {
-            return Inconclusive("Primary baseline percentile is zero; relative change is undefined.");
+            if (candidateValue == 0)
+            {
+                relativeImprovement = 0d;
+            }
+            else if ((baseline.Direction == MetricDirection.LowerIsBetter && candidateValue > 0) ||
+                     (baseline.Direction == MetricDirection.HigherIsBetter && candidateValue < 0))
+            {
+                relativeImprovement = double.NegativeInfinity;
+            }
+            else
+            {
+                relativeImprovement = double.PositiveInfinity;
+            }
         }
-
-        var relativeImprovement = CalculateImprovement(baseline.Direction, baselineValue, candidateValue);
-        if (!double.IsFinite(relativeImprovement))
+        else
         {
-            return Inconclusive("Primary relative change is non-finite; numerical evidence cannot be compared.");
+            relativeImprovement = CalculateImprovement(baseline.Direction, baselineValue, candidateValue);
+            if (!double.IsFinite(relativeImprovement))
+            {
+                return Inconclusive("Primary relative change is non-finite; numerical evidence cannot be compared.");
+            }
+        }
+        if (double.IsNaN(relativeImprovement))
+        {
+            return Inconclusive("Primary relative change is not a number; numerical evidence cannot be compared.");
         }
 
         var regressedGuardrails = new List<string>();

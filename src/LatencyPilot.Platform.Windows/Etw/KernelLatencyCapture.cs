@@ -49,15 +49,18 @@ public static class KernelLatencyCapture
             {
                 // TraceEventSession.EventsLost queries the live ETW session. Once Stop
                 // removes the session, Windows may reject that query with a WMI
-                // instance-name error, so snapshot it first.
+                // instance-name error, so snapshot it first. Any failure here must
+                // still reach session.Stop: sessionStopRequested is already set, so a
+                // re-entry would no-op and Process() could hang forever.
                 eventsLost = session.EventsLost;
             }
-            catch (COMException)
+            catch (Exception exception) when (exception is not StackOverflowException and not OutOfMemoryException)
             {
                 // Preserve the observation, but keep the loss count explicitly unknown
                 // so the UI cannot present an unverified zero as a clean capture.
                 eventsLost = UnknownEventsLost;
             }
+
             session.Stop(noThrow: true);
         }
 

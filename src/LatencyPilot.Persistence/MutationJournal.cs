@@ -348,18 +348,26 @@ public sealed class MutationJournal
     private SqliteConnection OpenConnection()
     {
         var connection = new SqliteConnection(connectionString);
-        connection.Open();
+        try
+        {
+            connection.Open();
 
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            PRAGMA foreign_keys = ON;
-            PRAGMA busy_timeout = 5000;
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = FULL;
-            """;
-        command.ExecuteNonQuery();
-        return connection;
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                PRAGMA foreign_keys = ON;
+                PRAGMA busy_timeout = 5000;
+                PRAGMA journal_mode = WAL;
+                PRAGMA synchronous = FULL;
+                """;
+            command.ExecuteNonQuery();
+            return connection;
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
     }
 
     private static bool HasUnresolvedEntry(SqliteConnection connection, SqliteTransaction transaction)

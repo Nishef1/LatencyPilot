@@ -111,5 +111,8 @@ internal static class MutationRecoveryAssessment
         InvalidDataException or
         InvalidOperationException or
         NotSupportedException or
-        JsonException;
+        JsonException or
+        FormatException or
+        OverflowException or
+        ArgumentException;
 }

@@ -181,9 +181,11 @@ public sealed class GpuCandidateComparisonChart : UserControl
                 ? keptBrush
                 : candidate.IsCompared
                     ? comparedBrush
-                    : string.Equals(candidate.Verdict, "Inconclusive", StringComparison.OrdinalIgnoreCase)
-                        ? mutedBrush
-                        : ordinaryBrush;
+                    : string.Equals(candidate.Verdict, "Rejected", StringComparison.OrdinalIgnoreCase)
+                        ? ordinaryBrush
+                        : string.Equals(candidate.Verdict, "Inconclusive", StringComparison.OrdinalIgnoreCase)
+                            ? mutedBrush
+                            : ordinaryBrush;
             var rankPrefix = candidate.DecisionRank is > 0 and var rank ? $"#{rank}  " : string.Empty;
 
             var cpu = new TextBlock

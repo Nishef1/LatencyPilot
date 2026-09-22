@@ -116,6 +116,7 @@ public sealed partial class MainWindow
             _measurementScenarioComboBox,
             "Select whether this run represents a real-world workload, controlled idle, or a before/after comparison.");
         root.Children.Add(_measurementScenarioComboBox);
+        UpdateScenarioSelectionEnabledState();
 
         _measurementScenarioGuidanceText = new TextBlock
         {
@@ -473,9 +474,20 @@ public sealed partial class MainWindow
     {
         _measurementBusy = busy;
         SetObservationControlsBusy(busy);
+        UpdateScenarioSelectionEnabledState();
+    }
+
+    private void UpdateScenarioSelectionEnabledState()
+    {
+        var enabled = !_measurementBusy && !_gateAValidationRunning;
         if (_measurementScenarioComboBox is not null)
         {
-            _measurementScenarioComboBox.IsEnabled = !busy && !_gateAValidationRunning;
+            _measurementScenarioComboBox.IsEnabled = enabled;
+        }
+
+        if (DashboardScenarioComboBox is not null)
+        {
+            DashboardScenarioComboBox.IsEnabled = enabled;
         }
     }
 

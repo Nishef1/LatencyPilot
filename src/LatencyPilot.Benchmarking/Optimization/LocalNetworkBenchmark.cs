@@ -78,14 +78,18 @@ public static class LocalNetworkBenchmark
             MetricDirection.LowerIsBetter,
             metrics);
 
-        if (observations.Count < MinimumObservations || successfulRtt.Length < MinimumObservations)
+        // Jitter is derived from consecutive successful RTT pairs and therefore
+        // needs one extra successful sample beyond the jitter minimum itself.
+        if (observations.Count < MinimumObservations ||
+            successfulRtt.Length < MinimumObservations ||
+            jitter.Length < MinimumObservations)
         {
             return new NetworkBenchmarkResult(
                 NetworkBenchmarkStatus.InsufficientSamples,
                 scope,
                 metrics,
                 lossRatio,
-                [$"At least {MinimumObservations} observations and successful RTT samples are required."]);
+                [$"At least {MinimumObservations} observations, successful RTT samples, and jitter pairs are required."]);
         }
 
         if (scope == NetworkBenchmarkScope.InternetSupplemental)

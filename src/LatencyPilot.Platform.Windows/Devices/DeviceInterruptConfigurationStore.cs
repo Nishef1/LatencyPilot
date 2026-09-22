@@ -61,7 +61,7 @@ public static class DeviceInterruptConfigurationStore
             key.SetValue(MsiSupportedValue, 1, RegistryValueKind.DWord);
         tx.Commit();
         var stored = Capture(original.DeviceInstanceId);
-        if (!IsMsiEnabled(stored) || !ValuesEqual(stored.MessageNumberLimit, original.MessageNumberLimit))
+        if (!stored.MsiPropertiesKeyExisted || !IsMsiEnabled(stored) || !ValuesEqual(stored.MessageNumberLimit, original.MessageNumberLimit))
             throw new InvalidOperationException("MSI candidate write could not be verified without collateral MessageNumberLimit change.");
     }
 
@@ -92,11 +92,30 @@ public static class DeviceInterruptConfigurationStore
             throw new InvalidOperationException("MSI restore refused because driver identity or MessageNumberLimit changed after the captured original state.");
         }
         using var tx = TransactionalRegistry.Begin("LatencyPilot MSI exact restore");
-        using (var key = tx.CreateOrOpenKey(RegistryHive.LocalMachine, HardwareSubPath(original.DeviceInstanceId, MsiSubKey)))
-            RestoreValue(key, MsiSupportedValue, original.MsiSupported);
+        if (original.MsiPropertiesKeyExisted)
+        {
+            using (var key = tx.CreateOrOpenKey(RegistryHive.LocalMachine, HardwareSubPath(original.DeviceInstanceId, MsiSubKey)))
+            {
+                RestoreValue(key, MsiSupportedValue, original.MsiSupported);
+                RestoreValue(key, MessageNumberLimitValue, original.MessageNumberLimit);
+            }
+        }
+        else
+        {
+            using (var key = tx.CreateOrOpenKey(RegistryHive.LocalMachine, HardwareSubPath(original.DeviceInstanceId, MsiSubKey)))
+            {
+                var counts = key.GetCounts();
+                var known = (key.ValueExists(MsiSupportedValue) ? 1u : 0u) + (key.ValueExists(MessageNumberLimitValue) ? 1u : 0u);
+                if (counts.SubKeyCount != 0 || counts.ValueCount != known)
+                    throw new InvalidOperationException("Refusing to remove MSI properties key containing state outside the bounded mutation contract.");
+            }
+            tx.DeleteKey(RegistryHive.LocalMachine, HardwareSubPath(original.DeviceInstanceId, MsiSubKey));
+            TryDeleteEmptyInterruptManagementParent(tx, original.DeviceInstanceId);
+        }
         tx.Commit();
         var current = Capture(original.DeviceInstanceId);
-        if (!ValuesEqual(current.MsiSupported, original.MsiSupported) || !ValuesEqual(current.MessageNumberLimit, original.MessageNumberLimit))
+        if (!ValuesEqual(current.MsiSupported, original.MsiSupported) || !ValuesEqual(current.MessageNumberLimit, original.MessageNumberLimit) ||
+            current.MsiPropertiesKeyExisted != original.MsiPropertiesKeyExisted)
             throw new InvalidOperationException("Exact MSI original state was not restored.");
     }
 
@@ -124,12 +143,33 @@ public static class DeviceInterruptConfigurationStore
                     throw new InvalidOperationException("Refusing to remove affinity key containing state outside the bounded mutation contract.");
             }
             tx.DeleteKey(RegistryHive.LocalMachine, HardwareSubPath(original.DeviceInstanceId, AffinitySubKey));
+            TryDeleteEmptyInterruptManagementParent(tx, original.DeviceInstanceId);
         }
         tx.Commit();
         var current = Capture(original.DeviceInstanceId);
         if (!ValuesEqual(current.DevicePolicy, original.DevicePolicy) || !ValuesEqual(current.AssignmentSetOverride, original.AssignmentSetOverride) ||
             current.AffinityPolicyKeyExisted != original.AffinityPolicyKeyExisted)
             throw new InvalidOperationException("Exact xHCI affinity original state was not restored.");
+    }
+
+    private static void TryDeleteEmptyInterruptManagementParent(TransactionalRegistry tx, string deviceInstanceId)
+    {
+        try
+        {
+            var parentPath = HardwareSubPath(deviceInstanceId, Interrupt);
+            using var parent = tx.CreateOrOpenKey(RegistryHive.LocalMachine, parentPath);
+            var counts = parent.GetCounts();
+            if (counts.SubKeyCount == 0 && counts.ValueCount == 0)
+            {
+                tx.DeleteKey(RegistryHive.LocalMachine, parentPath);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     public static bool IsXhciAffinityStored(DeviceInterruptConfigurationSnapshot snapshot, DeviceInterruptAffinityCandidate candidate)
@@ -159,7 +199,9 @@ public static class DeviceInterruptConfigurationStore
     {
         if (!string.Equals(current.DriverVersion, original.DriverVersion, StringComparison.OrdinalIgnoreCase)) return false;
         return operation == DeviceInterruptMutationOperation.EnableMsi
-            ? ValuesEqual(current.MsiSupported, original.MsiSupported) && ValuesEqual(current.MessageNumberLimit, original.MessageNumberLimit)
+            ? current.MsiPropertiesKeyExisted == original.MsiPropertiesKeyExisted &&
+              ValuesEqual(current.MsiSupported, original.MsiSupported) &&
+              ValuesEqual(current.MessageNumberLimit, original.MessageNumberLimit)
             : current.AffinityPolicyKeyExisted == original.AffinityPolicyKeyExisted && ValuesEqual(current.DevicePolicy, original.DevicePolicy) && ValuesEqual(current.AssignmentSetOverride, original.AssignmentSetOverride);
     }
 
@@ -202,6 +244,6 @@ public static class DeviceInterruptConfigurationStore
     }
     private static bool ValuesEqual(RegistryValueSnapshot a, RegistryValueSnapshot b) => a.Exists == b.Exists && a.Kind == b.Kind && a.Data.AsSpan().SequenceEqual(b.Data);
     private static bool TryDword(RegistryValueSnapshot value, out uint result) { if (value.Exists && value.Kind == RegistryValueKind.DWord && value.Data.Length == 4) { result = BinaryPrimitives.ReadUInt32LittleEndian(value.Data); return true; } result = 0; return false; }
-    private static bool TryMask(RegistryValueSnapshot value, out ulong result) { if (value.Exists && value.Kind == RegistryValueKind.Binary && value.Data.Length is > 0 and <= 8) { Span<byte> p = stackalloc byte[8]; value.Data.CopyTo(p); result = BinaryPrimitives.ReadUInt64LittleEndian(p); return true; } result = 0; return false; }
+    private static bool TryMask(RegistryValueSnapshot value, out ulong result) { if (value.Exists && value.Kind == RegistryValueKind.Binary && value.Data.Length is > 0 and <= 8) { Span<byte> p = stackalloc byte[8]; p.Clear(); value.Data.CopyTo(p); result = BinaryPrimitives.ReadUInt64LittleEndian(p); return true; } result = 0; return false; }
     private static void ValidateCandidate(DeviceInterruptAffinityCandidate c) { if (c.ProcessorGroup != 0 || c.ProcessorNumber >= 64 || c.AffinityMask != (1UL << c.ProcessorNumber)) throw new ArgumentException("xHCI affinity candidate must be one valid group-0 KAFFINITY bit.", nameof(c)); }
 }

@@ -76,6 +76,7 @@ public static class GpuInterruptAffinityStateComparer
                 return true;
             case RegistryValueKind.Binary when value.Data.Length is > 0 and <= sizeof(ulong):
                 Span<byte> padded = stackalloc byte[sizeof(ulong)];
+                padded.Clear();
                 value.Data.AsSpan().CopyTo(padded);
                 result = BinaryPrimitives.ReadUInt64LittleEndian(padded);
                 return true;
