@@ -127,9 +127,10 @@ public static class GateAResultPresentation
                             : "No measured winner · Original restored"
                         : "Result needs attention";
         var summary = BuildSummary(report, compared, verifiedKeep);
-        var eligibilityLabel = report.GateAClosureEligible
-            ? "Evidence eligible"
-            : "Development evidence";
+        var gateAResultEligible = report.SearchScope == GpuAutoAffinitySearchScope.Full && report.GateAClosureEligible;
+        var eligibilityLabel = report.SearchScope == GpuAutoAffinitySearchScope.Full
+            ? gateAResultEligible ? "Evidence eligible" : "Development evidence"
+            : "Diagnostic only";
         var comparedLabel = compared is null
             ? "No authoritative comparison candidate"
             : report.SearchScope == GpuAutoAffinitySearchScope.Custom
@@ -152,7 +153,7 @@ public static class GateAResultPresentation
             title,
             summary,
             eligibilityLabel,
-            report.GateAClosureEligible,
+            gateAResultEligible,
             comparedProcessor,
             diagnosticOnly,
             comparedLabel,
