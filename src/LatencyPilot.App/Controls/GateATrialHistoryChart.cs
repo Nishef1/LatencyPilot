@@ -77,7 +77,7 @@ public sealed class GateATrialHistoryChart : UserControl
         _emptyState.Visibility = Visibility.Collapsed;
         const double left = 46d;
         const double right = 12d;
-        const double top = 18d;
+        const double top = 40d;
         const double bottom = 30d;
         var plotWidth = Math.Max(1d, ActualWidth - left - right);
         var plotHeight = Math.Max(1d, ActualHeight - top - bottom);
@@ -97,6 +97,8 @@ public sealed class GateATrialHistoryChart : UserControl
         var candidateBrush = DashboardThemeResources.Brush(this, "ChartAccentSecondaryBrush");
         var attentionBrush = DashboardThemeResources.Brush(this, "SemanticAttentionBrush");
         var ringBrush = DashboardThemeResources.Brush(this, "GlassRaisedBrush");
+
+        RenderLegend(originalBrush, candidateBrush, attentionBrush, mutedBrush, left);
 
         for (var index = 0; index < 4; index++)
         {
@@ -169,6 +171,50 @@ public sealed class GateATrialHistoryChart : UserControl
             top,
             plotWidth,
             plotHeight);
+    }
+
+    private void RenderLegend(
+        Brush originalBrush,
+        Brush candidateBrush,
+        Brush attentionBrush,
+        Brush mutedBrush,
+        double left)
+    {
+        var entries = new[]
+        {
+            (Text: "● Original controls", Brush: originalBrush),
+            (Text: "● Candidate", Brush: candidateBrush),
+            (Text: "○ Unstable / inconclusive", Brush: attentionBrush),
+        };
+        var x = left;
+        foreach (var entry in entries)
+        {
+            var label = new TextBlock
+            {
+                Text = entry.Text,
+                FontSize = 10d,
+                Foreground = entry.Brush,
+                Opacity = 0.92d,
+            };
+            Canvas.SetLeft(label, x);
+            Canvas.SetTop(label, 4d);
+            _canvas.Children.Add(label);
+            x += entry.Text.Length * 6.1d + 18d;
+            if (x > ActualWidth - 150d)
+            {
+                break;
+            }
+        }
+
+        var unit = new TextBlock
+        {
+            Text = "1% low FPS",
+            FontSize = 9d,
+            Foreground = mutedBrush,
+        };
+        Canvas.SetLeft(unit, 0d);
+        Canvas.SetTop(unit, 22d);
+        _canvas.Children.Add(unit);
     }
 
     private void RenderOriginalSeries(
