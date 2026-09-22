@@ -2,7 +2,7 @@
 
 This is the live execution ledger for `ROADMAP.md`. Current source/runtime evidence owns actual state; plans and historical chat do not.
 
-Last updated: 2026-09-21
+Last updated: 2026-09-22
 
 ## Overall
 
@@ -108,6 +108,8 @@ The result surface now distinguishes:
 - exact terminal machine state.
 
 Candidate bars are centered on 0% paired 1%-low effect and never re-rank candidates in UI code. A RestoreOriginal result may show the best measured candidate as diagnostic context, but never as a kept winner.
+
+Final-summary ranked medians and the development progress raw-attempt rows only consume `Ready` trials on real `screening-*` non-warmup phases whose `CaptureId` belongs to a `Valid` pair for the compared CPU. Progress budgets pair retries (+6), recovery Original-control (+2) and transient collector retries (+1). Returning to Full scope restores the source-state Run Gate A button instead of leaving a diagnostic label stuck.
 
 The two custom chart surfaces now create explicit UI Automation peers and expose stable automation ids/control types plus concise status and full chart-content descriptions. This closes only the source-level automation-tree gap; Narrator/Accessibility Insights, high-contrast, text-scaling and keyboard behavior still require real Windows inspection.
 

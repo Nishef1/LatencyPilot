@@ -110,6 +110,12 @@ public sealed class GateAResultCompletionContractTests
             "A paired retry adds a fresh Original-before warm-up/score plus candidate and Original-after warm-up/score: six progress units.");
         StringAssert.Contains(progressFile, "-retry-original-before-warmup",
             "Progress accounting must recognize the bounded pair retry at its fresh Original-before boundary.");
+        StringAssert.Contains(progressFile, "RecoveryOriginalAdditionalUnits = 2",
+            "A recovery Original-control chain reacquires warm-up plus scored control: two progress units.");
+        StringAssert.Contains(progressFile, "-recovery-original-control-warmup",
+            "Progress accounting must budget the recovery Original-control at its warm-up boundary so ETA never claims completion mid-recovery.");
+        StringAssert.Contains(progressFile, "request.RetryAttempt > 0",
+            "A transient benchmark/collector retry adds exactly one extra progress unit without inventing a new pair budget.");
         Assert.IsFalse(progressFile.Contains("finalistWarmupsStarted", StringComparison.Ordinal),
             "Finalist warm-up counting must not double-count paired retries after the retry boundary owns the six-unit budget.");
 
@@ -196,6 +202,47 @@ public sealed class GateAResultCompletionContractTests
         StringAssert.Contains(scopeExperience, "NotSupportedException");
         StringAssert.Contains(scopeExperience, "Original only · no system changes");
         StringAssert.Contains(scopeExperience, "Selected CPUs · restore Original");
+        StringAssert.Contains(scopeExperience, "GpuAutoAffinitySearchScope.Full",
+            "Scope UI must distinguish Full from diagnostic scopes.");
+        StringAssert.Contains(scopeExperience, "ApplyGateAButtonFromSourceState(assessment)",
+            "Returning to Full scope must restore the source-state Run Gate A button, not leave a diagnostic label stuck.");
+        StringAssert.Contains(scopeExperience, "Run selected CPUs",
+            "Custom diagnostic scope must label the run as selected-CPU only.");
+        StringAssert.Contains(scopeExperience, "Check Original",
+            "Original-only diagnostic scope must label its restricted action.");
+
+        var finalSummarySource = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.App",
+            "GateAValidationExperience.cs"));
+        StringAssert.Contains(finalSummarySource, "MedianTrialMetric",
+            "Final-summary ranked medians must go through one filtered ranking helper.");
+        StringAssert.Contains(finalSummarySource, "GpuAutoAffinityPairVerdict.Valid",
+            "Ranked medians must only consume Valid local pairs, never Unstable/Inconclusive attempts.");
+        StringAssert.Contains(finalSummarySource, "pair.CandidateCaptureId",
+            "Pair-to-trial join must use the persisted candidate capture id.");
+        StringAssert.Contains(finalSummarySource, "rankedCaptures.Contains(trial.CaptureId)",
+            "Ranked medians must restrict trials to captures that belong to a Valid pair for the compared CPU.");
+        StringAssert.Contains(finalSummarySource, "string.Equals(trial.ReadinessState, \"Ready\", StringComparison.Ordinal)",
+            "Ranked medians must exclude non-Ready (failed/retry) observations.");
+        StringAssert.Contains(finalSummarySource, "trial.Phase.StartsWith(\"screening-\"",
+            "Ranked medians must only include real screening trial phases.");
+        StringAssert.Contains(finalSummarySource, "!trial.Phase.EndsWith(\"-warmup\"",
+            "Warm-up observations must never enter ranked medians.");
+        Assert.IsFalse(
+            finalSummarySource.Contains("report.Trials.Where(static trial => trial.Phase == \"screening\")", StringComparison.Ordinal),
+            "Candidate-report Phase \"screening\" is not a trial phase; medians must use trial phases.");
+
+        var progressExperienceSource = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.App",
+            "GpuOptimizationProgressWindow.xaml.cs"));
+        StringAssert.Contains(progressExperienceSource,
+            "string.Equals(trial.ReadinessState, \"Ready\", StringComparison.Ordinal)",
+            "Ranked progress raw-attempt rows must only summarize Ready candidate observations.");
+        StringAssert.Contains(progressExperienceSource,
+            ".OrderBy(static row => row.DecisionRank ?? int.MaxValue)",
+            "Ranked progress rows must order by persisted decision rank, never re-rank from decimals.");
 
         var reportContract = File.ReadAllText(FindRepositoryFile(
             "src",
