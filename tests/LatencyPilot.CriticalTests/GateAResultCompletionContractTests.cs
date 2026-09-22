@@ -63,6 +63,12 @@ public sealed class GateAResultCompletionContractTests
             "GpuOptimizationProgressWindow.xaml.cs"));
         StringAssert.Contains(progressExperience, "DecisionRank",
             "The development Gate A completion view must consume the optimizer-persisted decision rank.");
+        StringAssert.Contains(progressExperience, "DecisionOnePercentLowEffect",
+            "Rankable progress rows must identify the persisted paired effect instead of presenting raw candidate FPS as the decision metric.");
+        StringAssert.Contains(progressExperience, "No decision aggregate",
+            "Unrankable measured candidates must be labeled explicitly rather than receiving a synthetic decision value.");
+        StringAssert.Contains(progressExperience, "Raw attempts:",
+            "Unrankable measured candidates must retain their raw attempts as diagnostic context.");
         StringAssert.Contains(progressExperience, "Open report",
             "Terminal progress must expose the raw report as an action instead of printing a filesystem path into the status paragraph.");
         StringAssert.Contains(progressExperience, "Copy report path",
@@ -72,6 +78,11 @@ public sealed class GateAResultCompletionContractTests
         Assert.IsFalse(progressExperience.Contains("Report: {reportPath}", StringComparison.Ordinal),
             "The terminal status paragraph must not append the raw report path.");
         Assert.IsFalse(
+            progressExperience.Contains("candidate!.DecisionOnePercentLowFps : rawLow1", StringComparison.Ordinal) ||
+            progressExperience.Contains("candidate!.DecisionAvgFps : rawAvg", StringComparison.Ordinal) ||
+            progressExperience.Contains("candidate!.DecisionFrameP99Milliseconds : rawP99", StringComparison.Ordinal),
+            "Raw attempt medians must never be substituted into persisted decision fields when a pair was unrankable.");
+        Assert.IsFalse(
             progressExperience.Contains(
                 ".OrderByDescending(static row => row.DecisionOnePercentLowFps)",
                 StringComparison.Ordinal) ||
@@ -79,6 +90,17 @@ public sealed class GateAResultCompletionContractTests
                 ".ThenByDescending(static row => row.DecisionAvgFps)",
                 StringComparison.Ordinal),
             "The development Gate A completion view must not create a second ranking from metric decimals.");
+
+        var progressXaml = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.App",
+            "GpuOptimizationProgressWindow.xaml"));
+        StringAssert.Contains(progressXaml, "Affinity / ISR state",
+            "The progress card must use a state-neutral label because RestoreOriginal verifies terminal affinity state without claiming final winner ISR placement.");
+        Assert.IsFalse(progressXaml.Contains("Text=\"GPU ISR placement\"", StringComparison.Ordinal),
+            "A terminal Original restore must not be shown under a label that implies winner ISR placement was verified.");
+        StringAssert.Contains(progressXaml, "Candidate evidence",
+            "The completion card can contain raw unrankable attempts, so its heading must not imply every row is decision-grade.");
 
         var progressFile = File.ReadAllText(FindRepositoryFile(
             "tools",
