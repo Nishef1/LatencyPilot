@@ -686,15 +686,15 @@ public static class GateAResultPresentation
             string.Equals(trial.Phase, phase, StringComparison.Ordinal) &&
             IsFinitePositive(trial.OnePercentLowFps));
 
-    private static double Median(IReadOnlyList<double> orderedValues)
+    private static double Median(double[] orderedValues)
     {
-        if (orderedValues.Count == 0)
+        if (orderedValues.Length == 0)
         {
             throw new ArgumentException("Median requires at least one value.", nameof(orderedValues));
         }
 
-        var middle = orderedValues.Count / 2;
-        return orderedValues.Count % 2 == 0
+        var middle = orderedValues.Length / 2;
+        return orderedValues.Length % 2 == 0
             ? (orderedValues[middle - 1] + orderedValues[middle]) / 2d
             : orderedValues[middle];
     }
