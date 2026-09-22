@@ -30,7 +30,8 @@ public sealed record GpuBenchmarkTrialArtifact(
     IReadOnlyList<ulong> WorkerChecksums,
     long StartedAtQpc = 0,
     long EndedAtQpc = 0,
-    long QpcFrequency = 0)
+    long QpcFrequency = 0,
+    IReadOnlyList<string>? MeasurementWarnings = null)
 {
     public const string SchemaId = "latencypilot-gpu-benchmark-v1";
 }

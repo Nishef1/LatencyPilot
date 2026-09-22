@@ -144,6 +144,14 @@ Exact-head hosted **Tests** are mandatory for every revision used as physical cl
 
 **OPEN.**
 
+2026-09-22 investigation: the latest owner report (`bbc5698f-e871-464d-88c5-fd029e134145`) stopped before any candidate mutation: its five Original 1%-low observations were 53.63, 94.60, 84.72, 114.28 and 114.62 FPS. The preceding paired-v2 diagnostic exhausted its retries with local Original movement of 67.05%, 22.57%, 22.64% and 32.32%. These are measurement-repeatability stops, not an affinity registry-write failure.
+
+A normal-user benchmark probe found both `RTSSHooks64.dll` and `nvspcap64.dll` loaded inside the subject. A 30-second runtime trace found no GC suspension inside that scored window. Noise also reproduced without the external ETW/PresentMon collectors. After the owner closed RTSS/Afterburner, a fresh five-observation probe measured 212.72, 214.15, 225.95, 230.04 and 213.84 FPS at 1% low, sufficient for the existing bounded three-run qualification. NVIDIA capture injection was still present in that probe; this is evidence of improvement after removing RTSS/Afterburner, not isolated proof against every overlay or proof of candidate benefit.
+
+The benchmark now samples loaded graphics-hook names outside the scored window, preserves optional `MeasurementWarnings` in new trial artifacts, and carries warnings into per-trial context and terminal report reasons. Presence is explicitly interference context rather than a causal verdict; inspection failure remains unknown. Historical artifacts lacking this optional field remain readable. No noise budget, ranking rule, ISR-placement requirement or automatic application-closing behavior changed.
+
+The actual helper's subsequent Original-only diagnostic (`b209095f-19c1-4d2b-914c-ae781d60f017`) verified exact Original with `clean-zero-unresolved`, without affinity changes or GPU restart. Its five 1%-low observations were 116.13, 124.44, 126.36, 125.34 and 96.52 FPS (22.4% all-observation noise); it was not a stable full diagnostic. The new warning survived the real artifact-to-terminal-report path and reported `nvspcap64.dll` still loaded. Disabling NVIDIA Overlay and rerunning in a fresh process remains necessary before treating that interference hypothesis as eliminated.
+
 Historical physical evidence at source revision `15879543ce54eadb8342a87e367d60a6d5d5f81f` proved useful v1 safety properties: journal-owned apply/restart/rollback, full old-method screening, exact verified Original restoration and zero unresolved recovery ownership. That run used the superseded v1 measurement/ranking method and therefore **cannot** validate paired-v2 or the current UI.
 
 Physical Gate A for v2 requires one exact clean green current revision to prove:
@@ -183,13 +191,11 @@ Public mutation remains unarmed until this physical gate passes.
 
 ## Immediate execution ladder
 
-1. Before physical work, require hosted **Tests** success on the exact clean `main` revision that will be tested.
-2. Run Original-only and a small selected-CPU diagnostic on that exact revision to check physical measurement/restart/recovery behavior quickly.
-3. Run one full paired-v2 Gate A search and inspect report, direct pair evidence, terminal state, renderer/device restart behavior and result UI.
-4. Repeat the full search for practical reproducibility.
-5. Exercise **Stop safely** plus one supported failure/recovery path with `unresolved=0` and verify exact Original.
-6. Inspect the real WinUI result surface in light/dark/high-contrast, text scaling and keyboard flows.
-7. Only after physical Gate A passes, arm the typed allowlisted product mutation boundary and proceed with integrated xHCI/reboot/before-after physical validation.
+1. **Completed now:** traced the current pre-mutation stop to unstable Original evidence, observed graphics-hook injection, and implemented explicit artifact/report interference context. This measurement investigation is implemented but not physically closed.
+2. **Evidence:** owner-local Release builds of the benchmark/helper and the existing consolidated critical test passed. The diagnostic probes above are normal-user, non-mutating evidence; hosted Tests for the delivered revision and a complete physical search are still required.
+3. **Still open:** verify Original through the actual helper with ETW/PresentMon after overlay shutdown; prove restart/pair stability and terminal placement/recovery. Hook absence alone does not establish a quiet environment.
+4. **Next stage:** obtain hosted Tests success for the exact clean `main` revision; confirm Original repeatability; perform the owner-authorized full search with Keep allowed only after all existing decision and runtime-placement gates pass; inspect its report and exact terminal state.
+5. **After that:** repeat the full search for reproducibility, exercise Stop safely plus supported failure/recovery with `unresolved=0`, and inspect the real WinUI result/accessibility states. Only then consider typed product mutation arming and integrated xHCI/reboot/before-after physical validation.
 
 ## Completion rule
 

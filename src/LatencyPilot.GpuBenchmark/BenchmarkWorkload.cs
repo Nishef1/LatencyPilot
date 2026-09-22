@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using LatencyPilot.Core.Benchmarking;
 using LatencyPilot.Core.System;
@@ -117,6 +118,9 @@ internal sealed class BenchmarkWorkload
             throw new ArgumentOutOfRangeException(nameof(duration));
         }
 
+        // Inspect the actual subject after calibration/renderer recreation, outside
+        // the scored window. A running overlay process alone is not injection proof.
+        var measurementWarnings = CaptureMeasurementWarnings();
         var expectedFrames = checked((int)Math.Clamp(
             Math.Ceiling(duration.TotalSeconds * 240d),
             1d,
@@ -234,7 +238,33 @@ internal sealed class BenchmarkWorkload
             renderer.CaptureWorkerChecksums(),
             startedAtQpc,
             completedAtQpc,
-            Stopwatch.Frequency));
+            Stopwatch.Frequency,
+            measurementWarnings));
+    }
+
+    private static string[] CaptureMeasurementWarnings()
+    {
+        try
+        {
+            using var process = Process.GetCurrentProcess();
+            var hooks = process.Modules.Cast<ProcessModule>()
+                .Select(static module => module.ModuleName)
+                .Where(static name =>
+                    string.Equals(name, "RTSSHooks64.dll", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(name, "nvspcap64.dll", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return hooks.Length == 0 ? [] :
+                [$"Graphics interception detected inside the benchmark: {string.Join(", ", hooks)}. " +
+                 "RTSS/NVIDIA overlay or capture hooks can perturb frame timing. If Original or local pairs are unstable, " +
+                 "disable the corresponding overlay/monitoring tool and start a new benchmark session. " +
+                 "Loaded modules are interference context, not proof of causation; no application was closed automatically."];
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            return ["Benchmark graphics-hook inspection was unavailable; overlay interference is unknown."];
+        }
     }
 
     private static void ValidateFrame(BenchmarkFrameTelemetry frame)

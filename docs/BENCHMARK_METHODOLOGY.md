@@ -46,6 +46,8 @@ Historical `gpu-affinity-benchmark-v1` evidence remains historical and is never 
 
 ## 3. Provenance and integrity
 
+New benchmark artifacts may include optional `MeasurementWarnings` from an inspection of graphics-hook modules loaded in the benchmark process. Inspection runs outside the scored interval. These warnings are preserved in Gate A trial context and terminal reasons so an unstable Original/pair result can name an observed RTSS/NVIDIA interception path and advise a fresh session after the owner disables it. A loaded hook is interference context, not proof that it caused a measured regression; unavailable inspection remains unknown. Historical artifacts without this field are unchanged. This diagnostic context does not relax qualification, pair drift, ranking or final ISR-placement gates.
+
 Authoritative GPU evidence records where applicable:
 
 - exact source revision and source eligibility state;

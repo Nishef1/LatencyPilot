@@ -42,6 +42,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private readonly Dictionary<Guid, GpuAffinityCandidate> ownedCandidates = [];
     private readonly List<GpuAutoAffinityMutationAuditEntry> mutationAudit = [];
     private readonly List<double> originalCpuBusyPercent = [];
+    private readonly HashSet<string> measurementWarnings = new(StringComparer.Ordinal);
     private GpuAutoAffinityReportProvenance? reportProvenance;
     private string? referenceIsrModuleName;
 
@@ -131,6 +132,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             FinalStoredState = ToStoredStateReport(current),
             MutationAudit = mutationAudit.ToArray(),
             RecoveryStatus = recoveryStatus,
+            Reasons = report.Reasons.Concat(measurementWarnings).Distinct(StringComparer.Ordinal).ToArray(),
         };
     }
 
@@ -564,6 +566,15 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             continuity,
             storedBefore,
             storedAfter);
+
+        if (artifact.MeasurementWarnings is { } warnings)
+        {
+            foreach (var warning in warnings.Where(static warning => !string.IsNullOrWhiteSpace(warning)))
+            {
+                measurementWarnings.Add(warning);
+                softNotes.Add(warning);
+            }
+        }
 
         var systemCpuBusyDrifted = false;
         if (!isWarmup &&
