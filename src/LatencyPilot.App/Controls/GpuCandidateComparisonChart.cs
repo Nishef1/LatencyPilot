@@ -12,6 +12,7 @@ public sealed class GpuCandidateComparisonChart : UserControl
 {
     private const double RowHeight = 31d;
     private const double MinimumChartHeight = 190d;
+    private const double EmptyChartHeight = 132d;
     private readonly Canvas _canvas = new();
     private readonly ChartEmptyState _emptyState;
     private IReadOnlyList<GateACandidateBar> _candidates = Array.Empty<GateACandidateBar>();
@@ -51,7 +52,9 @@ public sealed class GpuCandidateComparisonChart : UserControl
         _originalOnePercentLowFps = IsFinitePositive(originalOnePercentLowFps)
             ? originalOnePercentLowFps
             : null;
-        var desiredHeight = Math.Max(MinimumChartHeight, 58d + (_candidates.Count * RowHeight));
+        var desiredHeight = _candidates.Count == 0
+            ? EmptyChartHeight
+            : Math.Max(MinimumChartHeight, 58d + (_candidates.Count * RowHeight));
         MinHeight = desiredHeight;
         Height = desiredHeight;
         _emptyState.SetMessage(string.IsNullOrWhiteSpace(emptyMessage)
@@ -67,8 +70,8 @@ public sealed class GpuCandidateComparisonChart : UserControl
     {
         _candidates = Array.Empty<GateACandidateBar>();
         _originalOnePercentLowFps = null;
-        MinHeight = MinimumChartHeight;
-        Height = MinimumChartHeight;
+        MinHeight = EmptyChartHeight;
+        Height = EmptyChartHeight;
         _emptyState.SetMessage(message);
         AutomationProperties.SetHelpText(this, message);
         AutomationProperties.SetItemStatus(this, "No decision-grade GPU candidate data is available.");
