@@ -155,7 +155,20 @@ public sealed partial class MainWindow
                 _ => "All CPUs ▾",
             };
         }
-        if (_gateAValidationButton is null || _gateASourceAssessment?.CanRun != true || _gateASearchScope == GpuAutoAffinitySearchScope.Full)
+        if (_gateAValidationButton is null || _gateASourceAssessment is not { } assessment)
+        {
+            return;
+        }
+        if (_gateASearchScope == GpuAutoAffinitySearchScope.Full)
+        {
+            if (assessment.CanRun)
+            {
+                ApplyGateAButtonFromSourceState(assessment);
+            }
+
+            return;
+        }
+        if (!assessment.CanRun)
         {
             return;
         }

@@ -120,6 +120,19 @@ public sealed partial class MainWindow
             return;
         }
 
+        ApplyGateAButtonFromSourceState(assessment);
+        UpdateGateAScopeUi();
+    }
+
+    private void ApplyGateAButtonFromSourceState(GpuOptimizationSourceAssessment assessment)
+    {
+        if (_gateAValidationButton is null ||
+            _gateAValidationStateText is null ||
+            _gateAValidationStateBadge is null)
+        {
+            return;
+        }
+
         switch (assessment.State)
         {
             case GpuOptimizationSourceState.EvidenceReady:
@@ -160,7 +173,6 @@ public sealed partial class MainWindow
                 SetGateAValidationStatus(assessment.Reason, syncEvidenceStatus: false);
                 break;
         }
-        UpdateGateAScopeUi();
     }
 
     private void ApplyGateAStateBadgeBrushes(string foregroundResourceKey, string backgroundResourceKey)
