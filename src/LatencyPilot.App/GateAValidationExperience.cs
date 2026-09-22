@@ -769,11 +769,19 @@ public sealed partial class MainWindow
         LogicalProcessorId processor,
         Func<GpuAutoAffinityTrialReport, double?> selector)
     {
+        var rankedCaptures = report.Pairs
+            .Where(pair =>
+                pair.Verdict == GpuAutoAffinityPairVerdict.Valid &&
+                pair.Processor.Equals(processor))
+            .Select(static pair => pair.CandidateCaptureId)
+            .ToHashSet();
         var values = report.Trials
             .Where(trial =>
                 trial.Processor is { } trialProcessor && trialProcessor.Equals(processor) &&
                 trial.Phase.StartsWith("screening-", StringComparison.Ordinal) &&
-                !trial.Phase.EndsWith("-warmup", StringComparison.Ordinal))
+                !trial.Phase.EndsWith("-warmup", StringComparison.Ordinal) &&
+                string.Equals(trial.ReadinessState, "Ready", StringComparison.Ordinal) &&
+                rankedCaptures.Contains(trial.CaptureId))
             .Select(selector)
             .Where(static value => value is { } item && double.IsFinite(item) && item > 0)
             .Select(static value => value!.Value)
