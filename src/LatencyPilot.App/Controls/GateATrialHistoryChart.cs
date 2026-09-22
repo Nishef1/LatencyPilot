@@ -98,7 +98,23 @@ public sealed class GateATrialHistoryChart : UserControl
         var attentionBrush = DashboardThemeResources.Brush(this, "SemanticAttentionBrush");
         var ringBrush = DashboardThemeResources.Brush(this, "GlassRaisedBrush");
 
-        RenderLegend(originalBrush, candidateBrush, attentionBrush, mutedBrush, left);
+        var hasOriginal = valid.Any(static point =>
+            string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase));
+        var candidatePoints = valid
+            .Where(static point => !string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var hasCandidate = candidatePoints.Length > 0;
+        var hasAttentionCandidate = candidatePoints.Any(static point =>
+            point.PairVerdict is GpuAutoAffinityPairVerdict.Unstable or GpuAutoAffinityPairVerdict.Inconclusive);
+        RenderLegend(
+            originalBrush,
+            candidateBrush,
+            attentionBrush,
+            mutedBrush,
+            left,
+            hasOriginal,
+            hasCandidate,
+            hasAttentionCandidate);
 
         for (var index = 0; index < 4; index++)
         {
@@ -147,7 +163,8 @@ public sealed class GateATrialHistoryChart : UserControl
         }
 
         RenderOriginalSeries(
-            valid.Where(static point => string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase)).ToArray(),
+            valid.Where(static point =>
+                string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase)).ToArray(),
             originalBrush,
             ringBrush,
             minimumRun,
@@ -159,7 +176,7 @@ public sealed class GateATrialHistoryChart : UserControl
             plotWidth,
             plotHeight);
         RenderCandidateMarkers(
-            valid.Where(static point => !string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase)).ToArray(),
+            candidatePoints,
             candidateBrush,
             attentionBrush,
             ringBrush,
@@ -178,14 +195,25 @@ public sealed class GateATrialHistoryChart : UserControl
         Brush candidateBrush,
         Brush attentionBrush,
         Brush mutedBrush,
-        double left)
+        double left,
+        bool hasOriginal,
+        bool hasCandidate,
+        bool hasAttentionCandidate)
     {
-        var entries = new[]
+        var entries = new List<(string Text, Brush Brush)>();
+        if (hasOriginal)
         {
-            (Text: "● Original controls", Brush: originalBrush),
-            (Text: "● Candidate", Brush: candidateBrush),
-            (Text: "○ Unstable / inconclusive", Brush: attentionBrush),
-        };
+            entries.Add(("● Original controls", originalBrush));
+        }
+        if (hasCandidate)
+        {
+            entries.Add(("● Candidate", candidateBrush));
+        }
+        if (hasAttentionCandidate)
+        {
+            entries.Add(("○ Unstable / inconclusive", attentionBrush));
+        }
+
         var x = left;
         foreach (var entry in entries)
         {
@@ -360,7 +388,10 @@ public sealed class GateATrialHistoryChart : UserControl
             : $"Original 1 percent low range is {originals.Min(static point => point.OnePercentLowFps):0.0} to {originals.Max(static point => point.OnePercentLowFps):0.0} FPS across {originals.Length} observation(s).";
         var attentionCount = candidates.Count(static point =>
             point.PairVerdict is GpuAutoAffinityPairVerdict.Unstable or GpuAutoAffinityPairVerdict.Inconclusive);
-        return $"{range} Candidate observations: {candidates.Length}; attention-state candidate observations: {attentionCount}. Original controls are connected in run order; candidate CPUs are discrete markers and are never connected into a synthetic series. Raw local-pair evidence and control movement are listed below the chart.";
+        var candidateDetail = candidates.Length == 0
+            ? "No candidate observations are present in this result."
+            : $"Candidate observations: {candidates.Length}; attention-state candidate observations: {attentionCount}. Raw local-pair evidence and control movement are listed below the chart.";
+        return $"{range} {candidateDetail} Original controls are connected in run order; candidate CPUs, when present, are discrete markers and are never connected into a synthetic series.";
     }
 
     private static GateATrialPoint[] ValidPoints(IReadOnlyList<GateATrialPoint> points) =>

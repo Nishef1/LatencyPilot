@@ -70,25 +70,25 @@ public sealed partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center,
         });
 
-        var eligibilityBrush = result.GateAClosureEligible ? "ChartAccentPrimaryBrush" : "SemanticAttentionBrush";
-        var eligibilitySoftBrush = result.GateAClosureEligible ? "BrandActionSoftBrush" : "SemanticAttentionSoftBrush";
-        var eligibility = new Border
+        var badges = new StackPanel
         {
-            Padding = new Thickness(10d, 5d, 10d, 5d),
-            CornerRadius = new CornerRadius(999d),
-            BorderThickness = new Thickness(1d),
-            BorderBrush = DashboardThemeResources.Brush(card, eligibilityBrush),
-            Background = DashboardThemeResources.Brush(card, eligibilitySoftBrush),
-            Child = new TextBlock
-            {
-                Text = result.EligibilityLabel,
-                FontSize = 11d,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = DashboardThemeResources.Brush(card, eligibilityBrush),
-            },
+            Orientation = Orientation.Horizontal,
+            Spacing = 8d,
+            HorizontalAlignment = HorizontalAlignment.Right,
         };
-        Grid.SetColumn(eligibility, 1);
-        eyebrowRow.Children.Add(eligibility);
+        badges.Children.Add(BuildStatusBadge(
+            card,
+            result.EligibilityLabel,
+            result.GateAClosureEligible ? "ChartAccentPrimaryBrush" : "SemanticAttentionBrush",
+            result.GateAClosureEligible ? "BrandActionSoftBrush" : "SemanticAttentionSoftBrush"));
+        badges.Children.Add(BuildStatusBadge(
+            card,
+            result.TerminalStateLabel,
+            result.TerminalStateVerified ? "SemanticGoodBrush" : "SemanticFailureBrush",
+            result.TerminalStateVerified ? "SemanticGoodSoftBrush" : "SemanticFailureSoftBrush"));
+        Grid.SetColumn(badges, 1);
+        eyebrowRow.Children.Add(badges);
+
         stack.Children.Add(eyebrowRow);
         stack.Children.Add(new TextBlock
         {
@@ -132,9 +132,77 @@ public sealed partial class MainWindow
         return card;
     }
 
+    private static Border BuildStatusBadge(
+        FrameworkElement owner,
+        string text,
+        string foregroundBrush,
+        string backgroundBrush) =>
+        new()
+        {
+            Padding = new Thickness(10d, 5d, 10d, 5d),
+            CornerRadius = new CornerRadius(999d),
+            BorderThickness = new Thickness(1d),
+            BorderBrush = DashboardThemeResources.Brush(owner, foregroundBrush),
+            Background = DashboardThemeResources.Brush(owner, backgroundBrush),
+            Child = new TextBlock
+            {
+                Text = text,
+                FontSize = 11d,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = DashboardThemeResources.Brush(owner, foregroundBrush),
+            },
+        };
+
     private static Grid BuildGateAMetricGrid(GateAResultViewModel result)
     {
         var grid = new Grid { ColumnSpacing = 12d, RowSpacing = 12d };
+        if (result.OriginalOnlyResult)
+        {
+            foreach (var metric in result.OriginalMetricSummaries)
+            {
+                var card = StyledBorder("DashboardMetricStyle");
+                var content = new StackPanel { Spacing = 7d };
+                content.Children.Add(new TextBlock
+                {
+                    Text = metric.Label,
+                    Style = AppStyle("MetricLabelTextStyle"),
+                });
+                content.Children.Add(new TextBlock
+                {
+                    Text = $"{metric.Median:0.0} {metric.Unit}",
+                    Style = AppStyle("MetricValueTextStyle"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                content.Children.Add(new TextBlock
+                {
+                    Text = result.BaselineQualificationFailed
+                        ? "Unstable baseline"
+                        : result.OriginalEvidenceRepeatable
+                            ? "Repeatable diagnostic"
+                            : "Unstable diagnostic",
+                    FontSize = 11d,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = DashboardThemeResources.Brush(
+                        card,
+                        result.OriginalEvidenceRepeatable && !result.BaselineQualificationFailed
+                            ? "SemanticGoodBrush"
+                            : "SemanticAttentionBrush"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                content.Children.Add(new TextBlock
+                {
+                    Text = $"Scored Original range {metric.Minimum:0.0}–{metric.Maximum:0.0} {metric.Unit}. Raw observations only; not a candidate comparison.",
+                    Style = AppStyle("CaptionTextStyle"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                card.Child = content;
+                grid.Children.Add(card);
+                CardElevation.Apply(card);
+            }
+
+            return grid;
+        }
+
         foreach (var metric in result.Metrics)
         {
             var card = StyledBorder("DashboardMetricStyle");
@@ -171,31 +239,39 @@ public sealed partial class MainWindow
 
     private static Grid BuildGateAChartsGrid(GateAResultViewModel result)
     {
-        var candidateChart = new GpuCandidateComparisonChart();
-        var measuredProcessors = result.Pairs.Select(static pair => pair.Processor).Distinct().Count();
-        candidateChart.SetData(
-            result.Candidates,
-            null,
-            $"{measuredProcessors} measured CPU candidate(s); {result.Candidates.Count} candidate(s) have persisted decision aggregates. {result.ComparedCandidateLabel}. Bars are paired 1% low effects centered on 0%. Raw local controls are listed below.",
-            result.Pairs.Count > 0 && result.Candidates.Count == 0
-                ? "No decision-grade candidate could be charted. Measured local pairs remain available below with their control movement and retry outcomes."
-                : null);
+        var grid = new Grid { ColumnSpacing = 12d, RowSpacing = 12d };
+        if (!result.OriginalOnlyResult)
+        {
+            var candidateChart = new GpuCandidateComparisonChart();
+            var measuredProcessors = result.Pairs.Select(static pair => pair.Processor).Distinct().Count();
+            candidateChart.SetData(
+                result.Candidates,
+                null,
+                $"{measuredProcessors} measured CPU candidate(s); {result.Candidates.Count} candidate(s) have persisted decision aggregates. {result.ComparedCandidateLabel}. Bars are paired 1% low effects centered on 0%. Raw local controls are listed below.",
+                result.Pairs.Count > 0 && result.Candidates.Count == 0
+                    ? "No decision-grade candidate could be charted. Measured local pairs remain available below with their control movement and retry outcomes."
+                    : null);
+            grid.Children.Add(BuildChartCard(
+                "Candidate comparison",
+                "Persisted paired 1% low effects from the optimizer. Zero means the adjacent Original controls; this chart never reconstructs a second ranking.",
+                candidateChart));
+        }
 
         var trialChart = new GateATrialHistoryChart();
-        var originalTrials = result.Trials.Count(static point => string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase));
+        var originalTrials = result.Trials.Count(static point =>
+            string.Equals(point.Series, "Original", StringComparison.OrdinalIgnoreCase));
+        var candidateTrials = result.Trials.Count - originalTrials;
         trialChart.SetData(
             result.Trials,
-            $"Scored 1% low history contains {originalTrials} Original control point(s) and {result.Trials.Count - originalTrials} candidate observation(s). Original controls are connected; candidate observations are discrete markers so different CPUs are never presented as one synthetic series.");
+            result.OriginalOnlyResult
+                ? result.OriginalEvidenceDetail
+                : $"Scored 1% low history contains {originalTrials} Original control point(s) and {candidateTrials} candidate observation(s). Original controls are connected; candidate observations are discrete markers so different CPUs are never presented as one synthetic series.");
 
-        var grid = new Grid { ColumnSpacing = 12d, RowSpacing = 12d };
-        grid.Children.Add(BuildChartCard(
-            "Candidate comparison",
-            "Persisted paired 1% low effects from the optimizer. Zero means the adjacent Original controls; this chart never reconstructs a second ranking.",
-            candidateChart));
-        grid.Children.Add(BuildChartCard(
-            "Control stability",
-            "Raw scored 1% low FPS in run order. Original controls are connected; candidate measurements are discrete markers, and unstable or inconclusive pairs use the attention state.",
-            trialChart));
+        var stabilityTitle = result.OriginalOnlyResult ? "Original stability" : "Control stability";
+        var stabilitySubtitle = result.OriginalOnlyResult
+            ? result.OriginalEvidenceDetail
+            : "Raw scored 1% low FPS in run order. Original controls are connected; candidate measurements are discrete markers, and unstable or inconclusive pairs use the attention state.";
+        grid.Children.Add(BuildChartCard(stabilityTitle, stabilitySubtitle, trialChart));
         return grid;
     }
 
@@ -220,6 +296,27 @@ public sealed partial class MainWindow
     {
         var card = StyledBorder("ChartCardStyle");
         var stack = new StackPanel { Spacing = 10d };
+
+        if (result.OriginalOnlyResult && result.Pairs.Count == 0)
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Candidate comparison unavailable",
+                Style = AppStyle("SubsectionTitleTextStyle"),
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = result.BaselineQualificationFailed
+                    ? "Candidate testing was not started because Original qualification did not produce a stable three-run 1% low cluster. No candidate was mutated, ranked, or retained."
+                    : "This Original-only diagnostic intentionally performs no affinity mutation or device restart, so there is no candidate comparison for this run.",
+                Style = AppStyle("MutedBodyTextStyle"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            card.Child = stack;
+            CardElevation.Apply(card);
+            return card;
+        }
+
         stack.Children.Add(new TextBlock { Text = "Local pair evidence", Style = AppStyle("SubsectionTitleTextStyle") });
         stack.Children.Add(new TextBlock
         {
@@ -238,7 +335,8 @@ public sealed partial class MainWindow
                 Foreground = DashboardThemeResources.Brush(card, "TextBrush"),
                 Margin = new Thickness(0d, 4d, 0d, 0d),
             });
-            foreach (var finalist in result.Finalists.OrderBy(static item => item.PairNumbers.Count == 0 ? int.MaxValue : item.PairNumbers.Min()))
+            foreach (var finalist in result.Finalists.OrderBy(static item =>
+                         item.PairNumbers.Count == 0 ? int.MaxValue : item.PairNumbers.Min()))
             {
                 var median = finalist.MedianOnePercentLowEffect is { } effect && double.IsFinite(effect)
                     ? effect.ToString("+0.0%;-0.0%;0.0%", System.Globalization.CultureInfo.InvariantCulture)
@@ -463,7 +561,7 @@ public sealed partial class MainWindow
 
     private static void UpdateGateAChartsGridLayout(Grid grid, double width)
     {
-        var sideBySide = width >= 900d;
+        var sideBySide = grid.Children.Count > 1 && width >= 900d;
         grid.ColumnDefinitions.Clear();
         grid.RowDefinitions.Clear();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
@@ -474,8 +572,10 @@ public sealed partial class MainWindow
         }
         else
         {
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (var row = 0; row < Math.Max(1, grid.Children.Count); row++)
+            {
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            }
         }
         for (var index = 0; index < grid.Children.Count; index++)
         {
@@ -522,13 +622,19 @@ public sealed partial class MainWindow
     private static Brush DecisionStateBrush(FrameworkElement owner, string state) =>
         DashboardThemeResources.Brush(owner,
             string.Equals(state, "Passed", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(state, "Decision-grade", StringComparison.OrdinalIgnoreCase)
+            string.Equals(state, "Decision-grade", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(state, "Restored", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(state, "Verified", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(state, "Repeatable", StringComparison.OrdinalIgnoreCase)
                 ? "SemanticGoodBrush"
                 : string.Equals(state, "Needs attention", StringComparison.OrdinalIgnoreCase) ||
                   string.Equals(state, "Blocked", StringComparison.OrdinalIgnoreCase)
                     ? "SemanticFailureBrush"
                     : string.Equals(state, "Diagnostic only", StringComparison.OrdinalIgnoreCase) ||
-                      string.Equals(state, "Unavailable", StringComparison.OrdinalIgnoreCase)
+                      string.Equals(state, "Unavailable", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(state, "Unstable", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(state, "Not started", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(state, "Not run", StringComparison.OrdinalIgnoreCase)
                         ? "SemanticAttentionBrush"
                         : "MutedTextBrush");
 

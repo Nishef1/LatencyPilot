@@ -22,6 +22,14 @@ public sealed record GateAMetricComparison(
     GateAMetricState State,
     bool LowerIsBetter);
 
+public sealed record GateAOriginalMetricSummary(
+    string Key,
+    string Label,
+    string Unit,
+    double Median,
+    double Minimum,
+    double Maximum);
+
 public sealed record GateACandidateBar(
     LogicalProcessorId Processor,
     int PhysicalCoreIndex,
@@ -79,11 +87,20 @@ public sealed record GateAResultViewModel(
     public bool BundleAvailable => !string.IsNullOrWhiteSpace(ZipPath);
     public IReadOnlyList<GpuAutoAffinityPairReport> Pairs { get; init; } = [];
     public IReadOnlyList<GpuAutoAffinityFinalistReport> Finalists { get; init; } = [];
+    public bool BaselineQualificationFailed { get; init; }
+    public bool OriginalOnlyResult { get; init; }
+    public bool OriginalEvidenceRepeatable { get; init; }
+    public IReadOnlyList<GateAOriginalMetricSummary> OriginalMetricSummaries { get; init; } = [];
+    public string OriginalEvidenceDetail { get; init; } = string.Empty;
+    public string TerminalStateLabel { get; init; } = string.Empty;
+    public bool TerminalStateVerified { get; init; }
 }
 
 public static class GateAResultPresentation
 {
     private const string FinalistPhaseName = "screening-finalists";
+    private const string ScreeningOriginalPhaseName = "screening-original";
+    private const string DiagnosticOriginalPhaseName = "diagnostic-original";
 
     public static GateAResultViewModel Create(
         GpuAutoAffinityReport report,
@@ -110,34 +127,57 @@ public static class GateAResultPresentation
         var metrics = BuildMetricComparisons(compared, localControlUncertainty, verifiedKeep);
         var candidateBars = BuildCandidateBars(report, comparedProcessor, verifiedKeep);
         var trialPoints = BuildTrialPoints(report);
-        var decisionRows = BuildDecisionRows(report, compared, metrics, verifiedKeep);
         var terminalOriginalVerified = report.FinalStateVerified && report.OriginalStateRestored;
+        var baselineQualificationFailed = IsBaselineQualificationFailure(report);
+        var originalOnlyResult = baselineQualificationFailed || report.OriginalDiagnostic is not null;
+        GateAOriginalMetricSummary[] originalMetricSummaries = originalOnlyResult
+            ? BuildOriginalMetricSummaries(report)
+            : [];
+        var originalEvidenceRepeatable = report.OriginalDiagnostic?.Repeatable == true &&
+                                         !baselineQualificationFailed;
+        var originalEvidenceDetail = originalOnlyResult
+            ? BuildOriginalEvidenceDetail(report, baselineQualificationFailed)
+            : string.Empty;
+        var decisionRows = BuildDecisionRows(
+            report,
+            compared,
+            metrics,
+            verifiedKeep,
+            baselineQualificationFailed);
 
-        var title = report.OriginalDiagnostic is { } diagnostic
-            ? diagnostic.Repeatable ? "Original repeatable in this sample" : "Original variability is too high"
-            : report.SearchScope == GpuAutoAffinitySearchScope.Custom && terminalOriginalVerified
-                ? "Custom diagnostic result"
-                : verifiedKeep
-                    ? report.PracticalTie
-                        ? $"Practical tie · CPU {report.FinalProcessor!.Value.Number} kept"
-                        : $"Winner · CPU {report.FinalProcessor!.Value.Number} kept"
-                    : terminalOriginalVerified
-                        ? compared is null
-                            ? "Inconclusive · Original restored"
-                            : "No measured winner · Original restored"
-                        : "Result needs attention";
-        var summary = BuildSummary(report, compared, verifiedKeep);
+        var title = baselineQualificationFailed
+            ? terminalOriginalVerified
+                ? "Baseline instability detected"
+                : "Baseline unstable · recovery needs attention"
+            : report.OriginalDiagnostic is { } diagnostic
+                ? diagnostic.Repeatable ? "Original repeatable in this sample" : "Original variability is too high"
+                : report.SearchScope == GpuAutoAffinitySearchScope.Custom && terminalOriginalVerified
+                    ? "Custom diagnostic result"
+                    : verifiedKeep
+                        ? report.PracticalTie
+                            ? $"Practical tie · CPU {report.FinalProcessor!.Value.Number} kept"
+                            : $"Winner · CPU {report.FinalProcessor!.Value.Number} kept"
+                        : terminalOriginalVerified
+                            ? compared is null
+                                ? "Inconclusive · Original restored"
+                                : "No measured winner · Original restored"
+                            : "Result needs attention";
+        var summary = BuildSummary(report, compared, verifiedKeep, baselineQualificationFailed);
         var gateAResultEligible = report.SearchScope == GpuAutoAffinitySearchScope.Full && report.GateAClosureEligible;
         var eligibilityLabel = report.SearchScope == GpuAutoAffinitySearchScope.Full
             ? gateAResultEligible ? "Evidence eligible" : "Development evidence"
             : "Diagnostic only";
-        var comparedLabel = compared is null
-            ? "No authoritative comparison candidate"
-            : report.SearchScope == GpuAutoAffinitySearchScope.Custom
-                ? $"CPU {compared.Processor.Number} · Best within selected CPUs · diagnostic only · Original restored"
-                : verifiedKeep
-                    ? $"CPU {compared.Processor.Number} · kept"
-                    : $"CPU {compared.Processor.Number} · best measured · comparison only · not kept";
+        var comparedLabel = baselineQualificationFailed
+            ? "Candidate testing not started · Original restored"
+            : compared is null
+                ? report.OriginalDiagnostic is not null
+                    ? "Original-only diagnostic · no candidate tested"
+                    : "No authoritative comparison candidate"
+                : report.SearchScope == GpuAutoAffinitySearchScope.Custom
+                    ? $"CPU {compared.Processor.Number} · Best within selected CPUs · diagnostic only · Original restored"
+                    : verifiedKeep
+                        ? $"CPU {compared.Processor.Number} · kept"
+                        : $"CPU {compared.Processor.Number} · best measured · comparison only · not kept";
         var bundleStatus = bundle.Succeeded
             ? "Shareable evidence ZIP is ready."
             : string.IsNullOrWhiteSpace(bundle.Error)
@@ -148,6 +188,15 @@ public static class GateAResultPresentation
         {
             sourceRevision = "Source revision unavailable";
         }
+
+        var terminalStateVerified = verifiedKeep || terminalOriginalVerified;
+        var terminalStateLabel = verifiedKeep && report.FinalProcessor is { } keptProcessor
+            ? $"CPU {keptProcessor.Number} kept"
+            : report.OriginalDiagnostic is not null && terminalOriginalVerified
+                ? "Original verified"
+                : terminalOriginalVerified
+                    ? "Original restored"
+                    : "State not fully verified";
 
         return new GateAResultViewModel(
             title,
@@ -172,6 +221,13 @@ public static class GateAResultPresentation
         {
             Pairs = report.Pairs,
             Finalists = report.Finalists,
+            BaselineQualificationFailed = baselineQualificationFailed,
+            OriginalOnlyResult = originalOnlyResult,
+            OriginalEvidenceRepeatable = originalEvidenceRepeatable,
+            OriginalMetricSummaries = originalMetricSummaries,
+            OriginalEvidenceDetail = originalEvidenceDetail,
+            TerminalStateLabel = terminalStateLabel,
+            TerminalStateVerified = terminalStateVerified,
         };
     }
 
@@ -244,6 +300,56 @@ public static class GateAResultPresentation
                 : GateAMetricState.DecisionGuardrailSatisfied;
         return new GateAMetricComparison(
             key, label, "%", null, null, effect, localControlUncertainty, state, lowerIsBetter);
+    }
+
+    private static GateAOriginalMetricSummary[] BuildOriginalMetricSummaries(GpuAutoAffinityReport report)
+    {
+        var phase = report.OriginalDiagnostic is null
+            ? ScreeningOriginalPhaseName
+            : DiagnosticOriginalPhaseName;
+        var trials = report.Trials
+            .Where(trial =>
+                string.Equals(trial.Role, "Original", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(trial.Phase, phase, StringComparison.Ordinal))
+            .ToArray();
+
+        return new GateAOriginalMetricSummary?[]
+        {
+            CreateOriginalMetricSummary("low1", "1% low", "FPS", trials, static trial => trial.OnePercentLowFps),
+            CreateOriginalMetricSummary("avg", "Average", "FPS", trials, static trial => trial.AvgFps),
+            CreateOriginalMetricSummary("p99", "Frame p99", "ms", trials, static trial => trial.FrameP99Milliseconds),
+            CreateOriginalMetricSummary("low01", "0.1% low", "FPS", trials, static trial => trial.Low01PctFps),
+        }
+        .Where(static summary => summary is not null)
+        .Select(static summary => summary!)
+        .ToArray();
+    }
+
+    private static GateAOriginalMetricSummary? CreateOriginalMetricSummary(
+        string key,
+        string label,
+        string unit,
+        IReadOnlyList<GpuAutoAffinityTrialReport> trials,
+        Func<GpuAutoAffinityTrialReport, double?> selector)
+    {
+        var values = trials
+            .Select(selector)
+            .Where(IsFinitePositive)
+            .Select(static value => value!.Value)
+            .OrderBy(static value => value)
+            .ToArray();
+        if (values.Length == 0)
+        {
+            return null;
+        }
+
+        return new GateAOriginalMetricSummary(
+            key,
+            label,
+            unit,
+            Median(values),
+            values[0],
+            values[^1]);
     }
 
     private static GateACandidateBar[] BuildCandidateBars(
@@ -335,8 +441,61 @@ public static class GateAResultPresentation
         GpuAutoAffinityReport report,
         GpuAutoAffinityCandidateReport? compared,
         IReadOnlyList<GateAMetricComparison> metrics,
-        bool verifiedKeep)
+        bool verifiedKeep,
+        bool baselineQualificationFailed)
     {
+        if (baselineQualificationFailed)
+        {
+            var scoredOriginals = CountScoredOriginalTrials(report, ScreeningOriginalPhaseName);
+            var selected = report.RequestedProcessors.Count;
+            var tested = report.ValidatedProcessors.Count;
+            var notReached = Math.Max(0, selected - tested);
+            var terminalOriginalVerified = report.OriginalStateRestored && report.FinalStateVerified;
+            return
+            [
+                new GateADecisionEvidenceRow(
+                    "Original qualification",
+                    "Unstable",
+                    $"{scoredOriginals} scored Original measurement(s) did not produce a stable three-run 1% low cluster under the bounded qualification policy."),
+                new GateADecisionEvidenceRow(
+                    "Candidate testing",
+                    "Not started",
+                    $"{selected} candidate CPU(s) selected · {tested} candidate CPU(s) tested · {notReached} not reached. Candidate mutation did not start."),
+                new GateADecisionEvidenceRow(
+                    "Runtime ISR placement",
+                    "Not required",
+                    "No candidate was retained, so final candidate ISR-placement proof was not required."),
+                new GateADecisionEvidenceRow(
+                    "Final machine state",
+                    terminalOriginalVerified ? "Restored" : "Needs attention",
+                    terminalOriginalVerified
+                        ? "The exact original GPU affinity state was restored and verified."
+                        : "The report does not prove a verified restored Original state."),
+            ];
+        }
+
+        if (report.OriginalDiagnostic is { } diagnostic)
+        {
+            var terminalOriginalVerified = report.OriginalStateRestored && report.FinalStateVerified;
+            return
+            [
+                new GateADecisionEvidenceRow(
+                    "Original diagnostic",
+                    diagnostic.Repeatable ? "Repeatable" : "Unstable",
+                    diagnostic.Reason),
+                new GateADecisionEvidenceRow(
+                    "Candidate testing",
+                    "Not run",
+                    "Original-only diagnostic scope performs no affinity mutation or device restart and does not measure candidate benefit."),
+                new GateADecisionEvidenceRow(
+                    "Final machine state",
+                    terminalOriginalVerified ? "Verified" : "Needs attention",
+                    terminalOriginalVerified
+                        ? "The exact original GPU affinity state remained active and was verified."
+                        : "The report does not prove the terminal Original state."),
+            ];
+        }
+
         var primary = metrics.First(static metric => metric.Key == "low1");
         var primaryState = primary.State switch
         {
@@ -411,8 +570,18 @@ public static class GateAResultPresentation
     private static string BuildSummary(
         GpuAutoAffinityReport report,
         GpuAutoAffinityCandidateReport? compared,
-        bool verifiedKeep)
+        bool verifiedKeep,
+        bool baselineQualificationFailed)
     {
+        if (baselineQualificationFailed)
+        {
+            var scoredOriginals = CountScoredOriginalTrials(report, ScreeningOriginalPhaseName);
+            var terminalState = report.OriginalStateRestored && report.FinalStateVerified
+                ? "The exact Original GPU affinity policy was restored and verified."
+                : "Candidate testing did not start, but the terminal Original state is not fully verified.";
+            return $"{scoredOriginals} scored Original measurements completed. No stable three-run 1% low cluster was found within the bounded Original qualification policy, so candidate testing did not start. {terminalState}";
+        }
+
         if (report.OriginalDiagnostic is { } diagnostic)
         {
             return $"{diagnostic.ObservationCount} Original observations; 1%-low noise {diagnostic.OnePercentLowRelativeNoise:P1}, AVG noise {diagnostic.AvgRelativeNoise:P1}, frame-p99 noise {diagnostic.FrameP99RelativeNoise:P1}. {diagnostic.Reason} Final state verified: {report.FinalStateVerified}.";
@@ -446,6 +615,37 @@ public static class GateAResultPresentation
         return "Gate A produced a report, but the terminal machine state is not fully verified. Use the evidence and recovery status below before continuing.";
     }
 
+    private static bool IsBaselineQualificationFailure(GpuAutoAffinityReport report) =>
+        report.SearchScope != GpuAutoAffinitySearchScope.OriginalDiagnostics &&
+        report.DecisionBaseline is null &&
+        report.Candidates.Count == 0 &&
+        report.Pairs.Count == 0 &&
+        CountScoredOriginalTrials(report, ScreeningOriginalPhaseName) > 0;
+
+    private static string BuildOriginalEvidenceDetail(
+        GpuAutoAffinityReport report,
+        bool baselineQualificationFailed)
+    {
+        if (baselineQualificationFailed)
+        {
+            var scored = CountScoredOriginalTrials(report, ScreeningOriginalPhaseName);
+            var selected = report.RequestedProcessors.Count;
+            var tested = report.ValidatedProcessors.Count;
+            var notReached = Math.Max(0, selected - tested);
+            return $"{scored} scored Original measurement(s). Qualification requires a stable three-run 1% low cluster: ±3% preferred, with bounded recovery up to ±6%. No valid cluster was found. {selected} candidate CPU(s) selected · {tested} candidate CPU(s) tested · {notReached} not reached.";
+        }
+
+        if (report.OriginalDiagnostic is { } diagnostic)
+        {
+            var state = diagnostic.Repeatable
+                ? "Repeatable within the diagnostic budget."
+                : "Measurement is unstable before any affinity change.";
+            return $"{diagnostic.ObservationCount} scored Original measurement(s). {state} No candidate, restart, or affinity-change evidence is implied by this diagnostic.";
+        }
+
+        return string.Empty;
+    }
+
     private static string BuildCustomCoverageSummary(GpuAutoAffinityReport report)
     {
         var selected = report.RequestedProcessors.Count;
@@ -454,7 +654,26 @@ public static class GateAResultPresentation
         var stopDetail = notReached > 0
             ? " after early instability stop"
             : string.Empty;
-        return $"{selected} selected · {tested} tested · {notReached} not reached{stopDetail}";
+        return $"{selected} candidate CPUs selected · {tested} candidate CPUs tested · {notReached} not reached{stopDetail}";
+    }
+
+    private static int CountScoredOriginalTrials(GpuAutoAffinityReport report, string phase) =>
+        report.Trials.Count(trial =>
+            string.Equals(trial.Role, "Original", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(trial.Phase, phase, StringComparison.Ordinal) &&
+            IsFinitePositive(trial.OnePercentLowFps));
+
+    private static double Median(IReadOnlyList<double> orderedValues)
+    {
+        if (orderedValues.Count == 0)
+        {
+            throw new ArgumentException("Median requires at least one value.", nameof(orderedValues));
+        }
+
+        var middle = orderedValues.Count / 2;
+        return orderedValues.Count % 2 == 0
+            ? (orderedValues[middle - 1] + orderedValues[middle]) / 2d
+            : orderedValues[middle];
     }
 
     private static string DescribeMetric(GateAMetricComparison metric, string interpretation)
