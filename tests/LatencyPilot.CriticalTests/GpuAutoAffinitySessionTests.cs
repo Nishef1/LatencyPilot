@@ -48,9 +48,9 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.AreEqual(new LogicalProcessorId(0, 3), result.Report.BestObservedProcessor);
         Assert.AreEqual("High", result.Report.SelectionConfidence);
         var winningFinalist = result.Report.Finalists.Single(static finalist => finalist.Processor == new LogicalProcessorId(0, 3));
-        Assert.AreEqual(100d, winningFinalist.MedianOriginalOnePercentLowFps, 0.001d);
-        Assert.AreEqual(115d, winningFinalist.MedianCandidateOnePercentLowFps, 0.001d);
-        Assert.AreEqual(0.15d, winningFinalist.MedianOnePercentLowEffect, 0.0001d);
+        Assert.AreEqual(100d, winningFinalist.MedianOriginalOnePercentLowFps!.Value, 0.001d);
+        Assert.AreEqual(115d, winningFinalist.MedianCandidateOnePercentLowFps!.Value, 0.001d);
+        Assert.AreEqual(0.15d, winningFinalist.MedianOnePercentLowEffect!.Value, 0.0001d);
         Assert.IsTrue(winningFinalist.RecommendedForKeep);
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "screening-original-control"));
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "finalist-original-control"));
