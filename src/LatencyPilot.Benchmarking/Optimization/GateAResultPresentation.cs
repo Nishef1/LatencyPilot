@@ -157,10 +157,10 @@ public static class GateAResultPresentation
                     ? compared is null
                         ? "Custom diagnostic result"
                         : $"Best observed · CPU {compared.Processor.Number} · diagnostic only"
-                    : verifiedKeep && report.FinalProcessor is { } keptProcessor
+                    : verifiedKeep && report.FinalProcessor is { } selectedProcessor
                         ? report.PracticalTie
-                            ? $"Best observed in practical tie · CPU {keptProcessor.Number} kept"
-                            : $"Selected · CPU {keptProcessor.Number}"
+                            ? $"Best observed in practical tie · CPU {selectedProcessor.Number} kept"
+                            : $"Selected · CPU {selectedProcessor.Number}"
                         : terminalOriginalVerified
                             ? compared is null
                                 ? "No valid candidate evidence · Original restored"
