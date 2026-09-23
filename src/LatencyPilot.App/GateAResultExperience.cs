@@ -604,10 +604,11 @@ public sealed partial class MainWindow
             var absoluteImprovement = metric.LowerIsBetter
                 ? original - candidate
                 : candidate - original;
-            var percentage = metric.ImprovementFraction is { } effect && double.IsFinite(effect)
-                ? $" ({effect:+0.0%;-0.0%;0.0%})"
+            var pairedEffect = metric.ImprovementFraction is { } effect && double.IsFinite(effect)
+                ? $" · paired {effect:+0.0%;-0.0%;0.0%}"
                 : string.Empty;
-            return $"{original:0.##} → {candidate:0.##} {metric.Unit} · +{Math.Max(0d, absoluteImprovement):0.##} {metric.Unit} improvement{percentage}";
+            var direction = absoluteImprovement >= 0d ? "improvement" : "regression";
+            return $"{original:0.##} → {candidate:0.##} {metric.Unit} · {direction} {Math.Abs(absoluteImprovement):0.##} {metric.Unit}{pairedEffect}";
         }
 
         return metric.ImprovementFraction is { } fallback && double.IsFinite(fallback)
