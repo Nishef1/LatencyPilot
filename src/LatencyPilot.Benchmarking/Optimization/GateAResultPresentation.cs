@@ -753,10 +753,11 @@ public static class GateAResultPresentation
             var absoluteImprovement = metric.LowerIsBetter
                 ? original - candidate
                 : candidate - original;
-            var percentage = metric.ImprovementFraction is { } effect && double.IsFinite(effect)
-                ? $" ({effect:+0.0%;-0.0%;0.0%})"
+            var pairedEffect = metric.ImprovementFraction is { } effect && double.IsFinite(effect)
+                ? $" paired effect {effect:+0.0%;-0.0%;0.0%}"
                 : string.Empty;
-            return $"{metric.Label}: {original:0.##} → {candidate:0.##} {metric.Unit}; improvement {absoluteImprovement:+0.##;-0.##;0} {metric.Unit}{percentage}.";
+            var direction = absoluteImprovement >= 0d ? "improvement" : "regression";
+            return $"{metric.Label}: {original:0.##} → {candidate:0.##} {metric.Unit}; {direction} {Math.Abs(absoluteImprovement):0.##} {metric.Unit};{pairedEffect}.";
         }
 
         return metric.ImprovementFraction is { } fallback && double.IsFinite(fallback)
