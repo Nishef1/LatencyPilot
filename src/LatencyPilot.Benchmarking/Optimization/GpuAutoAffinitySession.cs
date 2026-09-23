@@ -1649,7 +1649,8 @@ public sealed class GpuAutoAffinitySession
             return "High";
         }
 
-        return best.PositiveOnePercentLowPairCount >= 2 && lead > 0d
+        var mediumLeadFloor = Math.Max(0.005d, variability * 0.5d);
+        return best.PositiveOnePercentLowPairCount >= 2 && lead > mediumLeadFloor
             ? "Medium"
             : "Low";
     }
