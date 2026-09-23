@@ -58,7 +58,7 @@ NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, 
 - [x] typed observation protocol with public mutation unarmed;
 - [x] durable SQLite mutation journal and recovery ownership;
 - [x] exact original-state snapshot/restore semantics;
-- [x] GPU paired-v2 measurement authority separated from broader product/safety authority;
+- [x] GPU measurement/ranking authority separated from broader product/safety authority;
 - [x] NIC/audio/generic cross-subsystem tuning removed from the v1 critical path.
 
 ### Exit gate

@@ -59,7 +59,7 @@ Authoritative GPU evidence records where applicable:
 - requested mutation and verified stored state;
 - raw trial/capture identity;
 - pair identity/attempt/verdict/effects/control movement/drift budget;
-- finalist pair membership and decision floor;
+- finalist pair membership, robust noise/MAD context and Keep recommendation;
 - requested/validated processors and realized execution order;
 - final recommendation and terminal state.
 

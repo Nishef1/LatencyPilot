@@ -83,7 +83,7 @@ The v3 report persists raw trials/pairs, finalist medians, effect MAD, positive-
 
 The developer UI provides:
 
-- **Full search** — the authoritative paired-v2 machine search.
+- **Full search** — the authoritative noise-tolerant v3 machine search.
 - **Selected CPUs · restore Original** — real paired screening for an exact subset; diagnostic-only, no finalist Keep, always restores Original, cannot close Gate A.
 - **Original only · no system changes** — five 10 s Original observations with no affinity mutation or device restart.
 
@@ -108,7 +108,7 @@ The result surface now distinguishes:
 - actual median Original → Candidate 1% low / AVG FPS and frame-p99 ms;
 - absolute FPS/ms improvement plus paired percentage effect;
 - practical tie from “no result”;
-- MAD/noise detail from a hard decision floor;
+- MAD/noise detail instead of a hard winner decision floor;
 - direct pair evidence and exact terminal machine state.
 
 Candidate bars remain based on persisted paired 1%-low effect and UI code does not invent a second ranking. A RestoreOriginal result can still truthfully show the best-observed CPU.
