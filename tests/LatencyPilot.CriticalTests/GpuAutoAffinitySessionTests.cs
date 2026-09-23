@@ -43,8 +43,15 @@ public sealed class GpuAutoAffinitySessionTests
             new byte[] { 0, 1, 2, 3 },
             result.Report.ValidatedProcessors.Select(static processor => processor.Number).ToArray(),
             "The two physical-core representatives and both selected SMT siblings should be screened on this synthetic topology.");
-        Assert.AreEqual(2, result.Report.Finalists.Count);
+        Assert.AreEqual(3, result.Report.Finalists.Count);
         Assert.IsTrue(result.Report.Finalists.All(static finalist => finalist.PairNumbers.Count == 3));
+        Assert.AreEqual(new LogicalProcessorId(0, 3), result.Report.BestObservedProcessor);
+        Assert.AreEqual("High", result.Report.SelectionConfidence);
+        var winningFinalist = result.Report.Finalists.Single(static finalist => finalist.Processor == new LogicalProcessorId(0, 3));
+        Assert.AreEqual(100d, winningFinalist.MedianOriginalOnePercentLowFps, 0.001d);
+        Assert.AreEqual(115d, winningFinalist.MedianCandidateOnePercentLowFps, 0.001d);
+        Assert.AreEqual(0.15d, winningFinalist.MedianOnePercentLowEffect, 0.0001d);
+        Assert.IsTrue(winningFinalist.RecommendedForKeep);
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "screening-original-control"));
         Assert.IsTrue(result.Report.Trials.Any(static trial => trial.Phase == "finalist-original-control"));
         var finalVerification = result.Report.Trials.Single(static trial => trial.Phase == "final-verification");
@@ -73,6 +80,8 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsTrue(custom.Report.OriginalStateRestored);
         Assert.IsTrue(custom.Report.FinalStateVerified);
         Assert.IsNull(custom.Report.FinalProcessor);
+        Assert.AreEqual(new LogicalProcessorId(0, 3), custom.Report.BestObservedProcessor);
+        Assert.AreEqual("Low", custom.Report.SelectionConfidence);
         Assert.AreEqual(0, custom.Report.Finalists.Count,
             "Custom scope is fast screening-only evidence and must skip the finalist tournament.");
         CollectionAssert.AreEquivalent(
@@ -117,7 +126,7 @@ public sealed class GpuAutoAffinitySessionTests
     }
 
     [AuditCase]
-    public async Task SessionBoundsOriginalQualificationAndAbortsRepeatedlyUnstablePairsEarly()
+    public async Task SessionUsesNoiseToLowerConfidenceWithoutErasingTheBestObservedCpu()
     {
         var (topology, pressure) = CreateSmtTopology();
         var request = new GpuAutoAffinitySessionRequest(
@@ -127,32 +136,44 @@ public sealed class GpuAutoAffinitySessionTests
         var recoverableOriginalBackend = new ScriptedBackend(recoverableOriginalOutlier: true);
         var recoverable = await new GpuAutoAffinitySession(recoverableOriginalBackend).RunAsync(request);
         Assert.AreEqual(
-            4,
+            3,
             recoverableOriginalBackend.Events.Count(static item =>
                 item.StartsWith("original:screening-original:", StringComparison.Ordinal)),
-            "One Original outlier should be recovered by the bounded fourth scored observation.");
+            "Median/MAD should tolerate one isolated Original outlier without forcing extra acquisition.");
         Assert.IsTrue(recoverableOriginalBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)));
+        Assert.IsNotNull(recoverable.Report.BestObservedProcessor);
 
         var persistentOriginalBackend = new ScriptedBackend(persistentlyNoisyOriginal: true);
         var persistent = await new GpuAutoAffinitySession(persistentOriginalBackend).RunAsync(request with { SessionId = Guid.NewGuid() });
-        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, persistent.Recommendation);
         Assert.AreEqual(
             5,
             persistentOriginalBackend.Events.Count(static item =>
                 item.StartsWith("original:screening-original:", StringComparison.Ordinal)));
-        Assert.IsFalse(persistentOriginalBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)),
-            "Unstable initial Original qualification must stop before the first mutation.");
+        Assert.IsTrue(
+            persistentOriginalBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)),
+            "Broad but structurally valid Original variability must reduce confidence rather than block candidate measurement.");
+        Assert.IsNotNull(persistent.Report.BestObservedProcessor);
+        Assert.AreNotEqual("Unavailable", persistent.Report.SelectionConfidence);
 
         var unstableBackend = new ScriptedBackend(unstablePairControls: true);
         var unstable = await new GpuAutoAffinitySession(unstableBackend).RunAsync(request with { SessionId = Guid.NewGuid() });
-        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, unstable.Recommendation);
-        Assert.IsTrue(unstable.Report.OriginalStateRestored);
-        Assert.AreEqual(4, unstable.Report.Pairs.Count,
-            "Two candidates should each consume exactly two local-pair attempts before early abort.");
-        Assert.AreEqual(2, unstable.Report.Pairs.Count(static pair => pair.Verdict == GpuAutoAffinityPairVerdict.Inconclusive));
-        Assert.AreEqual(4, unstableBackend.Events.Count(static item => item.StartsWith("apply:", StringComparison.Ordinal)));
-        Assert.AreEqual(0, unstable.Report.Finalists.Count);
-        Assert.IsTrue(unstable.Report.Reasons.Any(static reason =>
+        CollectionAssert.AreEquivalent(
+            new byte[] { 0, 1, 2, 3 },
+            unstable.Report.ValidatedProcessors.Select(static processor => processor.Number).ToArray(),
+            "Noisy local controls must not stop the search after two candidates.");
+        Assert.IsNotNull(unstable.Report.BestObservedProcessor,
+            "Structurally valid noisy measurements must still yield a best-observed CPU.");
+        Assert.IsTrue(unstable.Report.Pairs.Any(static pair => pair.Verdict == GpuAutoAffinityPairVerdict.Unstable),
+            "The first high-drift attempts remain visible as noise evidence.");
+        Assert.IsTrue(unstable.Report.Pairs.Any(static pair =>
+            pair.Verdict == GpuAutoAffinityPairVerdict.Valid &&
+            pair.ControlMovement > pair.DriftBudget),
+            "After one retry, a still-noisy but structurally valid pair remains rankable and lowers confidence.");
+        Assert.AreEqual(
+            0,
+            unstable.Report.Pairs.Count(static pair => pair.Verdict == GpuAutoAffinityPairVerdict.Inconclusive),
+            "Ordinary control drift alone must not erase a candidate from ranking.");
+        Assert.IsFalse(unstable.Report.Reasons.Any(static reason =>
             reason.Contains("stopped early", StringComparison.OrdinalIgnoreCase)));
     }
 

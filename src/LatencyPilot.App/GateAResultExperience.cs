@@ -81,6 +81,15 @@ public sealed partial class MainWindow
             result.EligibilityLabel,
             result.GateAClosureEligible ? "ChartAccentPrimaryBrush" : "SemanticAttentionBrush",
             result.GateAClosureEligible ? "BrandActionSoftBrush" : "SemanticAttentionSoftBrush"));
+        if (!string.Equals(result.SelectionConfidence, "Unavailable", StringComparison.OrdinalIgnoreCase))
+        {
+            var confidenceIsHigh = string.Equals(result.SelectionConfidence, "High", StringComparison.OrdinalIgnoreCase);
+            badges.Children.Add(BuildStatusBadge(
+                card,
+                $"Confidence: {result.SelectionConfidence}",
+                confidenceIsHigh ? "SemanticGoodBrush" : "SemanticAttentionBrush",
+                confidenceIsHigh ? "SemanticGoodSoftBrush" : "SemanticAttentionSoftBrush"));
+        }
         badges.Children.Add(BuildStatusBadge(
             card,
             result.TerminalStateLabel,
@@ -225,7 +234,7 @@ public sealed partial class MainWindow
             content.Children.Add(new TextBlock
             {
                 Text = metric.ImprovementFraction is not null
-                    ? $"Paired Original → Candidate → Original · decision floor / local uncertainty {metric.UncertaintyFraction:P1}"
+                    ? $"Median paired comparison · noise / uncertainty guide {metric.UncertaintyFraction:P1} · confidence {result.SelectionConfidence}"
                     : "No comparable decision aggregate is available.",
                 Style = AppStyle("CaptionTextStyle"),
                 TextWrapping = TextWrapping.Wrap,
@@ -344,7 +353,7 @@ public sealed partial class MainWindow
                 var pairNumbers = finalist.PairNumbers.Count == 0 ? "none" : string.Join(", ", finalist.PairNumbers);
                 stack.Children.Add(new TextBlock
                 {
-                    Text = $"CPU {finalist.Processor.Number} · median 1% low {median} · decision floor {(finalist.DecisionFloor is { } floor ? floor.ToString("P1", System.Globalization.CultureInfo.InvariantCulture) : "—")} · {finalist.Verdict} · pairs {pairNumbers}",
+                    Text = $"CPU {finalist.Processor.Number} · median 1% low {median} · effect MAD {(finalist.OnePercentLowEffectMedianAbsoluteDeviation is { } mad ? mad.ToString("P1", System.Globalization.CultureInfo.InvariantCulture) : "—")} · noise guide {(finalist.NoiseFraction is { } noise ? noise.ToString("P1", System.Globalization.CultureInfo.InvariantCulture) : "—")} · {finalist.Verdict} · pairs {pairNumbers}",
                     Style = AppStyle("CaptionTextStyle"),
                     TextWrapping = TextWrapping.Wrap,
                 });
@@ -375,7 +384,7 @@ public sealed partial class MainWindow
                 });
                 header.Children.Add(new TextBlock
                 {
-                    Text = $"1% low effect {pair.OnePercentLowEffect:+0.0%;-0.0%;0.0%} · Control movement {pair.ControlMovement:P1} / {pair.DriftBudget:P1} budget · {pair.Verdict}",
+                    Text = $"1% low effect {pair.OnePercentLowEffect:+0.0%;-0.0%;0.0%} · Control movement {pair.ControlMovement:P1} / {pair.DriftBudget:P1} noise guide · {pair.Verdict}",
                     FontSize = 11d,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                     Foreground = PairVerdictBrush(card, pair.Verdict),
@@ -585,10 +594,26 @@ public sealed partial class MainWindow
         }
     }
 
-    private static string FormatMetricComparison(GateAMetricComparison metric) =>
-        metric.ImprovementFraction is { } effect && double.IsFinite(effect)
-            ? $"{effect:+0.0%;-0.0%;0.0%} paired effect"
+    private static string FormatMetricComparison(GateAMetricComparison metric)
+    {
+        if (metric.OriginalValue is { } original &&
+            metric.CandidateValue is { } candidate &&
+            double.IsFinite(original) &&
+            double.IsFinite(candidate))
+        {
+            var absoluteImprovement = metric.LowerIsBetter
+                ? original - candidate
+                : candidate - original;
+            var percentage = metric.ImprovementFraction is { } effect && double.IsFinite(effect)
+                ? $" ({effect:+0.0%;-0.0%;0.0%})"
+                : string.Empty;
+            return $"{original:0.##} → {candidate:0.##} {metric.Unit} · +{Math.Max(0d, absoluteImprovement):0.##} {metric.Unit} improvement{percentage}";
+        }
+
+        return metric.ImprovementFraction is { } fallback && double.IsFinite(fallback)
+            ? $"{fallback:+0.0%;-0.0%;0.0%} paired effect"
             : "—";
+    }
 
     private static string FormatPairStage(string stage) => stage switch
     {
@@ -622,7 +647,8 @@ public sealed partial class MainWindow
     private static Brush DecisionStateBrush(FrameworkElement owner, string state) =>
         DashboardThemeResources.Brush(owner,
             string.Equals(state, "Passed", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(state, "Decision-grade", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(state, "High", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(state, "Best observed", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(state, "Restored", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(state, "Verified", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(state, "Repeatable", StringComparison.OrdinalIgnoreCase)
@@ -631,6 +657,10 @@ public sealed partial class MainWindow
                   string.Equals(state, "Blocked", StringComparison.OrdinalIgnoreCase)
                     ? "SemanticFailureBrush"
                     : string.Equals(state, "Diagnostic only", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(state, "Medium", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(state, "Low", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(state, "Ranked", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(state, "Not kept", StringComparison.OrdinalIgnoreCase) ||
                       string.Equals(state, "Unavailable", StringComparison.OrdinalIgnoreCase) ||
                       string.Equals(state, "Unstable", StringComparison.OrdinalIgnoreCase) ||
                       string.Equals(state, "Not started", StringComparison.OrdinalIgnoreCase) ||

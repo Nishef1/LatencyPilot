@@ -45,8 +45,10 @@ public sealed class GateAResultCompletionContractTests
         StringAssert.Contains(resultExperience, "Copy ZIP path");
         StringAssert.Contains(resultExperience, "Open session folder");
         StringAssert.Contains(resultExperience, "Open raw report");
-        StringAssert.Contains(resultExperience, "paired effect",
-            "The result metric card must render the persisted paired effect instead of an empty absolute Original-to-candidate value pair.");
+        StringAssert.Contains(resultExperience, "improvement",
+            "The result metric card must render user-readable before/after absolute and percentage improvement.");
+        StringAssert.Contains(resultExperience, "Confidence:",
+            "The result hero must expose selection confidence separately from the selected CPU.");
         StringAssert.Contains(resultExperience, "BuildGateAPairEvidence",
             "The v2 result must expose the direct Original -> Candidate -> Original evidence instead of hiding it only in raw JSON.");
         StringAssert.Contains(resultExperience, "Original before");
@@ -130,8 +132,12 @@ public sealed class GateAResultCompletionContractTests
             "Candidate presentation rows must preserve the optimizer-persisted decision rank.");
         StringAssert.Contains(presentation, "screening-finalists",
             "When finalist authority exists, the result presentation must prefer the three-pair finalist aggregate over a short-screen row with the same persisted rank.");
-        StringAssert.Contains(presentation, "Best within selected CPUs",
-            "Custom diagnostic results must describe their restricted authority rather than implying a machine-wide winner.");
+        StringAssert.Contains(presentation, "Best observed within the selected CPUs",
+            "Custom diagnostic results must expose the best observed CPU while preserving their restricted authority.");
+        StringAssert.Contains(presentation, "DescribeUserGain",
+            "The result model must expose raw before/after values, absolute gain and percentage improvement.");
+        StringAssert.Contains(presentation, "SelectionConfidence",
+            "Noise must be presented as confidence instead of deleting the winner.");
         StringAssert.Contains(presentation, "Custom diagnostic result",
             "Custom scope needs an explicit primary result status.");
         StringAssert.Contains(presentation, "selected ·",
@@ -190,8 +196,10 @@ public sealed class GateAResultCompletionContractTests
             "LatencyPilot.Benchmarking",
             "Optimization",
             "GpuAutoAffinitySession.cs"));
-        StringAssert.Contains(sessionSource, "DecisionFloor = decisionFloor",
-            "The finalist decision floor used to accept a winner must be persisted for the evidence UI instead of silently becoming zero.");
+        StringAssert.Contains(sessionSource, "NoiseFraction = noiseGuide",
+            "The robust noise guide must be persisted for confidence/explanation without becoming a winner threshold.");
+        StringAssert.Contains(sessionSource, "BestObservedProcessor",
+            "A valid ranked CPU must survive into the terminal report even when the session restores Original.");
 
         var scopeExperience = File.ReadAllText(FindRepositoryFile(
             "src",
@@ -249,7 +257,12 @@ public sealed class GateAResultCompletionContractTests
             "LatencyPilot.Core",
             "Benchmarking",
             "GpuAutoAffinityReport.cs"));
-        StringAssert.Contains(reportContract, "latencypilot-gpu-auto-affinity-report-v2");
+        StringAssert.Contains(reportContract, "latencypilot-gpu-auto-affinity-report-v3");
+        StringAssert.Contains(reportContract, "BestObservedProcessor");
+        StringAssert.Contains(reportContract, "SelectionConfidence");
+        StringAssert.Contains(reportContract, "MedianOriginalOnePercentLowFps");
+        StringAssert.Contains(reportContract, "MedianCandidateOnePercentLowFps");
+        StringAssert.Contains(reportContract, "RecommendedForKeep");
         StringAssert.Contains(reportContract, "GpuAutoAffinitySearchScope");
         StringAssert.Contains(reportContract, "GpuAutoAffinityPairVerdict");
         StringAssert.Contains(reportContract, "GpuAutoAffinityPairReport");

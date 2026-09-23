@@ -98,7 +98,7 @@ public sealed class GpuBenchmarkContractTests
         var evidence = new GpuBenchmarkEvidence(
             GpuBenchmarkEvidence.SchemaId,
             new string('a', 40),
-            "gpu-affinity-benchmark-v2",
+            GpuBenchmarkEvidence.MethodIdValue,
             "windows-test",
             "gpu-test",
             "driver-test",

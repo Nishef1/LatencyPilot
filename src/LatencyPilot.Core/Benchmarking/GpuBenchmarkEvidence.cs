@@ -30,11 +30,11 @@ public sealed record GpuBenchmarkEvidence(
     IReadOnlyList<double>? FramePeriodMilliseconds = null)
 {
     // The evidence envelope is unchanged, so its schema remains v1. The method
-    // identity is versioned independently because paired-v2 changed how scored
-    // trials are sequenced and interpreted. New evidence must never be mistaken
-    // for the historical block-normalization method.
+    // identity is versioned independently because v3 changed how measurement
+    // noise affects ranking and confidence. New evidence must never be
+    // reinterpreted using the historical v1/v2 decision rules.
     public const string SchemaId = "latencypilot-gpu-benchmark-v1";
-    public const string MethodIdValue = "gpu-affinity-benchmark-v2";
+    public const string MethodIdValue = "gpu-affinity-benchmark-v3";
 }
 
 /// <summary>

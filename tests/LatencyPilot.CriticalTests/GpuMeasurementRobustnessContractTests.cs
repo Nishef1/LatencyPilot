@@ -12,48 +12,30 @@ namespace LatencyPilot.CriticalTests;
 public sealed class GpuMeasurementRobustnessContractTests
 {
     [AuditCase]
-    public void RepeatabilitySelectorRecoversOneModeratelySpreadThreeRunClusterButRejectsBroadInstability()
+    public void RankingUsesMedianAndMadWithoutTurningNoiseIntoANoWinnerGate()
     {
-        var selectorType = typeof(GpuAutoAffinitySession).Assembly.GetType(
-            "LatencyPilot.Benchmarking.Optimization.GpuRepeatabilityClusterSelector",
-            throwOnError: true)!;
-        var select = selectorType.GetMethod(
-            "Select",
-            BindingFlags.Static | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("GPU repeatability selector entry point was not found.");
-        var recoveryToleranceField = selectorType.GetField(
-            "RecoveryRelativeTolerance",
-            BindingFlags.Static | BindingFlags.NonPublic);
-        Assert.IsNotNull(recoveryToleranceField,
-            "The four-attempt recovery path needs an explicit bounded tolerance rather than a hidden magic number.");
-        var recoveryTolerance = (double)recoveryToleranceField.GetRawConstantValue()!;
+        var sessionSource = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.Benchmarking",
+            "Optimization",
+            "GpuAutoAffinitySession.cs"));
+        var reportSource = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.Core",
+            "Benchmarking",
+            "GpuAutoAffinityReport.cs"));
 
-        // Mirrors the shape seen on physical Gate A: one very fast Original sample
-        // followed by three ordinary samples that are not inside the preferred ±3%
-        // band, but are still a coherent local regime. The observed ~5.6% spread is
-        // retained as decision uncertainty; the gross sample must not force a ~25%
-        // whole-session noise floor.
-        var physicalRunShape = new[] { 258.9d, 191.7d, 203.1d, 211.6d };
-        var recovered = select.Invoke(null, [physicalRunShape]);
-
-        Assert.IsNotNull(recovered,
-            "After the fourth scored attempt, one gross sample must not mask a coherent three-run recovery cluster.");
-        var indexes = (int[])recovered.GetType().GetProperty("Indexes")!.GetValue(recovered)!;
-        var maximumRelativeDeviation = (double)recovered.GetType()
-            .GetProperty("MaximumRelativeDeviation")!
-            .GetValue(recovered)!;
-        Assert.AreEqual(3, indexes.Length);
-        Assert.IsFalse(indexes.Contains(0),
-            "The gross high sample must stay in the audit trail but not define the decision cluster.");
-        Assert.IsLessThanOrEqualTo(
-            recoveryTolerance,
-            maximumRelativeDeviation,
-            "Recovery must stay bounded; it is not permission to absorb arbitrary Windows variance.");
-
-        var broadlyUnstable = new[] { 76.9d, 62.5d, 52.6d, 45.5d };
-        Assert.IsNull(
-            select.Invoke(null, [broadlyUnstable]),
-            "Broad multi-run instability must still fall through to the explicit all-run noise-aware path rather than deleting whichever point is inconvenient.");
+        StringAssert.Contains(sessionSource, "MedianAbsoluteDeviation");
+        StringAssert.Contains(sessionSource, "RelativeMedianAbsoluteDeviation");
+        StringAssert.Contains(sessionSource, "DetermineSelectionConfidence");
+        StringAssert.Contains(sessionSource, "RecommendedForKeep");
+        Assert.IsFalse(
+            sessionSource.Contains("GpuRepeatabilityClusterSelector.Select(", StringComparison.Ordinal),
+            "The historical cluster selector may remain as a utility, but it must not own v3 ranking authority.");
+        StringAssert.Contains(reportSource, "BestObservedProcessor");
+        StringAssert.Contains(reportSource, "SelectionConfidence");
+        StringAssert.Contains(reportSource, "OnePercentLowEffectMedianAbsoluteDeviation");
+        StringAssert.Contains(reportSource, "RecommendedForKeep");
     }
 
     [AuditCase]

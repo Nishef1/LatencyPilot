@@ -154,7 +154,34 @@ public sealed record GpuAutoAffinityFinalistReport(
     string Verdict,
     string Reason)
 {
+    // Retained for historical v2 report compatibility. In v3 this value is a
+    // displayed noise guide only; it is never a threshold that erases a valid
+    // best-observed CPU from ranking.
     public double? DecisionFloor { get; init; }
+
+    public double? NoiseFraction { get; init; }
+
+    public double? OnePercentLowEffectMedianAbsoluteDeviation { get; init; }
+
+    public int PositiveOnePercentLowPairCount { get; init; }
+
+    public double? MedianOriginalOnePercentLowFps { get; init; }
+
+    public double? MedianCandidateOnePercentLowFps { get; init; }
+
+    public double? MedianOriginalAvgFps { get; init; }
+
+    public double? MedianCandidateAvgFps { get; init; }
+
+    public double? MedianOriginalFrameP99Milliseconds { get; init; }
+
+    public double? MedianCandidateFrameP99Milliseconds { get; init; }
+
+    public double? MedianOriginalLow01PctFps { get; init; }
+
+    public double? MedianCandidateLow01PctFps { get; init; }
+
+    public bool RecommendedForKeep { get; init; }
 }
 
 public sealed record GpuAutoAffinityCandidateReport(
@@ -240,7 +267,7 @@ public sealed record GpuAutoAffinityReport(
 {
     private const string FinalistPhaseName = "screening-finalists";
 
-    public const string SchemaId = "latencypilot-gpu-auto-affinity-report-v2";
+    public const string SchemaId = "latencypilot-gpu-auto-affinity-report-v3";
 
     public string SourceState { get; init; } = "unknown";
 
@@ -259,6 +286,12 @@ public sealed record GpuAutoAffinityReport(
     public IReadOnlyList<GpuAutoAffinityFinalistReport> Finalists { get; init; } = [];
 
     public bool PracticalTie { get; init; }
+
+    public LogicalProcessorId? BestObservedProcessor { get; init; }
+
+    public double? BestObservedOnePercentLowEffect { get; init; }
+
+    public string SelectionConfidence { get; init; } = "Unavailable";
 
     public GpuOriginalDiagnosticReport? OriginalDiagnostic { get; init; }
 

@@ -73,6 +73,7 @@ public sealed record GateAResultViewModel(
     LogicalProcessorId? ComparedProcessor,
     bool ComparedCandidateIsDiagnosticOnly,
     string ComparedCandidateLabel,
+    string SelectionConfidence,
     IReadOnlyList<GateAMetricComparison> Metrics,
     IReadOnlyList<GateACandidateBar> Candidates,
     IReadOnlyList<GateATrialPoint> Trials,
@@ -122,9 +123,10 @@ public static class GateAResultPresentation
         var comparedProcessor = compared?.Processor;
         var diagnosticOnly = compared is not null && !verifiedKeep;
         var localControlUncertainty = SanitizeUncertainty(
-            report.Finalists.LastOrDefault(finalist => finalist.Processor == comparedProcessor)?.DecisionFloor
+            report.Finalists.LastOrDefault(finalist => finalist.Processor == comparedProcessor)?.NoiseFraction
+            ?? report.Finalists.LastOrDefault(finalist => finalist.Processor == comparedProcessor)?.DecisionFloor
             ?? compared?.LocalControlUncertainty);
-        var metrics = BuildMetricComparisons(compared, localControlUncertainty, verifiedKeep);
+        var metrics = BuildMetricComparisons(report, compared, localControlUncertainty, verifiedKeep);
         var candidateBars = BuildCandidateBars(report, comparedProcessor, verifiedKeep);
         var trialPoints = BuildTrialPoints(report);
         var terminalOriginalVerified = report.FinalStateVerified && report.OriginalStateRestored;
@@ -147,22 +149,24 @@ public static class GateAResultPresentation
 
         var title = baselineQualificationFailed
             ? terminalOriginalVerified
-                ? "Baseline instability detected"
-                : "Baseline unstable · recovery needs attention"
+                ? "Baseline evidence unavailable"
+                : "Baseline evidence unavailable · recovery needs attention"
             : report.OriginalDiagnostic is { } diagnostic
-                ? diagnostic.Repeatable ? "Original repeatable in this sample" : "Original variability is too high"
+                ? diagnostic.Repeatable ? "Original repeatable in this sample" : "Original variability is high"
                 : report.SearchScope == GpuAutoAffinitySearchScope.Custom && terminalOriginalVerified
-                    ? "Custom diagnostic result"
-                    : verifiedKeep
+                    ? compared is null
+                        ? "Custom diagnostic result"
+                        : $"Best observed · CPU {compared.Processor.Number} · diagnostic only"
+                    : verifiedKeep && report.FinalProcessor is { } keptProcessor
                         ? report.PracticalTie
-                            ? $"Practical tie · CPU {report.FinalProcessor!.Value.Number} kept"
-                            : $"Winner · CPU {report.FinalProcessor!.Value.Number} kept"
+                            ? $"Best observed in practical tie · CPU {keptProcessor.Number} kept"
+                            : $"Selected · CPU {keptProcessor.Number}"
                         : terminalOriginalVerified
                             ? compared is null
-                                ? "Inconclusive · Original restored"
-                                : "No measured winner · Original restored"
+                                ? "No valid candidate evidence · Original restored"
+                                : $"Best observed · CPU {compared.Processor.Number} · Original restored"
                             : "Result needs attention";
-        var summary = BuildSummary(report, compared, verifiedKeep, baselineQualificationFailed);
+        var summary = BuildSummary(report, compared, metrics, verifiedKeep, baselineQualificationFailed);
         var gateAResultEligible = report.SearchScope == GpuAutoAffinitySearchScope.Full && report.GateAClosureEligible;
         var eligibilityLabel = report.SearchScope == GpuAutoAffinitySearchScope.Full
             ? gateAResultEligible ? "Evidence eligible" : "Development evidence"
@@ -206,6 +210,7 @@ public static class GateAResultPresentation
             comparedProcessor,
             diagnosticOnly,
             comparedLabel,
+            report.SelectionConfidence,
             metrics,
             candidateBars,
             trialPoints,
@@ -271,27 +276,67 @@ public static class GateAResultPresentation
     }
 
     private static GateAMetricComparison[] BuildMetricComparisons(
+        GpuAutoAffinityReport report,
         GpuAutoAffinityCandidateReport? candidate,
         double localControlUncertainty,
-        bool verifiedKeep) =>
+        bool verifiedKeep)
+    {
+        var finalist = report.Finalists.LastOrDefault(item => item.Processor == candidate?.Processor);
+        return
         [
             CreateMetric(
-                "low1", "1% low", candidate?.DecisionOnePercentLowEffect,
-                lowerIsBetter: false, localControlUncertainty, verifiedKeep, primaryMetric: true),
+                "low1",
+                "1% low",
+                "FPS",
+                finalist?.MedianOriginalOnePercentLowFps ?? report.DecisionBaseline?.OnePercentLowFps,
+                finalist?.MedianCandidateOnePercentLowFps ?? candidate?.DecisionOnePercentLowFps,
+                candidate?.DecisionOnePercentLowEffect,
+                lowerIsBetter: false,
+                localControlUncertainty,
+                verifiedKeep,
+                primaryMetric: true),
             CreateMetric(
-                "avg", "Average", candidate?.DecisionAvgEffect,
-                lowerIsBetter: false, localControlUncertainty, verifiedKeep, primaryMetric: false),
+                "avg",
+                "Average",
+                "FPS",
+                finalist?.MedianOriginalAvgFps ?? report.DecisionBaseline?.AvgFps,
+                finalist?.MedianCandidateAvgFps ?? candidate?.DecisionAvgFps,
+                candidate?.DecisionAvgEffect,
+                lowerIsBetter: false,
+                localControlUncertainty,
+                verifiedKeep,
+                primaryMetric: false),
             CreateMetric(
-                "p99", "Frame p99", candidate?.DecisionFrameP99Effect,
-                lowerIsBetter: true, localControlUncertainty, verifiedKeep, primaryMetric: false),
+                "p99",
+                "Frame p99",
+                "ms",
+                finalist?.MedianOriginalFrameP99Milliseconds ?? report.DecisionBaseline?.FrameP99Milliseconds,
+                finalist?.MedianCandidateFrameP99Milliseconds ?? candidate?.DecisionFrameP99Milliseconds,
+                candidate?.DecisionFrameP99Effect,
+                lowerIsBetter: true,
+                localControlUncertainty,
+                verifiedKeep,
+                primaryMetric: false),
             CreateMetric(
-                "low01", "0.1% low", candidate?.DecisionLow01PctEffect,
-                lowerIsBetter: false, localControlUncertainty, verifiedKeep: false, primaryMetric: false),
+                "low01",
+                "0.1% low",
+                "FPS",
+                finalist?.MedianOriginalLow01PctFps ?? report.DecisionBaseline?.Low01PctFps,
+                finalist?.MedianCandidateLow01PctFps ?? candidate?.DecisionLow01PctFps,
+                candidate?.DecisionLow01PctEffect,
+                lowerIsBetter: false,
+                localControlUncertainty,
+                verifiedKeep: false,
+                primaryMetric: false),
         ];
+    }
 
     private static GateAMetricComparison CreateMetric(
         string key,
         string label,
+        string unit,
+        double? original,
+        double? candidate,
         double? effect,
         bool lowerIsBetter,
         double localControlUncertainty,
@@ -301,7 +346,7 @@ public static class GateAResultPresentation
         if (!IsFinite(effect))
         {
             return new GateAMetricComparison(
-                key, label, "%", null, null, null, localControlUncertainty,
+                key, label, unit, original, candidate, null, localControlUncertainty,
                 GateAMetricState.Unavailable, lowerIsBetter);
         }
 
@@ -311,7 +356,7 @@ public static class GateAResultPresentation
                 ? GateAMetricState.Improved
                 : GateAMetricState.DecisionGuardrailSatisfied;
         return new GateAMetricComparison(
-            key, label, "%", null, null, effect, localControlUncertainty, state, lowerIsBetter);
+            key, label, unit, original, candidate, effect, localControlUncertainty, state, lowerIsBetter);
     }
 
     private static GateAOriginalMetricSummary[] BuildOriginalMetricSummaries(GpuAutoAffinityReport report)
@@ -465,24 +510,17 @@ public static class GateAResultPresentation
         if (baselineQualificationFailed)
         {
             var scoredOriginals = CountScoredOriginalTrials(report, ScreeningOriginalPhaseName);
-            var selected = report.RequestedProcessors.Count;
-            var tested = report.ValidatedProcessors.Count;
-            var notReached = Math.Max(0, selected - tested);
             var terminalOriginalVerified = report.OriginalStateRestored && report.FinalStateVerified;
             return
             [
                 new GateADecisionEvidenceRow(
-                    "Original qualification",
-                    "Unstable",
-                    $"{scoredOriginals} scored Original measurement(s) did not produce a stable three-run 1% low cluster under the bounded qualification policy."),
+                    "Baseline evidence",
+                    "Unavailable",
+                    $"{scoredOriginals} scored Original measurement(s) were captured, but no structurally valid ranking baseline was persisted."),
                 new GateADecisionEvidenceRow(
                     "Candidate testing",
                     "Not started",
-                    $"{selected} candidate CPU(s) selected · {tested} candidate CPU(s) tested · {notReached} not reached. Candidate mutation did not start."),
-                new GateADecisionEvidenceRow(
-                    "Runtime ISR placement",
-                    "Not required",
-                    "No candidate was retained, so final candidate ISR-placement proof was not required."),
+                    "Candidate ranking did not start because the baseline evidence itself was unusable, not merely because it was noisy."),
                 new GateADecisionEvidenceRow(
                     "Final machine state",
                     terminalOriginalVerified ? "Restored" : "Needs attention",
@@ -515,18 +553,15 @@ public static class GateAResultPresentation
         }
 
         var primary = metrics.First(static metric => metric.Key == "low1");
-        var primaryState = primary.State switch
-        {
-            GateAMetricState.Improved => "Passed",
-            GateAMetricState.DiagnosticOnly => "Diagnostic only",
-            _ => "Unavailable",
-        };
-        var repeatabilityState = compared is null
+        var primaryState = compared is null
             ? "Unavailable"
-            : verifiedKeep ? "Decision-grade" : "Diagnostic only";
+            : primary.ImprovementFraction is > 0d
+                ? "Best observed"
+                : "Ranked";
+        var confidenceState = compared is null ? "Unavailable" : report.SelectionConfidence;
         var guardrailState = compared is null
             ? "Unavailable"
-            : verifiedKeep ? "Passed" : "Diagnostic only";
+            : verifiedKeep ? "Passed" : "Not kept";
         var finalPlacement = report.Trials
             .Where(trial =>
                 string.Equals(trial.Phase, "final-verification", StringComparison.Ordinal) &&
@@ -548,34 +583,34 @@ public static class GateAResultPresentation
         return
         [
             new GateADecisionEvidenceRow(
-                "Primary improvement",
+                "Best-observed ranking",
                 primaryState,
-                verifiedKeep
-                    ? DescribeMetric(primary, "The optimizer's verified Keep means this primary metric cleared its full paired-v2 decision threshold.")
-                    : DescribeMetric(primary, "Measured delta only; this run did not establish a Keep decision for the comparison candidate.")),
-            new GateADecisionEvidenceRow(
-                "Repeatability / uncertainty",
-                repeatabilityState,
                 compared is null
-                    ? "No authority-ranked comparison candidate is persisted in this report."
-                    : verifiedKeep
-                        ? $"The candidate survived repeated local pairs. The persisted decision floor shown here is {primary.UncertaintyFraction:P1}."
-                        : $"The best measured candidate is diagnostic only. Its displayed decision floor / local uncertainty is {primary.UncertaintyFraction:P1}; no independent pass is inferred here."),
+                    ? "No structurally valid candidate could be ranked."
+                    : DescribeMetric(
+                        primary,
+                        "Valid candidates are always ranked. Noise changes confidence; it does not erase the best-observed CPU.")),
             new GateADecisionEvidenceRow(
-                "Performance guardrails",
+                "Selection confidence",
+                confidenceState,
+                compared is null
+                    ? "No ranked candidate exists."
+                    : $"Confidence is {report.SelectionConfidence}. The displayed uncertainty/noise guide is {primary.UncertaintyFraction:P1}; it is descriptive and does not act as a winner threshold."),
+            new GateADecisionEvidenceRow(
+                "Keep guardrails",
                 guardrailState,
                 compared is null
-                    ? "Guardrail decision evidence is unavailable because no authority-ranked comparison candidate is persisted."
+                    ? "Keep guardrails are unavailable because no candidate was ranked."
                     : verifiedKeep
-                        ? "The verified Keep requires AVG, frame-p99 and interrupt-tail guardrails. 0.1% low remains diagnostic at this sample size."
-                        : "Measured guardrail values remain diagnostic because the run did not reach a verified Keep decision."),
+                        ? "Positive median benefit, performance guardrails and final runtime placement all allowed the selected CPU to be retained."
+                        : "A best-observed CPU can still be reported when Keep is not recommended or final runtime placement cannot be proved; Original remains active in that case."),
             new GateADecisionEvidenceRow(
                 "Runtime ISR placement",
                 placementState,
                 finalPlacement?.Placement is { } placement
                     ? $"Target ISR {placement.TargetIsrEventCount}; off-target ISR {placement.OffTargetIsrEventCount}."
                     : report.FinalProcessor is null
-                        ? "Original policy was retained; no forced final processor needs Keep placement proof."
+                        ? "No candidate was retained, so final candidate ISR-placement proof was not required."
                         : "Final runtime placement proof is not available in the report."),
             new GateADecisionEvidenceRow(
                 "Final machine state",
@@ -593,6 +628,7 @@ public static class GateAResultPresentation
     private static string BuildSummary(
         GpuAutoAffinityReport report,
         GpuAutoAffinityCandidateReport? compared,
+        IReadOnlyList<GateAMetricComparison> metrics,
         bool verifiedKeep,
         bool baselineQualificationFailed)
     {
@@ -601,8 +637,8 @@ public static class GateAResultPresentation
             var scoredOriginals = CountScoredOriginalTrials(report, ScreeningOriginalPhaseName);
             var terminalState = report.OriginalStateRestored && report.FinalStateVerified
                 ? "The exact Original GPU affinity policy was restored and verified."
-                : "Candidate testing did not start, but the terminal Original state is not fully verified.";
-            return $"{scoredOriginals} scored Original measurements completed. No stable three-run 1% low cluster was found within the bounded Original qualification policy, so candidate testing did not start. {terminalState}";
+                : "The terminal Original state is not fully verified.";
+            return $"{scoredOriginals} scored Original measurements completed, but the evidence was structurally unusable for ranking. Ordinary run-to-run noise alone does not trigger this state. {terminalState}";
         }
 
         if (report.OriginalDiagnostic is { } diagnostic)
@@ -610,29 +646,30 @@ public static class GateAResultPresentation
             return $"{diagnostic.ObservationCount} Original observations; 1%-low noise {diagnostic.OnePercentLowRelativeNoise:P1}, AVG noise {diagnostic.AvgRelativeNoise:P1}, frame-p99 noise {diagnostic.FrameP99RelativeNoise:P1}. {diagnostic.Reason} Final state verified: {report.FinalStateVerified}.";
         }
 
+        var primary = metrics.FirstOrDefault(static metric => metric.Key == "low1");
+        var gain = primary is null ? string.Empty : DescribeUserGain(primary);
+
         if (report.SearchScope == GpuAutoAffinitySearchScope.Custom)
         {
             var coverage = BuildCustomCoverageSummary(report);
             return compared is null
-                ? $"{coverage}. No selected CPU produced an authority-ranked local pair. The exact Original policy was restored and verified; no machine-wide claim was made."
-                : $"{coverage}. Best within selected CPUs was CPU {compared.Processor.Number} by persisted paired-screening rank. This restricted diagnostic skipped machine-wide refinement and finalist Keep; the exact Original policy was restored and verified.";
+                ? $"{coverage}. No selected CPU produced structurally valid ranking evidence. The exact Original policy was restored and verified."
+                : $"{coverage}. Best observed within the selected CPUs is CPU {compared.Processor.Number}. {gain} Confidence: {report.SelectionConfidence}. This diagnostic always restores Original.";
         }
 
         if (verifiedKeep && report.FinalProcessor is { } processor)
         {
-            return report.PracticalTie
-                ? $"CPU {processor.Number} was the deterministic operational target inside a practical finalist tie and was kept only after final target-only ISR placement proof. It is not claimed to be faster than the tied peers."
-                : $"CPU {processor.Number} survived repeated paired benchmark decision gates and final target-only ISR placement proof and is the verified terminal GPU interrupt-affinity state.";
+            var tie = report.PracticalTie
+                ? " The top finalists are practically tied, so confidence is intentionally reduced."
+                : string.Empty;
+            return $"CPU {processor.Number} is the best observed CPU and passed the separate Keep safety checks. {gain} Confidence: {report.SelectionConfidence}.{tie}";
         }
 
         if (report.OriginalStateRestored && report.FinalStateVerified)
         {
-            var tiePrefix = report.PracticalTie
-                ? "Finalists were within the practical-tie margin, but no candidate was retained after the full Keep gates. "
-                : string.Empty;
-            return tiePrefix + (compared is null
-                ? "LatencyPilot retained and verified the exact original GPU affinity policy. No authority-ranked comparison candidate is available for a trustworthy winner claim in this report."
-                : $"CPU {compared.Processor.Number} has the highest persisted authority rank for comparison, but the session did not establish a verified Keep. The exact original policy is restored and verified.");
+            return compared is null
+                ? "LatencyPilot retained and verified the exact original GPU affinity policy because no structurally valid candidate could be ranked."
+                : $"CPU {compared.Processor.Number} remains the best observed CPU even though it was not kept. {gain} Confidence: {report.SelectionConfidence}. The exact Original policy is restored and verified.";
         }
 
         return "Gate A produced a report, but the terminal machine state is not fully verified. Use the evidence and recovery status below before continuing.";
@@ -674,10 +711,7 @@ public static class GateAResultPresentation
         var selected = report.RequestedProcessors.Count;
         var tested = report.ValidatedProcessors.Count;
         var notReached = Math.Max(0, selected - tested);
-        var stopDetail = notReached > 0
-            ? " after early instability stop"
-            : string.Empty;
-        return $"{selected} candidate CPUs selected · {tested} candidate CPUs tested · {notReached} not reached{stopDetail}";
+        return $"{selected} candidate CPUs selected · {tested} candidate CPUs tested · {notReached} not reached";
     }
 
     private static int CountScoredOriginalTrials(GpuAutoAffinityReport report, string phase) =>
@@ -705,10 +739,29 @@ public static class GateAResultPresentation
         {
             return $"{metric.Label} does not have enough authority-selected comparable evidence. {interpretation}";
         }
-        var delta = metric.ImprovementFraction is null
-            ? string.Empty
-            : $" ({metric.ImprovementFraction.Value:+0.0%;-0.0%;0.0%} improvement-direction delta)";
-        return $"Paired effect{delta}; decision floor / local uncertainty {metric.UncertaintyFraction:P1}. {interpretation}";
+
+        return $"{DescribeUserGain(metric)} Noise/uncertainty guide {metric.UncertaintyFraction:P1}. {interpretation}";
+    }
+
+    private static string DescribeUserGain(GateAMetricComparison metric)
+    {
+        if (metric.OriginalValue is { } original &&
+            metric.CandidateValue is { } candidate &&
+            double.IsFinite(original) &&
+            double.IsFinite(candidate))
+        {
+            var absoluteImprovement = metric.LowerIsBetter
+                ? original - candidate
+                : candidate - original;
+            var percentage = metric.ImprovementFraction is { } effect && double.IsFinite(effect)
+                ? $" ({effect:+0.0%;-0.0%;0.0%})"
+                : string.Empty;
+            return $"{metric.Label}: {original:0.##} → {candidate:0.##} {metric.Unit}; improvement {absoluteImprovement:+0.##;-0.##;0} {metric.Unit}{percentage}.";
+        }
+
+        return metric.ImprovementFraction is { } fallback && double.IsFinite(fallback)
+            ? $"{metric.Label}: {fallback:+0.0%;-0.0%;0.0%} paired effect."
+            : $"{metric.Label}: unavailable.";
     }
 
     private static bool IsFinitePositive(double? value) =>

@@ -11,77 +11,52 @@ namespace LatencyPilot.CriticalTests;
 public sealed class GpuMeasurementBootstrapContractTests
 {
     [AuditCase]
-    public void OriginalBaselineCanRecoverOnAttemptFiveButBroadInstabilityStillFails()
-    {
-        var selectorType = typeof(GpuAutoAffinitySession).Assembly.GetType(
-            "LatencyPilot.Benchmarking.Optimization.GpuRepeatabilityClusterSelector",
-            throwOnError: true)!;
-        var select = selectorType.GetMethod(
-            "Select",
-            BindingFlags.Static | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("GPU repeatability selector entry point was not found.");
-        var maximumOriginalAttempts = selectorType.GetField(
-            "MaximumOriginalAttemptCount",
-            BindingFlags.Static | BindingFlags.NonPublic);
-        Assert.IsNotNull(
-            maximumOriginalAttempts,
-            "Original baseline acquisition needs a distinct five-attempt ceiling instead of sharing the four-attempt finalist budget.");
-        Assert.AreEqual(5, (int)maximumOriginalAttempts.GetRawConstantValue()!);
-
-        // Physical Gate A shape from 2026-09-20: the first scored Original was a
-        // cold observer/bootstrap outlier. Four runs still have no bounded 3-run
-        // regime, while a fifth ordinary sample makes the stable regime explicit.
-        var firstFour = new[] { 68.5d, 160.8d, 152.8d, 172.2d };
-        Assert.IsNull(
-            select.Invoke(null, [firstFour]),
-            "The first four physical-shape samples must not manufacture a cluster by silently widening the recovery band.");
-
-        var fiveRuns = new[] { 68.5d, 160.8d, 152.8d, 172.2d, 155.5d };
-        var recovered = select.Invoke(null, [fiveRuns]);
-        Assert.IsNotNull(
-            recovered,
-            "A fifth bounded Original attempt must be able to recover a coherent three-run regime after one cold-start outlier.");
-        var indexes = (int[])recovered.GetType().GetProperty("Indexes")!.GetValue(recovered)!;
-        Assert.AreEqual(3, indexes.Length);
-        Assert.IsFalse(indexes.Contains(0),
-            "The cold-start outlier must remain in the audit trail but must not define baseline uncertainty once a coherent regime exists.");
-        Assert.IsTrue(indexes.Contains(4),
-            "The fifth attempt must remain a first-class eligible observation rather than replacing or hiding the fourth attempt.");
-
-        var broadlyUnstable = new[] { 70d, 88d, 111d, 139d, 176d };
-        Assert.IsNull(
-            select.Invoke(null, [broadlyUnstable]),
-            "Five attempts are a hard ceiling, not permission to cherry-pick a baseline from genuinely broad instability.");
-    }
-
-    [AuditCase]
-    public void OriginalBaselineSequentialThreeOfFiveMustLiveInCoreSession()
+    public void OriginalVariabilityIsMeasuredWithMedianAndMadInsteadOfUsedAsANoiseOnlyStop()
     {
         var sessionSource = File.ReadAllText(FindRepositoryFile(
             "src",
             "LatencyPilot.Benchmarking",
             "Optimization",
             "GpuAutoAffinitySession.cs"));
-        StringAssert.Contains(
-            sessionSource,
-            "QualifyOriginalAsync(",
-            "The core v2 session must own Original qualification before any candidate mutation.");
+
+        StringAssert.Contains(sessionSource, "RelativeMedianAbsoluteDeviation");
+        StringAssert.Contains(sessionSource, "noise lowers selection confidence but does not erase");
+        StringAssert.Contains(sessionSource, "MaximumOriginalAttemptCount");
+        StringAssert.Contains(sessionSource, "RequiredRunCount");
+        Assert.IsFalse(
+            sessionSource.Contains("GpuRepeatabilityClusterSelector.Select(", StringComparison.Ordinal),
+            "v3 must not cherry-pick a quiet three-run cluster and discard the rest of the valid observations.");
+        Assert.IsFalse(
+            sessionSource.Contains("candidate mutation is not allowed", StringComparison.OrdinalIgnoreCase),
+            "Broad but structurally valid Original variability is uncertainty evidence, not a reason to suppress the whole candidate search.");
+    }
+
+    [AuditCase]
+    public void OriginalAcquisitionUsesThreeRunsAndExtendsToFiveOnlyWhenRobustNoiseIsHigh()
+    {
+        var sessionSource = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.Benchmarking",
+            "Optimization",
+            "GpuAutoAffinitySession.cs"));
+
+        StringAssert.Contains(sessionSource, "QualifyOriginalAsync(");
         StringAssert.Contains(
             sessionSource,
             "observations.Count < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount",
-            "The core session must own the five-observation Original ceiling so attempts four and five remain real eligible measurements.");
+            "Original noise estimation must remain bounded at five scored observations.");
         StringAssert.Contains(
             sessionSource,
             "observations.Count < GpuRepeatabilityClusterSelector.RequiredRunCount",
-            "The core session must require three scored Original observations before accepting a repeatable regime.");
+            "At least three scored Original observations are required before estimating variability.");
         StringAssert.Contains(
             sessionSource,
-            "CreateOriginalEvaluation(observations.ToArray())",
-            "Original qualification must evaluate the real scored observations rather than manufacturing replacement samples.");
+            "evaluation.PrimaryRelativeNoise <= GpuRepeatabilityClusterSelector.RelativeTolerance",
+            "A quiet three-run baseline should avoid spending time on unnecessary extra Original samples.");
         StringAssert.Contains(
             sessionSource,
-            "observations.Length < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount",
-            "Original evaluation must continue through attempt five when no stable cluster exists instead of falling back after attempt four.");
+            "UsedNoiseAwareFallback: original.TotalObservationCount > GpuRepeatabilityClusterSelector.RequiredRunCount",
+            "The report must disclose when extra Original observations were needed because the initial sample was noisy.");
 
         var wrapperSource = File.ReadAllText(FindRepositoryFile(
             "tools",
@@ -91,7 +66,7 @@ public sealed class GpuMeasurementBootstrapContractTests
             wrapperSource.Contains("ApplyBoundedOriginalBaselineRecovery", StringComparison.Ordinal) ||
             wrapperSource.Contains("pendingOriginalRetryIndex", StringComparison.Ordinal) ||
             wrapperSource.Contains("ControlTrialDrifted = true", StringComparison.Ordinal),
-            "Progress reporting must not manufacture contamination to obtain the fifth Original sample; it should observe core-session behavior only.");
+            "Progress reporting must observe core-session behavior rather than manufacture contamination.");
     }
 
     [AuditCase]

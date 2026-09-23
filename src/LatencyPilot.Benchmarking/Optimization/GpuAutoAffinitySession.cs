@@ -85,14 +85,12 @@ public sealed class GpuAutoAffinitySession
     public static readonly TimeSpan V2FinalistDuration = TimeSpan.FromSeconds(30);
 
     private const double CandidateMetricEquivalenceTolerance = 0.01;
+    private const double KeepGuardrailRegressionTolerance = 0.03;
+    private const double MaximumKeepGuardrailRegressionTolerance = 0.10;
     private const double InterruptTailRegressionTolerance = 0.10;
     private const int MinimumInterruptTailSamples = 20;
     private const int MinimumInterruptTailRuns = 3;
-    private const int MaximumRejectedOriginalRepeatabilityRuns =
-        GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount -
-        GpuRepeatabilityClusterSelector.RequiredRunCount;
     private const int MaximumPairAttempts = 2;
-    private const int MaximumConsecutiveUnstableCandidates = 2;
     private const int MaximumPhysicalCoreHypotheses = 3;
     private const int MaximumFinalists = 3;
     private const int RequiredFinalistPairs = 3;
@@ -201,21 +199,16 @@ public sealed class GpuAutoAffinitySession
                 cancellationToken).ConfigureAwait(false);
             if (!original.IsRankable)
             {
-                reasons.Add($"Original-state benchmark is not repeatable enough for paired GPU comparison: {original.Reason}");
-                var originalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
-                return CreateResult(
-                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
-                    originalVerified, originalVerified, candidateReports, trialReports, pairReports,
-                    finalistReports, reasons, null, screenedProcessors,
-                    fullTopologyCoverage: false, practicalTie: false);
+                throw new SessionAbortException(
+                    $"Original benchmark evidence is structurally unusable: {original.Reason}");
             }
 
             decisionBaseline = ToDecisionBaseline(original);
-            if (original.TotalObservationCount > original.ValidObservationCount)
+            if (original.TotalObservationCount > GpuRepeatabilityClusterSelector.RequiredRunCount)
             {
                 reasons.Add(string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    $"Original qualification recovered {original.ValidObservationCount} valid runs from {original.TotalObservationCount} attempts; {original.TotalObservationCount - original.ValidObservationCount} outlier sample(s) were excluded. Accepted 1%-low noise was {original.PrimaryRelativeNoise:P2}."));
+                    $"Original variability was elevated, so {original.TotalObservationCount} scored observations were retained instead of rejecting the search. Robust 1%-low variability is {original.PrimaryRelativeNoise:P2}; noise lowers selection confidence but does not erase the best observed CPU."));
             }
 
             var driftBudget = ComputePairDriftBudget(original.PrimaryRelativeNoise);
@@ -227,7 +220,6 @@ public sealed class GpuAutoAffinitySession
                 trialReports,
                 cancellationToken).ConfigureAwait(false);
             var screeningMeasurements = new List<PairMeasurement>();
-            var consecutiveUnstableCandidates = 0;
 
             ShuffleDeterministically(candidates, request.ShuffleSeed);
             foreach (var candidate in candidates)
@@ -262,29 +254,11 @@ public sealed class GpuAutoAffinitySession
                 if (outcome.ValidMeasurement is { } valid)
                 {
                     screeningMeasurements.Add(valid);
-                    consecutiveUnstableCandidates = 0;
-                }
-                else
-                {
-                    consecutiveUnstableCandidates++;
                 }
 
                 var candidateReport = ToScreeningCandidateReport(candidate, outcome.FinalReport, outcome.ValidMeasurement);
                 candidateReports.Add(candidateReport);
                 await PublishCandidateReportAsync(candidateReport).ConfigureAwait(false);
-
-                if (consecutiveUnstableCandidates >= MaximumConsecutiveUnstableCandidates)
-                {
-                    reasons.Add(
-                        $"Paired screening stopped early after {MaximumConsecutiveUnstableCandidates} consecutive candidates remained unstable after their bounded retry. The exact Original state is retained rather than ranking noise.");
-                    ApplyPairDecisionRanks(candidateReports, screeningMeasurements);
-                    var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
-                    return CreateResult(
-                        request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
-                        restored, restored, candidateReports, trialReports, pairReports, finalistReports,
-                        reasons, decisionBaseline, screenedProcessors,
-                        fullTopologyCoverage: false, practicalTie: false);
-                }
             }
 
             if (request.SearchScope == GpuAutoAffinitySearchScope.Custom)
@@ -352,29 +326,11 @@ public sealed class GpuAutoAffinitySession
                 if (outcome.ValidMeasurement is { } valid)
                 {
                     screeningMeasurements.Add(valid);
-                    consecutiveUnstableCandidates = 0;
-                }
-                else
-                {
-                    consecutiveUnstableCandidates++;
                 }
 
                 var candidateReport = ToScreeningCandidateReport(candidate, outcome.FinalReport, outcome.ValidMeasurement);
                 candidateReports.Add(candidateReport);
                 await PublishCandidateReportAsync(candidateReport).ConfigureAwait(false);
-
-                if (consecutiveUnstableCandidates >= MaximumConsecutiveUnstableCandidates)
-                {
-                    reasons.Add(
-                        "Sibling refinement stopped because two consecutive candidates remained locally unstable after retry. Original was retained.");
-                    ApplyPairDecisionRanks(candidateReports, screeningMeasurements);
-                    var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
-                    return CreateResult(
-                        request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
-                        restored, restored, candidateReports, trialReports, pairReports, finalistReports,
-                        reasons, decisionBaseline, screenedProcessors,
-                        fullTopologyCoverage: stageAComplete, practicalTie: false);
-                }
             }
 
             ApplyPairDecisionRanks(candidateReports, screeningMeasurements);
@@ -400,14 +356,10 @@ public sealed class GpuAutoAffinitySession
             var finalistMeasurements = finalistCandidates.ToDictionary(
                 static candidate => candidate.Processor,
                 static _ => new List<PairMeasurement>(RequiredFinalistPairs));
-            var finalistInconclusive = new HashSet<LogicalProcessorId>();
-            consecutiveUnstableCandidates = 0;
 
             for (var round = 0; round < RequiredFinalistPairs; round++)
             {
-                var roundCandidates = finalistCandidates
-                    .Where(candidate => !finalistInconclusive.Contains(candidate.Processor))
-                    .ToArray();
+                var roundCandidates = finalistCandidates.ToArray();
                 ShuffleDeterministically(
                     roundCandidates,
                     unchecked(request.ShuffleSeed ^ (int)(0x9E3779B9u * (uint)(round + 1))));
@@ -447,30 +399,6 @@ public sealed class GpuAutoAffinitySession
                     if (outcome.ValidMeasurement is { } valid)
                     {
                         finalistMeasurements[candidate.Processor].Add(valid);
-                        consecutiveUnstableCandidates = 0;
-                    }
-                    else
-                    {
-                        finalistInconclusive.Add(candidate.Processor);
-                        consecutiveUnstableCandidates++;
-                    }
-
-                    if (consecutiveUnstableCandidates >= MaximumConsecutiveUnstableCandidates)
-                    {
-                        reasons.Add(
-                            "Finalist confirmation stopped because two consecutive candidates remained locally unstable after retry. Original was retained.");
-                        var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
-                        BuildFinalistReports(
-                            finalistCandidates,
-                            finalistMeasurements,
-                            finalistInconclusive,
-                            finalistReports,
-                            candidateReports);
-                        return CreateResult(
-                            request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
-                            restored, restored, candidateReports, trialReports, pairReports, finalistReports,
-                            reasons, decisionBaseline, screenedProcessors,
-                            fullTopologyCoverage: stageAComplete, practicalTie: false);
                     }
                 }
             }
@@ -478,20 +406,19 @@ public sealed class GpuAutoAffinitySession
             var finalistDecisions = BuildFinalistReports(
                 finalistCandidates,
                 finalistMeasurements,
-                finalistInconclusive,
                 finalistReports,
                 candidateReports);
-            var improvementCapable = finalistDecisions
-                .Where(static decision => decision.ImprovementCapable)
+            var rankedFinalists = finalistDecisions
+                .Where(static decision => decision.Report.MedianOnePercentLowEffect is not null)
                 .OrderByDescending(static decision => decision.Report.MedianOnePercentLowEffect)
                 .ThenBy(static decision => decision.Candidate.ObservedPressureScore)
                 .ThenBy(static decision => decision.Candidate.PhysicalCoreIndex)
                 .ThenBy(static decision => decision.Candidate.Processor.Number)
                 .ToArray();
 
-            if (improvementCapable.Length == 0)
+            if (rankedFinalists.Length == 0)
             {
-                reasons.Add("No finalist produced three valid local pairs that cleared the paired improvement and guardrail decision floor. Original was retained.");
+                reasons.Add("No finalist produced structurally valid benchmark evidence. Original was retained.");
                 var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
                 return CreateResult(
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
@@ -500,26 +427,33 @@ public sealed class GpuAutoAffinitySession
                     fullTopologyCoverage: stageAComplete, practicalTie: false);
             }
 
-            var bestEffect = improvementCapable[0].Report.MedianOnePercentLowEffect!.Value;
-            var tied = improvementCapable
-                .Where(decision =>
+            var selected = rankedFinalists[0];
+            var bestEffect = selected.Report.MedianOnePercentLowEffect!.Value;
+            var practicalTie = rankedFinalists
+                .Skip(1)
+                .Any(decision =>
                     Math.Abs(decision.Report.MedianOnePercentLowEffect!.Value - bestEffect) <=
-                    CandidateMetricEquivalenceTolerance)
-                .ToArray();
-            var practicalTie = tied.Length > 1;
-            var selected = tied
-                .OrderBy(static decision => decision.Candidate.ObservedPressureScore)
-                .ThenBy(static decision => decision.Candidate.PhysicalCoreIndex)
-                .ThenBy(static decision => decision.Candidate.Processor.Number)
-                .First();
+                    CandidateMetricEquivalenceTolerance);
 
             reasons.Add(practicalTie
                 ? string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    $"Finalists are within the 1 percentage-point practical-tie margin. CPU {selected.Candidate.Processor.Number} is the deterministic operational target; it is not claimed to be faster than tied peers. Median paired 1%-low effect {selected.Report.MedianOnePercentLowEffect:P2}.")
+                    $"CPU {selected.Candidate.Processor.Number} is the best observed finalist inside a practical tie. Median paired 1%-low effect {selected.Report.MedianOnePercentLowEffect:P2}; confidence is reduced rather than deleting the winner.")
                 : string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    $"CPU {selected.Candidate.Processor.Number} is the strongest repeatable paired finalist. Median paired 1%-low effect {selected.Report.MedianOnePercentLowEffect:P2}."));
+                    $"CPU {selected.Candidate.Processor.Number} is the best observed finalist. Median paired 1%-low effect {selected.Report.MedianOnePercentLowEffect:P2}."));
+
+            if (!selected.RecommendedForKeep)
+            {
+                reasons.Add(
+                    $"CPU {selected.Candidate.Processor.Number} remains the best observed CPU, but its median benefit is non-positive or a material guardrail regressed. The exact Original state is retained.");
+                var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+                return CreateResult(
+                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
+                    restored, restored, candidateReports, trialReports, pairReports, finalistReports,
+                    reasons, decisionBaseline, screenedProcessors,
+                    fullTopologyCoverage: stageAComplete, practicalTie);
+            }
 
             return await VerifyAndKeepFinalistAsync(
                 request,
@@ -565,7 +499,7 @@ public sealed class GpuAutoAffinitySession
         var observations = new List<GpuAutoAffinityTrialObservation>(
             GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount);
         var evaluation = OriginalEvaluation.Unrankable(
-            "Original repeatability has not collected three scored observations yet.");
+            "Original variability estimation has not collected three scored observations yet.");
 
         while (observations.Count < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount)
         {
@@ -585,7 +519,13 @@ public sealed class GpuAutoAffinitySession
             }
 
             evaluation = CreateOriginalEvaluation(observations.ToArray());
-            if (evaluation.IsRankable)
+            if (!evaluation.IsRankable)
+            {
+                break;
+            }
+
+            if (evaluation.PrimaryRelativeNoise <= GpuRepeatabilityClusterSelector.RelativeTolerance ||
+                observations.Count == GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount)
             {
                 break;
             }
@@ -671,8 +611,8 @@ public sealed class GpuAutoAffinitySession
             {
                 pair = pair with
                 {
-                    Verdict = GpuAutoAffinityPairVerdict.Inconclusive,
-                    Reason = $"Local Original movement {pair.ControlMovement:P2} remained above the {pair.DriftBudget:P2} drift budget after the bounded retry.",
+                    Verdict = GpuAutoAffinityPairVerdict.Valid,
+                    Reason = $"Local Original movement {pair.ControlMovement:P2} remained above the {pair.DriftBudget:P2} noise guide after one retry. The measurement remains rankable; elevated drift reduces confidence instead of erasing this CPU from the comparison.",
                 };
             }
 
@@ -917,51 +857,17 @@ public sealed class GpuAutoAffinitySession
         return stats;
     }
 
-    private static HashSet<int> SelectPhysicalCoreHypotheses(List<PairMeasurement> measurements)
-    {
-        var ordered = OrderScreeningMeasurements(measurements).ToArray();
-        if (ordered.Length == 0)
-        {
-            return [];
-        }
-
-        var selected = ordered
-            .Take(Math.Min(2, ordered.Length))
+    private static HashSet<int> SelectPhysicalCoreHypotheses(List<PairMeasurement> measurements) =>
+        OrderScreeningMeasurements(measurements)
+            .Take(MaximumPhysicalCoreHypotheses)
             .Select(static measurement => measurement.Candidate.PhysicalCoreIndex)
             .ToHashSet();
-        if (ordered.Length > 2 &&
-            Math.Abs(ordered[2].Report.OnePercentLowEffect - ordered[1].Report.OnePercentLowEffect) <=
-            CandidateMetricEquivalenceTolerance)
-        {
-            selected.Add(ordered[2].Candidate.PhysicalCoreIndex);
-        }
 
-        return selected.Count <= MaximumPhysicalCoreHypotheses
-            ? selected
-            : selected.Take(MaximumPhysicalCoreHypotheses).ToHashSet();
-    }
-
-    private static GpuAffinityCandidate[] SelectFinalists(List<PairMeasurement> measurements)
-    {
-        var ordered = OrderScreeningMeasurements(measurements).ToArray();
-        if (ordered.Length == 0)
-        {
-            return [];
-        }
-
-        var selected = ordered.Take(Math.Min(2, ordered.Length)).ToList();
-        if (ordered.Length > 2 &&
-            Math.Abs(ordered[2].Report.OnePercentLowEffect - ordered[1].Report.OnePercentLowEffect) <=
-            CandidateMetricEquivalenceTolerance)
-        {
-            selected.Add(ordered[2]);
-        }
-
-        return selected
+    private static GpuAffinityCandidate[] SelectFinalists(List<PairMeasurement> measurements) =>
+        OrderScreeningMeasurements(measurements)
             .Take(MaximumFinalists)
             .Select(static measurement => measurement.Candidate)
             .ToArray();
-    }
 
     private static IEnumerable<PairMeasurement> OrderScreeningMeasurements(List<PairMeasurement> measurements) =>
         measurements
@@ -1026,7 +932,6 @@ public sealed class GpuAutoAffinitySession
     private static FinalistDecision[] BuildFinalistReports(
         GpuAffinityCandidate[] finalists,
         Dictionary<LogicalProcessorId, List<PairMeasurement>> measurements,
-        HashSet<LogicalProcessorId> inconclusive,
         List<GpuAutoAffinityFinalistReport> reports,
         List<GpuAutoAffinityCandidateReport> candidateReports)
     {
@@ -1035,20 +940,20 @@ public sealed class GpuAutoAffinitySession
         {
             var pairs = measurements[candidate.Processor];
             GpuAutoAffinityFinalistReport report;
-            var improvementCapable = false;
+            var recommendedForKeep = false;
 
-            if (inconclusive.Contains(candidate.Processor) || pairs.Count != RequiredFinalistPairs)
+            if (pairs.Count == 0)
             {
                 report = new GpuAutoAffinityFinalistReport(
                     candidate.Processor,
                     candidate.PhysicalCoreIndex,
-                    pairs.Select(static pair => pair.Report.PairNumber).ToArray(),
+                    [],
                     null,
                     null,
                     null,
                     null,
                     "Inconclusive",
-                    $"Finalist produced {pairs.Count}/{RequiredFinalistPairs} valid paired observations within the bounded retry policy.");
+                    "Finalist produced no structurally valid paired benchmark observations.");
             }
             else
             {
@@ -1059,29 +964,51 @@ public sealed class GpuAutoAffinitySession
                     .Where(static pair => pair.Report.Low01PctEffect is not null)
                     .Select(static pair => pair.Report.Low01PctEffect!.Value)
                     .ToArray();
-                var controlMovement = Median(pairs.Select(static pair => pair.Report.ControlMovement));
-                var decisionFloor = Math.Max(CandidateMetricEquivalenceTolerance, controlMovement);
+                var beforeStats = pairs
+                    .Select(static pair => RequireVideoStats(pair.OriginalBefore, "Finalist OriginalBefore"))
+                    .ToArray();
+                var candidateStats = pairs
+                    .Select(static pair => RequireVideoStats(pair.CandidateObservation, "Finalist candidate"))
+                    .ToArray();
+                var afterStats = pairs
+                    .Select(static pair => RequireVideoStats(pair.OriginalAfter, "Finalist OriginalAfter"))
+                    .ToArray();
+
                 var medianPrimary = Median(primary);
                 var medianAvg = Median(avg);
                 var medianP99 = Median(p99);
+                var effectMad = MedianAbsoluteDeviation(primary, medianPrimary);
+                var controlMovement = Median(pairs.Select(static pair => pair.Report.ControlMovement));
+                var noiseGuide = Math.Max(CandidateMetricEquivalenceTolerance, Math.Max(effectMad, controlMovement));
                 var positivePrimaryCount = primary.Count(static effect => effect > 0d);
-                var materialPrimaryRegression = primary.Any(effect => effect < -decisionFloor);
-                var guardrailRegression = medianAvg < -decisionFloor || medianP99 < -decisionFloor;
+                var keepGuardrailTolerance = Math.Clamp(
+                    Math.Max(KeepGuardrailRegressionTolerance, effectMad),
+                    KeepGuardrailRegressionTolerance,
+                    MaximumKeepGuardrailRegressionTolerance);
+                var guardrailRegression =
+                    medianAvg < -keepGuardrailTolerance ||
+                    medianP99 < -keepGuardrailTolerance;
                 var interruptRegression = HasMaterialInterruptTailRegression(pairs, out var interruptReason);
-                improvementCapable =
-                    positivePrimaryCount >= 2 &&
-                    medianPrimary > decisionFloor &&
-                    !materialPrimaryRegression &&
+                recommendedForKeep =
+                    medianPrimary > 0d &&
                     !guardrailRegression &&
                     !interruptRegression;
 
-                var reason = improvementCapable
-                    ? string.Create(
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        $"Three valid paired observations; median 1%-low effect {medianPrimary:P2} clears the {decisionFloor:P2} local decision floor without material AVG/frame-p99/interrupt-tail regression.")
-                    : string.Create(
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        $"Finalist rejected: positive 1%-low pairs {positivePrimaryCount}/3; median effect {medianPrimary:P2}; decision floor {decisionFloor:P2}; material primary regression={materialPrimaryRegression}; AVG/p99 regression={guardrailRegression}. {interruptReason}");
+                var reason = FormattableString.Invariant(
+                    $"Ranked from {pairs.Count} paired observation(s): median 1%-low effect {medianPrimary:P2}; effect MAD {effectMad:P2}; positive pairs {positivePrimaryCount}/{pairs.Count}; local-noise guide {noiseGuide:P2}; Keep guardrail tolerance {keepGuardrailTolerance:P2}; AVG/p99 regression={guardrailRegression}; interrupt-tail regression={interruptRegression}. ") +
+                    (recommendedForKeep
+                        ? "This candidate may be kept if final runtime placement verifies."
+                        : "It remains rankable as the best-observed candidate, but automatic Keep is not recommended by the measured benefit/guardrails.") +
+                    (string.IsNullOrWhiteSpace(interruptReason) ? string.Empty : $" {interruptReason}");
+
+                var medianOriginalLow1 = Median(beforeStats.Select((item, index) =>
+                    GeometricMean(item.Low1PctFps, afterStats[index].Low1PctFps)));
+                var medianOriginalAvg = Median(beforeStats.Select((item, index) =>
+                    GeometricMean(item.AvgFps, afterStats[index].AvgFps)));
+                var medianOriginalP99 = Median(beforeStats.Select((item, index) =>
+                    GeometricMean(item.P99Milliseconds, afterStats[index].P99Milliseconds)));
+                var medianOriginalLow01 = Median(beforeStats.Select((item, index) =>
+                    GeometricMean(item.Low01PctFps, afterStats[index].Low01PctFps)));
 
                 report = new GpuAutoAffinityFinalistReport(
                     candidate.Processor,
@@ -1091,32 +1018,40 @@ public sealed class GpuAutoAffinitySession
                     medianAvg,
                     medianP99,
                     low01.Length == 0 ? null : Median(low01),
-                    improvementCapable ? "ImprovementCapable" : "Rejected",
+                    "Ranked",
                     reason)
                 {
-                    DecisionFloor = decisionFloor,
+                    DecisionFloor = noiseGuide,
+                    NoiseFraction = noiseGuide,
+                    OnePercentLowEffectMedianAbsoluteDeviation = effectMad,
+                    PositiveOnePercentLowPairCount = positivePrimaryCount,
+                    MedianOriginalOnePercentLowFps = medianOriginalLow1,
+                    MedianCandidateOnePercentLowFps = Median(candidateStats.Select(static item => item.Low1PctFps)),
+                    MedianOriginalAvgFps = medianOriginalAvg,
+                    MedianCandidateAvgFps = Median(candidateStats.Select(static item => item.AvgFps)),
+                    MedianOriginalFrameP99Milliseconds = medianOriginalP99,
+                    MedianCandidateFrameP99Milliseconds = Median(candidateStats.Select(static item => item.P99Milliseconds)),
+                    MedianOriginalLow01PctFps = medianOriginalLow01,
+                    MedianCandidateLow01PctFps = Median(candidateStats.Select(static item => item.Low01PctFps)),
+                    RecommendedForKeep = recommendedForKeep,
                 };
             }
 
             reports.Add(report);
-            var lastMeasurement = pairs.LastOrDefault();
-            var stats = lastMeasurement is null
-                ? null
-                : RequireVideoStats(lastMeasurement.CandidateObservation, "Finalist candidate");
             candidateReports.Add(new GpuAutoAffinityCandidateReport(
                 FinalistPhaseName,
                 candidate.PhysicalCoreIndex,
                 candidate.Processor,
                 pairs.Count,
-                improvementCapable ? "Ranked" : "Rejected",
+                report.MedianOnePercentLowEffect is null ? "Inconclusive" : "Ranked",
                 report.MedianFrameP99Effect,
                 [],
                 report.Reason,
-                stats?.Low1PctFps,
-                stats?.AvgFps,
-                stats?.P99Milliseconds,
-                stats?.Low01PctFps,
-                pairs.Count == 0 ? null : Median(pairs.Select(static pair => pair.Report.ControlMovement)),
+                report.MedianCandidateOnePercentLowFps,
+                report.MedianCandidateAvgFps,
+                report.MedianCandidateFrameP99Milliseconds,
+                report.MedianCandidateLow01PctFps,
+                report.NoiseFraction,
                 UsesTimeLocalNormalization: false)
             {
                 DecisionOnePercentLowEffect = report.MedianOnePercentLowEffect,
@@ -1124,7 +1059,7 @@ public sealed class GpuAutoAffinitySession
                 DecisionFrameP99Effect = report.MedianFrameP99Effect,
                 DecisionLow01PctEffect = report.MedianLow01PctEffect,
             });
-            decisions.Add(new FinalistDecision(candidate, report, improvementCapable));
+            decisions.Add(new FinalistDecision(candidate, report, recommendedForKeep));
         }
 
         var ranked = decisions
@@ -1307,7 +1242,7 @@ public sealed class GpuAutoAffinitySession
             await backend.KeepAsync(keptId, CancellationToken.None).ConfigureAwait(false);
             activeExperiment = null;
             reasons.Add(
-                $"CPU {finalist.Processor.Number} was kept after repeated paired improvement and final kernel-ETW target-only ISR placement proof.");
+                $"Best observed CPU {finalist.Processor.Number} was kept after final kernel-ETW target-only ISR placement proof.");
             return CreateResult(
                 request, startedAtUtc, GpuOptimizationRecommendation.KeepCandidate, finalist,
                 finalStateVerified: true, originalStateRestored: false,
@@ -1520,45 +1455,28 @@ public sealed class GpuAutoAffinitySession
                 "Original benchmark ranking statistics are missing or non-finite.", observations.Length);
         }
 
-        var cluster = GpuRepeatabilityClusterSelector.Select(
-            values.Select(static item => item.Low1PctFps).ToArray());
-        if (cluster is null)
-        {
-            if (observations.Length < GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount)
-            {
-                return OriginalEvaluation.Unrankable(
-                    $"No stable {GpuRepeatabilityClusterSelector.RequiredRunCount}-run Original 1% low cluster exists after {observations.Length} scored observation(s).",
-                    observations.Length);
-            }
-
-            return OriginalEvaluation.Unrankable(
-                $"No stable {GpuRepeatabilityClusterSelector.RequiredRunCount}-run Original 1% low cluster exists after the bounded {GpuRepeatabilityClusterSelector.MaximumOriginalAttemptCount} scored observations; candidate mutation is not allowed.",
-                observations.Length);
-        }
-        if (observations.Length - cluster.Indexes.Length > MaximumRejectedOriginalRepeatabilityRuns)
+        if (observations.Length < GpuRepeatabilityClusterSelector.RequiredRunCount)
         {
             return OriginalEvaluation.Unrankable(
-                "Original repeatability excluded more observations than the bounded acquisition policy permits.",
+                $"At least {GpuRepeatabilityClusterSelector.RequiredRunCount} scored Original observations are required.",
                 observations.Length);
         }
 
-        var selected = cluster.Indexes.Select(index => values[index]).ToArray();
-        var selectedObservations = cluster.Indexes.Select(index => observations[index]).ToArray();
-        var medianLow1 = Median(selected.Select(static item => item.Low1PctFps));
-        var medianLow01 = Median(selected.Select(static item => item.Low01PctFps));
-        var medianAvg = Median(selected.Select(static item => item.AvgFps));
-        var medianP99 = Median(selected.Select(static item => item.P99Milliseconds));
+        var medianLow1 = Median(values.Select(static item => item.Low1PctFps));
+        var medianLow01 = Median(values.Select(static item => item.Low01PctFps));
+        var medianAvg = Median(values.Select(static item => item.AvgFps));
+        var medianP99 = Median(values.Select(static item => item.P99Milliseconds));
         return new OriginalEvaluation(
-            selectedObservations,
+            observations,
             medianLow1,
             medianLow01,
             medianAvg,
             medianP99,
-            RelativeNoise(selected.Select(static item => item.Low1PctFps), medianLow1),
-            RelativeNoise(selected.Select(static item => item.Low01PctFps), medianLow01),
-            RelativeNoise(selected.Select(static item => item.AvgFps), medianAvg),
-            RelativeNoise(selected.Select(static item => item.P99Milliseconds), medianP99),
-            selectedObservations.Length,
+            RelativeMedianAbsoluteDeviation(values.Select(static item => item.Low1PctFps), medianLow1),
+            RelativeMedianAbsoluteDeviation(values.Select(static item => item.Low01PctFps), medianLow01),
+            RelativeMedianAbsoluteDeviation(values.Select(static item => item.AvgFps), medianAvg),
+            RelativeMedianAbsoluteDeviation(values.Select(static item => item.P99Milliseconds), medianP99),
+            observations.Length,
             observations.Length,
             true,
             null);
@@ -1576,7 +1494,7 @@ public sealed class GpuAutoAffinitySession
             original.Low01RelativeNoise,
             original.ValidObservationCount,
             original.TotalObservationCount,
-            UsedNoiseAwareFallback: false);
+            UsedNoiseAwareFallback: original.TotalObservationCount > GpuRepeatabilityClusterSelector.RequiredRunCount);
 
     private static bool HasFiniteRankingStatistics(GpuBenchmarkVideoStats item) =>
         double.IsFinite(item.Low1PctFps) && item.Low1PctFps > 0d &&
@@ -1635,6 +1553,20 @@ public sealed class GpuAutoAffinitySession
         var terminalFinalist = recommendation == GpuOptimizationRecommendation.KeepCandidate
             ? finalist
             : null;
+        var bestObserved = candidateReports
+            .Where(static candidate =>
+                candidate.DecisionRank == 1 &&
+                candidate.DecisionOnePercentLowEffect is { } effect &&
+                double.IsFinite(effect))
+            .OrderByDescending(static candidate =>
+                string.Equals(candidate.Phase, FinalistPhaseName, StringComparison.Ordinal))
+            .FirstOrDefault();
+        var selectionConfidence = DetermineSelectionConfidence(
+            bestObserved?.Processor,
+            finalistReports,
+            decisionBaseline,
+            practicalTie);
+
         var report = new GpuAutoAffinityReport(
             GpuAutoAffinityReport.SchemaId,
             request.SessionId,
@@ -1660,8 +1592,66 @@ public sealed class GpuAutoAffinitySession
             Pairs = pairReports.AsReadOnly(),
             Finalists = finalistReports.AsReadOnly(),
             PracticalTie = practicalTie,
+            BestObservedProcessor = bestObserved?.Processor,
+            BestObservedOnePercentLowEffect = bestObserved?.DecisionOnePercentLowEffect,
+            SelectionConfidence = selectionConfidence,
         };
         return new GpuAutoAffinitySessionResult(recommendation, terminalFinalist, report);
+    }
+
+    private static string DetermineSelectionConfidence(
+        LogicalProcessorId? bestProcessor,
+        IReadOnlyList<GpuAutoAffinityFinalistReport> finalistReports,
+        GpuAutoAffinityDecisionBaselineReport? decisionBaseline,
+        bool practicalTie)
+    {
+        if (bestProcessor is null)
+        {
+            return "Unavailable";
+        }
+
+        var ranked = finalistReports
+            .Where(static report =>
+                report.MedianOnePercentLowEffect is { } effect &&
+                double.IsFinite(effect))
+            .OrderByDescending(static report => report.MedianOnePercentLowEffect)
+            .ThenBy(static report => report.PhysicalCoreIndex)
+            .ThenBy(static report => report.Processor.Number)
+            .ToArray();
+        var best = ranked.FirstOrDefault(report => report.Processor == bestProcessor);
+        if (best is null || best.MedianOnePercentLowEffect is not { } bestEffect || bestEffect <= 0d)
+        {
+            return "Low";
+        }
+        if (practicalTie)
+        {
+            return "Low";
+        }
+
+        var runnerUp = ranked.FirstOrDefault(report => report.Processor != bestProcessor);
+        if (runnerUp is null || runnerUp.MedianOnePercentLowEffect is not { } runnerEffect)
+        {
+            return best.PositiveOnePercentLowPairCount >= RequiredFinalistPairs ? "Medium" : "Low";
+        }
+
+        var lead = bestEffect - runnerEffect;
+        var variability = Math.Max(
+            best.OnePercentLowEffectMedianAbsoluteDeviation ?? 0d,
+            runnerUp.OnePercentLowEffectMedianAbsoluteDeviation ?? 0d);
+        if (decisionBaseline is not null)
+        {
+            variability = Math.Max(variability, decisionBaseline.OnePercentLowRelativeNoise);
+        }
+
+        if (best.PositiveOnePercentLowPairCount >= RequiredFinalistPairs &&
+            lead > Math.Max(CandidateMetricEquivalenceTolerance, variability))
+        {
+            return "High";
+        }
+
+        return best.PositiveOnePercentLowPairCount >= 2 && lead > 0d
+            ? "Medium"
+            : "Low";
     }
 
     private static void ShuffleDeterministically(GpuAffinityCandidate[] candidates, int seed)
@@ -1731,6 +1721,16 @@ public sealed class GpuAutoAffinitySession
             ? double.PositiveInfinity
             : MaximumRelativeDeviation(values, median);
 
+    private static double RelativeMedianAbsoluteDeviation(IEnumerable<double> values, double median)
+    {
+        if (!double.IsFinite(median) || median <= 0d)
+        {
+            return double.PositiveInfinity;
+        }
+
+        return MedianAbsoluteDeviation(values, median) / Math.Abs(median);
+    }
+
     private static double Median(IEnumerable<double> source)
     {
         var ordered = source.Order().ToArray();
@@ -1756,10 +1756,13 @@ public sealed class GpuAutoAffinitySession
         GpuAutoAffinityTrialObservation? NextOriginal,
         PairMeasurement? ValidMeasurement);
 
+    private static double MedianAbsoluteDeviation(IEnumerable<double> source, double median) =>
+        Median(source.Select(value => Math.Abs(value - median)));
+
     private sealed record FinalistDecision(
         GpuAffinityCandidate Candidate,
         GpuAutoAffinityFinalistReport Report,
-        bool ImprovementCapable);
+        bool RecommendedForKeep);
 
     private sealed record OriginalEvaluation(
         GpuAutoAffinityTrialObservation[] Observations,

@@ -7,7 +7,7 @@ namespace LatencyPilot.CriticalTests;
 public sealed class GpuTemporalStabilityContractTests
 {
     [AuditCase]
-    public void PairedLocalControlsReplaceBlockInterpolationAndBoundInstability()
+    public void PairedLocalControlsRetryDriftButDoNotEraseStructurallyValidCandidates()
     {
         var source = File.ReadAllText(FindRepositoryFile(
             "src",
@@ -22,20 +22,23 @@ public sealed class GpuTemporalStabilityContractTests
         StringAssert.Contains(source, "screening-original-control");
         StringAssert.Contains(source, "GpuAutoAffinityPairVerdict.Unstable");
         StringAssert.Contains(source, "MaximumPairAttempts = 2");
-        StringAssert.Contains(source, "MaximumConsecutiveUnstableCandidates = 2");
         StringAssert.Contains(source, "retry-original-before");
+        StringAssert.Contains(source, "elevated drift reduces confidence instead of erasing this CPU");
+        Assert.IsFalse(
+            source.Contains("MaximumConsecutiveUnstableCandidates", StringComparison.Ordinal),
+            "Noise must not stop the search after an arbitrary number of candidates.");
+        Assert.IsFalse(
+            source.Contains("Verdict = GpuAutoAffinityPairVerdict.Inconclusive", StringComparison.Ordinal),
+            "Ordinary local-control drift may trigger one retry, but it must not erase an otherwise structurally valid candidate.");
         Assert.IsFalse(
             source.Contains("originalBefore = pair.OriginalAfter", StringComparison.Ordinal),
-            "An unstable OriginalAfter must not silently become the next pair or retry anchor.");
+            "An unstable first attempt must not silently become the retry anchor.");
         Assert.IsFalse(
             source.Contains("NormalizeScreeningEvaluations", StringComparison.Ordinal),
-            "v2 must not normalize a candidate back to a distant session baseline.");
-        Assert.IsFalse(
-            source.Contains("ScreeningCandidatesPerControlBlock", StringComparison.Ordinal),
-            "v2 must not group candidates into temporal interpolation blocks.");
+            "Local control must not normalize a candidate back to a distant session baseline.");
         Assert.IsFalse(
             source.Contains("ControlPoint.Interpolate", StringComparison.Ordinal),
-            "v2 local control must come from measured adjacent Originals, not interpolation.");
+            "Local control must come from measured adjacent Originals, not interpolation.");
     }
 
     [AuditCase]
