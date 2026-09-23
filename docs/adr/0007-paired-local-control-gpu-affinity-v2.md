@@ -1,8 +1,10 @@
 # ADR 0007 — Paired local-control GPU affinity v2
 
-Status: **Accepted and implemented in source** (2026-09-21)
+Status: **Superseded for new evidence by ADR 0008** (2026-09-24)
 
-Supersedes the GPU measurement, screening and ranking portions of ADR 0006. ADR 0006 remains authoritative for the narrow v1 product scope, mutation/recovery ownership, xHCI direction and final product sequencing.
+This document remains the historical `gpu-affinity-benchmark-v2` contract. ADR 0008 owns new GPU measurement/ranking evidence. ADR 0006 remains authoritative for the narrow v1 product scope, mutation/recovery ownership, xHCI direction and final product sequencing.
+
+> Historical note: the hard Original-cluster, pair-drift rejection and finalist decision-floor rules below describe v2 only. They must not be applied to v3 evidence.
 
 ## Decision
 

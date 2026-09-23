@@ -122,22 +122,20 @@ No UI, ETW implementation, raw P/Invoke, registry paths or SQLite.
 
 Hardware-independent interpretation/orchestration:
 
-- percentile/statistical primitives;
+- percentile and robust statistical primitives;
 - steady `baseline-quality-v2` / `workload-stability-v1`;
-- GPU candidate generation from actual topology and current CPU-set evidence;
-- `gpu-affinity-benchmark-v2` evidence interpretation/readiness;
-- bounded Original 3-of-up-to-5 qualification before mutation;
-- direct local pair orchestration and pair verdicts;
-- Stage-A physical-core representatives;
-- bounded Stage-B SMT sibling refinement;
-- bounded Stage-C finalists;
-- three independent valid 30 s finalist pairs;
-- persisted paired effects, control movement and finalist decision floor;
-- practical-tie semantics;
+- GPU candidate generation from actual topology/current CPU-set evidence;
+- `gpu-affinity-benchmark-v3` evidence interpretation/readiness;
+- 3–5 Original observations with median/MAD variability;
+- direct local pair orchestration and drift retry;
+- Stage-A representatives, bounded top-3 Stage-B refinement and top-3 finalists;
+- three shuffled 30 s finalist pairs;
+- persisted median paired effects, MAD/noise context, raw before/after values and rank;
+- best-observed CPU + selection confidence independent from Keep;
 - final Keep/Restore orchestration;
 - input/xHCI timing/headroom interpretation.
 
-The GPU decision path has no hidden weighted score. Short-screen rank authority is paired 1%-low effect. Finalist authority is median paired 1%-low effect plus decision-floor/guardrail semantics from ADR 0007. A practical tie stays a tie.
+There is no hidden weighted score. Short screens order candidates by paired 1%-low effect; finalists rank by median paired 1%-low effect. Noise changes confidence, not rankability. Keep is a separate guardrail and runtime-placement decision owned by ADR 0008.
 
 ### `LatencyPilot.Protocol`
 
@@ -242,66 +240,55 @@ Unavailable evidence remains unavailable.
 
 `baseline-quality-v2` and `workload-stability-v1` remain the repeated RealWorld/manual evidence product. They are not forced into the synthetic GPU-search method.
 
-### Automatic GPU search — paired v2
+### Automatic GPU search — noise-tolerant v3
 
 The benchmark process remains stable across the complete search. Workload calibration, process identity, seed and worker map remain frozen. Every affinity-triggered GPU transition is followed by renderer/device recreation before the next relevant warm-up/measurement.
 
 ```text
 5 s non-scored Original warm-up
-→ 10 s Original qualification observations
-→ require 3-run cluster, ±3% preferred, bounded recovery up to ±6% after observations 4/5
-→ no valid cluster after 5 = retain Original, no candidate mutation
+→ 3 × 10 s Original observations
+→ extend to 4/5 only when robust median/MAD variability is high
 → fresh 10 s O0
 → Stage A: one eligible representative per physical core
 → local pair per candidate:
      OriginalBefore
      apply/restart/verify
-     5 s candidate warm-up
+     candidate warm-up
      10 s scored candidate
      exact rollback + Original verification
      Original warm-up
      10 s OriginalAfter
 → pair effect from geometric mean of adjacent Original controls
-→ one retry for unstable pair
-→ two consecutive exhausted candidates = safe stop
-→ Stage B: bounded sibling refinement on up to 3 promising physical cores
-→ Stage C: up to 3 logical-CPU finalists
-→ 3 independent valid 30 s pairs per finalist
-→ finalist DecisionFloor = max(1%, median pair-control movement)
-→ practical ties remain ties
-→ final apply + clean target-only ETW ISR-placement proof
-→ Keep only with verified terminal candidate state
-   otherwise exact RestoreOriginal
+→ one retry for high drift; structurally valid retry remains rankable
+→ Stage B: refine at most top 3 physical cores
+→ Stage C: at most top 3 logical-CPU finalists
+→ 3 shuffled 30 s pairs per finalist
+→ rank by median paired 1%-low effect
+→ report MAD/noise + High/Medium/Low confidence
+→ separate Keep guardrails
+→ final target-only ETW ISR-placement proof
+→ Keep or exact RestoreOriginal while preserving best-observed rank
 ```
 
-Raw observations are never replaced by derived pseudo-normalized FPS.
+Raw observations are never replaced by pseudo-normalized FPS.
 
 ## 8. Screening versus final Keep
 
-Screening must be robust enough to compare bounded hypotheses without pretending optional telemetry is always available.
+A structurally valid scored trial requires valid artifact/session identity, frozen-workload continuity, finite positive controlled metrics and expected stored affinity around the trial. Ordinary variability is uncertainty evidence, not invalid evidence.
 
-Required for a rankable scored trial:
+Standalone PresentMon and screening kernel ETW remain independent cross-check/guardrail sources. Missing optional collector data stays explicit. Healthy ETW that proves off-target GPU ISR placement invalidates the candidate.
 
-- valid benchmark artifact/session identity;
-- frozen-workload continuity;
-- finite positive controlled frame-period statistics;
-- expected stored affinity verified around the trial.
-
-Standalone PresentMon and screening kernel ETW are independent cross-check/guardrail sources. Missing optional collector data remains explicit context. Healthy ETW that proves off-target GPU ISR placement invalidates the candidate.
-
-Final Keep is stricter. A selected candidate is kept only when final verification proves:
+Ranking and Keep are separate:
 
 ```text
-expected stored candidate state
-clean ETW integrity
-zero lost events
-attributable GPU ISR samples > 0
-requested logical CPU is the target
-resolved off-target ISR = 0
-verified terminal state
+valid candidate evidence
+→ persisted rank / best-observed CPU
+→ confidence from lead + MAD + variability + pair consistency
+→ independent Keep guardrails
+→ final runtime placement proof
 ```
 
-Failure restores exact Original.
+Final Keep requires expected stored candidate state, clean ETW integrity, zero lost events, attributable GPU ISR samples, requested logical target, zero resolved off-target ISR and verified terminal state. Failure restores exact Original without deleting the best-observed result.
 
 ## 9. GPU result authority
 
@@ -316,30 +303,31 @@ validate report/session/source
 
 The result UX exposes:
 
-- terminal Keep/Restore/practical-tie/custom-diagnostic state;
-- `Evidence eligible` versus development evidence;
-- direct `Original before → Candidate → Original after` evidence;
-- paired effect, control movement, drift budget and verdict;
-- persisted candidate/finalist rank authority;
-- finalist decision floor where applicable;
+- best-observed CPU independently from terminal Keep/Restore;
+- High/Medium/Low selection confidence;
+- Evidence eligible versus development evidence;
+- actual median Original → Candidate FPS/ms;
+- absolute FPS/ms improvement and paired percentage effect;
+- direct pair evidence, drift/noise guide and attempt;
+- persisted rank/finalist authority and practical ties;
 - final placement/stored-state evidence;
 - ZIP/session/raw-report actions.
 
-`GateAClosureEligible` is source/evidence eligibility only; it is not physical gate closure.
+`GateAClosureEligible` is source/evidence eligibility only.
 
 ## 10. Diagnostic GPU scopes
 
 ### Full search
 
-Authoritative machine-wide paired-v2 search, subject to physical Gate A.
+Authoritative machine-wide v3 search, subject to physical Gate A.
 
 ### Selected CPUs / Custom
 
-Uses the real paired screening path only for the selected logical CPUs, skips the machine-wide finalist tournament, never Keeps and restores exact Original. It is diagnostic-only.
+Uses real paired screening for selected logical CPUs, reports the best observed selection with low confidence, skips the machine-wide finalist tournament, never Keeps and restores exact Original.
 
 ### Original diagnostics
 
-Captures bounded Original-only observations with no affinity mutation or device restart. It measures pre-search variability only.
+Captures bounded Original-only observations with no affinity mutation or restart. It measures variability only.
 
 ## 11. Input/xHCI path
 
@@ -403,8 +391,8 @@ The arming chain is:
 
 ```text
 exact-head green CI
-→ physical paired-v2 GPU Gate A
-→ repeated whole-search / explicit instability evidence
+→ physical noise-tolerant v3 GPU Gate A
+→ repeated whole-search / confidence evidence
 → Stop safely + supported recovery exercise
 → real Windows result/accessibility inspection
 → typed allowlisted mutation-specific IPC

@@ -27,15 +27,15 @@ Purpose: ETW integrity, attribution, per-CPU concentration, obvious tail events 
 
 This remains the authoritative steady/manual RealWorld contract. It is intentionally separate from the synthetic GPU candidate-search method.
 
-### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v2`
+### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v3`
 
 The product question is:
 
-> Which logical CPU, if any, shows a repeatable local paired improvement for GPU interrupt affinity on the current machine under LatencyPilot's controlled workload, while preserving guardrails and final runtime placement proof?
+> Which structurally valid logical CPU is the best observed GPU interrupt-affinity option under the controlled workload, how large is the measured gain, and how uncertain is that ranking?
 
-Windows default is the exact reference/recovery state. It is not an opponent that a forced CPU must beat by a fixed folklore percentage.
+A separate question asks whether that CPU is safe/useful enough to Keep.
 
-Historical `gpu-affinity-benchmark-v1` evidence remains historical and is never reinterpreted as v2.
+Windows default remains the exact reference/recovery state. Historical `gpu-affinity-benchmark-v1` and `gpu-affinity-benchmark-v2` evidence remains historical and is never reinterpreted as v3.
 
 ## 2. Source hierarchy
 
@@ -103,47 +103,31 @@ Each scored benchmark loop records its own controlled wall-clock frame period. F
 
 These are controlled comparison signals for the LatencyPilot workload, not claims about arbitrary-game click-to-photon latency.
 
-## 6. Initial Original qualification
+## 6. Initial Original variability estimate
 
 Before the first candidate mutation:
 
 1. run a 5-second non-scored Original warm-up;
-2. collect scored Original observations of exactly 10 seconds;
-3. after three observations, require a three-run 1%-low cluster within the preferred ±3% median-relative band;
-4. if absent, collect observation four and re-evaluate every three-run combination;
-5. after observation four exists, the existing bounded recovery band may accept the tightest three-run cluster up to ±6%;
-6. if still absent, collect observation five and re-evaluate under the same preferred-then-bounded-recovery rule;
-7. if no eligible three-run cluster exists after five scored observations, verify/retain exact Original and stop before any candidate mutation.
+2. capture three scored Original observations of exactly 10 seconds;
+3. compute median values and relative MAD (`median absolute deviation / median`);
+4. if robust 1%-low variability is above the preferred 3% guide, extend to observation four and then five;
+5. stop after at most five valid scored observations.
 
-Every scored observation remains in the audit trail. The accepted cluster qualifies the measurement substrate and yields the accepted Original 1%-low noise. It is **not** reused as a local candidate control.
+All valid observations remain in the estimate and audit trail. A noisy but structurally valid Original does **not** block candidate testing. It lowers selection confidence.
 
 ## 7. Paired local-control screening
 
-After qualification, capture a fresh 10-second Original control `O0` and screen candidates in a chained sequence:
+Capture a fresh 10-second Original control `O0` and screen candidates in a chained sequence:
 
 ```text
 O0 → C1 → O1 → C2 → O2 → C3 → O3 ...
 ```
 
-For each candidate:
-
-1. start from a verified exact Original state and a scored `OriginalBefore` control;
-2. apply the candidate and activate/restart the device;
-3. verify the stored candidate state;
-4. run the bounded 5-second non-scored transition warm-up;
-5. capture one 10-second scored candidate observation;
-6. restore and verify exact Original;
-7. recreate/warm the renderer as required;
-8. capture one 10-second scored `OriginalAfter` control;
-9. evaluate the local pair.
-
-`OriginalAfter` becomes the next pair's chain anchor only when the pair/control state is acceptable. Unstable retries acquire a fresh valid control rather than treating a failed pair as a trustworthy anchor.
+For each candidate, verify exact state, apply/restart/verify the candidate, run the bounded warm-up, capture the candidate, restore exact Original, and capture the adjacent `OriginalAfter`.
 
 ### 7.1 Local reference and effect
 
-Raw observations remain authoritative and unchanged.
-
-For positive-valued higher-is-better metrics:
+For higher-is-better metrics:
 
 ```text
 LocalReference = sqrt(OriginalBefore × OriginalAfter)
@@ -156,107 +140,59 @@ For lower-is-better frame p99:
 LocalEffect = LocalReference / Candidate - 1
 ```
 
-Positive effect always means improvement-directed movement.
+Raw observations remain authoritative. No pseudo-normalized FPS is manufactured.
 
-The report/UI may show the raw three values plus the derived effect. It must not synthesize pseudo-normalized FPS and present that as a measured observation.
+### 7.2 Local drift and retry
 
-### 7.2 Pair drift budget
+Local Original movement remains a useful noise signal. If the first pair exceeds the existing bounded drift guide, reacquire a fresh Original control and retry once.
 
-Primary pair movement is the relative movement between the two adjacent Original 1%-low controls.
+If the retry is still noisy **but structurally valid**, it remains rankable and its drift is persisted as uncertainty. Noise does not create an `Inconclusive` candidate and there is no consecutive-noise early-stop rule.
 
-```text
-PairDriftBudget = clamp(max(6%, 2 × InitialOriginal1PercentLowNoise), 6%, 10%)
-```
-
-If Original movement exceeds the budget, the pair is `Unstable` and cannot rank the candidate.
-
-One fresh retry is allowed. If the second attempt also exceeds the budget, the candidate becomes `Inconclusive`. Two consecutive candidates that exhaust their retry cause an early safe stop with exact Original retained. A later valid candidate resets the consecutive-unstable counter.
-
-Structural evidence failures remain fail-closed immediately and do not consume the statistical retry.
+Structural evidence failures still fail closed immediately: invalid identity, non-finite controlled metrics, wrong stored state, healthy contradictory placement, failed rollback/recovery, or equivalent contract failure.
 
 ## 8. Full-search candidate strategy
 
-The full search spends short screens broadly and long confirmation narrowly.
-
 ### Stage A — physical-core representatives
 
-For every eligible physical core, choose one eligible logical processor using:
-
-1. current CPU-set availability/allocation evidence;
-2. lower observed pressure;
-3. deterministic processor-number fallback.
-
-Do not assume even/odd SMT numbering and do not globally ban CPU0.
-
-Each representative receives one valid paired short screen.
+Screen one eligible logical representative per eligible physical core, respecting current CPU-set eligibility. Passive pressure and deterministic processor number are only selection/tie fallbacks.
 
 ### Stage B — sibling refinement
 
-Order valid Stage-A hypotheses by paired 1%-low effect. Select:
-
-- the best two physical-core hypotheses;
-- plus a third only when it is within the 1 percentage-point practical-equivalence margin of second place;
-- hard cap: three physical cores.
-
-Screen any still-untested eligible SMT sibling on those selected cores.
+Order Stage-A representatives by paired 1%-low effect and refine at most the top three physical-core hypotheses.
 
 ### Stage C — finalists
 
-From all valid logical-CPU screening pairs, advance:
+Order all valid logical-CPU screens by paired 1%-low effect and advance at most the top three logical CPUs.
 
-- the best two logical CPUs;
-- plus one additional CPU only when it is within the same 1 percentage-point margin of second place;
-- hard cap: three finalists.
-
-The 10-second screen is a filter, not final proof. Primary ranking uses paired 1%-low effect. AVG/frame-p99 are guardrail/context signals; 0.1% low remains diagnostic in the short window.
+The short screen is a filter, not the final confidence estimate.
 
 ## 9. Finalist confirmation
 
-Finalist evidence is separate from the 10-second screening sample.
+Run three 30-second finalist rounds with deterministic candidate-order shuffling. Each finalist receives one local pair per round and the same single high-drift retry.
 
-1. capture a fresh 30-second Original control;
-2. run three rounds;
-3. deterministically shuffle finalist order per round;
-4. each finalist must obtain three independent valid 30-second local pairs;
-5. apply the same one-retry local-stability rule to a finalist pair.
+Persist:
 
-Persist per finalist:
+- median paired 1%-low/AVG/frame-p99 effects;
+- diagnostic 0.1%-low effect;
+- 1%-low effect MAD;
+- positive-pair count;
+- local noise guide;
+- raw median local Original and Candidate FPS/ms;
+- separate Keep recommendation.
 
-- the three accepted pair numbers;
-- median paired 1%-low effect;
-- median paired AVG effect;
-- median paired frame-p99 effect;
-- median diagnostic 0.1%-low effect where available;
-- local pair-control movement;
-- `DecisionFloor`;
-- verdict and reason.
+Structurally valid finalists remain rankable even when their observations disagree.
 
-### 9.1 Finalist decision floor
+## 10. Ranking, confidence and practical ties
 
-```text
-DecisionFloor = max(1%, median finalist pair-control movement)
-```
+Finalists are ordered by median paired 1%-low effect. Rank 1 is the **best observed CPU**.
 
-A finalist is improvement-capable only when:
+A difference of at most one percentage point remains a practical tie. A practical tie lowers confidence and must be disclosed, but it does not erase rank 1.
 
-- at least two of its three valid paired 1%-low effects are positive;
-- median paired 1%-low effect is above the decision floor;
-- no valid primary pair shows a material regression beyond that floor;
-- median paired AVG does not materially regress;
-- median paired frame-p99 does not materially regress;
-- sufficiently supported GPU-driver DPC/ISR tail evidence does not materially regress.
+Selection confidence is explanatory metadata derived from already-collected evidence: lead over runner-up, effect MAD, Original robust variability, positive-pair consistency and practical-tie state. It is not a Keep gate and no hidden weighted score is used.
 
-A finalist that cannot obtain three valid pairs within the bounded retry policy is `Inconclusive` and cannot be kept.
+Keep is evaluated separately. A positive median primary effect and bounded performance guardrails are required before the final runtime-placement check; final target-only ISR proof remains mandatory.
 
-## 10. Ranking and practical ties
-
-Finalists are ordered by median paired 1%-low effect.
-
-Differences of at most one **percentage point of paired effect** are practical ties. LatencyPilot may use passive observed-pressure/topology/processor identity ordering to select one operational target among tied improvement-capable finalists, but the report/UI must say **Practical tie** and must not claim the chosen target proved faster than tied peers.
-
-There is no hidden weighted score.
-
-0.1% low remains visible tail context but does not independently overturn the primary paired-v2 authority.
+0.1% low remains diagnostic tail context.
 
 ## 11. Interrupt-tail guardrails
 
@@ -327,30 +263,34 @@ Performs the bounded Original-only measurement path with no affinity mutation or
 
 ## 15. UI/evidence semantics
 
-Presentation must distinguish:
+Presentation distinguishes:
 
 ```text
 raw observation
 ≠ paired derived effect
-≠ persisted decision/finalist authority
+≠ best-observed rank
+≠ selection confidence
+≠ Keep recommendation
 ≠ verified terminal machine state
 ```
 
-The UI must consume persisted decision/finalist authority rather than re-ranking shuffled execution order.
+The UI consumes persisted rank rather than re-ranking shuffled execution order.
 
-For direct pair evidence it should expose, where available:
+For the best observed CPU it shows, where available:
 
-- Original before;
-- Candidate;
-- Original after;
-- paired effect;
-- control movement;
-- drift budget;
-- attempt/verdict.
+- CPU id;
+- `High` / `Medium` / `Low` confidence;
+- median Original → Candidate 1% low and AVG FPS;
+- median Original → Candidate frame-p99 ms;
+- absolute FPS/ms improvement;
+- paired percentage effect;
+- MAD/noise context in details;
+- practical-tie state;
+- whether the CPU was kept or exact Original was restored.
 
-A non-Keep candidate is diagnostic/comparison-only even if it shows a positive measured effect.
+Direct pair evidence remains available with Original before, Candidate, Original after, paired effect, control movement/noise guide, attempt and verdict.
 
-`GateAClosureEligible` is a compatibility field for source/evidence eligibility. UI copy uses **Evidence eligible** because the field does not mean physical Gate A has already closed.
+A non-Keep CPU may still be the valid best observed CPU. `GateAClosureEligible` remains source/evidence eligibility only.
 
 ## 16. Physical evidence boundary
 
@@ -367,12 +307,13 @@ Physical Gate A therefore remains a separate requirement on one exact clean gree
 
 ## 17. Interpretation rules
 
-- Do not call a positive single pair a proven winner.
-- Do not compare historical v1 normalized aggregates as though they were paired-v2 effects.
+- Structurally valid evidence is ranked; ordinary noise lowers confidence rather than deleting rank 1.
+- Do not call a low-confidence rank proof of superiority.
+- Historical v1/v2 aggregates are not reinterpreted as v3.
 - Do not treat registry state as runtime placement proof.
-- Do not hide unstable/inconclusive evidence.
+- Do not hide noisy attempts or structural failures.
 - Do not turn optional missing telemetry into zero or success.
-- Do not lengthen warm-up or add new isolation machinery merely because a run is noisy; first inspect the paired evidence and identify a falsifiable cause.
-- Prefer Restore Original to manufacturing certainty when the evidence contract is not satisfied.
+- Do not lengthen warm-up or invent isolation machinery merely to force a cleaner result.
+- Keep may restore Original even when the report has a best-observed CPU.
 
-See ADR 0007 and `docs/PHASE3_PHYSICAL_VALIDATION.md` for the authoritative paired-v2 Gate A procedure.
+See ADR 0008 and `docs/PHASE3_PHYSICAL_VALIDATION.md` for the authoritative v3 procedure.

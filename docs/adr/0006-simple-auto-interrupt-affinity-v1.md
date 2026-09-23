@@ -64,22 +64,23 @@ Existing read-only/future/recovery code in those areas may remain, but it must n
 
 Current GPU method authority is:
 
-[`0007-paired-local-control-gpu-affinity-v2.md`](0007-paired-local-control-gpu-affinity-v2.md)
+[`0008-noise-tolerant-ranked-gpu-affinity-v3.md`](0008-noise-tolerant-ranked-gpu-affinity-v3.md)
 
 In brief, current source uses:
 
 ```text
-bounded Original qualification
+3–5 scored Original observations for robust median/MAD variability
 → direct Original-before → Candidate → Original-after local pairs
-→ physical-core representatives
-→ bounded SMT sibling refinement
+→ one retry for high local drift, then keep structurally valid evidence rankable
+→ physical-core representatives and bounded top-3 refinement
 → up to 3 finalists
-→ 3 independent 30 s local pairs per finalist
-→ practical-tie semantics
-→ final clean target-only kernel-ETW ISR-placement proof before Keep
+→ 3 shuffled 30 s local pairs per finalist
+→ always rank valid finalist evidence
+→ confidence describes uncertainty
+→ Keep is a separate guardrail + final target-only kernel-ETW decision
 ```
 
-New method identity is `gpu-affinity-benchmark-v2`. Historical v1 evidence remains historical and is never reinterpreted as v2.
+New method identity is `gpu-affinity-benchmark-v3`; report schema is `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2 evidence remains historical and is never reinterpreted as v3.
 
 The broad product rule is unchanged: **a measured performance result is not sufficient for Keep; runtime placement and terminal state must verify.**
 
@@ -194,7 +195,7 @@ The dependency chain is:
 
 ```text
 exact-head green hosted Tests
-→ paired-v2 GPU physical Gate A
+→ noise-tolerant v3 GPU physical Gate A
 → whole-search repeatability / explicit instability
 → Stop safely + supported recovery exercise
 → real Windows result/accessibility inspection
@@ -212,17 +213,20 @@ Do not arm public mutation merely because hosted tests are green.
 
 ## Evidence honesty
 
-LatencyPilot must prefer an explicit inconclusive/Restore result over false precision.
+LatencyPilot distinguishes **uncertainty** from **invalid evidence**.
 
 Rules:
 
-- missing evidence stays missing;
+- structurally valid candidate evidence is ranked even when the environment is noisy;
+- noise lowers `SelectionConfidence`; it does not erase the best-observed CPU;
+- missing/invalid evidence stays missing/invalid;
 - optional collector failure is not silently converted to zero;
-- healthy contradictory evidence invalidates the relevant claim;
-- practical ties remain ties;
-- UI does not invent a winner or second scoring system;
+- healthy contradictory placement evidence invalidates the relevant claim;
+- practical ties remain explicit while rank 1 remains the best observed estimate;
+- UI does not invent a second scoring system;
 - source/evidence eligibility is not physical Gate A closure;
-- historical evidence remains bound to its historical method/source revision.
+- historical evidence remains bound to its historical method/source revision;
+- Keep remains independently conservative and may restore Original even when a best-observed CPU exists.
 
 ## Test policy
 

@@ -11,24 +11,26 @@ Last updated: 2026-09-22
 - Public protocol: **v6 / observation-only** (`LatencyPilot.Observation.v6`).
 - Public commands: **`GetStatus`, `CaptureKernelLatency` only**.
 - `ServiceBoundary.MutationAvailable`: **false**.
-- GPU benchmark method: **`gpu-affinity-benchmark-v2`**.
-- GPU evidence envelope/report: **`latencypilot-gpu-benchmark-v1` / `latencypilot-gpu-auto-affinity-report-v2`**. The benchmark envelope schema remains v1 because its shape did not change; method identity is independently versioned to v2.
+- GPU benchmark method: **`gpu-affinity-benchmark-v3`**.
+- GPU evidence envelope/report: **`latencypilot-gpu-benchmark-v1` / `latencypilot-gpu-auto-affinity-report-v3`**. The evidence envelope schema remains v1; method/report identities are versioned independently.
 - Product/safety authority: **ADR 0006**.
-- GPU measurement/search/ranking authority: **ADR 0007**.
-- Hosted GitHub Actions is **software-contract evidence only**. It cannot prove physical interrupt placement, device restart behavior, rendered WinUI/accessibility, LocalSystem behavior or package/signing behavior.
+- GPU measurement/search/ranking authority: **ADR 0008**.
+- ADR 0007 remains the historical paired-v2 contract and does not govern new evidence.
+- Hosted GitHub Actions is **software-contract evidence only**.
 
 ## Current v1 direction
 
 LatencyPilot remains a narrow automatic interrupt-affinity workflow, not a generic whole-PC optimizer:
 
 ```text
-preflight / quiet check
+preflight / quiet-context capture
 → deep ETW baseline
-→ bounded Original qualification
+→ robust Original variability estimate
 → paired GPU screening: Original before → Candidate → Original after
-→ physical-core representatives → promising SMT siblings → up to 3 finalists
-→ three independent 30 s local pairs per finalist
-→ final target-only GPU ISR placement proof
+→ physical-core representatives → top-3 refinement → up to 3 finalists
+→ three shuffled 30 s local pairs per finalist
+→ best-observed CPU + confidence
+→ separate Keep guardrails + final target-only GPU ISR placement proof
 → measure free CPU interrupt headroom
 → Raw Input → USB → xHCI resolution
 → reversible xHCI affinity
@@ -55,26 +57,27 @@ Implemented:
 - GPU interrupt-affinity mutation, target restart, renderer recreation and exact rollback;
 - Raw Input → USB hub/port → xHCI read-only topology and input-host timing source.
 
-### GPU paired-v2 contract
+### GPU noise-tolerant v3 contract
 
-Current source implements ADR 0007:
+Current source implements ADR 0008:
 
 1. 5 s non-scored Original warm-up.
-2. 10 s scored Original qualification: require a three-run 1%-low cluster, ±3% preferred; observations four/five may recover within the bounded ±6% band. No valid cluster after five stops before candidate mutation and retains Original.
-3. Fresh 10 s Original control `O0`.
-4. Local screening pairs `O0 → C1 → O1 → C2 → O2 ...` with exact rollback between candidates.
-5. Pair effect uses the equal-weight geometric mean of adjacent Original controls. Raw values remain untouched; there is no pseudo-normalized FPS.
-6. Pair drift budget is `clamp(max(6%, 2 × accepted Original 1%-low noise), 6%, 10%)`.
-7. One retry is allowed for an unstable pair. Two consecutive candidates that exhaust the retry stop safely and retain Original.
+2. Three scored 10 s Original observations; if robust median/MAD variability is high, extend to at most five.
+3. Ordinary Original variability lowers confidence rather than stopping candidate mutation.
+4. Fresh 10 s Original control `O0`.
+5. Local screening pairs `O0 → C1 → O1 → C2 → O2 ...` with exact rollback between candidates.
+6. Pair effect uses the geometric mean of adjacent Original controls; raw values remain untouched.
+7. High local drift gets one fresh retry. A still-noisy but structurally valid retry remains rankable; there is no consecutive-noise early stop.
 8. Stage A screens one representative logical CPU per eligible physical core.
-9. Stage B screens untested siblings only on the best two physical-core hypotheses, plus a third when within the 1% practical-equivalence margin; hard cap three cores.
-10. Stage C advances the best two logical CPUs plus one within the 1% margin; hard cap three finalists.
-11. Each finalist must obtain three independent 30 s valid local pairs in deterministically shuffled order.
-12. A finalist is improvement-capable only when at least two of three primary effects are positive, median 1%-low effect exceeds `max(1%, median local-control movement)`, and primary/AVG/p99/interrupt-tail guardrails do not materially regress.
-13. Finalists within one percentage point are a **practical tie**. Passive pressure/topology ordering may choose the operational target but must not be presented as proof of speed superiority.
-14. Final Keep requires exact stored state plus clean attributable target-only GPU ISR placement. Otherwise exact Original is restored.
+9. Stage B refines at most the top three physical-core hypotheses.
+10. Stage C advances at most the top three logical CPUs.
+11. Finalists receive three deterministically shuffled 30 s local pairs.
+12. Every structurally valid finalist is ranked by median paired 1%-low effect.
+13. MAD, Original variability, lead over runner-up, pair consistency and practical-tie state produce `High`/`Medium`/`Low` confidence; confidence never gates rank.
+14. `RecommendedForKeep` is separate: positive median benefit plus bounded AVG/frame-p99/interrupt-tail guardrails.
+15. Final Keep still requires exact stored state and clean attributable target-only GPU ISR placement. Otherwise exact Original is restored while the best-observed CPU remains in the report.
 
-The report persists raw trials, pair capture ids, pair attempts/effects/control movement/drift budget/verdict, finalist aggregates and `DecisionFloor`, requested/validated processors, realized candidate/finalist order, durations, provenance and terminal state. Execution-order metadata is derived from persisted raw pair/trial evidence to avoid a second mutable source of truth.
+The v3 report persists raw trials/pairs, finalist medians, effect MAD, positive-pair count, noise guide, raw median Original/Candidate FPS/ms, `BestObservedProcessor`, `SelectionConfidence`, Keep recommendation, provenance and terminal state.
 
 ### Diagnostic scopes
 
@@ -88,7 +91,7 @@ CPU selection uses current topology/CPU-set eligibility; unsupported topology fa
 
 ### Gate A result experience
 
-The validated completion path is:
+The validated completion path remains:
 
 ```text
 validate report/session/source
@@ -99,19 +102,16 @@ validate report/session/source
 
 The result surface now distinguishes:
 
-- source/evidence eligibility from the performance verdict (`Evidence eligible`, not “Closure eligible”);
-- persisted optimizer rank from shuffled execution order;
-- raw trial history from paired decision effects;
-- direct `Original before → Candidate → Original after` evidence;
-- finalist median effects/decision floor from short-screen evidence;
-- `Winner`, `Practical tie`, `No measured winner`, `Inconclusive` and custom diagnostic outcomes;
-- exact terminal machine state.
+- best-observed CPU from kept CPU / restored Original;
+- persisted rank from shuffled execution order;
+- High/Medium/Low confidence from ranking itself;
+- actual median Original → Candidate 1% low / AVG FPS and frame-p99 ms;
+- absolute FPS/ms improvement plus paired percentage effect;
+- practical tie from “no result”;
+- MAD/noise detail from a hard decision floor;
+- direct pair evidence and exact terminal machine state.
 
-Candidate bars are centered on 0% paired 1%-low effect and never re-rank candidates in UI code. A RestoreOriginal result may show the best measured candidate as diagnostic context, but never as a kept winner.
-
-Final-summary ranked medians and the development progress raw-attempt rows only consume `Ready` trials on real `screening-*` non-warmup phases whose `CaptureId` belongs to a `Valid` pair for the compared CPU. Progress budgets pair retries (+6), recovery Original-control (+2) and transient collector retries (+1). Returning to Full scope restores the source-state Run Gate A button instead of leaving a diagnostic label stuck.
-
-The two custom chart surfaces now create explicit UI Automation peers and expose stable automation ids/control types plus concise status and full chart-content descriptions. This closes only the source-level automation-tree gap; Narrator/Accessibility Insights, high-contrast, text-scaling and keyboard behavior still require real Windows inspection.
+Candidate bars remain based on persisted paired 1%-low effect and UI code does not invent a second ranking. A RestoreOriginal result can still truthfully show the best-observed CPU.
 
 ### USB/xHCI recommendation
 
@@ -123,56 +123,42 @@ The xHCI recommendation remains read-only/product-gated until the shared mutatio
 
 ### Hosted software verification
 
-The paired-v2 work is covered by the existing permanent critical-test budget rather than adding a new test family. TDD/CI has already caught and driven fixes for:
+The v3 work reuses the consolidated critical-test budget. New/updated contracts specifically guard:
 
-- stale v1 benchmark method identity;
-- UI-side re-ranking rather than persisted `DecisionRank`;
-- wrong finalist phase name in presentation;
-- short-screen data incorrectly taking precedence over finalist authority;
-- missing persisted finalist `DecisionFloor`;
-- raw-FPS candidate bars instead of paired-effect bars;
-- misleading “Closure eligible” copy;
-- unsupported CPU-scope handling;
-- stale progress warm-up semantics;
-- hidden direct pair evidence;
-- custom Canvas-backed result charts that exposed visual/tool-tip evidence without explicit UI Automation peers or concise accessible chart summaries;
-- PresentMon startup that treated process liveness plus a fixed delay as capture readiness. Current source waits for the uniquely named ETW session through the maintained TraceEvent query API, then still relies on the benchmark-owned unscored observer-active settle before the scored QPC boundary; it does not depend on redirected console buffering as a readiness handshake.
+- noise cannot stop the search after two candidates;
+- high drift gets one retry but a structurally valid retry remains rankable;
+- Original variability uses median/MAD rather than quiet-cluster cherry-picking;
+- best-observed CPU persists independently from Keep/Restore;
+- selection confidence is metadata rather than a winner threshold;
+- result presentation includes actual before/after FPS/ms plus absolute and percentage improvement;
+- final target-only ISR placement and rollback safety remain separate Keep requirements.
 
-Exact-head hosted **Tests** are mandatory for every revision used as physical closure evidence. Every commit moves HEAD, so GitHub Actions for the exact revision selected for physical work is the CI oracle; an older successful or cancelled run must never be reused as proof for a later SHA.
+Exact-head hosted **Tests** are mandatory for every revision used as physical closure evidence. An older green run is never reused for a newer SHA.
 
 ### Physical GPU Gate A
 
-**OPEN.**
+**OPEN for v3.**
 
-2026-09-22 investigation: the latest owner report (`bbc5698f-e871-464d-88c5-fd029e134145`) stopped before any candidate mutation: its five Original 1%-low observations were 53.63, 94.60, 84.72, 114.28 and 114.62 FPS. The preceding paired-v2 diagnostic exhausted its retries with local Original movement of 67.05%, 22.57%, 22.64% and 32.32%. These are measurement-repeatability stops, not an affinity registry-write failure.
+The 2026-09-22 v2 investigation remains useful historical evidence: real owner runs showed large Original/pair variability and graphics-hook context, demonstrating that a hard noise-as-validity gate could prevent any candidate ranking on an ordinary Windows system. Those v2 reports are not reinterpreted as v3 evidence.
 
-A normal-user benchmark probe found both `RTSSHooks64.dll` and `nvspcap64.dll` loaded inside the subject. A 30-second runtime trace found no GC suspension inside that scored window. Noise also reproduced without the external ETW/PresentMon collectors. After the owner closed RTSS/Afterburner, a fresh five-observation probe measured 212.72, 214.15, 225.95, 230.04 and 213.84 FPS at 1% low, sufficient for the existing bounded three-run qualification. NVIDIA capture injection was still present in that probe; this is evidence of improvement after removing RTSS/Afterburner, not isolated proof against every overlay or proof of candidate benefit.
+Current v3 physical validation must prove on one exact clean green revision:
 
-The benchmark now samples loaded graphics-hook names outside the scored window, preserves optional `MeasurementWarnings` in new trial artifacts, and carries warnings into per-trial context and terminal report reasons. Presence is explicitly interference context rather than a causal verdict; inspection failure remains unknown. Historical artifacts lacking this optional field remain readable. No noise budget, ranking rule, ISR-placement requirement or automatic application-closing behavior changed.
+1. noisy but structurally valid Original observations continue into candidate testing and reduce confidence instead of causing a noise-only stop;
+2. Stage-A coverage and bounded top-3 refinement match actual topology;
+3. pair math and raw controls reconstruct from persisted evidence;
+4. high-drift retry evidence remains visible while valid candidates remain ranked;
+5. finalists receive three shuffled 30 s observations and persisted median/MAD authority matches the rank;
+6. `BestObservedProcessor` and `SelectionConfidence` agree with report/UI even when Original is restored;
+7. actual before/after FPS/ms and paired percentage effect render correctly;
+8. Keep guardrails do not affect who is ranked first;
+9. exact rollback succeeds between candidates and on failure/cancellation;
+10. final ETW proves attributable target-only GPU ISR placement before Keep;
+11. terminal state verifies with `unresolved=0`;
+12. **Stop safely** and one supported failure/recovery path restore exact Original;
+13. a second full v3 search produces comparable ranking/confidence behavior without requiring identical decimals;
+14. real Windows result UI is inspected for theme/text-scale/keyboard/accessibility behavior.
 
-The actual helper's subsequent Original-only diagnostic (`b209095f-19c1-4d2b-914c-ae781d60f017`) verified exact Original with `clean-zero-unresolved`, without affinity changes or GPU restart. Its five 1%-low observations were 116.13, 124.44, 126.36, 125.34 and 96.52 FPS (22.4% all-observation noise); it was not a stable full diagnostic. The new warning survived the real artifact-to-terminal-report path and reported `nvspcap64.dll` still loaded. Disabling NVIDIA Overlay and rerunning in a fresh process remains necessary before treating that interference hypothesis as eliminated.
-
-Historical physical evidence at source revision `15879543ce54eadb8342a87e367d60a6d5d5f81f` proved useful v1 safety properties: journal-owned apply/restart/rollback, full old-method screening, exact verified Original restoration and zero unresolved recovery ownership. That run used the superseded v1 measurement/ranking method and therefore **cannot** validate paired-v2 or the current UI.
-
-Physical Gate A for v2 requires one exact clean green current revision to prove:
-
-1. bounded Original qualification either succeeds in at most five scored observations or stops before mutation;
-2. Stage-A physical-core representative coverage is correct for the actual topology;
-3. Stage-B sibling refinement targets only the selected promising cores without even/odd assumptions;
-4. direct local pair controls/capture IDs/effects/movement/retries are correct and raw values remain unchanged;
-5. repeated local instability fails safe rather than being converted into candidate benefit;
-6. finalists receive the required three independent 30 s valid pairs or become inconclusive;
-7. finalist `DecisionFloor`, guardrails and practical-tie semantics match the persisted report;
-8. exact rollback succeeds between candidate activations and on failure/cancellation;
-9. final ETW proves attributable target-only GPU ISR placement before Keep;
-10. terminal state verifies with `unresolved=0`;
-11. **Stop safely** and one supported failure/recovery path restore exact Original;
-12. a second full paired-v2 search is practically reproducible or reports instability explicitly;
-13. the real Windows result surface is inspected in relevant theme/text-scale/keyboard/accessibility states.
-
-Dirty runs remain development evidence only. `GateAClosureEligible` is a source/evidence-eligibility field, not proof that the physical gate has closed.
-
-Public mutation remains unarmed until this physical gate passes.
+Dirty runs remain development evidence only. Public mutation remains unarmed until physical Gate A passes.
 
 ## Roadmap snapshot
 
@@ -181,7 +167,7 @@ Public mutation remains unarmed until this physical gate passes.
 | 0 Scope/safety | **Source complete** | Keep exact-head verification current |
 | 1 Preflight | **Most primitives exist** | Integrated quiet check + combined GPU/xHCI preflight |
 | 2 Baseline | **ETW engine exists** | Wire deep comparable baseline into one-button workflow |
-| 3 GPU search | **Paired-v2 source/result contracts implemented** | Physical Gate A + repeat + recovery/render inspection; chosen physical revision must be exact-head green |
+| 3 GPU search | **Noise-tolerant v3 source/result contracts implemented** | Exact-head CI + physical v3 Gate A + repeat + recovery/render inspection |
 | 4 GPU Keep | **Internal verified-Keep source implemented** | Physical proof, typed product IPC, arming gates |
 | 5 USB selection | **Read-only recommendation implemented** | Representative physical evidence + product rendering |
 | 6 USB apply | **Internal reversible substrate / product-gated** | Integrated physical apply/verify/rollback evidence |
@@ -191,11 +177,11 @@ Public mutation remains unarmed until this physical gate passes.
 
 ## Immediate execution ladder
 
-1. **Completed now:** traced the current pre-mutation stop to unstable Original evidence, observed graphics-hook injection, and implemented explicit artifact/report interference context. This measurement investigation is implemented but not physically closed.
-2. **Evidence:** owner-local Release builds of the benchmark/helper and the existing consolidated critical test passed. The diagnostic probes above are normal-user, non-mutating evidence; hosted Tests for the delivered revision and a complete physical search are still required.
-3. **Still open:** verify Original through the actual helper with ETW/PresentMon after overlay shutdown; prove restart/pair stability and terminal placement/recovery. Hook absence alone does not establish a quiet environment.
-4. **Next stage:** obtain hosted Tests success for the exact clean `main` revision; confirm Original repeatability; perform the owner-authorized full search with Keep allowed only after all existing decision and runtime-placement gates pass; inspect its report and exact terminal state.
-5. **After that:** repeat the full search for reproducibility, exercise Stop safely plus supported failure/recovery with `unresolved=0`, and inspect the real WinUI result/accessibility states. Only then consider typed product mutation arming and integrated xHCI/reboot/before-after physical validation.
+1. **Completed now:** v3 source separates best-observed ranking/confidence from Keep, removes noise-only early stops, adds median/MAD evidence and actual before/after result values.
+2. **Evidence:** consolidated critical tests are updated to fail if noise again erases valid ranking or the result UI loses confidence/absolute-gain evidence.
+3. **Still open:** hosted Tests must be green for the final documentation-aligned HEAD, then v3 needs physical owner evidence.
+4. **Next stage:** run the exact-head full v3 search and inspect best-observed rank, confidence, FPS/ms gains, rollback and final placement.
+5. **After that:** repeat the search, exercise Stop safely/failure recovery, and complete real WinUI/accessibility inspection before product mutation arming.
 
 ## Completion rule
 

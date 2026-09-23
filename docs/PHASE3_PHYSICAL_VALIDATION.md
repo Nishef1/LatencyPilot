@@ -1,20 +1,18 @@
 # Phase 3 Physical Validation Runbook
 
-This is the owner-local **GPU Gate A** procedure for the paired local-control GPU search in ADR 0007. It does **not** arm public mutation. Protocol v6 remains observation-only and `ServiceBoundary.MutationAvailable=false` during this gate.
+This is the owner-local **GPU Gate A** procedure for the noise-tolerant ranked GPU search in ADR 0008. It does **not** arm public mutation. Protocol v6 remains observation-only and `ServiceBoundary.MutationAvailable=false`.
 
 ```text
 Run GPU Gate A
 = primary end-to-end development validation path
 = normal-user D3D12 benchmark + elevated owner helper
-= bounded Original qualification
+= 3–5 Original observations for robust noise context
 = direct Original-before → Candidate → Original-after local pairs
-= physical-core representative screen + bounded sibling refinement
-= up to 3 finalists, 3 independent 30 s pairs each
+= Stage-A physical-core representatives + bounded top-3 refinement
+= up to 3 finalists, 3 shuffled 30 s pairs each
+= best-observed CPU + confidence
+= separate Keep guardrails
 = final ETW runtime ISR-placement proof before Keep
-
-LatencyPilot.PhysicalValidation
-= lower-level exact-state/preflight/recovery diagnostics
-= not the candidate-selection authority
 ```
 
 ## Scope and evidence boundary
@@ -29,48 +27,44 @@ stored interrupt-affinity policy
 != runtime ETW ISR execution
 ```
 
-A registry write/restart is not activation proof. ConfigMgr resources are provenance only. Never coerce ambiguous IRQ/group/affinity fields into a plausible placement claim.
-
-Keep these measurement layers separate:
+Keep these result layers separate:
 
 ```text
-raw scored observation
-!= paired derived effect
-!= persisted decision/finalist authority
-!= verified terminal machine state
+raw observation
+!= paired effect
+!= best-observed rank
+!= selection confidence
+!= Keep recommendation
+!= terminal machine state
 ```
 
-During **screening**, valid controlled benchmark evidence may remain rankable if optional PresentMon or kernel ETW is unavailable; that absence must be explicit. If healthy ETW proves off-target placement, the candidate is invalid.
+During screening, structurally valid benchmark evidence remains rankable even when run-to-run/local-control variability is high. Missing optional PresentMon or screening ETW remains explicit context. Healthy ETW that proves off-target placement invalidates that candidate.
 
-During **final Keep verification**, missing/unhealthy ETW is not acceptable. Keep requires clean ETW, attributable GPU ISR samples and target-only placement on the selected logical processor.
+During final Keep verification, clean ETW, attributable GPU ISR samples and target-only placement remain mandatory.
 
-Stop on unknown/diverged stored state, target-identity change, invalid/mismatched benchmark evidence, failed exact rollback or recovery requiring manual intervention. Never edit/delete the SQLite journal to make validation pass.
+Stop on unknown/diverged stored state, target-identity change, invalid benchmark identity, non-finite required metrics, failed exact rollback, or recovery requiring manual intervention. Do not stop merely because otherwise valid FPS measurements are noisy.
 
 ## Required provenance
 
 Record:
 
-- exact clean `main` revision;
-- successful hosted Tests run for that exact revision;
-- Windows build;
-- GPU name/driver/PnP identity;
-- CPU topology, CPU-set eligibility and Stage-A physical-core representatives;
+- exact clean `main` revision and hosted Tests result for that exact SHA;
+- Windows build, GPU/driver/PnP identity and CPU topology/CPU-set eligibility;
 - benchmark method/schema/seed/frozen worker/workload mapping;
-- Original qualification observations and accepted cluster/noise;
-- every local pair's processor, stage, attempt and three capture ids;
-- raw Original-before / Candidate / Original-after 1%-low/AVG/p99/0.1%-low values;
-- paired effects, control movement, drift budget and verdict;
-- Stage-B sibling hypothesis selection;
-- Stage-C finalist selection;
-- all finalist pair numbers, median effects, decision floors and verdicts;
-- PresentMon version/path/hash and any bounded collector diagnostic state;
-- ETW integrity and ISR target/off-target/unresolved counts where available;
-- every mutation-journal apply/rollback/keep transition;
+- every scored Original observation plus median/MAD variability;
+- every local pair's processor, stage, attempt and capture ids;
+- raw Original-before / Candidate / Original-after values and paired effects;
+- pair control movement/noise guide and retry outcome;
+- Stage-A representatives, Stage-B refined cores and Stage-C finalists;
+- finalist median effects, effect MAD, positive-pair count and raw median Original/Candidate values;
+- best-observed CPU and `SelectionConfidence`;
+- `RecommendedForKeep` and guardrail evidence;
+- PresentMon/ETW availability and integrity;
+- mutation-journal transitions;
 - exact original/final stored states;
 - final recommendation/processor and recovery status;
-- final unresolved journal count;
 - generated evidence ZIP path/status;
-- rendered Overview/progress/taskbar/keyboard/Stop-safely observations.
+- real rendered UI/accessibility observations.
 
 ## 1. Freeze the exact revision
 
@@ -91,7 +85,7 @@ HEAD = exact 40-hex revision
 hosted Tests = green for this exact HEAD
 ```
 
-If HEAD changes, restart the authoritative physical evidence set. An older physical run is historical evidence only.
+If HEAD changes, restart the authoritative physical evidence set.
 
 ## 2. Validate the normal App/Service path
 
@@ -103,13 +97,11 @@ Run:
 
 Before mutation confirm:
 
-- the App launches non-elevated;
+- App launches non-elevated;
 - observation Service connectivity works;
 - startup reports no unexplained unresolved mutation state;
 - evidence/session paths are writable;
-- the Gate A developer controls are present and understandable.
-
-Do not continue if the normal path is broken.
+- Gate A developer controls are present.
 
 ## 3. Read-only preflight
 
@@ -119,25 +111,21 @@ dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.Physic
 dotnet run --project .\tools\LatencyPilot.PhysicalValidation\LatencyPilot.PhysicalValidation.csproj --configuration Release -- list-gpus
 ```
 
-Require `unresolved=0`. Record device/driver/topology/CPU-set evidence. Current GPU mutation remains fail-closed for unsupported processor-group/topology cases.
+Require `unresolved=0`. Record device/driver/topology/CPU-set evidence.
 
-## 4. Optional no-mutation methodology check
+## 4. Optional Original-only diagnostic
 
-Before spending time on a full search, the developer UI may run:
+The developer UI may run:
 
 ```text
 Original only · no system changes
 ```
 
-This path must perform no GPU affinity write or device restart. It is useful for checking current Original variability and benchmark health, but it **cannot** prove candidate benefit, restart stability or Gate A closure.
+This path performs no GPU affinity write or restart. It is useful context for current variability and graphics-hook warnings, but it does not gate the full v3 search solely because the environment is noisy.
 
-If the Original-only diagnostic is obviously unstable, fix the environment/methodology issue before interpreting a full search. Do not widen thresholds or lengthen sleeps merely to force a pass.
+A structurally broken diagnostic still needs investigation before interpreting a full run.
 
-## 5. Run the complete paired-v2 GPU Gate A search
-
-There is no separate PresentMon Service installation prerequisite. LatencyPilot uses the pinned standalone PresentMon console executable and its bounded verification/provisioning path.
-
-In the development App choose the full GPU Gate A search.
+## 5. Run the complete v3 GPU Gate A search
 
 Expected flow:
 
@@ -145,56 +133,44 @@ Expected flow:
 normal-user benchmark + one UAC owner helper
 → capture exact Original stored state
 → 5 s non-scored Original warm-up
-→ 10 s scored Original observations
-→ establish 3-run 1%-low cluster:
-     ±3% preferred
-     bounded recovery up to ±6% after observations 4/5
-→ no valid cluster after 5:
-     verify exact Original
-     stop before candidate mutation
-→ capture fresh 10 s Original control O0
+→ 3 × 10 s scored Original observations
+→ compute robust median/MAD variability
+→ when noisy, extend to observation 4/5
+→ broad valid variance lowers confidence; it does not block candidate testing
+→ capture fresh 10 s Original O0
 → Stage A:
-     one eligible logical-CPU representative per physical core
-     representative selection uses current eligibility/pressure evidence
-→ for each candidate:
-     OriginalBefore already available
-     apply/restart/verify candidate state
+     one eligible logical representative per physical core
+→ for each short-screen candidate:
+     OriginalBefore
+     apply/restart/verify candidate
      5 s non-scored candidate warm-up
      10 s scored candidate
      exact rollback + Original verification
      5 s non-scored Original warm-up
-     10 s scored OriginalAfter
-     compute pair movement/effects/verdict
-→ unstable pair:
-     one fresh retry only
-→ two consecutive candidates that exhaust retry:
-     stop safely, verify/retain Original
+     10 s OriginalAfter
+     compute paired effects + control movement
+→ high control movement:
+     one fresh retry
+→ second noisy but structurally valid attempt:
+     keep rankable and persist its uncertainty
 → Stage B:
-     best 2 physical-core hypotheses
-     + third only inside 1 percentage-point margin
-     screen still-untested siblings on those cores
+     refine siblings on at most top 3 physical-core hypotheses
 → Stage C:
-     best 2 logical CPUs
-     + third only inside 1 percentage-point margin
-     hard cap 3 finalists
+     advance at most top 3 logical CPUs
 → finalist confirmation:
      fresh 30 s Original control
-     3 rounds
-     deterministic finalist shuffle per round
-     3 independent valid 30 s local pairs per accepted finalist
-→ finalist decision floor = max(1%, median local pair-control movement)
-→ reject finalist on insufficient positive primary evidence or material primary/AVG/p99/interrupt-tail regression
-→ if remaining improvement-capable finalists are within 1 percentage point:
-     record Practical tie
-     use passive ordering only to choose an operational target
-→ apply selected operational target once more
-→ final non-scored warm-up
-→ clean kernel-ETW runtime-placement verification
-→ Keep only with attributable target-only GPU ISR placement and verified terminal state
+     3 shuffled rounds
+     one local pair per finalist per round
+→ persist median effects + 1%-low effect MAD + pair consistency
+→ rank every structurally valid finalist
+→ persist BestObservedProcessor + High/Medium/Low SelectionConfidence
+→ evaluate separate Keep guardrails
+→ apply best observed CPU only when Keep is recommended
+→ final warm-up + clean kernel-ETW runtime placement verification
+→ Keep only with attributable target-only GPU ISR placement
    otherwise exact RestoreOriginal
-→ validate report identity/source eligibility
-→ package shareable evidence ZIP when possible
-→ render authority-selected result in Overview
+→ preserve best-observed result even when Original is restored
+→ package evidence ZIP and render Overview result
 ```
 
 ### Expected Ryzen 7 5700X search shape
@@ -202,14 +178,14 @@ normal-user benchmark + one UAC owner helper
 On an 8-core / 16-thread Ryzen 7 5700X with all logical processors eligible:
 
 - Stage A should normally screen **8 physical-core representatives**, not blindly all 16 logical CPUs;
-- Stage B should add only the untested siblings on the bounded selected physical-core hypotheses;
-- Stage C must still cap finalists at 3.
+- Stage B refines only still-untested siblings on at most three top physical-core hypotheses;
+- Stage C caps finalists at 3.
 
-Do not hard-code those counts. Actual topology/eligibility evidence owns the expected set.
+Do not hard-code those counts; actual topology/eligibility evidence owns the set.
 
-## 6. Verify local pair math and stability semantics
+## 6. Verify local pair math and noise semantics
 
-For every valid pair, independently check that persisted evidence can reconstruct:
+For each persisted pair independently reconstruct:
 
 ```text
 reference = sqrt(OriginalBefore × OriginalAfter)
@@ -230,103 +206,102 @@ effect = reference / Candidate - 1
 Check that:
 
 - raw trial values were not rewritten;
-- pair capture ids resolve to the expected three observations;
-- control movement uses the two adjacent Original controls;
-- pair drift budget is `clamp(max(6%, 2 × accepted Original 1%-low noise), 6%, 10%)`;
-- a pair above budget is not ranked;
-- attempt 2 is the only statistical retry;
-- an exhausted pair becomes Inconclusive;
-- two consecutive exhausted candidates trigger a safe stop rather than a manufactured ranking.
+- pair capture ids resolve to the expected observations;
+- control movement uses adjacent Original controls;
+- the first high-drift attempt can trigger one retry;
+- a structurally valid second attempt remains rankable even when movement is above the noise guide;
+- high drift appears in the report/UI as uncertainty rather than being hidden;
+- ordinary noise alone never triggers a "two candidates => stop" path.
 
-A result that simply chooses the fastest raw candidate without valid local controls is a failure.
+Structural evidence failures must still abort/fail closed.
 
-## 7. Verify Stage A/B/C selection authority
-
-Check that the persisted execution/report evidence agrees with the algorithm:
+## 7. Verify Stage A/B/C authority
 
 ### Stage A
 
 - one eligible representative per physical core;
 - no even/odd SMT assumption;
 - CPU0 not globally banned;
-- current CPU-set eligibility respected;
-- passive pressure only used for representative/fallback ordering, not as a performance score.
+- current CPU-set eligibility respected.
 
 ### Stage B
 
-- best two physical-core hypotheses selected from valid paired evidence;
-- third only when within the 1 percentage-point practical-equivalence margin of second place;
-- no more than three physical cores refined;
-- only untested eligible siblings added.
+- candidates are ordered by paired 1%-low effect;
+- no more than three physical-core hypotheses are refined;
+- only untested eligible siblings are added.
 
 ### Stage C
 
-- best two logical CPUs advance;
-- third only when within the same practical-equivalence margin of second place;
-- no more than three finalists.
+- finalists are ordered by paired 1%-low effect;
+- no more than three logical CPUs advance.
 
-## 8. Verify finalist authority
+## 8. Verify finalist rank and confidence
 
-For each accepted finalist require:
+For every structurally valid finalist require:
 
-- exactly three valid 30-second pair numbers;
-- median paired 1%-low/AVG/frame-p99 effects persisted;
-- diagnostic 0.1%-low effect persisted where available;
-- `DecisionFloor = max(1%, median finalist pair-control movement)`;
-- at least two of three primary pair effects positive before an ImprovementCapable verdict;
-- median primary effect above decision floor;
-- no material primary regression beyond the floor;
-- no material AVG/frame-p99 regression;
-- no material supported interrupt-tail regression.
+- three shuffled 30-second pair observations in the ordinary successful path;
+- persisted median 1%-low/AVG/frame-p99 effects;
+- persisted 1%-low effect MAD;
+- positive-pair count;
+- persisted noise guide;
+- raw median local Original/Candidate 1% low / AVG / p99 values.
 
-If a finalist cannot produce three valid pairs under the bounded retry policy, it must be Inconclusive and cannot be kept.
+Then verify:
 
-If improvement-capable finalists are within one percentage point, the report/result UI must say **Practical tie** and must not claim that the operationally selected CPU proved faster.
+- rank 1 is the highest median paired 1%-low effect;
+- a practical tie does not erase rank 1;
+- practical tie lowers confidence;
+- `SelectionConfidence` is `High`, `Medium` or `Low` and does not control whether rank 1 exists;
+- the report still has `BestObservedProcessor` on a RestoreOriginal outcome when valid ranking evidence exists.
 
-## 9. Inspect final runtime placement and terminal state
+Confidence is a best-estimate quality label, not statistical proof.
 
-A `KeepCandidate` outcome requires all of the following on the final verification capture:
+## 9. Verify Keep is separate from ranking
+
+A best-observed CPU is not automatically a kept CPU.
+
+Check `RecommendedForKeep` separately:
+
+- best median 1%-low effect is positive;
+- median AVG/frame-p99 guardrails do not show a clear bounded regression;
+- supported GPU-driver DPC/ISR tail evidence does not materially regress.
+
+Final Keep additionally requires:
 
 ```text
 stored candidate state verified before/after
 ETW integrity clean
 ETW lost events = 0
 attributable GPU ISR samples > 0
-target processor = selected processor
+target processor = best observed processor
 resolved off-target ISR = 0
 terminal stored state verified
 unresolved journal ownership = 0
 ```
 
-If any required final-placement condition is absent, the run must restore exact Original.
+If this final verification fails, exact Original is restored while the best-observed CPU remains in the report.
 
-For `RestoreOriginal`, verify the final stored state matches the exact captured Original state and `unresolved=0`.
+## 10. Inspect result UX
 
-## 10. Inspect live progress and final result UX
-
-While running, the main App should minimize rather than disappear. The compact progress surface should expose meaningful phase/progress state and **Stop safely**.
-
-After a valid terminal report, the main window should return to Overview and render the in-product result rather than automatically opening raw JSON.
-
-Inspect:
+The normal Overview result should expose:
 
 ```text
-terminal outcome
-Evidence eligible / Development evidence
-best measured candidate when relevant, clearly marked not kept
-practical-tie state when applicable
-direct Original-before / Candidate / Original-after pair evidence
-paired effect
-control movement + drift budget
-pair attempt/verdict
-candidate/finalist rank authority
-Why this decision rows
-runtime placement/final state
-evidence ZIP status
-actions: Open ZIP / Copy ZIP path / Open session folder / Open raw report
+Best observed CPU
+Selection confidence
+1% low: Original → Candidate FPS
+Absolute 1% low FPS gain
+Paired percentage effect
+Average FPS: Original → Candidate + absolute/percentage gain
+Frame p99: Original → Candidate ms + improvement
+Practical tie when applicable
+Kept vs Original restored
+MAD/noise details
+Direct pair evidence
+Final runtime/terminal state
+Evidence ZIP actions
 ```
 
-For RestoreOriginal outcomes, any positive candidate measurement is diagnostic/comparison-only. The UI must not re-rank shuffled execution data or turn a positive effect into a Keep claim.
+Do not present low confidence as "no winner." Do not present a best-observed CPU as kept when Original is actually active.
 
 ## 11. Real Windows visual/accessibility inspection
 
@@ -336,84 +311,67 @@ CI compilation is not visual evidence. Inspect the actual result/progress surfac
 - Dark;
 - High Contrast;
 - increased text scale;
-- narrow and wide window sizes;
+- narrow and wide windows;
 - keyboard-only navigation;
 - UI Automation/Narrator as applicable.
 
-Require:
-
-- no clipping/overlap;
-- readable chart labels/tooltips;
-- correct focus order;
-- meaningful accessible names/help text;
-- decision state not encoded by color alone;
-- Stop safely and evidence actions keyboard reachable.
-
-Record screenshots/UIA evidence in the closure bundle.
+Require no clipping/overlap, readable numbers, meaningful accessible names, correct focus order, state not encoded by color alone, and keyboard-reachable Stop safely/evidence actions.
 
 ## 12. Exercise Stop safely
 
-During a separate full-search session on the same exact revision:
+During a separate full-search session:
 
 1. wait until a candidate mutation is owned;
 2. invoke **Stop safely**;
-3. require the helper/session to rollback exact Original;
+3. require exact Original rollback;
 4. verify terminal stored state;
-5. require `unresolved=0`;
-6. confirm the UI reports stopped/restored truthfully.
+5. require `unresolved=0`.
 
-Do not reuse the interrupted session as winner evidence.
+Do not reuse the interrupted session as ranking evidence.
 
 ## 13. Exercise one supported failure/recovery path
 
-Use one existing supported physical-validation/recovery scenario that can be induced without inventing unsupported mutation. Examples include a bounded cancellation/failure path already represented by the physical-validation tooling.
+Use an existing supported physical-validation/recovery scenario. Require visible journal ownership, actual machine-state reread, exact Original restore or explicit manual-intervention fail-closed state, and `unresolved=0` before closure.
 
-Require:
-
-- journal ownership is visible;
-- recovery re-reads actual machine state;
-- exact Original is restored or the tool fails closed with explicit manual-intervention state;
-- `unresolved=0` before declaring the exercise closed.
-
-Never manufacture a green result by deleting the journal.
+Never make a run green by deleting the journal.
 
 ## 14. Repeat the whole search
 
-After returning to a clean exact Original state, run the full paired-v2 search a second time on the same source revision and comparable conditions.
+Return to exact Original and run the full v3 search a second time on the same source revision and comparable conditions.
 
 Compare:
 
-- Original qualification/noise;
-- Stage-A valid hypotheses;
-- Stage-B sibling refinements;
-- finalist set;
-- finalist median paired effects/decision floors;
-- final Keep/Restore/practical-tie outcome;
+- Original median/MAD variability;
+- Stage-A/B/C candidate set;
+- best-observed CPU;
+- finalist median effects/MAD;
+- confidence;
+- Keep/Restore result;
 - runtime-placement evidence.
 
-The second run need not produce identical decimals. It must either be practically reproducible under the method's equivalence semantics or explicitly expose instability/inconclusive evidence rather than manufacturing consistency.
+Identical decimals are not required. A different close winner is acceptable only when the report exposes the uncertainty/practical tie rather than manufacturing confidence.
 
 ## 15. Gate A closure criteria
 
-Physical GPU Gate A closes only when one exact clean green revision has recorded evidence that:
+Physical GPU Gate A closes only when one exact clean green revision has evidence that:
 
-- the normal App/helper path works;
-- Original qualification is bounded and fail-closed before mutation;
-- every eligible physical core receives the correct representative screen;
-- Stage-B/Stage-C selection matches the persisted paired evidence;
-- local pair math/control movement/retry semantics reconstruct correctly;
-- finalists meet the three-valid-pair contract;
-- practical ties are represented honestly;
-- exact rollback works between candidates;
-- final Keep, when present, has clean attributable target-only GPU ISR proof;
-- RestoreOriginal, when present, restores exact Original;
+- source/hosted Tests are exact-head green;
+- valid noisy evidence remains rankable;
+- structural invalidity still fails closed;
+- Stage-A/B/C selection matches persisted evidence;
+- pair math/retry/noise semantics reconstruct;
+- finalist median/MAD rank is correct;
+- best-observed CPU and confidence survive independent of Keep/Restore;
+- raw before/after FPS/ms and paired percent render correctly;
+- Keep guardrails and final target-only ISR proof remain independent from rank;
+- exact rollback works between candidates and on cancellation/failure;
 - terminal journal ownership is zero;
 - Stop safely restores exact Original;
 - one supported failure/recovery exercise closes cleanly;
-- a second whole search is reproducible or explicitly inconclusive;
-- real result/progress UI passes the recorded render/accessibility inspection.
+- second whole search is honestly reproducible at the rank/confidence level;
+- real result/progress UI passes recorded render/accessibility inspection.
 
-Only after those conditions pass may the project proceed to arming the typed allowlisted product mutation boundary.
+Only then may the project proceed to arming typed allowlisted product mutation.
 
 ## 16. What this gate does not prove
 
@@ -424,5 +382,3 @@ GPU Gate A does not by itself prove:
 - final one-button before/after product workflow;
 - signed package/install/upgrade/uninstall closure;
 - performance for arbitrary games/workloads beyond the controlled LatencyPilot method.
-
-Those remain later v1 gates.

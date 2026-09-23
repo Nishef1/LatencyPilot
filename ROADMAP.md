@@ -115,68 +115,59 @@ LatencyMon is not a dependency; LatencyPilot uses its own ETW evidence.
 
 ## Phase 3 — Automatic GPU core search
 
-**State: PAIRED-V2 SOURCE + HOSTED CONTRACTS IMPLEMENTED; PHYSICAL PROOF OPEN**
+**State: NOISE-TOLERANT V3 SOURCE + HOSTED CONTRACTS IMPLEMENTED; PHYSICAL PROOF OPEN**
 
 Current source workflow:
 
 ```text
 capture exact Original/default GPU affinity
 → 5 s non-scored Original warm-up
-→ collect 10 s scored Original observations
-→ require 3-run 1%-low cluster, ±3% preferred; bounded recovery up to ±6% after observations 4/5
-→ if no valid cluster after 5, verify/retain Original and stop before candidate mutation
+→ collect 3 scored 10 s Original observations
+→ if robust median/MAD variability is high, extend to at most 5 observations
+→ noise lowers confidence; it does not block candidate search
 → capture fresh 10 s Original control O0
 → Stage A: screen one eligible logical processor per physical core
-→ for each candidate use a local pair:
-     Original before
-     apply/restart/verify candidate
-     5 s non-scored transition warm-up
-     10 s scored candidate
-     exact rollback + Original verification
-     5 s non-scored Original warm-up
-     10 s scored Original after
+→ each candidate uses Original-before → Candidate → Original-after local controls
 → local effect uses geometric mean of adjacent Original controls
-→ pair drift budget = clamp(max(6%, 2 × accepted Original 1%-low noise), 6%, 10%)
-→ one retry for an unstable pair; two consecutive exhausted candidates stop safely
-→ Stage B: refine siblings only on the best 2 physical cores, plus a 3rd inside the 1% practical-equivalence margin
-→ Stage C: advance best 2 logical CPUs, plus a 3rd inside the 1% margin; hard cap 3 finalists
-→ each finalist receives 3 independent valid 30 s local pairs in shuffled order
-→ finalist decision floor = max(1%, median finalist pair-control movement)
-→ require repeatable positive 1%-low effect without material AVG/p99/interrupt-tail regression
-→ practical ties within 1 percentage point remain ties
-→ apply selected operational target once more
-→ final benchmark-only warm-up + clean target-only ETW ISR-placement verification
-→ Keep only with verified terminal candidate state; otherwise exact RestoreOriginal
+→ one retry for high local drift
+→ a still-noisy but structurally valid retry remains rankable
+→ Stage B: refine at most top 3 physical-core hypotheses
+→ Stage C: advance at most top 3 logical CPUs
+→ each finalist gets 3 shuffled 30 s local pairs
+→ rank every structurally valid finalist by median paired 1%-low effect
+→ median/MAD + lead + pair consistency produce High/Medium/Low confidence
+→ practical tie lowers confidence but does not erase rank 1
+→ separate Keep guardrails decide whether the best observed CPU should remain active
+→ final clean target-only ETW ISR-placement proof is mandatory for Keep
+→ otherwise exact RestoreOriginal while preserving best-observed result
 ```
 
 Source checklist:
 
-- [x] D3D12 benchmark and queue timestamp evidence;
-- [x] controlled benchmark wall-period AVG / 1% / 0.1% / p99 statistics;
+- [x] D3D12 benchmark and controlled wall-period AVG / 1% / 0.1% / p99 statistics;
 - [x] candidate generation from actual Windows topology/CPU-set evidence with CPU0 allowed;
-- [x] bounded pre-mutation Original 3-of-up-to-5 qualification;
-- [x] exact 10 s screening duration and 30 s finalist duration owned by the method;
-- [x] direct `Original before → Candidate → Original after` persisted pair evidence;
+- [x] 3–5 Original observations with robust median/MAD variability;
+- [x] exact 10 s screening and 30 s finalist durations;
+- [x] direct `Original before → Candidate → Original after` pair evidence;
 - [x] geometric-mean local reference and signed paired effects;
-- [x] bounded 6–10% pair drift budget derived from qualified Original noise;
-- [x] one pair retry and early safe stop after two consecutive exhausted candidates;
+- [x] one bounded high-drift retry without a noise-only candidate/search abort;
 - [x] Stage-A physical-core representative selection;
-- [x] bounded Stage-B sibling refinement;
-- [x] bounded Stage-C finalist selection, hard cap three;
-- [x] three independent valid local pairs per finalist;
-- [x] finalist `DecisionFloor` persisted;
-- [x] practical ties represented explicitly rather than hidden by decimal ordering;
-- [x] comparable GPU-driver DPC/ISR tails used as guardrails when sufficient evidence exists;
+- [x] bounded top-3 Stage-B sibling refinement;
+- [x] bounded top-3 Stage-C finalist selection;
+- [x] three shuffled finalist pairs;
+- [x] median paired ranking + effect MAD + positive-pair consistency;
+- [x] `BestObservedProcessor` persisted independently from terminal Keep/Restore state;
+- [x] `SelectionConfidence` persisted as explanatory metadata, never a rank gate;
+- [x] practical ties remain explicit while rank 1 remains the best observed estimate;
+- [x] separate bounded AVG/frame-p99/interrupt-tail Keep guardrails;
 - [x] final Keep requires clean attributable target-only GPU ISR placement;
 - [x] exact rollback between candidates and on failure/cancellation;
-- [x] custom selected-CPU diagnostic scope always restores Original;
-- [x] Original-only diagnostic scope performs no affinity mutation/restart;
-- [x] result presentation consumes persisted decision/finalist authority instead of re-ranking execution order;
-- [x] direct pair evidence is visible in result UX;
-- [x] `GateAClosureEligible` is rendered as **Evidence eligible**, not as physical gate closure;
-- [x] historical v1 evidence is not reinterpreted as v2;
-- [ ] one exact clean green physical Gate A run on owner hardware using paired-v2;
-- [ ] repeat the whole paired-v2 search for practical reproducibility;
+- [x] result UX exposes actual Original → Candidate FPS/ms, absolute gain and paired percentage effect;
+- [x] custom selected-CPU diagnostic always restores Original;
+- [x] Original-only diagnostic performs no affinity mutation/restart;
+- [x] historical v1/v2 evidence is not reinterpreted as v3;
+- [ ] one exact clean green physical Gate A run on owner hardware using v3;
+- [ ] repeat the whole v3 search for practical reproducibility;
 - [ ] Stop safely + supported failure/recovery physical exercise;
 - [ ] rendered/taskbar/keyboard/accessibility inspection of the result surface.
 
@@ -184,19 +175,20 @@ Source checklist:
 
 Gate A closes only when one exact clean green revision proves on supported hardware:
 
-1. Original qualification either establishes the bounded three-run regime or stops before mutation after five misses;
+1. structurally valid Original evidence continues through real-world variability and records robust noise instead of failing only for variance;
 2. every eligible physical core receives a Stage-A representative screen;
-3. Stage-B sibling refinement matches the persisted selected physical-core hypotheses;
+3. Stage-B/Stage-C top-3 selection matches persisted paired evidence;
 4. every ranked candidate has reconstructable adjacent Original controls and pair math;
-5. unstable pairs obey the one-retry rule and never silently become ranked evidence;
-6. finalists obey the hard cap and each accepted finalist has three valid 30 s pairs;
-7. persisted decision floor/guardrails match the authoritative Keep decision;
-8. exact rollback occurs between candidate activations and on failure/cancellation;
-9. final ETW proves target-only GPU ISR placement before Keep;
-10. terminal stored state verifies with zero unresolved journal ownership;
-11. Stop safely plus one supported failure path restore exact Original;
-12. a repeated whole search is practically reproducible or reports instability explicitly;
-13. real Windows rendering/accessibility is inspected with the actual report/evidence bundle.
+5. high-drift retry evidence stays visible and does not erase an otherwise valid candidate;
+6. finalists receive three shuffled 30 s pairs and rank by persisted median effect;
+7. best-observed CPU, confidence, raw before/after values and terminal Keep/Restore state agree across report and UI;
+8. Keep guardrails remain separate from ranking;
+9. exact rollback occurs between candidate activations and on failure/cancellation;
+10. final ETW proves target-only GPU ISR placement before Keep;
+11. terminal stored state verifies with zero unresolved journal ownership;
+12. Stop safely plus one supported failure path restore exact Original;
+13. a repeated whole search is practically reproducible or reports lower confidence honestly;
+14. real Windows rendering/accessibility is inspected with the actual report/evidence bundle.
 
 Public mutation IPC remains unarmed until this physical gate passes.
 
