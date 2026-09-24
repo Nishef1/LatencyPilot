@@ -132,8 +132,8 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
     internal async Task<string> RunTrialAsync(
         int runNumber,
         TimeSpan duration,
-        CancellationToken cancellationToken = default,
-        bool observerActive = false)
+        bool observerActive = false,
+        CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(stopped, this);
         var command = GpuBenchmarkControlCommand.RunTrial(
