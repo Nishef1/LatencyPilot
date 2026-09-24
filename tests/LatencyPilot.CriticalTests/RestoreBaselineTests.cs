@@ -52,6 +52,13 @@ public sealed class RestoreBaselineTests
             var unknown = retained[0] with { Kind = "unknown-mutation-kind" };
             Assert.ThrowsExactly<NotSupportedException>(() =>
                 GlobalRestoreBaselinePlanner.Create([unknown, retained[1]]));
+
+            var root = FindRepositoryRoot();
+            var restoreSource = File.ReadAllText(Path.Combine(
+                root, "src", "LatencyPilot.Service", "GlobalRestoreBaseline.cs"));
+            StringAssert.Contains(restoreSource, "RestoreTarget(string targetId)");
+            StringAssert.Contains(restoreSource, "string.Equals(entry.TargetId, targetId",
+                "Per-device restore must select only retained changes owned by the requested target.");
         }
         finally
         {
@@ -64,6 +71,19 @@ public sealed class RestoreBaselineTests
                 // SQLite pooling can briefly retain file handles on some runners.
             }
         }
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "LatencyPilot.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new DirectoryNotFoundException();
     }
 
     private static MutationJournalEntry CreateKept(
