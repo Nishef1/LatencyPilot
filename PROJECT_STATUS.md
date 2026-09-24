@@ -93,6 +93,20 @@ The developer UI provides:
 
 CPU selection uses current topology/CPU-set eligibility; unsupported topology fails safely. The dialog is a WinUI `ContentDialog` owned by the current `XamlRoot`.
 
+### Development manual device affinity lab
+
+The Devices page now exposes a development-only manual affinity surface without changing the public observation-only Service contract:
+
+- current stored interrupt policy / `AssignmentSetOverride` and translated allocated interrupt-resource masks are shown separately for latency-sensitive present devices;
+- GPU and USBXHCI are the only editable targets because they already have bounded journal/restart/rollback ownership;
+- network, audio, storage, HID and other latency-sensitive devices remain read-only;
+- manual Apply uses an elevated one-shot helper: exact snapshot → journal → apply/restart → allocated-resource affinity verification → Keep, or exact rollback on failed verification;
+- a reboot-pending xHCI experiment may resume only for the same journaled CPU candidate;
+- Restore is per-device and only unwinds retained changes actually owned by the LatencyPilot mutation journal; an external pre-existing override is never claimed or overwritten as LatencyPilot-owned;
+- the App blocks manual mutation while GPU Gate A is running.
+
+This lab does **not** arm `ServiceBoundary.MutationAvailable`, add generic registry mutation, or widen the automatic v1 path to NIC/audio/storage tuning.
+
 ### Gate A result experience
 
 The validated completion path remains:
@@ -186,7 +200,7 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 ## Immediate execution ladder
 
 1. **Completed now:** v5 source preserves best-observed ranking/Keep separation, rechecks the observed top four before the finalist cut, isolates external-observer startup outside the scored QPC window, removes fixed-SMT worker contention asymmetry with exact physical-core worker masks, keeps two 15-second finalists plus one uncertainty-driven optional third round, and separates finalist-confirmed values from screening-only values in result UX.
-2. **Evidence:** hosted `Tests` are green on the completed v5 source/test revision `2b069504690f815027aba11963721173c8b80239`; permanent contracts cover the top-four shortlist recheck, cadence-aware observer quiet-tail gate, exact physical-core worker-mask provenance, and finalist/screening result-authority separation. This ledger-only update must also be exact-head green before physical evidence is accepted.
+2. **Evidence:** GPU v5 source/test contracts were green on revision `2b069504690f815027aba11963721173c8b80239`. Manual device-affinity source/contracts now add bounded GPU/xHCI-only dev controls; exact-head hosted `Tests` for the combined revision are pending and must be green before this source state is treated as verified.
 3. **Still open:** one exact-head physical owner v5 GPU Gate A run remains required; public product mutation stays unarmed.
 4. **Next stage:** once this final ledger HEAD is green, run Full v5 once with overlays/capture disabled where practical and inspect observer-settle, top-four recheck retention, top-two confirmation count, total runtime, best-observed rank, confidence, FPS/ms gains, rollback and final placement.
 5. **After that:** repeat the v5 search, exercise Stop safely/failure recovery, and complete real WinUI/accessibility inspection before product mutation arming.
