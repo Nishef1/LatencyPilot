@@ -125,17 +125,18 @@ Hardware-independent interpretation/orchestration:
 - percentile and robust statistical primitives;
 - steady `baseline-quality-v2` / `workload-stability-v1`;
 - GPU candidate generation from actual topology/current CPU-set evidence;
-- `gpu-affinity-benchmark-v3` evidence interpretation/readiness;
+- `gpu-affinity-benchmark-v4` evidence interpretation/readiness;
 - 3–5 Original observations with median/MAD variability;
 - direct local pair orchestration and drift retry;
-- Stage-A representatives, bounded top-3 Stage-B refinement and top-3 finalists;
-- three shuffled 30 s finalist pairs;
+- Stage-A representatives plus bounded uncertainty-aware Stage-B refinement;
+- adaptive top-two-guaranteed shortlist/recheck capped at five logical CPUs;
+- top-two 15 s finalist confirmation with a third round only when uncertainty remains;
 - persisted median paired effects, MAD/noise context, raw before/after values and rank;
 - best-observed CPU + selection confidence independent from Keep;
 - final Keep/Restore orchestration;
 - input/xHCI timing/headroom interpretation.
 
-There is no hidden weighted score. Short screens order candidates by paired 1%-low effect; finalists rank by median paired 1%-low effect. Noise changes confidence, not rankability. Keep is a separate guardrail and runtime-placement decision owned by ADR 0008.
+There is no hidden weighted score. Short evidence is aggregated with median effect plus bounded uncertainty only to decide who deserves another measurement; finalists still rank by median paired 1%-low effect. Noise changes confidence, not rankability. Keep is a separate guardrail and runtime-placement decision owned by ADR 0009.
 
 ### `LatencyPilot.Protocol`
 
@@ -260,9 +261,12 @@ The benchmark process remains stable across the complete search. Workload calibr
      10 s OriginalAfter
 → pair effect from geometric mean of adjacent Original controls
 → one retry for high drift; structurally valid retry remains rankable
-→ Stage B: refine at most top 3 physical cores
-→ Stage C: at most top 3 logical-CPU finalists
-→ 3 shuffled 30 s pairs per finalist
+→ Stage B: keep up to 4 plausible physical-core hypotheses under bounded uncertainty
+→ Stage C: keep the observed top two plus uncertainty-overlapping challengers, capped at 5
+→ one additional 10 s local pair for every shortlisted CPU
+→ top 2 by median short-screen effect
+→ 2 shuffled 15 s pairs per finalist
+→ a third 15 s pair only while the top-two lead remains inside measured uncertainty
 → rank by median paired 1%-low effect
 → report MAD/noise + High/Medium/Low confidence
 → separate Keep guardrails

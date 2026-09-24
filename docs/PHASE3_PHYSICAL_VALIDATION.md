@@ -1,6 +1,6 @@
 # Phase 3 Physical Validation Runbook
 
-This is the owner-local **GPU Gate A** procedure for the noise-tolerant ranked GPU search in ADR 0008. It does **not** arm public mutation. Protocol v6 remains observation-only and `ServiceBoundary.MutationAvailable=false`.
+This is the owner-local **GPU Gate A** procedure for the adaptive uncertainty-aware GPU search in ADR 0009. It does **not** arm public mutation. Protocol v6 remains observation-only and `ServiceBoundary.MutationAvailable=false`.
 
 ```text
 Run GPU Gate A
@@ -8,8 +8,9 @@ Run GPU Gate A
 = normal-user D3D12 benchmark + elevated owner helper
 = 3–5 Original observations for robust noise context
 = direct Original-before → Candidate → Original-after local pairs
-= Stage-A physical-core representatives + bounded top-3 refinement
-= up to 3 finalists, 3 shuffled 30 s pairs each
+= Stage-A physical-core representatives + uncertainty-aware refinement across at most 4 physical-core hypotheses
+= top-two-guaranteed shortlist, capped at 5 CPUs, with one additional 10 s recheck
+= top 2 finalists, 2 shuffled 15 s pairs each, plus one third round only if uncertainty remains
 = best-observed CPU + confidence
 = separate Keep guardrails
 = final ETW runtime ISR-placement proof before Keep
@@ -154,13 +155,18 @@ normal-user benchmark + one UAC owner helper
 → second noisy but structurally valid attempt:
      keep rankable and persist its uncertainty
 → Stage B:
-     refine siblings on at most top 3 physical-core hypotheses
+     retain at most 4 physical-core hypotheses whose bounded uncertainty can still overlap the leader
+     refine eligible siblings only on those cores
 → Stage C:
-     advance at most top 3 logical CPUs
+     retain the observed top two logical CPUs whenever available
+     add uncertainty-overlapping challengers up to 5 CPUs total
+     give every shortlisted CPU one additional 10 s local pair
+     advance the top two by median short-screen effect
 → finalist confirmation:
-     fresh 30 s Original control
-     3 shuffled rounds
+     fresh 15 s Original control
+     2 shuffled 15 s rounds by default
      one local pair per finalist per round
+     add one third 15 s round only while the top-two lead remains inside measured uncertainty
 → persist median effects + 1%-low effect MAD + pair consistency
 → rank every structurally valid finalist
 → persist BestObservedProcessor + High/Medium/Low SelectionConfidence
@@ -226,20 +232,23 @@ Structural evidence failures must still abort/fail closed.
 
 ### Stage B
 
-- candidates are ordered by paired 1%-low effect;
-- no more than three physical-core hypotheses are refined;
+- candidates are aggregated by paired 1%-low effect and bounded uncertainty;
+- no more than four plausible physical-core hypotheses are refined;
+- the observed top two hypotheses remain eligible whenever two structurally valid hypotheses exist;
 - only untested eligible siblings are added.
 
 ### Stage C
 
-- finalists are ordered by paired 1%-low effect;
-- no more than three logical CPUs advance.
+- the observed top two logical CPUs remain shortlisted whenever at least two structurally valid CPUs exist;
+- additional uncertainty-overlapping challengers may join up to five total CPUs;
+- every shortlisted CPU gets one additional 10-second local pair;
+- only the top two by median short-screen effect advance to finalist confirmation.
 
 ## 8. Verify finalist rank and confidence
 
 For every structurally valid finalist require:
 
-- three shuffled 30-second pair observations in the ordinary successful path;
+- two shuffled 15-second pair observations in the ordinary successful path, with one third 15-second round only when the top-two lead remains inside measured uncertainty;
 - persisted median 1%-low/AVG/frame-p99 effects;
 - persisted 1%-low effect MAD;
 - positive-pair count;

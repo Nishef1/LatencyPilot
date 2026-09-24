@@ -131,9 +131,12 @@ capture exact Original/default GPU affinity
 → local effect uses geometric mean of adjacent Original controls
 → one retry for high local drift
 → a still-noisy but structurally valid retry remains rankable
-→ Stage B: refine at most top 3 physical-core hypotheses
-→ Stage C: advance at most top 3 logical CPUs
-→ each finalist gets 3 shuffled 30 s local pairs
+→ Stage B: retain up to 4 plausible physical-core hypotheses under bounded uncertainty
+→ Stage C: retain the observed top two plus uncertainty-overlapping challengers, capped at 5 logical CPUs
+→ give shortlisted CPUs one additional 10 s local pair
+→ advance the top two by median short-screen effect
+→ give both finalists 2 shuffled 15 s local pairs
+→ add one third 15 s round only while their lead remains inside measured uncertainty
 → rank every structurally valid finalist by median paired 1%-low effect
 → median/MAD + lead + pair consistency produce High/Medium/Low confidence
 → practical tie lowers confidence but does not erase rank 1
@@ -147,14 +150,14 @@ Source checklist:
 - [x] D3D12 benchmark and controlled wall-period AVG / 1% / 0.1% / p99 statistics;
 - [x] candidate generation from actual Windows topology/CPU-set evidence with CPU0 allowed;
 - [x] 3–5 Original observations with robust median/MAD variability;
-- [x] exact 10 s screening and 30 s finalist durations;
+- [x] exact 10 s screening/recheck and 15 s finalist durations;
 - [x] direct `Original before → Candidate → Original after` pair evidence;
 - [x] geometric-mean local reference and signed paired effects;
 - [x] one bounded high-drift retry without a noise-only candidate/search abort;
 - [x] Stage-A physical-core representative selection;
-- [x] bounded top-3 Stage-B sibling refinement;
-- [x] bounded top-3 Stage-C finalist selection;
-- [x] three shuffled finalist pairs;
+- [x] bounded uncertainty-aware Stage-B refinement across at most four physical-core hypotheses;
+- [x] Stage-C shortlist keeps the observed top two whenever available, admits uncertainty-overlapping challengers up to five, and rechecks each once for 10 s;
+- [x] top-two finalist confirmation uses two shuffled 15 s pairs, with one third round only when uncertainty remains;
 - [x] median paired ranking + effect MAD + positive-pair consistency;
 - [x] `BestObservedProcessor` persisted independently from terminal Keep/Restore state;
 - [x] `SelectionConfidence` persisted as explanatory metadata, never a rank gate;
@@ -165,9 +168,9 @@ Source checklist:
 - [x] result UX exposes actual Original → Candidate FPS/ms, absolute gain and paired percentage effect;
 - [x] custom selected-CPU diagnostic always restores Original;
 - [x] Original-only diagnostic performs no affinity mutation/restart;
-- [x] historical v1/v2 evidence is not reinterpreted as v3;
-- [ ] one exact clean green physical Gate A run on owner hardware using v3;
-- [ ] repeat the whole v3 search for practical reproducibility;
+- [x] historical v1/v2/v3 evidence is not reinterpreted as v4;
+- [ ] one exact clean green physical Gate A run on owner hardware using v4;
+- [ ] repeat the whole v4 search for practical reproducibility;
 - [ ] Stop safely + supported failure/recovery physical exercise;
 - [ ] rendered/taskbar/keyboard/accessibility inspection of the result surface.
 
