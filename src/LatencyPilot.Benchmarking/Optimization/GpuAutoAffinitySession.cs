@@ -982,12 +982,26 @@ public sealed class GpuAutoAffinitySession
             return [];
         }
 
+        var boundedMaximum = Math.Min(maximumCount, ordered.Length);
+        var guaranteedCount = Math.Min(2, boundedMaximum);
+        var guaranteed = ordered.Take(guaranteedCount);
+        if (guaranteedCount == boundedMaximum)
+        {
+            return guaranteed.ToArray();
+        }
+
+        // Never let one noisy point estimate collapse a multi-candidate search to
+        // one CPU. The observed top two stay alive whenever two structurally valid
+        // candidates exist; uncertainty is used only to admit additional plausible
+        // challengers up to the bounded budget.
         var plausibilityFloor = ordered[0].MedianOnePercentLowEffect - CandidateMetricEquivalenceTolerance;
-        return ordered
+        var challengers = ordered
+            .Skip(guaranteedCount)
             .Where(aggregate =>
                 aggregate.MedianOnePercentLowEffect + aggregate.UncertaintyFraction >= plausibilityFloor)
-            .Take(maximumCount)
-            .ToArray();
+            .Take(boundedMaximum - guaranteedCount);
+
+        return guaranteed.Concat(challengers).ToArray();
     }
 
     private static ScreeningAggregate[] BuildScreeningAggregates(IEnumerable<PairMeasurement> measurements) =>

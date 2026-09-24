@@ -14,13 +14,13 @@ Search flow:
 
 1. 10 s representative screen for every physical core.
 2. Refine at most four plausible physical-core hypotheses.
-3. Retain at most five logical CPUs whose observed effect plus bounded uncertainty still overlaps the leader.
+3. Retain the observed top two logical CPUs whenever at least two structurally valid candidates exist, then admit additional uncertainty-overlapping challengers up to a maximum of five.
 4. Recheck each shortlisted CPU once for 10 s.
 5. Advance the top two by median short-screen effect.
 6. Confirm both with two shuffled 15 s local pairs.
 7. Add one final 15 s round only when their lead remains inside measured uncertainty.
 
-Bounded screening uncertainty is `max(1 percentage point, effect MAD, median(min(control movement, drift budget)))`. Extreme drift therefore cannot make an obvious loser look infinitely plausible, while a near-neutral noisy CPU still gets one recheck.
+Bounded screening uncertainty is `max(1 percentage point, effect MAD, median(min(control movement, drift budget)))`. Extreme drift therefore cannot make an obvious loser look infinitely plausible, while a near-neutral noisy CPU still gets one recheck. Uncertainty may add challengers, but it never removes the observed runner-up before the second short comparison.
 
 Automatic Keep is stricter than ranking: median 1%-low effect must be positive; both primary effects must be positive when only two pairs were needed, or at least two of three after an uncertainty extension; performance/interrupt guardrails and final target-only ISR placement must still pass.
 

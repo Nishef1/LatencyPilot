@@ -162,7 +162,7 @@ A one-pair point estimate is not trusted as a hard cut. Keep at most four physic
 
 ### Stage C — adaptive shortlist and recheck
 
-Across all valid logical-CPU screens, retain at most five CPUs whose median paired 1%-low effect plus bounded uncertainty remains within one percentage point of the current leader.
+Across all valid logical-CPU screens, always retain the observed top two when at least two structurally valid CPUs exist. Then admit additional CPUs whose median paired 1%-low effect plus bounded uncertainty remains within one percentage point of the current leader, up to five total.
 
 Bounded uncertainty is the maximum of one percentage point, effect MAD when repeated short evidence exists, and median local-control movement capped at that pair's drift budget.
 
