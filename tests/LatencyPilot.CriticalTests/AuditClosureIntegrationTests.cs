@@ -307,7 +307,8 @@ public sealed class AuditClosureIntegrationTests
             "C:\\evidence\\session",
             "C:\\evidence\\session\\gpu-auto-affinity-report.json",
             new GateAEvidenceBundleExportResult(null, "ZIP destination is locked."));
-        Assert.AreEqual("No measured winner · Original restored", restorePresentation.Title);
+        Assert.AreEqual("Best observed · CPU 7 · Original restored", restorePresentation.Title,
+            "Restoring Original must not erase a structurally valid best-observed CPU.");
         Assert.AreEqual("Development evidence", restorePresentation.EligibilityLabel);
         Assert.AreEqual(cpu7, restorePresentation.ComparedProcessor,
             "Diagnostic comparison must follow the optimizer's persisted decision rank, not candidate execution order.");
@@ -318,9 +319,9 @@ public sealed class AuditClosureIntegrationTests
         Assert.IsTrue(restorePresentation.Metrics.All(metric =>
             metric.State is GateAMetricState.DiagnosticOnly or GateAMetricState.Unavailable),
             "A restored run may display measured paired effects, but it must not turn them into independent pass/fail decisions.");
-        var restoredGuardrail = restorePresentation.DecisionEvidence.Single(row => row.Label == "Performance guardrails");
-        Assert.AreEqual("Diagnostic only", restoredGuardrail.State,
-            "An empty regressed-guardrails list is not structured proof that an unkept candidate passed final guardrails.");
+        var restoredGuardrail = restorePresentation.DecisionEvidence.Single(row => row.Label == "Keep guardrails");
+        Assert.AreEqual("Not kept", restoredGuardrail.State,
+            "A ranked CPU that was restored must not be presented as having passed the separate Keep decision.");
         Assert.IsFalse(restorePresentation.BundleAvailable);
         StringAssert.Contains(restorePresentation.BundleStatus, "could not be packaged");
 
@@ -329,9 +330,9 @@ public sealed class AuditClosureIntegrationTests
             "C:\\evidence\\session",
             "C:\\evidence\\session\\gpu-auto-affinity-report.json",
             new GateAEvidenceBundleExportResult(null, "ZIP destination is locked."));
-        Assert.AreEqual("Custom diagnostic result", customPresentation.Title);
+        Assert.AreEqual("Best observed · CPU 7 · diagnostic only", customPresentation.Title);
         StringAssert.Contains(customPresentation.ComparedCandidateLabel, "Best within selected CPUs");
-        StringAssert.Contains(customPresentation.Summary, "Best within selected CPUs");
+        StringAssert.Contains(customPresentation.Summary, "Best observed within the selected CPUs");
     }
 
     private static GpuAutoAffinityTrialReport CreateOriginalTrial(
