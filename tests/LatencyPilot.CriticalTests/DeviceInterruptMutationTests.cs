@@ -46,6 +46,29 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(txSource, "RollbackRebootPending");
         StringAssert.Contains(txSource, "ResumeAfterReboot");
         StringAssert.Contains(txSource, "measurementVerified");
+
+        var manualRunnerSource = File.ReadAllText(Path.Combine(
+            root, "tools", "LatencyPilot.GateAValidation", "ManualDeviceAffinityRunner.cs"));
+        StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Gpu");
+        StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Xhci");
+        StringAssert.Contains(manualRunnerSource, "VerifyAllocatedAffinity");
+        StringAssert.Contains(manualRunnerSource, "ApplyRebootPending");
+        StringAssert.Contains(manualRunnerSource, "pendingCandidate.ProcessorNumber != candidate.ProcessorNumber",
+            "A reboot-pending xHCI experiment must not be resumed under a newly selected CPU.");
+        StringAssert.Contains(manualRunnerSource, "VerificationFailedRolledBack",
+            "Manual affinity must fail closed and restore exact original state when active allocation is not verified.");
+        StringAssert.Contains(manualRunnerSource, "Existing explicit policy",
+            "A pre-existing matching policy must not be claimed as LatencyPilot-owned.");
+        Assert.IsFalse(
+            manualRunnerSource.Contains("Registry.LocalMachine", StringComparison.Ordinal),
+            "Manual affinity UI/helper must reuse bounded mutation stores instead of becoming an arbitrary registry writer.");
+
+        var appSource = File.ReadAllText(Path.Combine(
+            root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
+        StringAssert.Contains(appSource, "Read only",
+            "Unsupported latency-sensitive devices must remain inspectable without exposing mutation.");
+        StringAssert.Contains(appSource, "_gateAValidationRunning",
+            "Manual mutation must not run concurrently with GPU Gate A.");
     }
 
     private static string FindRepositoryRoot()
