@@ -57,7 +57,7 @@ public sealed class DeviceInterruptMutationTests
             "A reboot-pending xHCI experiment must not be resumed under a newly selected CPU.");
         StringAssert.Contains(manualRunnerSource, "VerificationFailedRolledBack",
             "Manual affinity must fail closed and restore exact original state when active allocation is not verified.");
-        StringAssert.Contains(manualRunnerSource, "Existing explicit policy",
+        StringAssert.Contains(manualRunnerSource, "does not claim ownership",
             "A pre-existing matching policy must not be claimed as LatencyPilot-owned.");
         Assert.IsFalse(
             manualRunnerSource.Contains("Registry.LocalMachine", StringComparison.Ordinal),
