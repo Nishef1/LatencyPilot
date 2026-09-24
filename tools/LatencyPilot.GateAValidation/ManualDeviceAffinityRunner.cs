@@ -95,24 +95,73 @@ internal static class ManualDeviceAffinityRunner
         MutationJournal journal,
         ManualAffinityOptions options)
     {
+        Guid? resumedExperiment = null;
+        var unresolved = journal.GetUnresolved();
+        if (unresolved.Count > 0)
+        {
+            var targetPending = unresolved
+                .Where(entry =>
+                    string.Equals(entry.TargetId, options.DeviceInstanceId, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (targetPending.Length != 1 || unresolved.Count != 1 ||
+                !string.Equals(
+                    targetPending[0].Kind,
+                    DeviceInterruptMutationContract.XhciAffinityKind,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Restore is blocked by unresolved mutation work that is not one xHCI experiment owned by this device. Recover that work first.");
+            }
+
+            var transaction = new DeviceInterruptMutationTransaction(journal);
+            var pending = targetPending[0];
+            var rollback = pending.State == MutationJournalState.RollbackRebootPending
+                ? transaction.ResumeAfterReboot(pending.ExperimentId)
+                : transaction.Rollback(pending.ExperimentId);
+            resumedExperiment = pending.ExperimentId;
+
+            if (rollback.Entry.State == MutationJournalState.RollbackRebootPending)
+            {
+                return CreateReport(
+                    options,
+                    "RebootRequired",
+                    succeeded: false,
+                    TryGetPresentDevice(options.DeviceInstanceId),
+                    pending.ExperimentId,
+                    restartRequired: true,
+                    verification: rollback.Entry.FailureReason,
+                    message: "The exact original xHCI policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again.");
+            }
+
+            if (rollback.Entry.State != MutationJournalState.Reverted ||
+                !rollback.OriginalStateRestored)
+            {
+                throw new InvalidOperationException(
+                    rollback.Entry.FailureReason ??
+                    $"xHCI restore stopped in {rollback.Entry.State}; recovery is required.");
+            }
+        }
+
         var result = new GlobalRestoreBaselineExecutor(journal).RestoreTarget(options.DeviceInstanceId);
         var device = TryGetPresentDevice(options.DeviceInstanceId);
-        var status = result.RestoredCount == 0 ? "NoLatencyPilotChange" : "Restored";
-        var message = result.RestoredCount == 0
+        var restoredCount = result.RestoredCount + (resumedExperiment is null ? 0 : 1);
+        var status = restoredCount == 0 ? "NoLatencyPilotChange" : "Restored";
+        var message = restoredCount == 0
             ? "No retained LatencyPilot mutation owns this device, so no registry or device state was changed."
-            : $"Restored {result.RestoredCount.ToString(CultureInfo.InvariantCulture)} retained LatencyPilot change(s) for this device to their exact captured original state.";
+            : $"Restored {restoredCount.ToString(CultureInfo.InvariantCulture)} journal-owned LatencyPilot change(s) for this device to their exact captured original state.";
 
-        var restoredExperiment = result.RestoredExperimentIds.Count > 0
-            ? result.RestoredExperimentIds[0]
-            : Guid.Empty;
+        var restoredExperiment = resumedExperiment ??
+            (result.RestoredExperimentIds.Count > 0 ? result.RestoredExperimentIds[0] : null);
         return CreateReport(
             options,
             status,
             succeeded: true,
             device,
-            experimentId: restoredExperiment == Guid.Empty ? null : restoredExperiment,
+            experimentId: restoredExperiment,
             restartRequired: false,
-            verification: result.RestoredCount == 0 ? "No owned retained change." : "Exact journal-owned original state restored.",
+            verification: restoredCount == 0
+                ? "No owned retained change."
+                : "Exact journal-owned original state restored and any reboot-pending rollback was verified.",
             message);
     }
 
