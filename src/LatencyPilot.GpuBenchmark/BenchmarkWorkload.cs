@@ -116,7 +116,12 @@ internal sealed class BenchmarkWorkload
         D3D12BenchmarkRenderer renderer,
         FrozenBenchmarkWorkload workload,
         CancellationToken cancellationToken = default) =>
-        RunTrialAsync(renderer, workload, options.Duration, observerActive: false, cancellationToken);
+        RunTrialAsync(
+            renderer,
+            workload,
+            options.Duration,
+            observerActive: false,
+            cancellationToken: cancellationToken);
 
     internal Task<GpuBenchmarkTrialArtifact> RunTrialAsync(
         D3D12BenchmarkRenderer renderer,
