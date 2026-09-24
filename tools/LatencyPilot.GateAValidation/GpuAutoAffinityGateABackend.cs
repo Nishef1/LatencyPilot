@@ -43,7 +43,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private readonly GpuInterruptAffinitySnapshot originalState;
     private readonly string topologyIdentity;
     private readonly string driverServiceName;
-    private readonly IReadOnlyDictionary<LogicalProcessorId, ulong> expectedWorkerAffinityMasks;
+    private readonly Dictionary<LogicalProcessorId, ulong> expectedWorkerAffinityMasks;
     private readonly HashSet<Guid> measuringExperiments = [];
     private readonly Dictionary<Guid, GpuAffinityCandidate> ownedCandidates = [];
     private readonly List<GpuAutoAffinityMutationAuditEntry> mutationAudit = [];
@@ -482,7 +482,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             var artifactPath = await benchmark.RunTrialAsync(
                 request.RunNumber,
                 request.Duration,
-                deadline.Token).ConfigureAwait(false);
+                cancellationToken: deadline.Token).ConfigureAwait(false);
             artifact = await ReadArtifactAsync(artifactPath, deadline.Token).ConfigureAwait(false);
             var actualDuration = artifact.EndedAtUtc > artifact.StartedAtUtc
                 ? artifact.EndedAtUtc - artifact.StartedAtUtc
@@ -538,8 +538,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             var artifactPathTask = benchmark.RunTrialAsync(
                 request.RunNumber,
                 request.Duration,
-                deadline.Token,
-                observerActive: true);
+                observerActive: true,
+                cancellationToken: deadline.Token);
 
             await Task.WhenAll(kernelTask, artifactPathTask).ConfigureAwait(false);
             kernel = await kernelTask.ConfigureAwait(false);
