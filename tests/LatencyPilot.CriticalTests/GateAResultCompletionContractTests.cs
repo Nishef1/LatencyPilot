@@ -131,13 +131,15 @@ public sealed class GateAResultCompletionContractTests
         StringAssert.Contains(presentation, "candidate.DecisionRank",
             "Candidate presentation rows must preserve the optimizer-persisted decision rank.");
         StringAssert.Contains(presentation, "screening-finalists",
-            "When finalist authority exists, the result presentation must prefer the three-pair finalist aggregate over a short-screen row with the same persisted rank.");
+            "When finalist authority exists, the result presentation must prefer the repeated finalist aggregate over a short-screen row with the same persisted rank.");
         StringAssert.Contains(presentation, "Best observed within the selected CPUs",
             "Custom diagnostic results must expose the best observed CPU while preserving their restricted authority.");
         StringAssert.Contains(presentation, "DescribeUserGain",
             "The result model must expose raw before/after values, absolute gain and percentage improvement.");
         StringAssert.Contains(presentation, "SelectionConfidence",
             "Noise must be presented as confidence instead of deleting the winner.");
+        StringAssert.Contains(presentation, "IsFinalistEvidence",
+            "Presentation data must preserve whether a candidate value is finalist-confirmed or screening-only.");
         StringAssert.Contains(presentation, "Custom diagnostic result",
             "Custom scope needs an explicit primary result status.");
         StringAssert.Contains(presentation, "selected ·",
@@ -151,6 +153,14 @@ public sealed class GateAResultCompletionContractTests
         Assert.IsFalse(
             presentation.Contains("candidate.Phase, \"finalists\"", StringComparison.Ordinal),
             "The result presentation must use the actual persisted finalist phase name.");
+
+        var resultExperience = File.ReadAllText(FindRepositoryFile(
+            "src",
+            "LatencyPilot.App",
+            "GateAResultExperience.cs"));
+        StringAssert.Contains(resultExperience, "Final confirmed");
+        StringAssert.Contains(resultExperience, "Screening only · not directly comparable to finalist medians",
+            "Different evidence-authority levels must not be rendered as one apparent ranking.");
 
         var candidateChart = File.ReadAllText(FindRepositoryFile(
             "src",

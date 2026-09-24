@@ -426,11 +426,11 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(
             gateASessionSource,
             "MinimumFinalistPairs = 2",
-            "Adaptive v4 finalist confirmation must collect two independent local pairs before it can stop.");
+            "Adaptive v5 finalist confirmation must collect two independent local pairs before it can stop.");
         StringAssert.Contains(
             gateASessionSource,
             "MaximumFinalistPairs = 3",
-            "Adaptive v4 may spend one additional pair only while the top two remain inside measured uncertainty.");
+            "Adaptive v5 may spend one additional pair only while the top two remain inside measured uncertainty.");
         StringAssert.Contains(
             gateASessionSource,
             "for (var round = 0; round < MaximumFinalistPairs; round++)",
@@ -454,7 +454,7 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(
             gateASessionSource,
             "MeasureScreeningPairAsync(",
-            "GPU v4 ranking must be derived from measured local Original-Candidate-Original pairs.");
+            "GPU v5 ranking must be derived from measured local Original-Candidate-Original pairs.");
 
         var rendererSource = File.ReadAllText(Path.Combine(
             repositoryRoot,

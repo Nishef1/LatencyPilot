@@ -30,6 +30,8 @@ public sealed class GpuMeasurementRobustnessContractTests
         StringAssert.Contains(sessionSource, "DetermineSelectionConfidence");
         StringAssert.Contains(sessionSource, "RecommendedForKeep");
         StringAssert.Contains(sessionSource, "SelectAdaptiveShortlist");
+        StringAssert.Contains(sessionSource, "MinimumAdaptiveShortlistCandidates = 4",
+            "The final methodology must recheck the observed top four logical CPUs when that many valid candidates exist.");
         StringAssert.Contains(sessionSource, "MaximumAdaptiveShortlistCandidates");
         StringAssert.Contains(sessionSource, "Math.Min(pair.Report.ControlMovement, pair.Report.DriftBudget)",
             "Shortlist uncertainty must be bounded so extreme drift keeps near-leaders alive without resurrecting clear losers.");
@@ -38,7 +40,7 @@ public sealed class GpuMeasurementRobustnessContractTests
         StringAssert.Contains(sessionSource, "MaximumFinalistPairs = 3");
         Assert.IsFalse(
             sessionSource.Contains("GpuRepeatabilityClusterSelector.Select(", StringComparison.Ordinal),
-            "The historical cluster selector may remain as a utility, but it must not own v4 ranking authority.");
+            "The historical cluster selector may remain as a utility, but it must not own v5 ranking authority.");
         StringAssert.Contains(reportSource, "BestObservedProcessor");
         StringAssert.Contains(reportSource, "SelectionConfidence");
         StringAssert.Contains(reportSource, "OnePercentLowEffectMedianAbsoluteDeviation");
@@ -52,6 +54,12 @@ public sealed class GpuMeasurementRobustnessContractTests
             "src", "LatencyPilot.Core", "Benchmarking", "GpuBenchmarkEvidence.cs"));
         var backendSource = File.ReadAllText(FindRepositoryFile(
             "tools", "LatencyPilot.GateAValidation", "GpuAutoAffinityGateABackend.cs"));
+        var workloadSource = File.ReadAllText(FindRepositoryFile(
+            "src", "LatencyPilot.GpuBenchmark", "BenchmarkWorkload.cs"));
+        var programSource = File.ReadAllText(FindRepositoryFile(
+            "src", "LatencyPilot.GpuBenchmark", "Program.cs"));
+        var artifactSource = File.ReadAllText(FindRepositoryFile(
+            "src", "LatencyPilot.Core", "Benchmarking", "GpuBenchmarkTrialArtifact.cs"));
         StringAssert.Contains(rendererSource, "FrameCompletionTimeout");
         StringAssert.Contains(rendererSource, "fenceEvent.WaitOne(FrameCompletionTimeout)");
         StringAssert.Contains(workerSource, "completed.Wait(WorkerCompletionTimeout)");
@@ -61,6 +69,16 @@ public sealed class GpuMeasurementRobustnessContractTests
         StringAssert.Contains(backendSource, "MaximumScoredWindowOverrunRatio");
         StringAssert.Contains(backendSource, "TrialDeadlineSlack");
         StringAssert.Contains(backendSource, "RendererRecreateDeadline");
+        StringAssert.Contains(workloadSource, "MinimumObserverSettleDuration");
+        StringAssert.Contains(workloadSource, "ObserverQuietTailDuration");
+        StringAssert.Contains(workloadSource, "pendingSettleFrame",
+            "Pending in-flight frames must participate in the quiet-tail gate before scored QPC timing begins.");
+        StringAssert.Contains(workerSource, "Mask = affinityMask",
+            "CPU workers must use the physical-core mask rather than a single fixed SMT sibling.");
+        StringAssert.Contains(programSource, "workerAffinityMasks");
+        StringAssert.Contains(artifactSource, "WorkerAffinityMasks");
+        StringAssert.Contains(backendSource, "expectedWorkerAffinityMasks",
+            "Gate A must verify worker masks against captured Windows topology rather than trusting artifact shape alone.");
     }
 
     [AuditCase]

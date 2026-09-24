@@ -76,8 +76,12 @@ public sealed class GpuMeasurementBootstrapContractTests
             "src",
             "LatencyPilot.GpuBenchmark",
             "BenchmarkWorkload.cs"));
-        StringAssert.Contains(source, "ObserverSettleDuration");
+        StringAssert.Contains(source, "MinimumObserverSettleDuration");
+        StringAssert.Contains(source, "MaximumObserverSettleDuration");
+        StringAssert.Contains(source, "ObserverQuietTailDuration");
         StringAssert.Contains(source, "observer-settle");
+        StringAssert.Contains(source, "if (observerActive)",
+            "Warm-up trials without external observers must not pay observer-settle overhead.");
 
         var settleStart = source.IndexOf("observer-settle", StringComparison.Ordinal);
         var qpcStart = source.IndexOf("var startedAtQpc = Stopwatch.GetTimestamp();", StringComparison.Ordinal);

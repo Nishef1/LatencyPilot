@@ -315,7 +315,7 @@ public sealed class AuditClosureIntegrationTests
         Assert.AreEqual(cpu7, restorePresentation.ComparedProcessor,
             "Diagnostic comparison must follow the optimizer's persisted decision rank, not candidate execution order.");
         Assert.AreEqual(0.12d, restorePresentation.Metrics.Single(metric => metric.Key == "low1").ImprovementFraction,
-            "When both a short-screen and a finalist aggregate exist for the same rank, diagnostic presentation must prefer the three-pair finalist authority.");
+            "When both a short-screen and a finalist aggregate exist for the same rank, diagnostic presentation must prefer the repeated finalist authority.");
         Assert.IsTrue(restorePresentation.ComparedCandidateIsDiagnosticOnly);
         StringAssert.Contains(restorePresentation.ComparedCandidateLabel, "comparison only");
         Assert.IsTrue(restorePresentation.Metrics.All(metric =>
