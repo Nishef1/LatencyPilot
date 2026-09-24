@@ -1,9 +1,9 @@
 # LatencyPilot System Design
 
 Status: **Authoritative architecture baseline**  
-Last updated: 2026-09-21
+Last updated: 2026-09-24
 
-`ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence. ADR 0006 owns the narrow v1 product/safety direction. ADR 0007 owns the current GPU measurement/search/ranking method.
+`ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence. ADR 0006 owns the narrow v1 product/safety direction. ADR 0008 owns the current GPU measurement/search/ranking method; ADR 0007 is historical for new evidence.
 
 ## 1. Product model
 

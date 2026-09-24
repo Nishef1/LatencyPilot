@@ -20,7 +20,28 @@ public sealed record GateAMetricComparison(
     double? ImprovementFraction,
     double UncertaintyFraction,
     GateAMetricState State,
-    bool LowerIsBetter);
+    bool LowerIsBetter)
+{
+    public double? ObservedChangeFraction
+    {
+        get
+        {
+            if (OriginalValue is not { } original ||
+                CandidateValue is not { } candidate ||
+                !double.IsFinite(original) ||
+                !double.IsFinite(candidate) ||
+                original == 0d)
+            {
+                return null;
+            }
+
+            var change = LowerIsBetter
+                ? (original - candidate) / Math.Abs(original)
+                : (candidate - original) / Math.Abs(original);
+            return double.IsFinite(change) ? change : null;
+        }
+    }
+}
 
 public sealed record GateAOriginalMetricSummary(
     string Key,
@@ -160,7 +181,7 @@ public static class GateAResultPresentation
                     : verifiedKeep && report.FinalProcessor is { } selectedProcessor
                         ? report.PracticalTie
                             ? $"Best observed in practical tie · CPU {selectedProcessor.Number} kept"
-                            : $"Selected · CPU {selectedProcessor.Number}"
+                            : $"Winner · CPU {selectedProcessor.Number} kept"
                         : terminalOriginalVerified
                             ? compared is null
                                 ? "No valid candidate evidence · Original restored"
@@ -692,7 +713,7 @@ public static class GateAResultPresentation
             var selected = report.RequestedProcessors.Count;
             var tested = report.ValidatedProcessors.Count;
             var notReached = Math.Max(0, selected - tested);
-            return $"{scored} scored Original measurement(s). Qualification requires a stable three-run 1% low cluster: ±3% preferred, with bounded recovery up to ±6%. No valid cluster was found. {selected} candidate CPU(s) selected · {tested} candidate CPU(s) tested · {notReached} not reached.";
+            return $"{scored} scored Original measurement(s). v3 requires at least three structurally valid scored Original observations. Ordinary variability may extend the estimate to five and lowers confidence; it does not block ranking. No valid ranking baseline was persisted because the Original evidence was structurally unusable. {selected} candidate CPU(s) selected · {tested} candidate CPU(s) tested · {notReached} not reached.";
         }
 
         if (report.OriginalDiagnostic is { } diagnostic)
@@ -753,11 +774,14 @@ public static class GateAResultPresentation
             var absoluteImprovement = metric.LowerIsBetter
                 ? original - candidate
                 : candidate - original;
+            var observedPercent = metric.ObservedChangeFraction is { } observed && double.IsFinite(observed)
+                ? $" ({observed:+0.0%;-0.0%;0.0%})"
+                : string.Empty;
             var pairedEffect = metric.ImprovementFraction is { } effect && double.IsFinite(effect)
-                ? $" paired effect {effect:+0.0%;-0.0%;0.0%}"
+                ? $" Drift-adjusted paired effect {effect:+0.0%;-0.0%;0.0%}."
                 : string.Empty;
             var direction = absoluteImprovement >= 0d ? "improvement" : "regression";
-            return $"{metric.Label}: {original:0.##} → {candidate:0.##} {metric.Unit}; {direction} {Math.Abs(absoluteImprovement):0.##} {metric.Unit};{pairedEffect}.";
+            return $"{metric.Label}: {original:0.##} → {candidate:0.##} {metric.Unit}; {direction} {Math.Abs(absoluteImprovement):0.##} {metric.Unit}{observedPercent}.{pairedEffect}";
         }
 
         return metric.ImprovementFraction is { } fallback && double.IsFinite(fallback)

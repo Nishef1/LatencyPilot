@@ -1,11 +1,11 @@
 # Benchmark Methodology
 
 Status: **V0.12 benchmark contract**  
-Last updated: 2026-09-21
+Last updated: 2026-09-24
 
 LatencyPilot exists to distinguish measurable effects from placebo, ordinary run-to-run variation, workload drift and unsafe/unverified state. It is not a generic Windows tweak collection.
 
-Current GPU measurement/search/ranking authority: **ADR 0007 — Paired local-control GPU affinity v2**. ADR 0006 remains authoritative for the broader v1 product scope, safety, mutation/recovery ownership and product sequencing.
+Current GPU measurement/search/ranking authority: **ADR 0008 — Noise-tolerant ranked GPU affinity v3**. ADR 0007 remains the historical v2 contract; ADR 0006 remains authoritative for the broader v1 product scope, safety, mutation/recovery ownership and product sequencing.
 
 ## 1. Evidence hierarchy
 
@@ -283,7 +283,8 @@ For the best observed CPU it shows, where available:
 - median Original → Candidate 1% low and AVG FPS;
 - median Original → Candidate frame-p99 ms;
 - absolute FPS/ms improvement;
-- paired percentage effect;
+- direct percentage change from the displayed median Original/Candidate values;
+- separate drift-adjusted paired percentage effect used for ranking;
 - MAD/noise context in details;
 - practical-tie state;
 - whether the CPU was kept or exact Original was restored.

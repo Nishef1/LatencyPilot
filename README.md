@@ -14,18 +14,18 @@ It is not a registry-tweak pack, debloater, generic FPS booster, or a list of se
 ## Current authority
 
 - Product scope, mutation ownership, recovery and v1 sequencing: [`docs/adr/0006-simple-auto-interrupt-affinity-v1.md`](docs/adr/0006-simple-auto-interrupt-affinity-v1.md)
-- GPU measurement/search/ranking: [`docs/adr/0007-paired-local-control-gpu-affinity-v2.md`](docs/adr/0007-paired-local-control-gpu-affinity-v2.md)
+- GPU measurement/search/ranking: [`docs/adr/0008-noise-tolerant-ranked-gpu-affinity-v3.md`](docs/adr/0008-noise-tolerant-ranked-gpu-affinity-v3.md)
 - Live execution/evidence state: [`PROJECT_STATUS.md`](PROJECT_STATUS.md)
 - Required completion outcomes: [`ROADMAP.md`](ROADMAP.md)
 
-ADR 0007 supersedes only the GPU measurement, screening and ranking portions of ADR 0006.
+ADR 0008 supersedes ADR 0007 for new GPU measurement/ranking evidence. ADR 0007 remains historical; ADR 0006 still owns the broader product/safety contract.
 
 ## v1 workflow
 
 ```text
 preflight / quiet check
 → deep ETW baseline
-→ bounded Original qualification
+→ robust Original variability estimate
 → paired GPU screening: Original before → Candidate → Original after
 → physical-core representatives → promising SMT siblings → up to 3 finalists
 → three independent 30 s local pairs per finalist
@@ -45,7 +45,7 @@ NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, 
 
 - Scope/safety/recovery foundations: **source complete**
 - Read-only ETW/topology/device evidence: **source substantially complete; physical closure remains**
-- GPU paired-v2 search: **implemented in source; physical Gate A open**
+- GPU noise-tolerant v3 search: **implemented in source; physical Gate A open**
 - Gate A result UX: **authoritative report → evidence ZIP → Overview result implemented; real render/accessibility inspection remains**
 - Final GPU Keep: **internal source requires hard ETW target-only ISR proof**
 - USB/input route + xHCI read-only evidence: **source exists**
@@ -56,28 +56,27 @@ NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, 
 - `ServiceBoundary.MutationAvailable`: **false**
 - Hosted CI: **software-contract evidence only**
 
-## GPU paired-v2 measurement
+## GPU noise-tolerant v3 measurement
 
-New GPU evidence uses method id `gpu-affinity-benchmark-v2` and report schema `latencypilot-gpu-auto-affinity-report-v2`. Historical v1 reports remain historical and are never reinterpreted as v2.
+New GPU evidence uses method id `gpu-affinity-benchmark-v3` and report schema `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2 reports remain historical and are never reinterpreted as v3.
 
-### 1. Original qualification
+### 1. Original variability estimate
 
 Before any candidate mutation:
 
 ```text
 5 s non-scored Original warm-up
-→ 10 s scored Original observations
-→ require a 3-observation 1%-low cluster
-   preferred band: ±3% of cluster median
-   bounded recovery after observations 4/5: up to ±6%
-→ no valid cluster after 5 scored observations = retain Original, no candidate mutation
+→ 3 × 10 s scored Original observations
+→ median + relative MAD noise estimate
+→ extend to observation 4/5 only when variability is elevated
+→ ordinary noise lowers confidence; it does not block candidate search
 ```
 
-Every observation remains in the audit trail. The accepted qualification cluster establishes a usable measurement substrate; it is not reused as a candidate pair control.
+Structurally valid observations stay in the estimate and audit trail. Candidate search is stopped only when the evidence itself is unusable (for example invalid identity/state or non-finite required metrics), not merely because a normal Windows system is noisy.
 
 ### 2. Direct local pairs
 
-After qualification, LatencyPilot captures a fresh Original control and screens with chained local pairs:
+LatencyPilot then captures a fresh Original control and screens candidates with chained local pairs:
 
 ```text
 O0 → C1 → O1 → C2 → O2 → ...
@@ -96,51 +95,47 @@ For lower-is-better frame p99:
 effect = reference / candidate - 1
 ```
 
-Positive effect always means improvement-directed movement. Raw observations are preserved unchanged; the optimizer does not manufacture pseudo-normalized FPS values.
+This local reference compensates for time-local drift without replacing the raw measurements. The result report keeps both the real Original/Candidate FPS or ms values and the drift-adjusted paired effect.
 
-### 3. Pair stability
+### 3. Pair drift and retry
 
-The pair drift budget is:
+High local Original movement gets one fresh retry. If the retry is still noisy **but structurally valid**, the candidate remains rankable and the larger movement is retained as uncertainty evidence. There is no noise-only consecutive-candidate early stop.
 
-```text
-clamp(max(6%, 2 × accepted Original 1%-low noise), 6%, 10%)
-```
-
-A pair above that budget is unstable and cannot rank the candidate. One fresh retry is allowed. A second unstable attempt makes that candidate inconclusive. Two consecutive candidates that exhaust the retry stop the search safely and retain exact Original.
-
-Structural evidence failures remain fail-closed immediately.
+Structural failures still fail closed: wrong stored state, invalid artifact/session identity, non-finite required metrics, healthy contradictory placement evidence, failed rollback/recovery, or equivalent evidence-contract failures.
 
 ### 4. Full-search strategy
 
-Full search does **not** blindly score every SMT sibling for the full tournament:
+Full search avoids expensive full confirmation of every SMT sibling:
 
-1. **Stage A — physical-core representatives:** screen one eligible logical processor per physical core using current CPU-set eligibility, lower observed pressure, then deterministic processor-number fallback.
-2. **Stage B — sibling refinement:** keep the best two physical-core hypotheses, plus a third only when it is within the 1% practical-equivalence margin; screen any still-untested eligible siblings on those cores.
-3. **Stage C — finalists:** advance the best two logical CPUs, plus one additional CPU only when it is within the same 1% margin; hard cap three finalists.
+1. **Stage A — physical-core representatives:** screen one eligible logical processor per physical core.
+2. **Stage B — sibling refinement:** refine at most the top three physical-core hypotheses.
+3. **Stage C — finalists:** advance at most the top three logical CPUs.
 
-CPU0 is not globally banned and no even/odd SMT assumption is permitted.
+Short-screen windows are exactly **10 seconds**. Paired 1% low effect is the primary ranking signal; AVG and frame p99 are guardrail/context metrics and 0.1% low remains diagnostic.
 
-Short-screen scored windows are exactly **10 seconds**. The primary ranking signal is paired 1%-low effect; AVG and frame p99 are guardrail/context metrics and 0.1% low remains diagnostic.
+### 5. Finalist ranking and confidence
 
-### 5. Finalist confirmation
+Finalists run **three shuffled 30-second local pairs**. Every structurally valid finalist is ranked by median paired 1% low effect.
 
-Each finalist must obtain **three independent valid 30-second local pairs**. Finalist order is deterministically shuffled per round.
+LatencyPilot also records:
 
-A finalist is improvement-capable only when:
+- effect MAD;
+- positive-pair count;
+- Original variability and local control movement;
+- raw median Original/Candidate FPS/ms;
+- lead over the runner-up;
+- practical-tie state.
 
-- at least two of three 1%-low pair effects are positive;
-- median paired 1%-low effect exceeds `max(1%, median finalist pair movement)`;
-- no valid pair shows a material primary regression beyond that floor;
-- AVG, frame-p99 and sufficiently supported GPU-driver interrupt-tail guardrails do not materially regress.
+Rank 1 is always the **best observed CPU** when valid ranked evidence exists. Noise changes `High` / `Medium` / `Low` confidence; it does not erase rank 1. A one-percentage-point practical tie is disclosed and lowers confidence while preserving the deterministic best-observed choice.
 
-Finalists within one percentage point are a **practical tie**. Passive pressure/topology ordering may choose the operational target inside a tie, but the UI must not claim that target proved faster than tied peers.
+No Bayesian model, bootstrap simulation or hidden weighted score is used in v3.
 
 ## Final Keep is stricter than ranking
 
-A measured performance winner is not enough. Before Keep, LatencyPilot applies the selected candidate once more and requires:
+The best observed CPU and the terminal machine state are separate facts. Automatic Keep additionally requires positive median benefit, bounded AVG/frame-p99/interrupt-tail guardrails, exact stored-state verification, and final clean target-only GPU ISR placement proof:
 
 ```text
-stored winner state verified
+stored selected state verified
 clean kernel ETW
 lost events = 0
 attributable GPU ISR samples > 0
@@ -149,7 +144,7 @@ resolved off-target ISR = 0
 terminal stored state verified
 ```
 
-If final runtime placement cannot be proved, exact Original is restored.
+If Keep is not recommended or final runtime placement cannot be proved, exact Original is restored **without deleting the best-observed CPU from the report**.
 
 Microsoft documents interrupt affinity as a device affinity policy and `AssignmentSetOverride` as a `KAFFINITY` processor mask when the specified-processors policy is used. LatencyPilot treats that stored policy as configuration evidence only; runtime ETW placement remains a separate verification layer.
 
@@ -157,8 +152,8 @@ Microsoft documents interrupt affinity as a device affinity policy and `Assignme
 
 The developer UI also supports bounded diagnostic paths:
 
-- **Selected CPUs · restore Original** — runs real paired screening only on the selected CPUs, skips the machine-wide finalist tournament, never Keeps, always restores Original and cannot close Gate A.
-- **Original only · no system changes** — captures the bounded Original-only sample set with no affinity mutation or device restart.
+- **Selected CPUs · restore Original** — real paired screening only for the selected CPUs; reports the best observed option in that subset, never Keeps, always restores Original and cannot close Gate A.
+- **Original only · no system changes** — captures Original-only observations with no affinity mutation or device restart.
 
 These are methodology/debugging tools, not shortcuts around the full physical gate.
 
@@ -170,21 +165,24 @@ The result surface keeps these layers distinct:
 
 ```text
 raw scored trials / local pairs
-!= persisted decision rank/finalist authority
+!= persisted best-observed rank
+!= selection confidence
+!= Keep recommendation
 != verified terminal machine state
 ```
 
-It shows:
+For the best observed CPU it shows, where evidence exists:
 
-- terminal Keep/Restore/practical-tie outcome;
-- `Evidence eligible` versus development evidence without implying physical Gate A is already closed;
-- direct `Original before → Candidate → Original after` pair evidence;
-- paired effect, local control movement, drift budget and pair verdict;
-- candidate/finalist comparison using persisted decision authority;
-- runtime placement/final-state evidence;
-- evidence ZIP/session/raw-report actions.
+- actual median Original → Candidate 1% low / AVG FPS and frame-p99 ms;
+- absolute improvement, such as `+12.6 FPS`;
+- direct percentage change from those displayed raw medians, such as `+6.8%`;
+- the separate drift-adjusted paired effect used by ranking;
+- `High` / `Medium` / `Low` confidence and MAD/noise detail;
+- practical-tie state;
+- whether the CPU was kept or exact Original was restored;
+- direct pair evidence and evidence ZIP/session/raw-report actions.
 
-Presentation code must never re-rank shuffled execution data or turn a non-Keep candidate into a winner.
+Presentation code consumes the persisted rank. It must not re-rank shuffled execution data or confuse “best observed” with “kept”.
 
 ## PresentMon and ETW boundaries
 
@@ -283,7 +281,7 @@ For XAML Hot Reload/Live Visual Tree, Visual Studio `F5` remains the preferred U
 
 ```text
 exact-head green CI
-→ paired-v2 GPU Gate A physical search/restart/placement/rollback proof
+→ noise-tolerant v3 GPU Gate A physical search/restart/placement/rollback proof
 → repeat whole search
 → Stop safely + supported recovery exercise
 → real Windows result/accessibility inspection

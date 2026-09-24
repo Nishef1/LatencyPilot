@@ -1,7 +1,7 @@
 # LatencyPilot Product Roadmap
 
 Status: **Authoritative completion plan**  
-Last updated: 2026-09-21
+Last updated: 2026-09-24
 
 `PROJECT_STATUS.md` owns current execution/evidence state. This file owns required product outcomes. Source-complete and physically validated are different claims.
 
@@ -12,7 +12,7 @@ LatencyPilot v1 automates one narrow, reversible Windows 11 workflow:
 ```text
 preflight / quiet check
 → baseline DPC/ISR evidence
-→ bounded Original qualification
+→ robust Original variability estimate
 → paired GPU affinity screening
 → physical-core representatives + promising SMT siblings
 → bounded finalist confirmation
@@ -25,7 +25,7 @@ preflight / quiet check
 → show before/after evidence + Restore original settings
 ```
 
-Product/safety authority remains ADR 0006. GPU measurement/search/ranking authority is ADR 0007, which supersedes only those GPU sections of ADR 0006.
+Product/safety authority remains ADR 0006. GPU measurement/search/ranking authority is ADR 0008; ADR 0007 remains the historical paired-v2 contract.
 
 ### v1 includes
 

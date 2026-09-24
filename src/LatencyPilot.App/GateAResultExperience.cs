@@ -316,7 +316,7 @@ public sealed partial class MainWindow
             stack.Children.Add(new TextBlock
             {
                 Text = result.BaselineQualificationFailed
-                    ? "Candidate testing was not started because Original qualification did not produce a stable three-run 1% low cluster. No candidate was mutated, ranked, or retained."
+                    ? "Candidate testing was not started because the scored Original evidence was structurally unusable. Ordinary benchmark variability alone does not block v3 ranking. No candidate was mutated, ranked, or retained."
                     : "This Original-only diagnostic intentionally performs no affinity mutation or device restart, so there is no candidate comparison for this run.",
                 Style = AppStyle("MutedBodyTextStyle"),
                 TextWrapping = TextWrapping.Wrap,
@@ -604,11 +604,14 @@ public sealed partial class MainWindow
             var absoluteImprovement = metric.LowerIsBetter
                 ? original - candidate
                 : candidate - original;
+            var observedPercent = metric.ObservedChangeFraction is { } observed && double.IsFinite(observed)
+                ? $" ({observed:+0.0%;-0.0%;0.0%})"
+                : string.Empty;
             var pairedEffect = metric.ImprovementFraction is { } effect && double.IsFinite(effect)
-                ? $" · paired {effect:+0.0%;-0.0%;0.0%}"
+                ? $" · drift-adjusted paired {effect:+0.0%;-0.0%;0.0%}"
                 : string.Empty;
             var direction = absoluteImprovement >= 0d ? "improvement" : "regression";
-            return $"{original:0.##} → {candidate:0.##} {metric.Unit} · {direction} {Math.Abs(absoluteImprovement):0.##} {metric.Unit}{pairedEffect}";
+            return $"{original:0.##} → {candidate:0.##} {metric.Unit} · {direction} {Math.Abs(absoluteImprovement):0.##} {metric.Unit}{observedPercent}{pairedEffect}";
         }
 
         return metric.ImprovementFraction is { } fallback && double.IsFinite(fallback)

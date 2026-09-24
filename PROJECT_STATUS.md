@@ -2,7 +2,7 @@
 
 This is the live execution ledger for `ROADMAP.md`. Current source/runtime evidence owns actual state; plans and historical chat do not.
 
-Last updated: 2026-09-22
+Last updated: 2026-09-24
 
 ## Overall
 
@@ -106,7 +106,7 @@ The result surface now distinguishes:
 - persisted rank from shuffled execution order;
 - High/Medium/Low confidence from ranking itself;
 - actual median Original → Candidate 1% low / AVG FPS and frame-p99 ms;
-- absolute FPS/ms improvement plus paired percentage effect;
+- absolute FPS/ms improvement plus direct raw-median percentage change, with the separate drift-adjusted paired effect preserved for ranking;
 - practical tie from “no result”;
 - MAD/noise detail instead of a hard winner decision floor;
 - direct pair evidence and exact terminal machine state.
