@@ -93,6 +93,7 @@ public sealed class GpuAutoAffinitySession
     private const int MinimumInterruptTailRuns = 2;
     private const int MaximumPairAttempts = 2;
     internal const int MaximumPhysicalCoreHypotheses = 4;
+    internal const int MinimumAdaptiveShortlistCandidates = 4;
     internal const int MaximumAdaptiveShortlistCandidates = 5;
     internal const int MaximumFinalists = 2;
     private const int MinimumFinalistPairs = 2;
@@ -949,7 +950,7 @@ public sealed class GpuAutoAffinitySession
         SelectPlausibleScreeningAggregates(
                 measurements,
                 MaximumAdaptiveShortlistCandidates,
-                minimumGuaranteedCount: 2)
+                minimumGuaranteedCount: MinimumAdaptiveShortlistCandidates)
             .Select(static aggregate => aggregate.Candidate)
             .ToArray();
 
