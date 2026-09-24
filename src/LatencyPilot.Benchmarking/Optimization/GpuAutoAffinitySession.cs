@@ -96,7 +96,7 @@ public sealed class GpuAutoAffinitySession
     private const int MinimumInterruptTailSamples = 20;
     private const int MinimumInterruptTailRuns = 2;
     private const int MaximumPairAttempts = 2;
-    private const int MaximumPhysicalCoreHypotheses = 4;
+    internal const int MaximumPhysicalCoreHypotheses = 4;
     internal const int MaximumAdaptiveShortlistCandidates = 5;
     internal const int MaximumFinalists = 2;
     private const int MinimumFinalistPairs = 2;

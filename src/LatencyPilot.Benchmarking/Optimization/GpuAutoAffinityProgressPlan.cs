@@ -64,7 +64,7 @@ public sealed class GpuAutoAffinityProgressPlan
             throw new ArgumentException("Only custom scope accepts candidate processors.", nameof(requestedProcessors));
         }
         var cores = candidates.GroupBy(static candidate => candidate.PhysicalCoreIndex).ToArray();
-        var siblingBudget = cores.Select(static core => core.Count() - 1).OrderDescending().Take(3).Sum();
+        var siblingBudget = cores.Select(static core => core.Count() - 1).OrderDescending().Take(GpuAutoAffinitySession.MaximumPhysicalCoreHypotheses).Sum();
         return new GpuAutoAffinityProgressPlan(candidates.Count, cores.Length + siblingBudget, scope);
     }
 }
