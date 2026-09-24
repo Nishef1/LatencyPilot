@@ -18,6 +18,11 @@ internal static partial class GateAOneClickProgram
 
     internal static async Task<int> RunAsync(string[] args)
     {
+        if (args.Contains(ManualDeviceAffinityRunner.ModeFlag, StringComparer.Ordinal))
+        {
+            return await ManualDeviceAffinityRunner.RunAsync(args);
+        }
+
         if (args.Contains(GpuAutoAffinityGateARunner.ModeFlag, StringComparer.Ordinal))
         {
             return await GpuAutoAffinityGateARunner.RunAsync(args);
