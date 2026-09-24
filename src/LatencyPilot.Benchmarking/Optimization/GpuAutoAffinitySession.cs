@@ -85,10 +85,6 @@ public sealed class GpuAutoAffinitySession
     public static readonly TimeSpan ScreeningDuration = TimeSpan.FromSeconds(10);
     public static readonly TimeSpan FinalistDuration = TimeSpan.FromSeconds(15);
 
-    // Compatibility aliases for historical internal callers.
-    public static readonly TimeSpan V2ScreeningDuration = ScreeningDuration;
-    public static readonly TimeSpan V2FinalistDuration = FinalistDuration;
-
     private const double CandidateMetricEquivalenceTolerance = 0.01;
     private const double KeepGuardrailRegressionTolerance = 0.03;
     private const double MaximumKeepGuardrailRegressionTolerance = 0.10;

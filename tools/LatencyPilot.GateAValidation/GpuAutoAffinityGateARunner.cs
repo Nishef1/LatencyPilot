@@ -148,8 +148,8 @@ internal static class GpuAutoAffinityGateARunner
                 pressure,
                 cpuSets,
                 shuffleSeed,
-                GpuAutoAffinitySession.V2ScreeningDuration,
-                GpuAutoAffinitySession.V2FinalistDuration,
+                GpuAutoAffinitySession.ScreeningDuration,
+                GpuAutoAffinitySession.FinalistDuration,
                 options.SearchScope,
                 options.RequestedProcessors);
 
