@@ -186,9 +186,9 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 ## Immediate execution ladder
 
 1. **Completed now:** v5 source preserves best-observed ranking/Keep separation, rechecks the observed top four before the finalist cut, isolates external-observer startup outside the scored QPC window, removes fixed-SMT worker contention asymmetry with exact physical-core worker masks, keeps two 15-second finalists plus one uncertainty-driven optional third round, and separates finalist-confirmed values from screening-only values in result UX.
-2. **Evidence:** permanent source contracts cover the v5 shortlist, quiet-tail gate, exact worker-mask provenance and result authority separation. Exact-head hosted `Tests` are pending for the final documentation-aligned revision and must be green before the owner final run is accepted.
+2. **Evidence:** hosted `Tests` are green on the completed v5 source/test revision `2b069504690f815027aba11963721173c8b80239`; permanent contracts cover the top-four shortlist recheck, cadence-aware observer quiet-tail gate, exact physical-core worker-mask provenance, and finalist/screening result-authority separation. This ledger-only update must also be exact-head green before physical evidence is accepted.
 3. **Still open:** one exact-head physical owner v5 GPU Gate A run remains required; public product mutation stays unarmed.
-4. **Next stage:** after exact-head CI is green, run Full v5 once with overlays/capture disabled where practical and inspect observer-settle, top-four recheck retention, top-two confirmation count, total runtime, best-observed rank, confidence, FPS/ms gains, rollback and final placement.
+4. **Next stage:** once this final ledger HEAD is green, run Full v5 once with overlays/capture disabled where practical and inspect observer-settle, top-four recheck retention, top-two confirmation count, total runtime, best-observed rank, confidence, FPS/ms gains, rollback and final placement.
 5. **After that:** repeat the v5 search, exercise Stop safely/failure recovery, and complete real WinUI/accessibility inspection before product mutation arming.
 
 ## Completion rule
