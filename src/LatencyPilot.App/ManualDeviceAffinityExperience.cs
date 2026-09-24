@@ -21,9 +21,9 @@ public sealed partial class MainWindow
     internal void InitializeManualDeviceAffinityExperience()
     {
         ManualDeviceAffinityCard.Visibility =
-            !string.IsNullOrWhiteSpace(_gateARepositoryRoot) &&
+            IsDevelopmentGateAAvailable(_gateARepositoryRoot) &&
             File.Exists(Path.Combine(
-                _gateARepositoryRoot,
+                _gateARepositoryRoot!,
                 "tools",
                 "LatencyPilot.GateAValidation",
                 "LatencyPilot.GateAValidation.csproj"))
@@ -35,6 +35,13 @@ public sealed partial class MainWindow
     {
         if (_manualDeviceAffinityBusy)
         {
+            return;
+        }
+
+        if (_gateAValidationRunning)
+        {
+            ManualDeviceAffinityStatusText.Text =
+                "Manual affinity is blocked while GPU Gate A owns the mutation/measurement session.";
             return;
         }
 
@@ -141,7 +148,7 @@ public sealed partial class MainWindow
         });
         host.Children.Add(new TextBlock
         {
-            Text = "Manual writes are intentionally limited to the display adapter and USBXHCI controllers. Apply is journaled and kept only after allocated interrupt resources verify the requested CPU; verification failure triggers exact rollback.",
+            Text = "Manual writes are intentionally limited to the display adapter and USBXHCI controllers. Apply is journaled and kept only after allocated interrupt resources verify the requested CPU; verification failure triggers exact rollback. Existing explicit policies are not claimed as LatencyPilot-owned unless the journal owns them.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
         });
@@ -259,7 +266,7 @@ public sealed partial class MainWindow
 
             var restoreButton = new Button
             {
-                Content = "Restore LatencyPilot original",
+                Content = "Restore all LatencyPilot changes",
                 Style = AppStyle("QuietButtonStyle"),
             };
             AutomationProperties.SetName(
@@ -308,6 +315,13 @@ public sealed partial class MainWindow
             return;
         }
 
+        if (_gateAValidationRunning)
+        {
+            ManualDeviceAffinityStatusText.Text =
+                "Manual affinity is blocked while GPU Gate A owns the mutation/measurement session.";
+            return;
+        }
+
         _manualDeviceAffinityBusy = true;
         ManualDeviceAffinityButton.IsEnabled = false;
         ManualDeviceAffinityStatusText.Text =
@@ -324,7 +338,7 @@ public sealed partial class MainWindow
                 processorNumber);
             ManualDeviceAffinityStatusText.Text =
                 report.Status == "RebootRequired"
-                    ? $"{row.Device.DisplayName}: Windows requires a reboot. Reboot, reopen this panel, and apply the same CPU again to resume verification."
+                    ? $"{row.Device.DisplayName}: Windows requires a reboot. Reboot, reopen this panel, and apply the same CPU again to resume the same journaled experiment."
                     : $"{row.Device.DisplayName}: {report.Message}";
 
             var refreshed = await Task.Run(CaptureManualAffinitySnapshot);
