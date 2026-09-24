@@ -251,19 +251,62 @@ public sealed partial class MainWindow
         var grid = new Grid { ColumnSpacing = 12d, RowSpacing = 12d };
         if (!result.OriginalOnlyResult)
         {
-            var candidateChart = new GpuCandidateComparisonChart();
             var measuredProcessors = result.Pairs.Select(static pair => pair.Processor).Distinct().Count();
-            candidateChart.SetData(
-                result.Candidates,
-                null,
-                $"{measuredProcessors} measured CPU candidate(s); {result.Candidates.Count} candidate(s) have persisted decision aggregates. {result.ComparedCandidateLabel}. Bars are paired 1% low effects centered on 0%. Raw local controls are listed below.",
-                result.Pairs.Count > 0 && result.Candidates.Count == 0
-                    ? "No decision-grade candidate could be charted. Measured local pairs remain available below with their control movement and retry outcomes."
-                    : null);
+            var confirmed = result.Candidates.Where(static candidate => candidate.IsFinalistEvidence).ToArray();
+            var screeningOnly = result.Candidates.Where(static candidate => !candidate.IsFinalistEvidence).ToArray();
+            var candidateSections = new StackPanel { Spacing = 14d };
+
+            if (confirmed.Length > 0)
+            {
+                candidateSections.Children.Add(new TextBlock
+                {
+                    Text = "Final confirmed",
+                    Style = AppStyle("CaptionTextStyle"),
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                });
+                var confirmedChart = new GpuCandidateComparisonChart();
+                confirmedChart.SetData(
+                    confirmed,
+                    null,
+                    $"{confirmed.Length} finalist CPU(s) with repeated 15-second confirmation. {result.ComparedCandidateLabel}.",
+                    null);
+                candidateSections.Children.Add(confirmedChart);
+            }
+
+            if (screeningOnly.Length > 0)
+            {
+                candidateSections.Children.Add(new TextBlock
+                {
+                    Text = "Screening only · not directly comparable to finalist medians",
+                    Style = AppStyle("CaptionTextStyle"),
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                });
+                var screeningChart = new GpuCandidateComparisonChart();
+                screeningChart.SetData(
+                    screeningOnly,
+                    null,
+                    $"{screeningOnly.Length} CPU(s) show short-screen evidence only. These values are not finalist-confirmed and must not be compared as if they had the same authority.",
+                    null);
+                candidateSections.Children.Add(screeningChart);
+            }
+
+            if (confirmed.Length == 0 && screeningOnly.Length == 0)
+            {
+                var emptyChart = new GpuCandidateComparisonChart();
+                emptyChart.SetData(
+                    [],
+                    null,
+                    $"{measuredProcessors} measured CPU candidate(s), but no decision-grade aggregate is available.",
+                    result.Pairs.Count > 0
+                        ? "No decision-grade candidate could be charted. Measured local pairs remain available below with their control movement and retry outcomes."
+                        : null);
+                candidateSections.Children.Add(emptyChart);
+            }
+
             grid.Children.Add(BuildChartCard(
-                "Candidate comparison",
-                "Persisted paired 1% low effects from the optimizer. Zero means the adjacent Original controls; this chart never reconstructs a second ranking.",
-                candidateChart));
+                "Candidate evidence",
+                "Finalist medians and short-screen signals are separated so measurements with different authority are never presented as one ranking.",
+                candidateSections));
         }
 
         var trialChart = new GateATrialHistoryChart();
