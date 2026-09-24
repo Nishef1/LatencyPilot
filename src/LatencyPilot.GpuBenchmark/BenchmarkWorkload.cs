@@ -23,7 +23,8 @@ internal sealed class BenchmarkWorkload
     private static readonly TimeSpan MinimumObserverSettleDuration = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan MaximumObserverSettleDuration = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan ObserverQuietTailDuration = TimeSpan.FromMilliseconds(500);
-    private const double ObserverTransientFramePeriodMilliseconds = 10d;
+    private const double MinimumObserverTransientFramePeriodMilliseconds = 10d;
+    private const double ObserverTransientMedianMultiplier = 2d;
     private static readonly TimeSpan CalibrationProgressInterval = TimeSpan.FromMilliseconds(250);
     private readonly BenchmarkOptions options;
     private readonly TextWriter output;
@@ -163,27 +164,15 @@ internal sealed class BenchmarkWorkload
                 "Settling benchmark and observer startup before the scored QPC window.");
             renderer.BeginMeasurementWindow();
             var observerSettle = Stopwatch.StartNew();
-            TimeSpan? lastObserverTransient = null;
-            var observerSettled = false;
+            var settleFrames = new List<(TimeSpan ObservedAt, double PeriodMilliseconds)>();
 
             void ObserveSettleFrame(BenchmarkFrameTelemetry frame)
             {
                 ValidateFrame(frame);
-                if (frame.FramePeriodMilliseconds >= ObserverTransientFramePeriodMilliseconds)
-                {
-                    lastObserverTransient = observerSettle.Elapsed;
-                }
+                settleFrames.Add((observerSettle.Elapsed, frame.FramePeriodMilliseconds));
             }
 
-            bool QuietTailSatisfied()
-            {
-                var elapsed = observerSettle.Elapsed;
-                return elapsed >= MinimumObserverSettleDuration &&
-                    (lastObserverTransient is null ||
-                     elapsed - lastObserverTransient.Value >= ObserverQuietTailDuration);
-            }
-
-            while (observerSettle.Elapsed < MaximumObserverSettleDuration)
+            while (observerSettle.Elapsed < MinimumObserverSettleDuration)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (renderer.RenderFrame(
@@ -192,24 +181,64 @@ internal sealed class BenchmarkWorkload
                 {
                     ObserveSettleFrame(settleFrame);
                 }
+            }
+
+            foreach (var pendingSettleFrame in renderer.DrainFrames())
+            {
+                ObserveSettleFrame(pendingSettleFrame);
+            }
+
+            if (settleFrames.Count == 0)
+            {
+                throw new InvalidDataException(
+                    "Benchmark observer settle completed without frame-period evidence.");
+            }
+
+            var settleMedian = Median(settleFrames.Select(static sample => sample.PeriodMilliseconds));
+            var transientThreshold = Math.Max(
+                MinimumObserverTransientFramePeriodMilliseconds,
+                settleMedian * ObserverTransientMedianMultiplier);
+            TimeSpan? lastObserverTransient = settleFrames
+                .Where(sample => sample.PeriodMilliseconds >= transientThreshold)
+                .Select(static sample => (TimeSpan?)sample.ObservedAt)
+                .LastOrDefault();
+
+            bool QuietTailSatisfied() =>
+                lastObserverTransient is null ||
+                observerSettle.Elapsed - lastObserverTransient.Value >= ObserverQuietTailDuration;
+
+            var observerSettled = QuietTailSatisfied();
+            while (!observerSettled && observerSettle.Elapsed < MaximumObserverSettleDuration)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (renderer.RenderFrame(
+                        workload.SimulationIterationsPerWorker,
+                        workload.CommandBatchesPerWorker) is { } settleFrame)
+                {
+                    ObserveSettleFrame(settleFrame);
+                    if (settleFrame.FramePeriodMilliseconds >= transientThreshold)
+                    {
+                        lastObserverTransient = observerSettle.Elapsed;
+                    }
+                }
 
                 if (!QuietTailSatisfied())
                 {
                     continue;
                 }
 
-                // Complete the two in-flight contexts before accepting the quiet
-                // boundary. A delayed transient is still part of observer startup.
+                // Complete both in-flight contexts before accepting the quiet
+                // boundary. A delayed transient is still observer startup.
                 foreach (var pendingSettleFrame in renderer.DrainFrames())
                 {
                     ObserveSettleFrame(pendingSettleFrame);
+                    if (pendingSettleFrame.FramePeriodMilliseconds >= transientThreshold)
+                    {
+                        lastObserverTransient = observerSettle.Elapsed;
+                    }
                 }
 
-                if (QuietTailSatisfied())
-                {
-                    observerSettled = true;
-                    break;
-                }
+                observerSettled = QuietTailSatisfied();
             }
 
             if (!observerSettled)
@@ -217,8 +246,11 @@ internal sealed class BenchmarkWorkload
                 foreach (var pendingSettleFrame in renderer.DrainFrames())
                 {
                     ObserveSettleFrame(pendingSettleFrame);
+                    if (pendingSettleFrame.FramePeriodMilliseconds >= transientThreshold)
+                    {
+                        lastObserverTransient = observerSettle.Elapsed;
+                    }
                 }
-
                 observerSettled = QuietTailSatisfied();
             }
 
@@ -341,6 +373,20 @@ internal sealed class BenchmarkWorkload
         {
             return ["Benchmark graphics-hook inspection was unavailable; overlay interference is unknown."];
         }
+    }
+
+    private static double Median(IEnumerable<double> values)
+    {
+        var ordered = values.Order().ToArray();
+        if (ordered.Length == 0)
+        {
+            throw new ArgumentException("Median requires at least one value.", nameof(values));
+        }
+
+        var middle = ordered.Length / 2;
+        return ordered.Length % 2 == 0
+            ? (ordered[middle - 1] + ordered[middle]) / 2d
+            : ordered[middle];
     }
 
     private static void ValidateFrame(BenchmarkFrameTelemetry frame)
