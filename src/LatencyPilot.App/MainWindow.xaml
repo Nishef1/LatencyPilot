@@ -720,24 +720,38 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="4">
-                                            <TextBlock Text="Manual device affinity · Development lab"
+                                        <StackPanel Spacing="7">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="DEVELOPMENT LAB"
+                                                           Style="{StaticResource HeroEyebrowTextStyle}"
+                                                           Foreground="{ThemeResource AccentBrush}" />
+                                                <Border Style="{StaticResource PillBorderStyle}"
+                                                        Background="{ThemeResource PremiumOverviewQuietBrush}"
+                                                        VerticalAlignment="Center">
+                                                    <TextBlock Text="Read-only surface"
+                                                               FontSize="10"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{ThemeResource MutedTextBrush}" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="Manage interrupt affinity"
                                                        Style="{StaticResource SubsectionTitleTextStyle}" />
-                                            <TextBlock Text="Inspect current interrupt policies for latency-sensitive devices. Manual writes are limited to GPU and USBXHCI targets with journaled verify/rollback."
+                                            <TextBlock Text="Inspect stored policy, active assignment and runtime proof as separate evidence. Supported GPU and USBXHCI changes use journaled verification and exact rollback."
                                                        TextWrapping="Wrap"
                                                        Style="{StaticResource CaptionTextStyle}" />
                                             <TextBlock x:Name="ManualDeviceAffinityStatusText"
-                                                       Text="Current policy inspection is read-only until you explicitly apply a supported target."
+                                                       Text="Ready to inspect. No system changes have been made."
                                                        TextWrapping="Wrap"
                                                        Style="{StaticResource CaptionTextStyle}" />
                                         </StackPanel>
                                         <Button x:Name="ManualDeviceAffinityButton"
                                                 Grid.Column="1"
-                                                Content="Manage affinity"
+                                                Content="Open affinity lab"
                                                 Click="ManualDeviceAffinityButton_Click"
                                                 Style="{StaticResource SecondaryButtonStyle}"
+                                                MinWidth="148"
                                                 VerticalAlignment="Center"
-                                                AutomationProperties.Name="Manage manual device interrupt affinity" />
+                                                AutomationProperties.Name="Open manual device interrupt affinity lab" />
                                     </Grid>
                                 </Border>
 
