@@ -132,8 +132,8 @@ capture exact Original/default GPU affinity
 → one retry for high local drift
 → a still-noisy but structurally valid retry remains rankable
 → Stage B: retain up to 4 plausible physical-core hypotheses under bounded uncertainty
-→ Stage C: retain the observed top two plus uncertainty-overlapping challengers, capped at 5 logical CPUs
-→ give shortlisted CPUs one additional 10 s local pair
+→ Stage C: retain the observed top 4 logical CPUs when available + at most one uncertainty-overlapping fifth challenger
+→ give every shortlisted CPU one additional 10 s local pair
 → advance the top two by median short-screen effect
 → give both finalists 2 shuffled 15 s local pairs
 → add one third 15 s round only while their lead remains inside measured uncertainty
@@ -151,12 +151,14 @@ Source checklist:
 - [x] candidate generation from actual Windows topology/CPU-set evidence with CPU0 allowed;
 - [x] 3–5 Original observations with robust median/MAD variability;
 - [x] exact 10 s screening/recheck and 15 s finalist durations;
+- [x] external-observer startup is isolated in a bounded unscored 2–4 s settle with a 500 ms quiet tail before scored QPC timing;
+- [x] benchmark CPU workers use frozen physical-core affinity masks instead of fixed first-SMT-sibling pinning, with masks persisted and topology-verified;
 - [x] direct `Original before → Candidate → Original after` pair evidence;
 - [x] geometric-mean local reference and signed paired effects;
 - [x] one bounded high-drift retry without a noise-only candidate/search abort;
 - [x] Stage-A physical-core representative selection;
 - [x] bounded uncertainty-aware Stage-B refinement across at most four physical-core hypotheses;
-- [x] Stage-C shortlist keeps the observed top two whenever available, admits uncertainty-overlapping challengers up to five, and rechecks each once for 10 s;
+- [x] Stage-C shortlist rechecks the observed top four whenever available and admits at most one uncertainty-overlapping fifth challenger;
 - [x] top-two finalist confirmation uses two shuffled 15 s pairs, with one third round only when uncertainty remains;
 - [x] median paired ranking + effect MAD + positive-pair consistency;
 - [x] `BestObservedProcessor` persisted independently from terminal Keep/Restore state;
@@ -168,9 +170,9 @@ Source checklist:
 - [x] result UX exposes actual Original → Candidate FPS/ms, absolute gain and paired percentage effect;
 - [x] custom selected-CPU diagnostic always restores Original;
 - [x] Original-only diagnostic performs no affinity mutation/restart;
-- [x] historical v1/v2/v3 evidence is not reinterpreted as v4;
-- [ ] one exact clean green physical Gate A run on owner hardware using v4;
-- [ ] repeat the whole v4 search for practical reproducibility;
+- [x] historical v1/v2/v3/v4 evidence is not reinterpreted as v5;
+- [ ] one exact clean green physical Gate A run on owner hardware using v5;
+- [ ] repeat the whole v5 search for practical reproducibility;
 - [ ] Stop safely + supported failure/recovery physical exercise;
 - [ ] rendered/taskbar/keyboard/accessibility inspection of the result surface.
 
@@ -180,7 +182,7 @@ Gate A closes only when one exact clean green revision proves on supported hardw
 
 1. structurally valid Original evidence continues through real-world variability and records robust noise instead of failing only for variance;
 2. every eligible physical core receives a Stage-A representative screen;
-3. Stage-B uncertainty-aware core refinement and the bounded five-CPU shortlist preserve plausible noisy near-leaders without re-testing clear losers;
+3. Stage-B uncertainty-aware core refinement plus the top-four recheck (and optional fifth uncertainty challenger) preserve plausible noisy near-leaders without sending every CPU to finalist confirmation;
 4. every ranked candidate has reconstructable adjacent Original controls and pair math;
 5. high-drift retry evidence stays visible and does not erase an otherwise valid candidate;
 6. the top two finalists receive two shuffled 15 s pairs, with one additional 15 s round only when their lead remains inside measured uncertainty;

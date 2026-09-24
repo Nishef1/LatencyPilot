@@ -3,7 +3,7 @@
 Status: **Authoritative architecture baseline**  
 Last updated: 2026-09-24
 
-`ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence. ADR 0006 owns the narrow v1 product/safety direction. ADR 0009 owns the current GPU measurement/search/ranking method; ADR 0008 is historical for new evidence.
+`ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence. ADR 0006 owns the narrow v1 product/safety direction. ADR 0010 owns the current GPU measurement/search/ranking method; ADR 0009 is historical v4 evidence for new runs.
 
 ## 1. Product model
 
@@ -125,18 +125,18 @@ Hardware-independent interpretation/orchestration:
 - percentile and robust statistical primitives;
 - steady `baseline-quality-v2` / `workload-stability-v1`;
 - GPU candidate generation from actual topology/current CPU-set evidence;
-- `gpu-affinity-benchmark-v4` evidence interpretation/readiness;
+- `gpu-affinity-benchmark-v5` evidence interpretation/readiness;
 - 3–5 Original observations with median/MAD variability;
 - direct local pair orchestration and drift retry;
 - Stage-A representatives plus bounded uncertainty-aware Stage-B refinement;
-- adaptive top-two-guaranteed shortlist/recheck capped at five logical CPUs;
+- adaptive top-four recheck plus at most one uncertainty-overlapping fifth logical CPU;
 - top-two 15 s finalist confirmation with a third round only when uncertainty remains;
 - persisted median paired effects, MAD/noise context, raw before/after values and rank;
 - best-observed CPU + selection confidence independent from Keep;
 - final Keep/Restore orchestration;
 - input/xHCI timing/headroom interpretation.
 
-There is no hidden weighted score. Short evidence is aggregated with median effect plus bounded uncertainty only to decide who deserves another measurement; finalists still rank by median paired 1%-low effect. Noise changes confidence, not rankability. Keep is a separate guardrail and runtime-placement decision owned by ADR 0009.
+There is no hidden weighted score. Short evidence is aggregated with median effect plus bounded uncertainty only to decide who deserves another measurement; finalists still rank by median paired 1%-low effect. Noise changes confidence, not rankability. Keep is a separate guardrail and runtime-placement decision owned by ADR 0010.
 
 ### `LatencyPilot.Protocol`
 
@@ -171,7 +171,7 @@ Ambiguous evidence stays ambiguous.
 Normal-user deterministic workload process:
 
 - hardware D3D12 adapter + flip-model swap chain;
-- fixed multi-core worker map;
+- frozen one-worker-per-physical-core map with exact physical-core logical-CPU affinity masks;
 - adaptive startup calibration then frozen workload;
 - direct D3D12 command-queue timestamp evidence;
 - controlled wall-clock loop periods used for AVG / 1% / 0.1% lows and p99 context;
@@ -241,9 +241,9 @@ Unavailable evidence remains unavailable.
 
 `baseline-quality-v2` and `workload-stability-v1` remain the repeated RealWorld/manual evidence product. They are not forced into the synthetic GPU-search method.
 
-### Automatic GPU search — noise-tolerant v3
+### Automatic GPU search — observer-isolated adaptive v5
 
-The benchmark process remains stable across the complete search. Workload calibration, process identity, seed and worker map remain frozen. Every affinity-triggered GPU transition is followed by renderer/device recreation before the next relevant warm-up/measurement.
+The benchmark process remains stable across the complete search. Workload calibration, process identity, seed, representative worker map and exact physical-core worker affinity masks remain frozen. Every affinity-triggered GPU transition is followed by renderer/device recreation before the next relevant warm-up/measurement.
 
 ```text
 5 s non-scored Original warm-up
@@ -251,6 +251,7 @@ The benchmark process remains stable across the complete search. Workload calibr
 → extend to 4/5 only when robust median/MAD variability is high
 → fresh 10 s O0
 → Stage A: one eligible representative per physical core
+→ scored blocks with external observers first complete a bounded unscored 2–4 s observer settle + 500 ms quiet tail
 → local pair per candidate:
      OriginalBefore
      apply/restart/verify
@@ -262,7 +263,7 @@ The benchmark process remains stable across the complete search. Workload calibr
 → pair effect from geometric mean of adjacent Original controls
 → one retry for high drift; structurally valid retry remains rankable
 → Stage B: keep up to 4 plausible physical-core hypotheses under bounded uncertainty
-→ Stage C: keep the observed top two plus uncertainty-overlapping challengers, capped at 5
+→ Stage C: keep the observed top 4 when available + at most one uncertainty-overlapping fifth challenger
 → one additional 10 s local pair for every shortlisted CPU
 → top 2 by median short-screen effect
 → 2 shuffled 15 s pairs per finalist

@@ -5,7 +5,7 @@ Last updated: 2026-09-24
 
 LatencyPilot exists to distinguish measurable effects from placebo, ordinary run-to-run variation, workload drift and unsafe/unverified state. It is not a generic Windows tweak collection.
 
-Current GPU measurement/search/ranking authority: **ADR 0009 — Adaptive uncertainty-aware GPU affinity v4**. ADR 0008 remains the historical v3 contract; ADR 0006 remains authoritative for the broader v1 product scope, safety, mutation/recovery ownership and product sequencing.
+Current GPU measurement/search/ranking authority: **ADR 0010 — Observer-isolated symmetric GPU affinity v5**. ADR 0009 remains the historical v4 contract; ADR 0006 remains authoritative for the broader v1 product scope, safety, mutation/recovery ownership and product sequencing.
 
 ## 1. Evidence hierarchy
 
@@ -27,7 +27,7 @@ Purpose: ETW integrity, attribution, per-CPU concentration, obvious tail events 
 
 This remains the authoritative steady/manual RealWorld contract. It is intentionally separate from the synthetic GPU candidate-search method.
 
-### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v4`
+### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v5`
 
 The product question is:
 
@@ -35,7 +35,7 @@ The product question is:
 
 A separate question asks whether that CPU is safe/useful enough to Keep.
 
-Windows/driver Original remains the exact reference/recovery state and is not CPU 0. CPU 0 is an explicit candidate. Historical `gpu-affinity-benchmark-v1`, `v2` and `v3` evidence remains historical and is never reinterpreted as v4.
+Windows/driver Original remains the exact reference/recovery state and is not CPU 0. CPU 0 is an explicit candidate. Historical `gpu-affinity-benchmark-v1`, `v2`, `v3` and `v4` evidence remains historical and is never reinterpreted as v5.
 
 ## 2. Source hierarchy
 
@@ -54,7 +54,7 @@ Authoritative GPU evidence records where applicable:
 - method/report schema version;
 - Windows build and processor topology;
 - target device and driver identity;
-- benchmark process/frozen workload/seed/worker map;
+- benchmark process/frozen workload/seed/representative worker map + exact physical-core worker affinity masks;
 - requested and actual interval;
 - requested mutation and verified stored state;
 - raw trial/capture identity;
@@ -81,7 +81,7 @@ A registry policy is therefore not runtime proof.
 
 The built-in normal-user D3D12 benchmark performs one startup calibration and freezes:
 
-- worker mapping;
+- representative worker mapping and exact physical-core worker masks;
 - command workload;
 - simulation workload;
 - seed;
@@ -162,7 +162,7 @@ A one-pair point estimate is not trusted as a hard cut. Keep at most four physic
 
 ### Stage C — adaptive shortlist and recheck
 
-Across all valid logical-CPU screens, always retain the observed top two when at least two structurally valid CPUs exist. Then admit additional CPUs whose median paired 1%-low effect plus bounded uncertainty remains within one percentage point of the current leader, up to five total.
+Across all valid logical-CPU screens, retain the observed top four whenever four structurally valid CPUs exist. When fewer than four exist, retain all of them. After that guaranteed recheck set, admit at most one additional CPU whose median paired 1%-low effect plus bounded uncertainty remains within one percentage point of the current leader, for a hard maximum of five.
 
 Bounded uncertainty is the maximum of one percentage point, effect MAD when repeated short evidence exists, and median local-control movement capped at that pair's drift budget.
 
@@ -179,6 +179,10 @@ After the second round, compare their lead against measured uncertainty. If the 
 Persist the same auditable aggregates as v3. Automatic Keep additionally requires positive-pair consistency: both pairs positive when only two were required, or at least two of three when an uncertainty extension was needed.
 
 Structurally valid finalists remain rankable even when their observations disagree.
+
+### Physical-core worker symmetry
+
+The synthetic workload keeps one worker per selected physical core, but each worker is allowed on the complete logical-processor mask of that physical core rather than being pinned to the first SMT sibling. The exact masks are frozen, included in workload identity, persisted in raw artifacts, and verified against captured Windows topology before evidence can be decision-grade. This removes a fixed-sibling contention asymmetry without changing the number of workers or recalibrating per candidate.
 
 ## 10. Ranking, confidence and practical ties
 
@@ -213,7 +217,7 @@ A rankable scored trial requires, among other structural checks:
 
 LatencyPilot uses a pinned standalone PresentMon console collector; a separately installed PresentMon Service/API is not a Gate A prerequisite.
 
-For the pinned console path, process liveness alone is not treated as capture readiness. LatencyPilot waits until the uniquely named PresentMon ETW session is visible through the existing TraceEvent session-query API, then the benchmark still runs its bounded unscored observer-active settle before opening the scored QPC window. The session can become queryable slightly before every child-side startup step is complete, so the session query and the benchmark-owned settle jointly establish the pre-score boundary. A bounded timeout or permission/query failure leaves PresentMon as explicit unavailable cross-check evidence rather than delaying indefinitely or fabricating readiness.
+For the pinned console path, process liveness alone is not treated as capture readiness. LatencyPilot waits until the uniquely named PresentMon ETW session is visible through the existing TraceEvent session-query API. A scored trial then runs a benchmark-owned **unscored** observer-active settle for at least 2 s and at most 4 s. Any >=10 ms frame-period transient seen during that settle, including pending in-flight contexts drained before acceptance, resets a 500 ms quiet-tail requirement. Only after the quiet tail does the scored QPC window open. Warm-up trials with no external observer skip this settle. This moves observer startup outside the score; it does not delete or rewrite scored outliers. A bounded timeout or permission/query failure leaves PresentMon as explicit unavailable cross-check evidence rather than delaying indefinitely or fabricating readiness.
 
 PresentMon cadence fields are not treated as interchangeable. Current `FrameTime`/supported cadence data may be used as cross-check evidence; unrelated start-offset semantics are not silently substituted.
 

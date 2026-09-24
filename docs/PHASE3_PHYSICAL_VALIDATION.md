@@ -1,6 +1,6 @@
 # Phase 3 Physical Validation Runbook
 
-This is the owner-local **GPU Gate A** procedure for the adaptive uncertainty-aware GPU search in ADR 0009. It does **not** arm public mutation. Protocol v6 remains observation-only and `ServiceBoundary.MutationAvailable=false`.
+This is the owner-local **GPU Gate A** procedure for the observer-isolated symmetric GPU search in ADR 0010. It does **not** arm public mutation. Protocol v6 remains observation-only and `ServiceBoundary.MutationAvailable=false`.
 
 ```text
 Run GPU Gate A
@@ -9,7 +9,7 @@ Run GPU Gate A
 = 3–5 Original observations for robust noise context
 = direct Original-before → Candidate → Original-after local pairs
 = Stage-A physical-core representatives + uncertainty-aware refinement across at most 4 physical-core hypotheses
-= top-two-guaranteed shortlist, capped at 5 CPUs, with one additional 10 s recheck
+= observed top 4 logical CPUs rechecked for 10 s when available, plus at most one uncertainty-overlapping fifth challenger
 = top 2 finalists, 2 shuffled 15 s pairs each, plus one third round only if uncertainty remains
 = best-observed CPU + confidence
 = separate Keep guardrails
@@ -51,7 +51,7 @@ Record:
 
 - exact clean `main` revision and hosted Tests result for that exact SHA;
 - Windows build, GPU/driver/PnP identity and CPU topology/CPU-set eligibility;
-- benchmark method/schema/seed/frozen worker/workload mapping;
+- benchmark method/schema/seed/frozen representative worker map + exact physical-core worker masks/workload identity;
 - every scored Original observation plus median/MAD variability;
 - every local pair's processor, stage, attempt and capture ids;
 - raw Original-before / Candidate / Original-after values and paired effects;
@@ -158,8 +158,8 @@ normal-user benchmark + one UAC owner helper
      retain at most 4 physical-core hypotheses whose bounded uncertainty can still overlap the leader
      refine eligible siblings only on those cores
 → Stage C:
-     retain the observed top two logical CPUs whenever available
-     add uncertainty-overlapping challengers up to 5 CPUs total
+     retain the observed top four logical CPUs whenever available
+     add at most one uncertainty-overlapping fifth challenger
      give every shortlisted CPU one additional 10 s local pair
      advance the top two by median short-screen effect
 → finalist confirmation:
@@ -184,10 +184,17 @@ normal-user benchmark + one UAC owner helper
 On an 8-core / 16-thread Ryzen 7 5700X with all logical processors eligible:
 
 - Stage A should normally screen **8 physical-core representatives**, not blindly all 16 logical CPUs;
-- Stage B refines only still-untested siblings on at most three top physical-core hypotheses;
-- Stage C caps finalists at 3.
+- Stage B refines only still-untested siblings on at most four plausible physical-core hypotheses;
+- Stage C rechecks the observed top four logical CPUs and may admit one fifth uncertainty-overlapping challenger;
+- only the top two after that recheck enter 15-second finalist confirmation.
 
 Do not hard-code those counts; actual topology/eligibility evidence owns the set.
+
+### Verify observer isolation and worker symmetry
+
+For scored trials with external observers verify that the raw benchmark enters an unscored `observer-settle` phase before `StartedAtQpc`, uses the bounded 2–4 s / 500 ms quiet-tail rule, and does not delete any frame after the scored boundary opens. Warm-up trials without external observers must skip observer-settle.
+
+Verify every raw artifact persists one worker-affinity mask per representative worker and that each mask exactly equals the logical-processor mask of that worker's physical core in the captured topology. A candidate must not receive different frozen worker masks than its adjacent Original controls.
 
 ## 6. Verify local pair math and noise semantics
 
@@ -239,8 +246,8 @@ Structural evidence failures must still abort/fail closed.
 
 ### Stage C
 
-- the observed top two logical CPUs remain shortlisted whenever at least two structurally valid CPUs exist;
-- additional uncertainty-overlapping challengers may join up to five total CPUs;
+- the observed top four logical CPUs are shortlisted whenever at least four structurally valid CPUs exist; otherwise all valid CPUs are retained;
+- at most one additional uncertainty-overlapping challenger may join, for a hard maximum of five;
 - every shortlisted CPU gets one additional 10-second local pair;
 - only the top two by median short-screen effect advance to finalist confirmation.
 

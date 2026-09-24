@@ -14,11 +14,11 @@ It is not a registry-tweak pack, debloater, generic FPS booster, or a list of se
 ## Current authority
 
 - Product scope, mutation ownership, recovery and v1 sequencing: [`docs/adr/0006-simple-auto-interrupt-affinity-v1.md`](docs/adr/0006-simple-auto-interrupt-affinity-v1.md)
-- GPU measurement/search/ranking: [`docs/adr/0009-adaptive-uncertainty-aware-gpu-affinity-v4.md`](docs/adr/0009-adaptive-uncertainty-aware-gpu-affinity-v4.md)
+- GPU measurement/search/ranking: [`docs/adr/0010-observer-isolated-symmetric-gpu-affinity-v5.md`](docs/adr/0010-observer-isolated-symmetric-gpu-affinity-v5.md)
 - Live execution/evidence state: [`PROJECT_STATUS.md`](PROJECT_STATUS.md)
 - Required completion outcomes: [`ROADMAP.md`](ROADMAP.md)
 
-ADR 0009 supersedes ADR 0008 for new GPU measurement/ranking evidence. ADR 0008 remains historical; ADR 0006 still owns the broader product/safety contract.
+ADR 0010 supersedes ADR 0009 for new GPU measurement/ranking evidence. ADR 0009 remains historical v4 evidence; ADR 0006 still owns the broader product/safety contract.
 
 ## v1 workflow
 
@@ -28,7 +28,7 @@ preflight / quiet check
 → robust Original variability estimate
 → paired GPU screening: Original before → Candidate → Original after
 → physical-core representatives → uncertainty-aware SMT refinement
-→ up to 5 plausible CPUs get one 10 s recheck
+→ observed top 4 logical CPUs get one 10 s recheck; one fifth may join only when uncertainty overlaps
 → top 2 → two 15 s confirmation pairs
 → optional third 15 s pair only if the top two remain uncertain
 → final ETW target-only GPU ISR placement proof
@@ -47,7 +47,7 @@ NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, 
 
 - Scope/safety/recovery foundations: **source complete**
 - Read-only ETW/topology/device evidence: **source substantially complete; physical closure remains**
-- GPU adaptive noise-tolerant v4 search: **implemented in source; physical Gate A open**
+- GPU observer-isolated adaptive v5 search: **implemented in source; physical Gate A open**
 - Gate A result UX: **authoritative report → evidence ZIP → Overview result implemented; real render/accessibility inspection remains**
 - Final GPU Keep: **internal source requires hard ETW target-only ISR proof**
 - USB/input route + xHCI read-only evidence: **source exists**
@@ -58,9 +58,9 @@ NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, 
 - `ServiceBoundary.MutationAvailable`: **false**
 - Hosted CI: **software-contract evidence only**
 
-## GPU adaptive noise-tolerant v4 measurement
+## GPU observer-isolated adaptive v5 measurement
 
-New GPU evidence uses method id `gpu-affinity-benchmark-v4` and report schema `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2/v3 evidence remains historical and is never reinterpreted as v4. `Original` means the exact pre-test Windows/driver affinity policy; it is not CPU 0.
+New GPU evidence uses method id `gpu-affinity-benchmark-v5` and report schema `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2/v3/v4 evidence remains historical and is never reinterpreted as v5. `Original` means the exact pre-test Windows/driver affinity policy; it is not CPU 0.
 
 ### 1. Original variability estimate
 
@@ -111,10 +111,10 @@ Full search avoids expensive full confirmation of every SMT sibling:
 
 1. **Stage A — physical-core representatives:** screen one eligible logical processor per physical core for 10 seconds.
 2. **Stage B — uncertainty-aware sibling refinement:** retain at most four physical-core hypotheses that can still overlap the leader after bounded uncertainty.
-3. **Stage C — adaptive shortlist:** retain at most five plausible logical CPUs and give each one additional 10-second local pair.
+3. **Stage C — adaptive shortlist:** retain the observed top four logical CPUs whenever available, admit at most one additional uncertainty-overlapping challenger, and give every shortlisted CPU one additional 10-second local pair.
 4. **Stage D — finalists:** rank the repeated short evidence by median and advance only the top two CPUs.
 
-Bounded shortlist uncertainty uses the larger of the 1-point practical margin, effect MAD, and local-control movement capped at that pair's drift budget. This keeps noisy near-leaders alive without letting extreme drift resurrect clear losers. Paired 1% low remains the primary ranking signal; AVG and frame p99 are guardrail/context metrics and 0.1% low remains diagnostic.
+Bounded shortlist uncertainty uses the larger of the 1-point practical margin, effect MAD, and local-control movement capped at that pair's drift budget. The top four short-screen leaders are rechecked when available; uncertainty may admit only one additional challenger. This prevents a single noisy screen from excluding CPU4/CPU14-like candidates while keeping the expensive finalist stage bounded. Paired 1% low remains the primary ranking signal; AVG and frame p99 are guardrail/context metrics and 0.1% low remains diagnostic.
 
 ### 5. Finalist ranking and confidence
 
@@ -131,7 +131,9 @@ LatencyPilot also records:
 
 Rank 1 is always the **best observed CPU** when valid ranked evidence exists. Noise changes `High` / `Medium` / `Low` confidence; it does not erase rank 1. A one-percentage-point practical tie is disclosed and lowers confidence while preserving the deterministic best-observed choice.
 
-No Bayesian model, bootstrap simulation or hidden weighted score is used in v4.
+Scored trials with external ETW/PresentMon observers use a bounded 2–4 s unscored startup settle and require a 500 ms quiet tail before the scored QPC boundary. Non-observer warm-ups skip that cost. Benchmark workers use the complete affinity mask of their physical core, and those masks are persisted/verified as frozen workload provenance.
+
+No Bayesian model, bootstrap simulation, scored-frame outlier deletion or hidden weighted score is used in v5.
 
 ## Final Keep is stricter than ranking
 
@@ -284,7 +286,7 @@ For XAML Hot Reload/Live Visual Tree, Visual Studio `F5` remains the preferred U
 
 ```text
 exact-head green CI
-→ adaptive noise-tolerant v4 GPU Gate A physical search/restart/placement/rollback proof
+→ observer-isolated adaptive v5 GPU Gate A physical search/restart/placement/rollback proof
 → repeat whole search
 → Stop safely + supported recovery exercise
 → real Windows result/accessibility inspection
