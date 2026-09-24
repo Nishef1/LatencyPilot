@@ -144,6 +144,55 @@ public sealed class GpuRuntimePlacementContractTests
                 dispatchCapture, target.InstanceId, [target, target with { InstanceId = "PCI\\SECOND" }]));
         Assert.ThrowsExactly<InvalidOperationException>(() =>
             GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(dispatchCapture, "PCI\\MISSING", [target]));
+
+        var xhciTarget = new PnPDeviceSnapshot(
+            "PCI\\VEN_1022&DEV_TEST_XHCI",
+            new Guid("36FC9E60-C465-11CF-8056-444553540000"),
+            "Test xHCI Controller",
+            "Test",
+            "PCI",
+            "USBXHCI",
+            new DriverMetadataSnapshot("1.0", "Microsoft", "usbxhci.inf"),
+            InterruptConfigurationSnapshot.Available(1, null, 4, 1UL << 5),
+            InterruptResourceSnapshot.Available(
+                [new AllocatedInterruptResourceSnapshot(17, 0, 1UL << 5, 0)]));
+        var xhciEvents = Enumerable.Range(0, 32)
+            .Select(index => new KernelLatencyEvent(
+                KernelLatencyEventKind.Isr, 5, index, 4d, 0x5000, null, index,
+                @"C:\Windows\System32\drivers\USBXHCI.sys"))
+            .Append(new KernelLatencyEvent(
+                KernelLatencyEventKind.Dpc, 5, 33, 8d, 0x6000, null, null,
+                @"C:\Windows\System32\drivers\USBXHCI.sys"))
+            .ToArray();
+        var xhciCapture = dispatchCapture with { Events = xhciEvents };
+        var xhciAttribution = XhciInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+            xhciCapture, xhciTarget.InstanceId, [xhciTarget]);
+        Assert.AreEqual("USBXHCI", xhciAttribution.DriverServiceName);
+        Assert.AreEqual(32, xhciAttribution.Events.Count);
+        var xhciPlacement = XhciInterruptRuntimePlacementVerifier.Analyze(
+            xhciAttribution,
+            new DeviceInterruptAffinityCandidate(0, 5, 1UL << 5));
+        Assert.IsTrue(xhciPlacement.ConfirmsRequestedPlacement);
+
+        var xhciOffTarget = xhciCapture with
+        {
+            Events =
+            [
+                .. xhciEvents,
+                new KernelLatencyEvent(
+                    KernelLatencyEventKind.Isr, 6, 34, 5d, 0x7000, null, 99,
+                    @"C:\Windows\System32\drivers\USBXHCI.sys"),
+            ],
+        };
+        Assert.IsFalse(XhciInterruptRuntimePlacementVerifier.Analyze(
+            XhciInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+                xhciOffTarget, xhciTarget.InstanceId, [xhciTarget]),
+            new DeviceInterruptAffinityCandidate(0, 5, 1UL << 5)).ConfirmsRequestedPlacement);
+        Assert.ThrowsExactly<NotSupportedException>(() =>
+            XhciInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+                xhciCapture,
+                xhciTarget.InstanceId,
+                [xhciTarget, xhciTarget with { InstanceId = "PCI\\SECOND_XHCI" }]));
         var luid = new GraphicsAdapterLuid(0x12345678, 0x10203040);
         var dxgi = new GraphicsAdapterSnapshot(
             0,

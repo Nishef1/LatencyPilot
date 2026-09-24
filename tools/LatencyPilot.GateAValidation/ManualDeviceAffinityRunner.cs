@@ -2,10 +2,13 @@ using System.Globalization;
 using System.Security.Principal;
 using System.Text.Json;
 using LatencyPilot.Core.Devices;
+using LatencyPilot.Core.Observation;
 using LatencyPilot.Core.System;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Platform.Windows.Etw;
 using LatencyPilot.Platform.Windows.System;
+using LatencyPilot.Protocol;
 using LatencyPilot.Service;
 
 namespace LatencyPilot.GateAValidation;
@@ -14,6 +17,7 @@ internal static class ManualDeviceAffinityRunner
 {
     internal const string ModeFlag = "--manual-device-affinity";
     private const string ConfirmationFlag = "--confirm-physical-mutation";
+    private static readonly TimeSpan ManualRuntimePlacementCaptureDuration = TimeSpan.FromSeconds(10);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -212,7 +216,17 @@ internal static class ManualDeviceAffinityRunner
         var device = TryGetPresentDevice(options.DeviceInstanceId);
         if (GpuInterruptAffinityStateComparer.MatchesCandidate(original, candidate))
         {
-            var verified = VerifyAllocatedAffinity(options.DeviceInstanceId, candidate.AffinityMask, out var masks, out var reason);
+            var assignmentVerified = VerifyAllocatedAffinity(
+                options.DeviceInstanceId,
+                candidate.AffinityMask,
+                out var masks,
+                out var assignmentReason);
+            var runtime = assignmentVerified
+                ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
+                : new ManualRuntimePlacementVerification(
+                    false,
+                    "Runtime ETW verification was skipped because the translated interrupt assignment did not match the requested CPU.");
+            var verified = assignmentVerified && runtime.Verified;
             return CreateReport(
                 options,
                 verified ? "AlreadyConfigured" : "AlreadyStoredUnverified",
@@ -220,10 +234,10 @@ internal static class ManualDeviceAffinityRunner
                 device,
                 experimentId: null,
                 restartRequired: false,
-                verification: reason,
+                verification: $"{assignmentReason} {runtime.Reason}",
                 message: verified
-                    ? "The requested GPU affinity was already stored and its allocated interrupt resources match the requested CPU. No write was attempted."
-                    : "The requested GPU affinity is already stored, but active allocated interrupt resources do not prove it. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
+                    ? "The requested GPU affinity was already stored; Windows allocated it to the requested CPU and clean ETW observed only target-CPU GPU ISR execution. No write was attempted."
+                    : "The requested GPU affinity is already stored, but LatencyPilot could not prove both translated assignment and target-only runtime GPU ISR placement. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
                 allocatedMasks: masks);
         }
 
@@ -242,7 +256,18 @@ internal static class ManualDeviceAffinityRunner
 
             var backend = new GpuAffinityMutationBackend(journal);
             backend.BeginMeasurement(prepared.ExperimentId);
-            var verified = VerifyAllocatedAffinity(options.DeviceInstanceId, candidate.AffinityMask, out var masks, out var reason);
+            var assignmentVerified = VerifyAllocatedAffinity(
+                options.DeviceInstanceId,
+                candidate.AffinityMask,
+                out var masks,
+                out var assignmentReason);
+            var runtime = assignmentVerified
+                ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
+                : new ManualRuntimePlacementVerification(
+                    false,
+                    "Runtime ETW verification was skipped because the translated interrupt assignment did not match the requested CPU.");
+            var verified = assignmentVerified && runtime.Verified;
+            var verification = $"{assignmentReason} {runtime.Reason}";
             if (!verified)
             {
                 backend.Rollback(prepared.ExperimentId);
@@ -253,8 +278,8 @@ internal static class ManualDeviceAffinityRunner
                     device,
                     prepared.ExperimentId,
                     restartRequired: false,
-                    verification: reason,
-                    message: "GPU affinity was applied but allocated interrupt resources did not verify the requested CPU; exact original state was restored.",
+                    verification: verification,
+                    message: "GPU affinity was applied, but translated assignment and target-only runtime ISR placement were not both proven; exact original state was restored.",
                     allocatedMasks: masks);
             }
 
@@ -267,8 +292,8 @@ internal static class ManualDeviceAffinityRunner
                 device,
                 prepared.ExperimentId,
                 restartRequired: false,
-                verification: reason,
-                message: "GPU affinity was journaled, applied, restarted, verified from allocated interrupt resources, and retained as an explicit manual choice.",
+                verification: verification,
+                message: "GPU affinity was journaled, applied, restarted, verified by Windows translated assignment plus clean target-only ETW ISR placement, and retained as an explicit manual choice.",
                 allocatedMasks: masks);
         }
         catch
@@ -321,7 +346,15 @@ internal static class ManualDeviceAffinityRunner
             var resumed = transaction.ResumeAfterReboot(pending[0].ExperimentId);
             if (resumed.Entry.State == MutationJournalState.Applied)
             {
-                return VerifyAndKeepXhci(transaction, options, candidate, pending[0].ExperimentId);
+                try
+                {
+                    return VerifyAndKeepXhci(transaction, options, candidate, pending[0].ExperimentId);
+                }
+                catch
+                {
+                    TryRollbackDevice(transaction, journal, pending[0].ExperimentId);
+                    throw;
+                }
             }
 
             if (resumed.Entry.State == MutationJournalState.ApplyRebootPending)
@@ -346,7 +379,17 @@ internal static class ManualDeviceAffinityRunner
         var prepared = transaction.PrepareXhciAffinity(options.DeviceInstanceId, candidate);
         if (prepared.NoWriteRequired)
         {
-            var verified = VerifyAllocatedAffinity(options.DeviceInstanceId, candidate.AffinityMask, out var masks, out var reason);
+            var assignmentVerified = VerifyAllocatedAffinity(
+                options.DeviceInstanceId,
+                candidate.AffinityMask,
+                out var masks,
+                out var assignmentReason);
+            var runtime = assignmentVerified
+                ? VerifyXhciRuntimePlacement(options.DeviceInstanceId, candidate)
+                : new ManualRuntimePlacementVerification(
+                    false,
+                    "Runtime ETW verification was skipped because the translated interrupt assignment did not match the requested CPU.");
+            var verified = assignmentVerified && runtime.Verified;
             return CreateReport(
                 options,
                 verified ? "AlreadyConfigured" : "AlreadyStoredUnverified",
@@ -354,10 +397,10 @@ internal static class ManualDeviceAffinityRunner
                 TryGetPresentDevice(options.DeviceInstanceId),
                 experimentId: null,
                 restartRequired: false,
-                verification: reason,
+                verification: $"{assignmentReason} {runtime.Reason}",
                 message: verified
-                    ? "The requested xHCI affinity was already stored and active; no LatencyPilot write was required."
-                    : "The requested xHCI affinity is already stored, but active allocated interrupt resources do not prove it. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
+                    ? "The requested xHCI affinity was already stored; Windows allocated it to the requested CPU and clean ETW observed only target-CPU USBXHCI ISR execution. No LatencyPilot write was required."
+                    : "The requested xHCI affinity is already stored, but LatencyPilot could not prove both translated assignment and controller-attributed target-only runtime ISR placement. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
                 allocatedMasks: masks);
         }
 
@@ -402,7 +445,18 @@ internal static class ManualDeviceAffinityRunner
         DeviceInterruptAffinityCandidate candidate,
         Guid experimentId)
     {
-        var verified = VerifyAllocatedAffinity(options.DeviceInstanceId, candidate.AffinityMask, out var masks, out var reason);
+        var assignmentVerified = VerifyAllocatedAffinity(
+            options.DeviceInstanceId,
+            candidate.AffinityMask,
+            out var masks,
+            out var assignmentReason);
+        var runtime = assignmentVerified
+            ? VerifyXhciRuntimePlacement(options.DeviceInstanceId, candidate)
+            : new ManualRuntimePlacementVerification(
+                false,
+                "Runtime ETW verification was skipped because the translated interrupt assignment did not match the requested CPU.");
+        var verified = assignmentVerified && runtime.Verified;
+        var verification = $"{assignmentReason} {runtime.Reason}";
         if (!verified)
         {
             var rollback = transaction.Rollback(experimentId);
@@ -414,10 +468,10 @@ internal static class ManualDeviceAffinityRunner
                 TryGetPresentDevice(options.DeviceInstanceId),
                 experimentId,
                 restartRequired: rollback.Entry.State == MutationJournalState.RollbackRebootPending,
-                verification: reason,
+                verification: verification,
                 message: restored
-                    ? "xHCI affinity did not verify from active allocated interrupt resources; exact original state was restored."
-                    : "xHCI affinity did not verify and rollback still requires recovery/reboot attention.",
+                    ? "xHCI affinity did not pass translated-assignment plus controller-attributed runtime ISR verification; exact original state was restored."
+                    : "xHCI affinity verification failed and rollback still requires recovery/reboot attention.",
                 allocatedMasks: masks);
         }
 
@@ -429,9 +483,64 @@ internal static class ManualDeviceAffinityRunner
             TryGetPresentDevice(options.DeviceInstanceId),
             experimentId,
             restartRequired: false,
-            verification: reason,
-            message: "xHCI affinity was journaled, applied, restarted, verified from active allocated interrupt resources, and retained as an explicit manual choice.",
+            verification: verification,
+            message: "xHCI affinity was journaled, applied, restarted, verified by Windows translated assignment plus clean controller-attributed target-only ETW ISR placement, and retained as an explicit manual choice.",
             allocatedMasks: masks);
+    }
+
+    private static ManualRuntimePlacementVerification VerifyGpuRuntimePlacement(
+        string deviceInstanceId,
+        GpuInterruptAffinityCandidate candidate)
+    {
+        var storedBefore = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        var storedBeforeMatches = GpuInterruptAffinityStateComparer.MatchesCandidate(storedBefore, candidate);
+        if (!storedBeforeMatches)
+        {
+            return new(false, "Stored GPU affinity no longer matches the requested candidate before ETW capture.");
+        }
+
+        var capture = KernelLatencyCapture.Capture(
+            new KernelLatencyCaptureOptions(
+                ManualRuntimePlacementCaptureDuration,
+                ObservationProtocol.MaximumCaptureEvents));
+        var placement = GpuInterruptRuntimePlacementVerifier.Analyze(
+            capture,
+            deviceInstanceId,
+            candidate);
+        var storedAfter = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        var storedAfterMatches = GpuInterruptAffinityStateComparer.MatchesCandidate(storedAfter, candidate);
+        var confirmed = GpuInterruptRuntimePlacementVerifier.ConfirmsGateAPlacement(
+            storedBeforeMatches,
+            storedAfterMatches,
+            capture.IsValid,
+            placement);
+
+        return new(
+            confirmed,
+            confirmed
+                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {placement.MatchingResolvedIsrEventCount} attributable GPU ISR event(s), all on CPU {candidate.ProcessorNumber}."
+                : $"GPU runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={placement.MatchingResolvedIsrEventCount}, targetIsr={placement.TargetProcessorIsrEventCount}, offTargetIsr={placement.OffTargetIsrEventCount}, storedAfterMatch={storedAfterMatches}.");
+    }
+
+    private static ManualRuntimePlacementVerification VerifyXhciRuntimePlacement(
+        string deviceInstanceId,
+        DeviceInterruptAffinityCandidate candidate)
+    {
+        var capture = KernelLatencyCapture.Capture(
+            new KernelLatencyCaptureOptions(
+                ManualRuntimePlacementCaptureDuration,
+                ObservationProtocol.MaximumCaptureEvents));
+        var placement = XhciInterruptRuntimePlacementVerifier.Analyze(
+            capture,
+            deviceInstanceId,
+            candidate);
+        var confirmed = capture.IsValid && placement.ConfirmsRequestedPlacement;
+
+        return new(
+            confirmed,
+            confirmed
+                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {placement.MatchingResolvedIsrEventCount} controller-attributed USBXHCI ISR event(s), all on CPU {candidate.ProcessorNumber}."
+                : $"xHCI runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={placement.MatchingResolvedIsrEventCount}, targetIsr={placement.TargetProcessorIsrEventCount}, offTargetIsr={placement.OffTargetIsrEventCount}.");
     }
 
     private static bool VerifyAllocatedAffinity(
@@ -680,6 +789,8 @@ internal enum ManualAffinityTargetKind
     Gpu = 0,
     Xhci = 1,
 }
+
+internal sealed record ManualRuntimePlacementVerification(bool Verified, string Reason);
 
 internal sealed record ManualDeviceAffinityReport(
     string Schema,

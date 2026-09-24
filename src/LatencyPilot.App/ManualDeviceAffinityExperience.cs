@@ -149,7 +149,7 @@ public sealed partial class MainWindow
         });
         host.Children.Add(new TextBlock
         {
-            Text = "Manual writes are intentionally limited to the display adapter and USBXHCI controllers. Apply is journaled and kept only after allocated interrupt resources verify the requested CPU; verification failure triggers exact rollback. Existing explicit policies are not claimed as LatencyPilot-owned unless the journal owns them.",
+            Text = "Manual writes are intentionally limited to the display adapter and USBXHCI controllers. Windows translated interrupt assignment is checked first, then a clean ETW capture must observe target-only ISR execution before LatencyPilot keeps a new manual change; failure triggers exact rollback. Existing explicit policies are not claimed as LatencyPilot-owned unless the journal owns them.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
         });
@@ -242,7 +242,7 @@ public sealed partial class MainWindow
 
             var applyButton = new Button
             {
-                Content = "Apply & verify",
+                Content = "Apply & verify runtime",
                 Style = AppStyle("SecondaryButtonStyle"),
                 IsEnabled = picker.SelectedItem is not null,
             };
@@ -327,7 +327,9 @@ public sealed partial class MainWindow
         ManualDeviceAffinityButton.IsEnabled = false;
         ManualDeviceAffinityStatusText.Text =
             action == "Apply"
-                ? $"Applying CPU {processorNumber?.ToString(CultureInfo.InvariantCulture)} to {row.Device.DisplayName}; Windows may briefly restart the device…"
+                ? row.TargetKind == "Xhci"
+                    ? $"Applying CPU {processorNumber?.ToString(CultureInfo.InvariantCulture)} to {row.Device.DisplayName}. After UAC, keep moving the USB mouse/using USB input during the ~10 s ETW verification; Windows may briefly restart the controller…"
+                    : $"Applying CPU {processorNumber?.ToString(CultureInfo.InvariantCulture)} to {row.Device.DisplayName}. After UAC, keep representative graphics activity running during the ~10 s ETW verification; Windows may briefly restart the device…"
                 : $"Restoring journal-owned original state for {row.Device.DisplayName}…";
 
         try

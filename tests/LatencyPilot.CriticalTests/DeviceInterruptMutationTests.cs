@@ -52,6 +52,10 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Gpu");
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Xhci");
         StringAssert.Contains(manualRunnerSource, "VerifyAllocatedAffinity");
+        StringAssert.Contains(manualRunnerSource, "GpuInterruptRuntimePlacementVerifier",
+            "Manual GPU Keep must require runtime ETW placement evidence, not only stored or allocated state.");
+        StringAssert.Contains(manualRunnerSource, "XhciInterruptRuntimePlacementVerifier",
+            "Manual xHCI Keep must require controller-attributed runtime ETW placement evidence.");
         StringAssert.Contains(manualRunnerSource, "ApplyRebootPending");
         StringAssert.Contains(manualRunnerSource, "pendingCandidate.ProcessorNumber != candidate.ProcessorNumber",
             "A reboot-pending xHCI experiment must not be resumed under a newly selected CPU.");
