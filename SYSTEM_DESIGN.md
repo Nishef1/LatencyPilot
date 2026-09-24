@@ -324,7 +324,7 @@ The result UX exposes:
 
 ### Full search
 
-Authoritative machine-wide v3 search, subject to physical Gate A.
+Authoritative machine-wide v5 search, subject to physical Gate A.
 
 ### Selected CPUs / Custom
 
@@ -349,6 +349,14 @@ After a verified GPU Keep, current design:
 9. rollback xHCI safely on verification failure.
 
 The GPU and xHCI choices are sequential, not a generic Pareto optimizer.
+
+### Development manual device-affinity surface
+
+The non-elevated App may inspect stored affinity policy and translated allocated interrupt resources for latency-sensitive present devices. A development-only one-shot elevated helper permits manual CPU selection only for the already-bounded GPU and USBXHCI mutation targets. It reuses the durable mutation journal, target restart/reboot handling and exact rollback substrate; it does not expose an arbitrary registry writer.
+
+A manual change is retained only after the active translated interrupt-resource affinity resolves entirely to the requested single group-0 CPU. Failure to establish that active allocation rolls back exact Original. Reboot-pending xHCI work resumes only when the requested CPU matches the journaled candidate. Other device categories remain read-only.
+
+This developer surface is separate from public product IPC. `MutationAvailable=false` remains required until the physical/product arming gates close.
 
 ## 12. Reboot/resume model
 
