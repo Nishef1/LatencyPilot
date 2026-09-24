@@ -953,7 +953,7 @@ public sealed class GpuAutoAffinitySession
 
     private static GpuAffinityCandidate[] SelectFinalists(
         List<PairMeasurement> measurements,
-        IReadOnlyList<GpuAffinityCandidate> shortlist)
+        GpuAffinityCandidate[] shortlist)
     {
         var allowed = shortlist.Select(static candidate => candidate.Processor).ToHashSet();
         return BuildScreeningAggregates(measurements)
@@ -1014,10 +1014,10 @@ public sealed class GpuAutoAffinitySession
             .ToArray();
 
     private static bool FinalistsNeedMoreEvidence(
-        IReadOnlyList<GpuAffinityCandidate> finalists,
-        IReadOnlyDictionary<LogicalProcessorId, List<PairMeasurement>> measurements)
+        GpuAffinityCandidate[] finalists,
+        Dictionary<LogicalProcessorId, List<PairMeasurement>> measurements)
     {
-        if (finalists.Count < 2)
+        if (finalists.Length < 2)
         {
             return false;
         }

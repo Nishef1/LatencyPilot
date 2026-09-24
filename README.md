@@ -14,11 +14,11 @@ It is not a registry-tweak pack, debloater, generic FPS booster, or a list of se
 ## Current authority
 
 - Product scope, mutation ownership, recovery and v1 sequencing: [`docs/adr/0006-simple-auto-interrupt-affinity-v1.md`](docs/adr/0006-simple-auto-interrupt-affinity-v1.md)
-- GPU measurement/search/ranking: [`docs/adr/0008-noise-tolerant-ranked-gpu-affinity-v3.md`](docs/adr/0008-noise-tolerant-ranked-gpu-affinity-v3.md)
+- GPU measurement/search/ranking: [`docs/adr/0009-adaptive-uncertainty-aware-gpu-affinity-v4.md`](docs/adr/0009-adaptive-uncertainty-aware-gpu-affinity-v4.md)
 - Live execution/evidence state: [`PROJECT_STATUS.md`](PROJECT_STATUS.md)
 - Required completion outcomes: [`ROADMAP.md`](ROADMAP.md)
 
-ADR 0008 supersedes ADR 0007 for new GPU measurement/ranking evidence. ADR 0007 remains historical; ADR 0006 still owns the broader product/safety contract.
+ADR 0009 supersedes ADR 0008 for new GPU measurement/ranking evidence. ADR 0008 remains historical; ADR 0006 still owns the broader product/safety contract.
 
 ## v1 workflow
 
@@ -27,8 +27,10 @@ preflight / quiet check
 → deep ETW baseline
 → robust Original variability estimate
 → paired GPU screening: Original before → Candidate → Original after
-→ physical-core representatives → promising SMT siblings → up to 3 finalists
-→ three independent 30 s local pairs per finalist
+→ physical-core representatives → uncertainty-aware SMT refinement
+→ up to 5 plausible CPUs get one 10 s recheck
+→ top 2 → two 15 s confirmation pairs
+→ optional third 15 s pair only if the top two remain uncertain
 → final ETW target-only GPU ISR placement proof
 → measure remaining per-CPU interrupt headroom
 → Raw Input → USB → exact xHCI controller
@@ -45,7 +47,7 @@ NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, 
 
 - Scope/safety/recovery foundations: **source complete**
 - Read-only ETW/topology/device evidence: **source substantially complete; physical closure remains**
-- GPU noise-tolerant v3 search: **implemented in source; physical Gate A open**
+- GPU adaptive noise-tolerant v4 search: **implemented in source; physical Gate A open**
 - Gate A result UX: **authoritative report → evidence ZIP → Overview result implemented; real render/accessibility inspection remains**
 - Final GPU Keep: **internal source requires hard ETW target-only ISR proof**
 - USB/input route + xHCI read-only evidence: **source exists**
@@ -56,9 +58,9 @@ NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, 
 - `ServiceBoundary.MutationAvailable`: **false**
 - Hosted CI: **software-contract evidence only**
 
-## GPU noise-tolerant v3 measurement
+## GPU adaptive noise-tolerant v4 measurement
 
-New GPU evidence uses method id `gpu-affinity-benchmark-v3` and report schema `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2 reports remain historical and are never reinterpreted as v3.
+New GPU evidence uses method id `gpu-affinity-benchmark-v4` and report schema `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2/v3 evidence remains historical and is never reinterpreted as v4. `Original` means the exact pre-test Windows/driver affinity policy; it is not CPU 0.
 
 ### 1. Original variability estimate
 
@@ -107,15 +109,16 @@ Structural failures still fail closed: wrong stored state, invalid artifact/sess
 
 Full search avoids expensive full confirmation of every SMT sibling:
 
-1. **Stage A — physical-core representatives:** screen one eligible logical processor per physical core.
-2. **Stage B — sibling refinement:** refine at most the top three physical-core hypotheses.
-3. **Stage C — finalists:** advance at most the top three logical CPUs.
+1. **Stage A — physical-core representatives:** screen one eligible logical processor per physical core for 10 seconds.
+2. **Stage B — uncertainty-aware sibling refinement:** retain at most four physical-core hypotheses that can still overlap the leader after bounded uncertainty.
+3. **Stage C — adaptive shortlist:** retain at most five plausible logical CPUs and give each one additional 10-second local pair.
+4. **Stage D — finalists:** rank the repeated short evidence by median and advance only the top two CPUs.
 
-Short-screen windows are exactly **10 seconds**. Paired 1% low effect is the primary ranking signal; AVG and frame p99 are guardrail/context metrics and 0.1% low remains diagnostic.
+Bounded shortlist uncertainty uses the larger of the 1-point practical margin, effect MAD, and local-control movement capped at that pair's drift budget. This keeps noisy near-leaders alive without letting extreme drift resurrect clear losers. Paired 1% low remains the primary ranking signal; AVG and frame p99 are guardrail/context metrics and 0.1% low remains diagnostic.
 
 ### 5. Finalist ranking and confidence
 
-Finalists run **three shuffled 30-second local pairs**. Every structurally valid finalist is ranked by median paired 1% low effect.
+The top two finalists run **two shuffled 15-second local pairs**. A third 15-second round is added only when their lead remains inside measured uncertainty. Every structurally valid finalist is ranked by median paired 1% low effect.
 
 LatencyPilot also records:
 
@@ -128,7 +131,7 @@ LatencyPilot also records:
 
 Rank 1 is always the **best observed CPU** when valid ranked evidence exists. Noise changes `High` / `Medium` / `Low` confidence; it does not erase rank 1. A one-percentage-point practical tie is disclosed and lowers confidence while preserving the deterministic best-observed choice.
 
-No Bayesian model, bootstrap simulation or hidden weighted score is used in v3.
+No Bayesian model, bootstrap simulation or hidden weighted score is used in v4.
 
 ## Final Keep is stricter than ranking
 
@@ -281,7 +284,7 @@ For XAML Hot Reload/Live Visual Tree, Visual Studio `F5` remains the preferred U
 
 ```text
 exact-head green CI
-→ noise-tolerant v3 GPU Gate A physical search/restart/placement/rollback proof
+→ adaptive noise-tolerant v4 GPU Gate A physical search/restart/placement/rollback proof
 → repeat whole search
 → Stop safely + supported recovery exercise
 → real Windows result/accessibility inspection

@@ -24,6 +24,7 @@ internal sealed class GpuGateAProgressFile
     private readonly Stopwatch stopwatch = Stopwatch.StartNew();
     private readonly GpuAutoAffinityProgressPlan progressPlan;
     private readonly Dictionary<LogicalProcessorId, int> screeningCandidates = [];
+    private readonly Dictionary<LogicalProcessorId, int> shortlistCandidates = [];
     private readonly Dictionary<LogicalProcessorId, int> finalistCandidates = [];
     private readonly Dictionary<string, int> candidatePassesStarted = new(StringComparer.Ordinal);
     private readonly object writeLock = new();
@@ -252,7 +253,7 @@ internal sealed class GpuGateAProgressFile
 
         if (string.Equals(request.Phase, "screening-original", StringComparison.Ordinal))
         {
-            return $"Original repeatability sample {originalScoredPassesStarted}; target {RequiredRepeatabilityRuns} stable samples, maximum {MaximumRepeatabilityObservations} scored observations.";
+            return $"Original variability sample {originalScoredPassesStarted}; minimum {RequiredRepeatabilityRuns} scored samples, extending to at most {MaximumRepeatabilityObservations} only when robust noise is elevated.";
         }
 
         if (string.Equals(request.Phase, "screening-warmup", StringComparison.Ordinal))
@@ -283,11 +284,15 @@ internal sealed class GpuGateAProgressFile
             candidatePassesStarted.TryGetValue(key, out var pass);
             pass++;
             candidatePassesStarted[key] = pass;
+            if (string.Equals(request.Phase, "screening-shortlist", StringComparison.Ordinal))
+            {
+                return $"Adaptive shortlist recheck {pass}; one additional 10-second local pair protects plausible noisy near-leaders before the top-two cut.";
+            }
             if (!string.Equals(request.Phase, "screening-finalists", StringComparison.Ordinal))
             {
                 return "Scored candidate in a local Original → Candidate → Original pair; confirmation follows rollback.";
             }
-            return $"Finalist scored observation {pass}; three valid independent pairs required, with at most one retry per pair.";
+            return $"Finalist scored observation {pass}; two 15-second pairs are standard and a third is added only while the top two remain inside measured uncertainty.";
         }
 
         return "Measuring benchmark trial.";
@@ -350,6 +355,19 @@ internal sealed class GpuGateAProgressFile
                 screeningCandidates.Add(candidate.Processor, index);
             }
             return (index, progressPlan.ScreeningCandidateCount);
+        }
+
+        if (string.Equals(phase, "screening-shortlist", StringComparison.Ordinal) ||
+            string.Equals(phase, "screening-shortlist-warmup", StringComparison.Ordinal))
+        {
+            if (!shortlistCandidates.TryGetValue(candidate.Processor, out var index))
+            {
+                index = shortlistCandidates.Count + 1;
+                shortlistCandidates.Add(candidate.Processor, index);
+            }
+            return (
+                index,
+                Math.Max(progressPlan.AdaptiveShortlistCandidateCount, shortlistCandidates.Count));
         }
 
         if (string.Equals(phase, "screening-finalists", StringComparison.Ordinal) ||

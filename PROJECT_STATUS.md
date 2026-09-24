@@ -11,11 +11,11 @@ Last updated: 2026-09-24
 - Public protocol: **v6 / observation-only** (`LatencyPilot.Observation.v6`).
 - Public commands: **`GetStatus`, `CaptureKernelLatency` only**.
 - `ServiceBoundary.MutationAvailable`: **false**.
-- GPU benchmark method: **`gpu-affinity-benchmark-v3`**.
+- GPU benchmark method: **`gpu-affinity-benchmark-v4`**.
 - GPU evidence envelope/report: **`latencypilot-gpu-benchmark-v1` / `latencypilot-gpu-auto-affinity-report-v3`**. The evidence envelope schema remains v1; method/report identities are versioned independently.
 - Product/safety authority: **ADR 0006**.
-- GPU measurement/search/ranking authority: **ADR 0008**.
-- ADR 0007 remains the historical paired-v2 contract and does not govern new evidence.
+- GPU measurement/search/ranking authority: **ADR 0009**.
+- ADR 0008 remains the historical noise-tolerant v3 contract and does not govern new evidence.
 - Hosted GitHub Actions is **software-contract evidence only**.
 
 ## Current v1 direction
@@ -27,8 +27,9 @@ preflight / quiet-context capture
 → deep ETW baseline
 → robust Original variability estimate
 → paired GPU screening: Original before → Candidate → Original after
-→ physical-core representatives → top-3 refinement → up to 3 finalists
-→ three shuffled 30 s local pairs per finalist
+→ physical-core representatives → uncertainty-aware core/sibling refinement
+→ bounded five-CPU 10 s recheck shortlist → top 2
+→ two shuffled 15 s pairs per finalist; third pair only if uncertainty remains
 → best-observed CPU + confidence
 → separate Keep guardrails + final target-only GPU ISR placement proof
 → measure free CPU interrupt headroom
@@ -57,9 +58,9 @@ Implemented:
 - GPU interrupt-affinity mutation, target restart, renderer recreation and exact rollback;
 - Raw Input → USB hub/port → xHCI read-only topology and input-host timing source.
 
-### GPU noise-tolerant v3 contract
+### GPU adaptive noise-tolerant v4 contract
 
-Current source implements ADR 0008:
+Current source implements ADR 0009:
 
 1. 5 s non-scored Original warm-up.
 2. Three scored 10 s Original observations; if robust median/MAD variability is high, extend to at most five.
@@ -69,21 +70,22 @@ Current source implements ADR 0008:
 6. Pair effect uses the geometric mean of adjacent Original controls; raw values remain untouched.
 7. High local drift gets one fresh retry. A still-noisy but structurally valid retry remains rankable; there is no consecutive-noise early stop.
 8. Stage A screens one representative logical CPU per eligible physical core.
-9. Stage B refines at most the top three physical-core hypotheses.
-10. Stage C advances at most the top three logical CPUs.
-11. Finalists receive three deterministically shuffled 30 s local pairs.
-12. Every structurally valid finalist is ranked by median paired 1%-low effect.
-13. MAD, Original variability, lead over runner-up, pair consistency and practical-tie state produce `High`/`Medium`/`Low` confidence; confidence never gates rank.
-14. `RecommendedForKeep` is separate: positive median benefit plus bounded AVG/frame-p99/interrupt-tail guardrails.
-15. Final Keep still requires exact stored state and clean attributable target-only GPU ISR placement. Otherwise exact Original is restored while the best-observed CPU remains in the report.
+9. Stage B retains at most four physical-core hypotheses whose bounded uncertainty can still overlap the leader.
+10. Stage C retains at most five plausible logical CPUs and gives each one additional 10 s local pair.
+11. Only the top two CPUs advance to finalist confirmation.
+12. Finalists receive two deterministically shuffled 15 s local pairs; one third 15 s round is added only while their lead remains inside measured uncertainty.
+13. Every structurally valid finalist is ranked by median paired 1%-low effect.
+14. MAD, Original variability, lead over runner-up, pair consistency and practical-tie state produce `High`/`Medium`/`Low` confidence; confidence never gates rank.
+15. `RecommendedForKeep` is separate: positive median benefit, positive-pair consistency and bounded AVG/frame-p99/interrupt-tail guardrails.
+16. Final Keep still requires exact stored state and clean attributable target-only GPU ISR placement. Otherwise exact Original is restored while the best-observed CPU remains in the report.
 
-The v3 report persists raw trials/pairs, finalist medians, effect MAD, positive-pair count, noise guide, raw median Original/Candidate FPS/ms, `BestObservedProcessor`, `SelectionConfidence`, Keep recommendation, provenance and terminal state.
+The v4 method uses the existing v3 report schema and persists raw trials/pairs, finalist medians, effect MAD, positive-pair count, noise guide, raw median Original/Candidate FPS/ms, `BestObservedProcessor`, `SelectionConfidence`, Keep recommendation, provenance and terminal state.
 
 ### Diagnostic scopes
 
 The developer UI provides:
 
-- **Full search** — the authoritative noise-tolerant v3 machine search.
+- **Full search** — the authoritative adaptive noise-tolerant v4 machine search.
 - **Selected CPUs · restore Original** — real paired screening for an exact subset; diagnostic-only, no finalist Keep, always restores Original, cannot close Gate A.
 - **Original only · no system changes** — five 10 s Original observations with no affinity mutation or device restart.
 
@@ -123,7 +125,7 @@ The xHCI recommendation remains read-only/product-gated until the shared mutatio
 
 ### Hosted software verification
 
-The v3 work reuses the consolidated critical-test budget. New/updated contracts specifically guard:
+The v4 work reuses the consolidated critical-test budget. New/updated contracts specifically guard:
 
 - noise cannot stop the search after two candidates;
 - high drift gets one retry but a structurally valid retry remains rankable;
@@ -137,17 +139,17 @@ Exact-head hosted **Tests** are mandatory for every revision used as physical cl
 
 ### Physical GPU Gate A
 
-**OPEN for v3.**
+**OPEN for v4.**
 
 The 2026-09-22 v2 investigation remains useful historical evidence: real owner runs showed large Original/pair variability and graphics-hook context, demonstrating that a hard noise-as-validity gate could prevent any candidate ranking on an ordinary Windows system. Those v2 reports are not reinterpreted as v3 evidence.
 
-Current v3 physical validation must prove on one exact clean green revision:
+Current v4 physical validation must prove on one exact clean green revision:
 
 1. noisy but structurally valid Original observations continue into candidate testing and reduce confidence instead of causing a noise-only stop;
-2. Stage-A coverage and bounded top-3 refinement match actual topology;
+2. Stage-A coverage, uncertainty-aware core refinement and the bounded five-CPU recheck shortlist match persisted evidence;
 3. pair math and raw controls reconstruct from persisted evidence;
 4. high-drift retry evidence remains visible while valid candidates remain ranked;
-5. finalists receive three shuffled 30 s observations and persisted median/MAD authority matches the rank;
+5. the top two finalists receive two 15 s observations, with a third only when uncertainty remains, and persisted median/MAD authority matches the rank;
 6. `BestObservedProcessor` and `SelectionConfidence` agree with report/UI even when Original is restored;
 7. actual before/after FPS/ms and paired percentage effect render correctly;
 8. Keep guardrails do not affect who is ranked first;
@@ -155,7 +157,7 @@ Current v3 physical validation must prove on one exact clean green revision:
 10. final ETW proves attributable target-only GPU ISR placement before Keep;
 11. terminal state verifies with `unresolved=0`;
 12. **Stop safely** and one supported failure/recovery path restore exact Original;
-13. a second full v3 search produces comparable ranking/confidence behavior without requiring identical decimals;
+13. a second full v4 search produces comparable ranking/confidence behavior without requiring identical decimals;
 14. real Windows result UI is inspected for theme/text-scale/keyboard/accessibility behavior.
 
 Dirty runs remain development evidence only. Public mutation remains unarmed until physical Gate A passes.
@@ -167,7 +169,7 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 | 0 Scope/safety | **Source complete** | Keep exact-head verification current |
 | 1 Preflight | **Most primitives exist** | Integrated quiet check + combined GPU/xHCI preflight |
 | 2 Baseline | **ETW engine exists** | Wire deep comparable baseline into one-button workflow |
-| 3 GPU search | **Noise-tolerant v3 source/result contracts implemented** | Exact-head CI + physical v3 Gate A + repeat + recovery/render inspection |
+| 3 GPU search | **Adaptive noise-tolerant v4 source/result contracts implemented** | Exact-head CI + physical v4 Gate A + repeat + recovery/render inspection |
 | 4 GPU Keep | **Internal verified-Keep source implemented** | Physical proof, typed product IPC, arming gates |
 | 5 USB selection | **Read-only recommendation implemented** | Representative physical evidence + product rendering |
 | 6 USB apply | **Internal reversible substrate / product-gated** | Integrated physical apply/verify/rollback evidence |
@@ -178,7 +180,7 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 ## Immediate execution ladder
 
 1. **Completed now:** v4 source keeps best-observed ranking separate from Keep, adds bounded uncertainty-aware shortlist/recheck, reduces finalists to top two with adaptive 15-second confirmation, and preserves actual before/after FPS/ms plus drift-adjusted paired ranking effects.
-2. **Evidence:** hosted `Tests` are green on source/test revision `7e64cbb7c66ce809a2de617c7026e3387d3c2ddb`. Existing consolidated contracts now fail if ordinary noise erases a valid best-observed CPU, RestoreOriginal hides that rank, or the user-visible raw percentage stops matching the displayed before/after medians.
+2. **Evidence:** implementation revision `578be014fb382145e979691c8fdc7dc776a74754` exposed only a CA1859 analyzer failure before test execution completed; this follow-up fixes that compile issue plus progress/README integration. Exact-head hosted `Tests` are pending and must be green before physical evidence is accepted.
 3. **Still open:** physical owner evidence for the v4 GPU Gate A remains required; public product mutation stays unarmed.
 4. **Next stage:** run the exact-head full v4 search and inspect shortlist retention, top-two confirmation count, total runtime, best-observed rank, confidence, FPS/ms gains, rollback and final placement.
 5. **After that:** repeat the search, exercise Stop safely/failure recovery, and complete real WinUI/accessibility inspection before product mutation arming.

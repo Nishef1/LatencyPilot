@@ -928,11 +928,14 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         }
 
         var kernelEnd = kernel.StartedAtUtc + kernel.ActualDuration;
-        // The kernel window intentionally starts before the scored benchmark
-        // (it covers D3D12 device recreation after a GPU restart) and runs
-        // longer than the trial. A coverage miss only degrades external
-        // cross-checks; it never invalidates benchmark-period ranking.
-        var kernelCoveredMs = (Min(artifact.EndedAtUtc, kernelEnd) -
+        var scoredDurationMsForCoverage = GetScoredDurationMilliseconds(artifact);
+        var scoredEndUtc = double.IsFinite(scoredDurationMsForCoverage) && scoredDurationMsForCoverage > 0d
+            ? artifact.StartedAtUtc + TimeSpan.FromMilliseconds(scoredDurationMsForCoverage)
+            : artifact.StartedAtUtc;
+        // The kernel window intentionally starts before the scored benchmark and
+        // runs longer than the trial. Coverage is checked only against the exact
+        // benchmark-owned QPC duration, never the post-score GPU drain wall time.
+        var kernelCoveredMs = (Min(scoredEndUtc, kernelEnd) -
             Max(artifact.StartedAtUtc, kernel.StartedAtUtc)).TotalMilliseconds;
         if (!double.IsFinite(kernelCoveredMs) ||
             kernelCoveredMs < request.Duration.TotalMilliseconds * MinimumOverlapRatio)

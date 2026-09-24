@@ -696,7 +696,9 @@ public static class GateAResultPresentation
         {
             return compared is null
                 ? "LatencyPilot retained and verified the exact original GPU affinity policy because no structurally valid candidate could be ranked."
-                : $"CPU {compared.Processor.Number} remains the best observed CPU even though it was not kept. {gain} Confidence: {report.SelectionConfidence}. The exact Original policy is restored and verified.";
+                : compared.DecisionOnePercentLowEffect is <= 0d
+                    ? $"No tested CPU beat the Windows/driver Original on the primary paired 1% low metric. CPU {compared.Processor.Number} was the best tested candidate. {gain} Confidence: {report.SelectionConfidence}. The exact Original policy is restored and verified."
+                    : $"CPU {compared.Processor.Number} remains the best observed CPU even though it was not kept. {gain} Confidence: {report.SelectionConfidence}. The exact Original policy is restored and verified.";
         }
 
         return "Gate A produced a report, but the terminal machine state is not fully verified. Use the evidence and recovery status below before continuing.";
@@ -719,7 +721,7 @@ public static class GateAResultPresentation
             var selected = report.RequestedProcessors.Count;
             var tested = report.ValidatedProcessors.Count;
             var notReached = Math.Max(0, selected - tested);
-            return $"{scored} scored Original measurement(s). v3 requires at least three structurally valid scored Original observations. Ordinary variability may extend the estimate to five and lowers confidence; it does not block ranking. No valid ranking baseline was persisted because the Original evidence was structurally unusable. {selected} candidate CPU(s) selected · {tested} candidate CPU(s) tested · {notReached} not reached.";
+            return $"{scored} scored Original measurement(s). v4 requires at least three structurally valid scored Original observations. Ordinary variability may extend the estimate to five and lowers confidence; it does not block ranking. No valid ranking baseline was persisted because the Original evidence was structurally unusable. {selected} candidate CPU(s) selected · {tested} candidate CPU(s) tested · {notReached} not reached.";
         }
 
         if (report.OriginalDiagnostic is { } diagnostic)

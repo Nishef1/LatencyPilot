@@ -38,16 +38,12 @@ public sealed class GpuMeasurementRobustnessContractTests
         StringAssert.Contains(sessionSource, "MaximumFinalistPairs = 3");
         Assert.IsFalse(
             sessionSource.Contains("GpuRepeatabilityClusterSelector.Select(", StringComparison.Ordinal),
-            "The historical cluster selector may remain as a utility, but it must not own v3 ranking authority.");
+            "The historical cluster selector may remain as a utility, but it must not own v4 ranking authority.");
         StringAssert.Contains(reportSource, "BestObservedProcessor");
         StringAssert.Contains(reportSource, "SelectionConfidence");
         StringAssert.Contains(reportSource, "OnePercentLowEffectMedianAbsoluteDeviation");
         StringAssert.Contains(reportSource, "RecommendedForKeep");
-    }
 
-    [AuditCase]
-    public void BenchmarkBlockingWaitsAndControlledFrameEvidenceAreBounded()
-    {
         var rendererSource = File.ReadAllText(FindRepositoryFile(
             "src", "LatencyPilot.GpuBenchmark", "D3D12BenchmarkRenderer.cs"));
         var workerSource = File.ReadAllText(FindRepositoryFile(
@@ -56,7 +52,6 @@ public sealed class GpuMeasurementRobustnessContractTests
             "src", "LatencyPilot.Core", "Benchmarking", "GpuBenchmarkEvidence.cs"));
         var backendSource = File.ReadAllText(FindRepositoryFile(
             "tools", "LatencyPilot.GateAValidation", "GpuAutoAffinityGateABackend.cs"));
-
         StringAssert.Contains(rendererSource, "FrameCompletionTimeout");
         StringAssert.Contains(rendererSource, "fenceEvent.WaitOne(FrameCompletionTimeout)");
         StringAssert.Contains(workerSource, "completed.Wait(WorkerCompletionTimeout)");
