@@ -69,6 +69,9 @@ public sealed class GpuMeasurementRobustnessContractTests
         StringAssert.Contains(backendSource, "MaximumScoredWindowOverrunRatio");
         StringAssert.Contains(backendSource, "TrialDeadlineSlack");
         StringAssert.Contains(backendSource, "RendererRecreateDeadline");
+        StringAssert.Contains(backendSource, "ObserverSettleCollectorBudget");
+        StringAssert.Contains(backendSource, "request.Duration + ObserverSettleCollectorBudget",
+            "External collectors must remain alive across the entire pre-score observer-settle budget.");
         StringAssert.Contains(workloadSource, "MinimumObserverSettleDuration");
         StringAssert.Contains(workloadSource, "ObserverQuietTailDuration");
         StringAssert.Contains(workloadSource, "pendingSettleFrame",
