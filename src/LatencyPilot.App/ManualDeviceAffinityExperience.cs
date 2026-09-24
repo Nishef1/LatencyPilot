@@ -5,6 +5,7 @@ using System.Text.Json;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Platform.Windows.System;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -398,7 +399,7 @@ public sealed partial class MainWindow
 
         var startInfo = new ProcessStartInfo
         {
-            FileName = ResolveDotNetExecutable(),
+            FileName = ResolveDotnetExecutable(),
             WorkingDirectory = _gateARepositoryRoot,
             UseShellExecute = true,
             Verb = "runas",
@@ -476,7 +477,7 @@ public sealed partial class MainWindow
             3 => "All processors",
             4 => "Specified processors",
             5 => "Spread MSI messages",
-            var value => $"Policy {value.ToString(CultureInfo.InvariantCulture)}",
+            var value => $"Policy {Convert.ToString(value, CultureInfo.InvariantCulture)}",
         };
         var mask = configuration.AssignmentSetOverrideMask is { } affinity
             ? $" · {FormatMask(affinity)} · mask 0x{affinity:X}"
