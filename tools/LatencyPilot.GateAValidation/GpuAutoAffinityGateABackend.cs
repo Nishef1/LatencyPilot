@@ -42,6 +42,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private readonly GpuInterruptAffinitySnapshot originalState;
     private readonly string topologyIdentity;
     private readonly string driverServiceName;
+    private readonly IReadOnlyDictionary<LogicalProcessorId, ulong> expectedWorkerAffinityMasks;
     private readonly HashSet<Guid> measuringExperiments = [];
     private readonly Dictionary<Guid, GpuAffinityCandidate> ownedCandidates = [];
     private readonly List<GpuAutoAffinityMutationAuditEntry> mutationAudit = [];
@@ -75,6 +76,25 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         this.benchmark = benchmark;
         topologyIdentity = ComputeTopologyIdentity(topology);
         driverServiceName = ResolveDriverServiceName(deviceInstanceId);
+        expectedWorkerAffinityMasks = topology.Cores.ToDictionary(
+            static core => core.LogicalProcessors
+                .OrderBy(static processor => processor.Group)
+                .ThenBy(static processor => processor.Number)
+                .First(),
+            static core =>
+            {
+                ulong mask = 0;
+                foreach (var processor in core.LogicalProcessors)
+                {
+                    if (processor.Group != 0 || processor.Number >= 64)
+                    {
+                        throw new NotSupportedException(
+                            "GPU Gate A worker-mask verification requires one processor group with logical processor numbers below 64.");
+                    }
+                    mask |= 1UL << processor.Number;
+                }
+                return mask;
+            });
 
         var journal = new MutationJournal(MutationJournal.GetDefaultDatabasePath());
         journal.Initialize();
@@ -891,11 +911,13 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             workerMasks.Count != artifact.FrozenWorkload.WorkerMap.Count ||
             workerMasks.Any(static mask => mask == 0) ||
             artifact.FrozenWorkload.WorkerMap.Where(
-                (worker, index) => worker.Number >= 64 ||
-                    (workerMasks[index] & (1UL << worker.Number)) == 0).Any())
+                (worker, index) =>
+                    worker.Number >= 64 ||
+                    !expectedWorkerAffinityMasks.TryGetValue(worker, out var expectedMask) ||
+                    workerMasks[index] != expectedMask).Any())
         {
             hard.Add(
-                "Benchmark physical-core worker affinity-mask provenance is incomplete or inconsistent with the worker map.");
+                "Benchmark physical-core worker affinity-mask provenance is incomplete or does not match the captured Windows topology.");
         }
         if (!storedBefore || !storedAfter)
         {
