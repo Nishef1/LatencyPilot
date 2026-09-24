@@ -286,6 +286,8 @@ public sealed class AuditClosureIntegrationTests
         var keptLow1 = keepPresentation.Metrics.Single(metric => metric.Key == "low1");
         Assert.AreEqual(0.12d, keptLow1.ImprovementFraction,
             "Presentation must use the optimizer-persisted finalist paired effect rather than reconstructing an absolute-baseline delta.");
+        Assert.AreEqual((165d - 145d) / 145d, keptLow1.ObservedChangeFraction!.Value, 0.0001d,
+            "The user-visible raw percentage must be derived directly from the same displayed Original and Candidate medians, independently of the drift-adjusted paired ranking effect.");
         Assert.AreEqual(0.025d, keptLow1.UncertaintyFraction,
             "Presentation uncertainty must carry the persisted finalist decision floor.");
         Assert.AreEqual(GateAMetricState.Improved, keptLow1.State,
