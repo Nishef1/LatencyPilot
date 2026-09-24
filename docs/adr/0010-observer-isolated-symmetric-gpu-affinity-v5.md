@@ -26,7 +26,7 @@ A scored trial whose controller declares `ObserverActive=true` performs an unsco
 
 - minimum observer-active settle: 2 seconds;
 - maximum settle: 4 seconds;
-- a frame period of at least 10 ms is treated as a startup transient marker only during this unscored settle;
+- the transient marker threshold is `max(10 ms, 2 × median frame period from the initial 2 s settle)`, so the gate scales with normal workload cadence instead of assuming every supported GPU renders below 10 ms;
 - the scored window opens only after a 500 ms quiet tail following the latest such marker;
 - pending in-flight frame contexts are drained and inspected before the quiet boundary is accepted;
 - failure to reach the quiet boundary by the hard deadline invalidates the trial instead of silently scoring contaminated startup.
