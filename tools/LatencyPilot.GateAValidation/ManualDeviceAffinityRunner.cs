@@ -5,6 +5,7 @@ using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Service;
 
 namespace LatencyPilot.GateAValidation;
@@ -39,7 +40,8 @@ internal static class ManualDeviceAffinityRunner
             {
                 ManualAffinityAction.Restore => RestoreTarget(journal, options),
                 ManualAffinityAction.Apply => ApplyTarget(journal, options, out experimentId),
-                _ => throw new ArgumentOutOfRangeException(nameof(options.Action)),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported manual affinity action '{options.Action}'."),
             };
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -68,7 +70,10 @@ internal static class ManualDeviceAffinityRunner
             return 2;
         }
 
-        report ??= throw new InvalidOperationException("Manual affinity runner did not produce a report.");
+        if (report is null)
+        {
+            throw new InvalidOperationException("Manual affinity runner did not produce a report.");
+        }
         await File.WriteAllTextAsync(options.OutputPath, JsonSerializer.Serialize(report, JsonOptions));
         Console.WriteLine($"manual-affinity-status={report.Status}");
         Console.WriteLine($"manual-affinity-report={options.OutputPath}");
@@ -97,7 +102,9 @@ internal static class ManualDeviceAffinityRunner
             ? "No retained LatencyPilot mutation owns this device, so no registry or device state was changed."
             : $"Restored {result.RestoredCount.ToString(CultureInfo.InvariantCulture)} retained LatencyPilot change(s) for this device to their exact captured original state.";
 
-        var restoredExperiment = result.RestoredExperimentIds.FirstOrDefault();
+        var restoredExperiment = result.RestoredExperimentIds.Count > 0
+            ? result.RestoredExperimentIds[0]
+            : Guid.Empty;
         return CreateReport(
             options,
             status,
@@ -150,6 +157,7 @@ internal static class ManualDeviceAffinityRunner
         GpuInterruptAffinityCandidate candidate,
         out Guid? experimentId)
     {
+        experimentId = null;
         EnsureNoUnresolvedMutation(journal);
         var original = GpuInterruptAffinityPolicyStore.Capture(options.DeviceInstanceId);
         var device = TryGetPresentDevice(options.DeviceInstanceId);
@@ -227,6 +235,7 @@ internal static class ManualDeviceAffinityRunner
         DeviceInterruptAffinityCandidate candidate,
         out Guid? experimentId)
     {
+        experimentId = null;
         var transaction = new DeviceInterruptMutationTransaction(journal);
         var pending = journal.GetUnresolved()
             .Where(entry =>
