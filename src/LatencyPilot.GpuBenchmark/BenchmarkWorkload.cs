@@ -159,6 +159,25 @@ internal sealed class BenchmarkWorkload
             renderer.BeginMeasurementWindow();
             var observerSettle = Stopwatch.StartNew();
             TimeSpan? lastObserverTransient = null;
+            var observerSettled = false;
+
+            void ObserveSettleFrame(BenchmarkFrameTelemetry frame)
+            {
+                ValidateFrame(frame);
+                if (frame.FramePeriodMilliseconds >= ObserverTransientFramePeriodMilliseconds)
+                {
+                    lastObserverTransient = observerSettle.Elapsed;
+                }
+            }
+
+            bool QuietTailSatisfied()
+            {
+                var elapsed = observerSettle.Elapsed;
+                return elapsed >= MinimumObserverSettleDuration &&
+                    (lastObserverTransient is null ||
+                     elapsed - lastObserverTransient.Value >= ObserverQuietTailDuration);
+            }
+
             while (observerSettle.Elapsed < MaximumObserverSettleDuration)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -166,41 +185,44 @@ internal sealed class BenchmarkWorkload
                         workload.SimulationIterationsPerWorker,
                         workload.CommandBatchesPerWorker) is { } settleFrame)
                 {
-                    ValidateFrame(settleFrame);
-                    if (settleFrame.FramePeriodMilliseconds >= ObserverTransientFramePeriodMilliseconds)
-                    {
-                        lastObserverTransient = observerSettle.Elapsed;
-                    }
+                    ObserveSettleFrame(settleFrame);
                 }
-    
-                var elapsed = observerSettle.Elapsed;
-                var minimumSatisfied = elapsed >= MinimumObserverSettleDuration;
-                var quietTailSatisfied = lastObserverTransient is null ||
-                    elapsed - lastObserverTransient.Value >= ObserverQuietTailDuration;
-                if (minimumSatisfied && quietTailSatisfied)
+
+                if (!QuietTailSatisfied())
                 {
+                    continue;
+                }
+
+                // Complete the two in-flight contexts before accepting the quiet
+                // boundary. A delayed transient is still part of observer startup.
+                foreach (var pendingSettleFrame in renderer.DrainFrames())
+                {
+                    ObserveSettleFrame(pendingSettleFrame);
+                }
+
+                if (QuietTailSatisfied())
+                {
+                    observerSettled = true;
                     break;
                 }
             }
-    
-            foreach (var settleFrame in renderer.DrainFrames())
+
+            if (!observerSettled)
             {
-                ValidateFrame(settleFrame);
-                if (settleFrame.FramePeriodMilliseconds >= ObserverTransientFramePeriodMilliseconds)
+                foreach (var pendingSettleFrame in renderer.DrainFrames())
                 {
-                    lastObserverTransient = observerSettle.Elapsed;
+                    ObserveSettleFrame(pendingSettleFrame);
                 }
+
+                observerSettled = QuietTailSatisfied();
             }
-    
-            if (observerSettle.Elapsed >= MaximumObserverSettleDuration &&
-                lastObserverTransient is { } lastTransient &&
-                observerSettle.Elapsed - lastTransient < ObserverQuietTailDuration)
+
+            if (!observerSettled)
             {
                 throw new InvalidDataException(
                     "Benchmark observers did not reach a quiet pre-score interval before the bounded settle deadline.");
             }
-    
-            }
+        }
 
         // Keep observer work outside the scored interval. Frame periods are measured
         // between Present calls, so serialization/console flushing between frames
