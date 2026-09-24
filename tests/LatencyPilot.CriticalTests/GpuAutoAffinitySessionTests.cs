@@ -35,8 +35,12 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.AreEqual(GpuAutoAffinitySearchScope.Full, result.Report.SearchScope);
         Assert.IsTrue(result.Report.FullTopologyCoverage);
         Assert.IsFalse(result.Report.PracticalTie);
-        Assert.IsTrue(result.Report.Pairs.Count >= 10,
-            "Full v2 should preserve representative/sibling screens plus repeated finalist pairs.");
+        Assert.IsTrue(result.Report.Pairs.Any(static pair => pair.Stage == "screening-representative"));
+        Assert.IsTrue(result.Report.Pairs.Any(static pair => pair.Stage == "screening-sibling"));
+        Assert.IsTrue(result.Report.Pairs.Any(static pair => pair.Stage == "screening-shortlist"),
+            "Full v4 must recheck the uncertainty-aware shortlist before the top-two cut.");
+        Assert.IsTrue(result.Report.Pairs.Any(static pair => pair.Stage == "screening-finalists"),
+            "Only the bounded top two should receive adaptive finalist confirmation.");
         Assert.IsTrue(result.Report.Pairs.All(static pair =>
             pair.Verdict == GpuAutoAffinityPairVerdict.Valid && pair.ControlMovement == 0d));
         CollectionAssert.AreEquivalent(
@@ -159,10 +163,15 @@ public sealed class GpuAutoAffinitySessionTests
 
         var unstableBackend = new ScriptedBackend(unstablePairControls: true);
         var unstable = await new GpuAutoAffinitySession(unstableBackend).RunAsync(request with { SessionId = Guid.NewGuid() });
-        CollectionAssert.AreEquivalent(
-            new byte[] { 0, 1, 2, 3 },
-            unstable.Report.ValidatedProcessors.Select(static processor => processor.Number).ToArray(),
-            "Noisy local controls must not stop the search after two candidates.");
+        var noisyValidated = unstable.Report.ValidatedProcessors
+            .Select(static processor => processor.Number)
+            .ToArray();
+        CollectionAssert.Contains(noisyValidated, (byte)0,
+            "The first physical-core representative must still be screened under noise.");
+        CollectionAssert.Contains(noisyValidated, (byte)2,
+            "The second physical-core representative must still be screened under noise.");
+        Assert.IsGreaterThanOrEqualTo(3, noisyValidated.Length,
+            "Noise must not trigger the historical global early stop; adaptive pruning may still skip a clearly implausible sibling.");
         Assert.IsNotNull(unstable.Report.BestObservedProcessor,
             "Structurally valid noisy measurements must still yield a best-observed CPU.");
         Assert.IsTrue(unstable.Report.Pairs.Any(static pair => pair.Verdict == GpuAutoAffinityPairVerdict.Unstable),

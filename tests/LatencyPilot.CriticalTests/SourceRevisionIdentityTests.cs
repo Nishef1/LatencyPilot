@@ -425,12 +425,20 @@ public sealed class SourceRevisionIdentityTests
             "GpuAutoAffinitySession.cs"));
         StringAssert.Contains(
             gateASessionSource,
-            "RequiredFinalistPairs = 3",
-            "Paired v2 finalists must be confirmed by three independent local pairs rather than legacy back-to-back repetitions.");
+            "MinimumFinalistPairs = 2",
+            "Adaptive v4 finalist confirmation must collect two independent local pairs before it can stop.");
         StringAssert.Contains(
             gateASessionSource,
-            "for (var round = 0; round < RequiredFinalistPairs; round++)",
-            "Finalist confirmation must execute the explicit three-pair policy.");
+            "MaximumFinalistPairs = 3",
+            "Adaptive v4 may spend one additional pair only while the top two remain inside measured uncertainty.");
+        StringAssert.Contains(
+            gateASessionSource,
+            "for (var round = 0; round < MaximumFinalistPairs; round++)",
+            "Finalist confirmation must remain explicitly bounded.");
+        StringAssert.Contains(
+            gateASessionSource,
+            "FinalistsNeedMoreEvidence(",
+            "The third finalist pair must be conditional on measured top-two uncertainty.");
         StringAssert.Contains(
             gateASessionSource,
             "ShuffleDeterministically(",
@@ -442,11 +450,11 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(
             gateASessionSource,
             "SelectFinalists(",
-            "GPU paired screening must reduce the search to bounded finalists instead of exhaustively re-running every logical processor.");
+            "GPU adaptive paired screening must reduce the search to bounded finalists instead of exhaustively re-running every logical processor.");
         StringAssert.Contains(
             gateASessionSource,
             "MeasureScreeningPairAsync(",
-            "GPU v2 ranking must be derived from measured local Original-Candidate-Original pairs.");
+            "GPU v4 ranking must be derived from measured local Original-Candidate-Original pairs.");
 
         var rendererSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
