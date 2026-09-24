@@ -177,10 +177,10 @@ Gate A closes only when one exact clean green revision proves on supported hardw
 
 1. structurally valid Original evidence continues through real-world variability and records robust noise instead of failing only for variance;
 2. every eligible physical core receives a Stage-A representative screen;
-3. Stage-B/Stage-C top-3 selection matches persisted paired evidence;
+3. Stage-B uncertainty-aware core refinement and the bounded five-CPU shortlist preserve plausible noisy near-leaders without re-testing clear losers;
 4. every ranked candidate has reconstructable adjacent Original controls and pair math;
 5. high-drift retry evidence stays visible and does not erase an otherwise valid candidate;
-6. finalists receive three shuffled 30 s pairs and rank by persisted median effect;
+6. the top two finalists receive two shuffled 15 s pairs, with one additional 15 s round only when their lead remains inside measured uncertainty;
 7. best-observed CPU, confidence, raw before/after values and terminal Keep/Restore state agree across report and UI;
 8. Keep guardrails remain separate from ranking;
 9. exact rollback occurs between candidate activations and on failure/cancellation;

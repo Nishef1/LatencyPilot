@@ -75,25 +75,33 @@ public sealed record GpuAutoAffinitySessionResult(
 /// <summary>
 /// Measurement-first GPU interrupt-affinity search using direct local paired controls.
 /// Every ranked treatment is backed by measured Original -> Candidate -> Original
-/// evidence. Drift invalidates a pair instead of being transformed into candidate FPS.
-/// Exact rollback remains mandatory between candidates and final Keep still requires
-/// ETW-backed target-only runtime ISR placement proof.
+/// evidence. Ordinary drift lowers confidence instead of erasing a structurally valid
+/// winner. Screening is adaptive: uncertain near-leaders get one short recheck before
+/// only the top two receive 15-second confirmation. Exact rollback remains mandatory
+/// and final Keep still requires ETW-backed target-only runtime ISR placement proof.
 /// </summary>
 public sealed class GpuAutoAffinitySession
 {
-    public static readonly TimeSpan V2ScreeningDuration = TimeSpan.FromSeconds(10);
-    public static readonly TimeSpan V2FinalistDuration = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan ScreeningDuration = TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan FinalistDuration = TimeSpan.FromSeconds(15);
+
+    // Compatibility aliases for historical internal callers.
+    public static readonly TimeSpan V2ScreeningDuration = ScreeningDuration;
+    public static readonly TimeSpan V2FinalistDuration = FinalistDuration;
 
     private const double CandidateMetricEquivalenceTolerance = 0.01;
     private const double KeepGuardrailRegressionTolerance = 0.03;
     private const double MaximumKeepGuardrailRegressionTolerance = 0.10;
     private const double InterruptTailRegressionTolerance = 0.10;
     private const int MinimumInterruptTailSamples = 20;
-    private const int MinimumInterruptTailRuns = 3;
+    private const int MinimumInterruptTailRuns = 2;
     private const int MaximumPairAttempts = 2;
-    private const int MaximumPhysicalCoreHypotheses = 3;
-    private const int MaximumFinalists = 3;
-    private const int RequiredFinalistPairs = 3;
+    private const int MaximumPhysicalCoreHypotheses = 4;
+    internal const int MaximumAdaptiveShortlistCandidates = 5;
+    internal const int MaximumFinalists = 2;
+    private const int MinimumFinalistPairs = 2;
+    private const int MaximumFinalistPairs = 3;
+    private const string ShortlistPhaseName = "screening-shortlist";
     private const string FinalistPhaseName = "screening-finalists";
     private static readonly TimeSpan TransitionWarmupDuration = TimeSpan.FromSeconds(5);
 
@@ -130,7 +138,7 @@ public sealed class GpuAutoAffinitySession
         var requestedProcessors = request.RequestedProcessors?.ToArray() ?? [];
         var candidates = SelectInitialCandidates(request, allEligibleCandidates, requestedProcessors);
         var finalistDuration = request.FinalistDuration == default
-            ? V2FinalistDuration
+            ? FinalistDuration
             : request.FinalistDuration;
 
         if (candidates.Length == 0 && request.SearchScope != GpuAutoAffinitySearchScope.OriginalDiagnostics)
@@ -334,10 +342,10 @@ public sealed class GpuAutoAffinitySession
             }
 
             ApplyPairDecisionRanks(candidateReports, screeningMeasurements);
-            var finalistCandidates = SelectFinalists(screeningMeasurements);
-            if (finalistCandidates.Length == 0)
+            var shortlistCandidates = SelectAdaptiveShortlist(screeningMeasurements);
+            if (shortlistCandidates.Length == 0)
             {
-                reasons.Add("No valid paired screening candidate remained for finalist confirmation. Original was retained.");
+                reasons.Add("No structurally valid paired screening candidate remained for adaptive recheck. Original was retained.");
                 var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
                 return CreateResult(
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
@@ -346,6 +354,66 @@ public sealed class GpuAutoAffinitySession
                     fullTopologyCoverage: stageAComplete, practicalTie: false);
             }
 
+            reasons.Add(
+                $"Adaptive shortlist retained {shortlistCandidates.Length} CPU(s) whose bounded screening uncertainty still overlapped the leader; clear losers were not re-tested.");
+            var shortlistOrder = shortlistCandidates.ToArray();
+            ShuffleDeterministically(shortlistOrder, unchecked(request.ShuffleSeed ^ 0x62A9D9ED));
+            foreach (var candidate in shortlistOrder)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (originalBefore is null)
+                {
+                    originalBefore = await CaptureOriginalControlAsync(
+                        "screening-shortlist-recovery-original-control",
+                        request.ScreeningDuration,
+                        reference,
+                        () => ++nextRunNumber,
+                        trialReports,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                var outcome = await MeasureScreeningPairAsync(
+                    candidate,
+                    ShortlistPhaseName,
+                    originalBefore,
+                    driftBudget,
+                    request.ScreeningDuration,
+                    reference,
+                    () => ++nextRunNumber,
+                    () => ++nextPairNumber,
+                    trialReports,
+                    pairReports,
+                    cancellationToken).ConfigureAwait(false);
+                originalBefore = outcome.NextOriginal;
+
+                if (outcome.ValidMeasurement is { } valid)
+                {
+                    screeningMeasurements.Add(valid);
+                }
+
+                var candidateReport = ToScreeningCandidateReport(
+                    candidate,
+                    outcome.FinalReport,
+                    outcome.ValidMeasurement,
+                    ShortlistPhaseName);
+                candidateReports.Add(candidateReport);
+                await PublishCandidateReportAsync(candidateReport).ConfigureAwait(false);
+            }
+
+            var finalistCandidates = SelectFinalists(screeningMeasurements, shortlistCandidates);
+            if (finalistCandidates.Length == 0)
+            {
+                reasons.Add("No adaptive-shortlist candidate produced structurally valid confirmation evidence. Original was retained.");
+                var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+                return CreateResult(
+                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
+                    restored, restored, candidateReports, trialReports, pairReports, finalistReports,
+                    reasons, decisionBaseline, screenedProcessors,
+                    fullTopologyCoverage: stageAComplete, practicalTie: false);
+            }
+
+            reasons.Add(
+                $"Adaptive recheck advanced {finalistCandidates.Length} CPU(s) to 15-second finalist confirmation.");
             var finalistOriginal = await CaptureOriginalControlAsync(
                 "finalist-original-control",
                 finalistDuration,
@@ -355,9 +423,9 @@ public sealed class GpuAutoAffinitySession
                 cancellationToken).ConfigureAwait(false);
             var finalistMeasurements = finalistCandidates.ToDictionary(
                 static candidate => candidate.Processor,
-                static _ => new List<PairMeasurement>(RequiredFinalistPairs));
+                static _ => new List<PairMeasurement>(MaximumFinalistPairs));
 
-            for (var round = 0; round < RequiredFinalistPairs; round++)
+            for (var round = 0; round < MaximumFinalistPairs; round++)
             {
                 var roundCandidates = finalistCandidates.ToArray();
                 ShuffleDeterministically(
@@ -384,7 +452,7 @@ public sealed class GpuAutoAffinitySession
                     {
                         finalistOriginal = nextOriginal;
                     }
-                    else if (round < RequiredFinalistPairs - 1 ||
+                    else if (round < MaximumFinalistPairs - 1 ||
                              roundCandidates[^1].Processor != candidate.Processor)
                     {
                         finalistOriginal = await CaptureOriginalControlAsync(
@@ -399,6 +467,22 @@ public sealed class GpuAutoAffinitySession
                     if (outcome.ValidMeasurement is { } valid)
                     {
                         finalistMeasurements[candidate.Processor].Add(valid);
+                    }
+                }
+
+                if (round + 1 >= MinimumFinalistPairs)
+                {
+                    if (!FinalistsNeedMoreEvidence(finalistCandidates, finalistMeasurements))
+                    {
+                        reasons.Add(
+                            $"Finalist confirmation stopped after {round + 1} round(s) because the top-two separation exceeded measured uncertainty.");
+                        break;
+                    }
+
+                    if (round + 1 < MaximumFinalistPairs)
+                    {
+                        reasons.Add(
+                            "The two finalists remain close relative to measured uncertainty; one final 15-second round is being added instead of extending every candidate.");
                     }
                 }
             }
@@ -858,16 +942,118 @@ public sealed class GpuAutoAffinitySession
     }
 
     private static HashSet<int> SelectPhysicalCoreHypotheses(List<PairMeasurement> measurements) =>
-        OrderScreeningMeasurements(measurements)
-            .Take(MaximumPhysicalCoreHypotheses)
-            .Select(static measurement => measurement.Candidate.PhysicalCoreIndex)
+        SelectPlausibleScreeningAggregates(measurements, MaximumPhysicalCoreHypotheses)
+            .Select(static aggregate => aggregate.Candidate.PhysicalCoreIndex)
             .ToHashSet();
 
-    private static GpuAffinityCandidate[] SelectFinalists(List<PairMeasurement> measurements) =>
-        OrderScreeningMeasurements(measurements)
-            .Take(MaximumFinalists)
-            .Select(static measurement => measurement.Candidate)
+    private static GpuAffinityCandidate[] SelectAdaptiveShortlist(List<PairMeasurement> measurements) =>
+        SelectPlausibleScreeningAggregates(measurements, MaximumAdaptiveShortlistCandidates)
+            .Select(static aggregate => aggregate.Candidate)
             .ToArray();
+
+    private static GpuAffinityCandidate[] SelectFinalists(
+        List<PairMeasurement> measurements,
+        IReadOnlyList<GpuAffinityCandidate> shortlist)
+    {
+        var allowed = shortlist.Select(static candidate => candidate.Processor).ToHashSet();
+        return BuildScreeningAggregates(measurements)
+            .Where(aggregate => allowed.Contains(aggregate.Candidate.Processor))
+            .OrderByDescending(static aggregate => aggregate.MedianOnePercentLowEffect)
+            .ThenBy(static aggregate => aggregate.Candidate.ObservedPressureScore)
+            .ThenBy(static aggregate => aggregate.Candidate.PhysicalCoreIndex)
+            .ThenBy(static aggregate => aggregate.Candidate.Processor.Number)
+            .Take(MaximumFinalists)
+            .Select(static aggregate => aggregate.Candidate)
+            .ToArray();
+    }
+
+    private static ScreeningAggregate[] SelectPlausibleScreeningAggregates(
+        List<PairMeasurement> measurements,
+        int maximumCount)
+    {
+        var ordered = BuildScreeningAggregates(measurements)
+            .OrderByDescending(static aggregate => aggregate.MedianOnePercentLowEffect)
+            .ThenBy(static aggregate => aggregate.Candidate.ObservedPressureScore)
+            .ThenBy(static aggregate => aggregate.Candidate.PhysicalCoreIndex)
+            .ThenBy(static aggregate => aggregate.Candidate.Processor.Number)
+            .ToArray();
+        if (ordered.Length == 0)
+        {
+            return [];
+        }
+
+        var plausibilityFloor = ordered[0].MedianOnePercentLowEffect - CandidateMetricEquivalenceTolerance;
+        return ordered
+            .Where(aggregate =>
+                aggregate.MedianOnePercentLowEffect + aggregate.UncertaintyFraction >= plausibilityFloor)
+            .Take(maximumCount)
+            .ToArray();
+    }
+
+    private static ScreeningAggregate[] BuildScreeningAggregates(IEnumerable<PairMeasurement> measurements) =>
+        measurements
+            .Where(static measurement => measurement.Report.Verdict == GpuAutoAffinityPairVerdict.Valid)
+            .GroupBy(static measurement => measurement.Candidate.Processor)
+            .Select(static group =>
+            {
+                var pairs = group.ToArray();
+                var candidate = pairs[0].Candidate;
+                var effects = pairs.Select(static pair => pair.Report.OnePercentLowEffect).ToArray();
+                var medianEffect = Median(effects);
+                var effectMad = MedianAbsoluteDeviation(effects, medianEffect);
+                var boundedControlNoise = Median(pairs.Select(static pair =>
+                    Math.Min(pair.Report.ControlMovement, pair.Report.DriftBudget)));
+                return new ScreeningAggregate(
+                    candidate,
+                    medianEffect,
+                    Math.Max(
+                        CandidateMetricEquivalenceTolerance,
+                        Math.Max(effectMad, boundedControlNoise)),
+                    pairs.Length);
+            })
+            .ToArray();
+
+    private static bool FinalistsNeedMoreEvidence(
+        IReadOnlyList<GpuAffinityCandidate> finalists,
+        IReadOnlyDictionary<LogicalProcessorId, List<PairMeasurement>> measurements)
+    {
+        if (finalists.Count < 2)
+        {
+            return false;
+        }
+
+        var aggregates = finalists
+            .Select(candidate =>
+            {
+                var pairs = measurements[candidate.Processor];
+                if (pairs.Count < MinimumFinalistPairs)
+                {
+                    return new ScreeningAggregate(candidate, double.NegativeInfinity, double.PositiveInfinity, pairs.Count);
+                }
+
+                var effects = pairs.Select(static pair => pair.Report.OnePercentLowEffect).ToArray();
+                var median = Median(effects);
+                var mad = MedianAbsoluteDeviation(effects, median);
+                var boundedControlNoise = Median(pairs.Select(static pair =>
+                    Math.Min(pair.Report.ControlMovement, pair.Report.DriftBudget)));
+                return new ScreeningAggregate(
+                    candidate,
+                    median,
+                    Math.Max(CandidateMetricEquivalenceTolerance, Math.Max(mad, boundedControlNoise)),
+                    pairs.Count);
+            })
+            .OrderByDescending(static aggregate => aggregate.MedianOnePercentLowEffect)
+            .ToArray();
+
+        if (aggregates.Any(static aggregate => aggregate.PairCount < MinimumFinalistPairs))
+        {
+            return true;
+        }
+
+        var lead = aggregates[0].MedianOnePercentLowEffect - aggregates[1].MedianOnePercentLowEffect;
+        var uncertainty = Math.Max(aggregates[0].UncertaintyFraction, aggregates[1].UncertaintyFraction);
+        return lead <= Math.Max(CandidateMetricEquivalenceTolerance, uncertainty);
+    }
 
     private static IEnumerable<PairMeasurement> OrderScreeningMeasurements(List<PairMeasurement> measurements) =>
         measurements
@@ -880,11 +1066,12 @@ public sealed class GpuAutoAffinitySession
     private static GpuAutoAffinityCandidateReport ToScreeningCandidateReport(
         GpuAffinityCandidate candidate,
         GpuAutoAffinityPairReport pair,
-        PairMeasurement? measurement)
+        PairMeasurement? measurement,
+        string reportPhase = "screening")
     {
         var stats = measurement is null ? null : RequireVideoStats(measurement.CandidateObservation, "Candidate");
         return new GpuAutoAffinityCandidateReport(
-            "screening",
+            reportPhase,
             candidate.PhysicalCoreIndex,
             candidate.Processor,
             1,
@@ -989,13 +1176,15 @@ public sealed class GpuAutoAffinitySession
                     medianAvg < -keepGuardrailTolerance ||
                     medianP99 < -keepGuardrailTolerance;
                 var interruptRegression = HasMaterialInterruptTailRegression(pairs, out var interruptReason);
+                var requiredPositivePairs = RequiredPositivePairCount(pairs.Count);
                 recommendedForKeep =
                     medianPrimary > 0d &&
+                    positivePrimaryCount >= requiredPositivePairs &&
                     !guardrailRegression &&
                     !interruptRegression;
 
                 var reason = FormattableString.Invariant(
-                    $"Ranked from {pairs.Count} paired observation(s): median 1%-low effect {medianPrimary:P2}; effect MAD {effectMad:P2}; positive pairs {positivePrimaryCount}/{pairs.Count}; local-noise guide {noiseGuide:P2}; Keep guardrail tolerance {keepGuardrailTolerance:P2}; AVG/p99 regression={guardrailRegression}; interrupt-tail regression={interruptRegression}. ") +
+                    $"Ranked from {pairs.Count} paired observation(s): median 1%-low effect {medianPrimary:P2}; effect MAD {effectMad:P2}; positive pairs {positivePrimaryCount}/{pairs.Count} (Keep requires {requiredPositivePairs}); local-noise guide {noiseGuide:P2}; Keep guardrail tolerance {keepGuardrailTolerance:P2}; AVG/p99 regression={guardrailRegression}; interrupt-tail regression={interruptRegression}. ") +
                     (recommendedForKeep
                         ? "This candidate may be kept if final runtime placement verifies."
                         : "It remains rankable as the best-observed candidate, but automatic Keep is not recommended by the measured benefit/guardrails.") +
@@ -1082,6 +1271,9 @@ public sealed class GpuAutoAffinitySession
 
         return decisions.ToArray();
     }
+
+    private static int RequiredPositivePairCount(int pairCount) =>
+        pairCount >= MaximumFinalistPairs ? 2 : Math.Min(2, pairCount);
 
     private static bool HasMaterialInterruptTailRegression(
         List<PairMeasurement> pairs,
@@ -1631,7 +1823,9 @@ public sealed class GpuAutoAffinitySession
         var runnerUp = ranked.FirstOrDefault(report => report.Processor != bestProcessor);
         if (runnerUp is null || runnerUp.MedianOnePercentLowEffect is not { } runnerEffect)
         {
-            return best.PositiveOnePercentLowPairCount >= RequiredFinalistPairs ? "Medium" : "Low";
+            return best.PositiveOnePercentLowPairCount >= RequiredPositivePairCount(best.PairNumbers.Count)
+                ? "Medium"
+                : "Low";
         }
 
         var lead = bestEffect - runnerEffect;
@@ -1643,14 +1837,16 @@ public sealed class GpuAutoAffinitySession
             variability = Math.Max(variability, decisionBaseline.OnePercentLowRelativeNoise);
         }
 
-        if (best.PositiveOnePercentLowPairCount >= RequiredFinalistPairs &&
+        if (best.PairNumbers.Count >= MinimumFinalistPairs &&
+            best.PositiveOnePercentLowPairCount == best.PairNumbers.Count &&
             lead > Math.Max(CandidateMetricEquivalenceTolerance, variability))
         {
             return "High";
         }
 
         var mediumLeadFloor = Math.Max(0.005d, variability * 0.5d);
-        return best.PositiveOnePercentLowPairCount >= 2 && lead > mediumLeadFloor
+        return best.PositiveOnePercentLowPairCount >= RequiredPositivePairCount(best.PairNumbers.Count) &&
+               lead > mediumLeadFloor
             ? "Medium"
             : "Low";
     }
@@ -1679,17 +1875,17 @@ public sealed class GpuAutoAffinitySession
         {
             throw new ArgumentException("GPU auto-affinity session identity is required.", nameof(request));
         }
-        if (request.ScreeningDuration != V2ScreeningDuration)
+        if (request.ScreeningDuration != ScreeningDuration)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(request),
-                $"GPU paired v2 screening duration must be exactly {V2ScreeningDuration.TotalSeconds:F0} seconds.");
+                $"GPU adaptive screening duration must be exactly {ScreeningDuration.TotalSeconds:F0} seconds.");
         }
-        if (request.FinalistDuration != default && request.FinalistDuration != V2FinalistDuration)
+        if (request.FinalistDuration != default && request.FinalistDuration != FinalistDuration)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(request),
-                $"GPU paired v2 finalist duration must be exactly {V2FinalistDuration.TotalSeconds:F0} seconds.");
+                $"GPU adaptive finalist duration must be exactly {FinalistDuration.TotalSeconds:F0} seconds.");
         }
 
         var requested = request.RequestedProcessors?.ToArray() ?? [];
@@ -1744,6 +1940,12 @@ public sealed class GpuAutoAffinitySession
             ? (ordered[(ordered.Length / 2) - 1] + ordered[ordered.Length / 2]) / 2d
             : ordered[ordered.Length / 2];
     }
+
+    private sealed record ScreeningAggregate(
+        GpuAffinityCandidate Candidate,
+        double MedianOnePercentLowEffect,
+        double UncertaintyFraction,
+        int PairCount);
 
     private sealed record PairMeasurement(
         GpuAffinityCandidate Candidate,

@@ -5,7 +5,7 @@ Last updated: 2026-09-24
 
 LatencyPilot exists to distinguish measurable effects from placebo, ordinary run-to-run variation, workload drift and unsafe/unverified state. It is not a generic Windows tweak collection.
 
-Current GPU measurement/search/ranking authority: **ADR 0008 — Noise-tolerant ranked GPU affinity v3**. ADR 0007 remains the historical v2 contract; ADR 0006 remains authoritative for the broader v1 product scope, safety, mutation/recovery ownership and product sequencing.
+Current GPU measurement/search/ranking authority: **ADR 0009 — Adaptive uncertainty-aware GPU affinity v4**. ADR 0008 remains the historical v3 contract; ADR 0006 remains authoritative for the broader v1 product scope, safety, mutation/recovery ownership and product sequencing.
 
 ## 1. Evidence hierarchy
 
@@ -27,7 +27,7 @@ Purpose: ETW integrity, attribution, per-CPU concentration, obvious tail events 
 
 This remains the authoritative steady/manual RealWorld contract. It is intentionally separate from the synthetic GPU candidate-search method.
 
-### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v3`
+### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v4`
 
 The product question is:
 
@@ -35,7 +35,7 @@ The product question is:
 
 A separate question asks whether that CPU is safe/useful enough to Keep.
 
-Windows default remains the exact reference/recovery state. Historical `gpu-affinity-benchmark-v1` and `gpu-affinity-benchmark-v2` evidence remains historical and is never reinterpreted as v3.
+Windows/driver Original remains the exact reference/recovery state and is not CPU 0. CPU 0 is an explicit candidate. Historical `gpu-affinity-benchmark-v1`, `v2` and `v3` evidence remains historical and is never reinterpreted as v4.
 
 ## 2. Source hierarchy
 
@@ -154,31 +154,29 @@ Structural evidence failures still fail closed immediately: invalid identity, no
 
 ### Stage A — physical-core representatives
 
-Screen one eligible logical representative per eligible physical core, respecting current CPU-set eligibility. Passive pressure and deterministic processor number are only selection/tie fallbacks.
+Screen one eligible logical representative per eligible physical core with a 10-second local pair.
 
-### Stage B — sibling refinement
+### Stage B — uncertainty-aware sibling refinement
 
-Order Stage-A representatives by paired 1%-low effect and refine at most the top three physical-core hypotheses.
+A one-pair point estimate is not trusted as a hard cut. Keep at most four physical-core hypotheses whose observed effect plus bounded uncertainty can still overlap the leader, then screen their eligible siblings.
 
-### Stage C — finalists
+### Stage C — adaptive shortlist and recheck
 
-Order all valid logical-CPU screens by paired 1%-low effect and advance at most the top three logical CPUs.
+Across all valid logical-CPU screens, retain at most five CPUs whose median paired 1%-low effect plus bounded uncertainty remains within one percentage point of the current leader.
 
-The short screen is a filter, not the final confidence estimate.
+Bounded uncertainty is the maximum of one percentage point, effect MAD when repeated short evidence exists, and median local-control movement capped at that pair's drift budget.
 
-## 9. Finalist confirmation
+Every shortlisted CPU receives one additional 10-second local pair. Clear losers do not.
 
-Run three 30-second finalist rounds with deterministic candidate-order shuffling. Each finalist receives one local pair per round and the same single high-drift retry.
+Then rank shortlisted CPUs by the median of their short-screen evidence and advance only the top two logical CPUs.
 
-Persist:
+## 9. Adaptive finalist confirmation
 
-- median paired 1%-low/AVG/frame-p99 effects;
-- diagnostic 0.1%-low effect;
-- 1%-low effect MAD;
-- positive-pair count;
-- local noise guide;
-- raw median local Original and Candidate FPS/ms;
-- separate Keep recommendation.
+The top two finalists run two shuffled 15-second local pairs.
+
+After the second round, compare their lead against measured uncertainty. If the lead exceeds uncertainty, confirmation stops. If they remain close, both receive one additional 15-second round. Three rounds are the maximum, not the default.
+
+Persist the same auditable aggregates as v3. Automatic Keep additionally requires positive-pair consistency: both pairs positive when only two were required, or at least two of three when an uncertainty extension was needed.
 
 Structurally valid finalists remain rankable even when their observations disagree.
 

@@ -34,7 +34,7 @@ public sealed record GpuBenchmarkEvidence(
     // noise affects ranking and confidence. New evidence must never be
     // reinterpreted using the historical v1/v2 decision rules.
     public const string SchemaId = "latencypilot-gpu-benchmark-v1";
-    public const string MethodIdValue = "gpu-affinity-benchmark-v3";
+    public const string MethodIdValue = "gpu-affinity-benchmark-v4";
 }
 
 /// <summary>
@@ -50,16 +50,18 @@ public sealed record GpuBenchmarkVideoStats(
     double Low1PctFps,
     double Low01PctFps)
 {
+    public const int MinimumSampleCount = 120;
+
     public static GpuBenchmarkVideoStats? TryCreate(IEnumerable<double> framePeriodMilliseconds)
     {
-        var ordered = framePeriodMilliseconds
-            .Where(static value => double.IsFinite(value) && value > 0d)
-            .Order()
-            .ToArray();
-        if (ordered.Length == 0)
+        var samples = framePeriodMilliseconds.ToArray();
+        if (samples.Length < MinimumSampleCount ||
+            samples.Any(static value => !double.IsFinite(value) || value <= 0d))
         {
             return null;
         }
+
+        var ordered = samples.Order().ToArray();
 
         static double LowFps(double[] sortedAscending, double fraction)
         {

@@ -9,6 +9,7 @@ namespace LatencyPilot.GpuBenchmark;
 
 internal sealed class CpuRenderWorker : IDisposable
 {
+    private static readonly TimeSpan WorkerCompletionTimeout = TimeSpan.FromSeconds(5);
     private readonly FrameResources[] frameResources;
     private readonly AutoResetEvent start = new(false);
     private readonly ManualResetEventSlim completed = new(false);
@@ -101,7 +102,11 @@ internal sealed class CpuRenderWorker : IDisposable
 
     internal void WaitForFrame()
     {
-        completed.Wait();
+        if (!completed.Wait(WorkerCompletionTimeout))
+        {
+            throw new TimeoutException(
+                $"Benchmark worker {processor} did not complete a frame within {WorkerCompletionTimeout.TotalSeconds:F0} seconds.");
+        }
         if (failure is not null)
         {
             throw new InvalidOperationException($"Benchmark worker {processor} failed.", failure);
@@ -112,7 +117,11 @@ internal sealed class CpuRenderWorker : IDisposable
     {
         stop = true;
         start.Set();
-        thread.Join();
+        if (!thread.Join(WorkerCompletionTimeout))
+        {
+            throw new TimeoutException(
+                $"Benchmark worker {processor} did not stop within {WorkerCompletionTimeout.TotalSeconds:F0} seconds.");
+        }
         completed.Dispose();
         start.Dispose();
         foreach (var resource in frameResources)

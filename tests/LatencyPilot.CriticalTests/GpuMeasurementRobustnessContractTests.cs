@@ -29,6 +29,13 @@ public sealed class GpuMeasurementRobustnessContractTests
         StringAssert.Contains(sessionSource, "RelativeMedianAbsoluteDeviation");
         StringAssert.Contains(sessionSource, "DetermineSelectionConfidence");
         StringAssert.Contains(sessionSource, "RecommendedForKeep");
+        StringAssert.Contains(sessionSource, "SelectAdaptiveShortlist");
+        StringAssert.Contains(sessionSource, "MaximumAdaptiveShortlistCandidates");
+        StringAssert.Contains(sessionSource, "Math.Min(pair.Report.ControlMovement, pair.Report.DriftBudget)",
+            "Shortlist uncertainty must be bounded so extreme drift keeps near-leaders alive without resurrecting clear losers.");
+        StringAssert.Contains(sessionSource, "MaximumFinalists = 2");
+        StringAssert.Contains(sessionSource, "MinimumFinalistPairs = 2");
+        StringAssert.Contains(sessionSource, "MaximumFinalistPairs = 3");
         Assert.IsFalse(
             sessionSource.Contains("GpuRepeatabilityClusterSelector.Select(", StringComparison.Ordinal),
             "The historical cluster selector may remain as a utility, but it must not own v3 ranking authority.");
@@ -36,6 +43,29 @@ public sealed class GpuMeasurementRobustnessContractTests
         StringAssert.Contains(reportSource, "SelectionConfidence");
         StringAssert.Contains(reportSource, "OnePercentLowEffectMedianAbsoluteDeviation");
         StringAssert.Contains(reportSource, "RecommendedForKeep");
+    }
+
+    [AuditCase]
+    public void BenchmarkBlockingWaitsAndControlledFrameEvidenceAreBounded()
+    {
+        var rendererSource = File.ReadAllText(FindRepositoryFile(
+            "src", "LatencyPilot.GpuBenchmark", "D3D12BenchmarkRenderer.cs"));
+        var workerSource = File.ReadAllText(FindRepositoryFile(
+            "src", "LatencyPilot.GpuBenchmark", "CpuRenderWorker.cs"));
+        var evidenceSource = File.ReadAllText(FindRepositoryFile(
+            "src", "LatencyPilot.Core", "Benchmarking", "GpuBenchmarkEvidence.cs"));
+        var backendSource = File.ReadAllText(FindRepositoryFile(
+            "tools", "LatencyPilot.GateAValidation", "GpuAutoAffinityGateABackend.cs"));
+
+        StringAssert.Contains(rendererSource, "FrameCompletionTimeout");
+        StringAssert.Contains(rendererSource, "fenceEvent.WaitOne(FrameCompletionTimeout)");
+        StringAssert.Contains(workerSource, "completed.Wait(WorkerCompletionTimeout)");
+        StringAssert.Contains(workerSource, "thread.Join(WorkerCompletionTimeout)");
+        StringAssert.Contains(evidenceSource, "MinimumSampleCount");
+        StringAssert.Contains(backendSource, "MinimumControlledFramesPerSecond");
+        StringAssert.Contains(backendSource, "MaximumScoredWindowOverrunRatio");
+        StringAssert.Contains(backendSource, "TrialDeadlineSlack");
+        StringAssert.Contains(backendSource, "RendererRecreateDeadline");
     }
 
     [AuditCase]

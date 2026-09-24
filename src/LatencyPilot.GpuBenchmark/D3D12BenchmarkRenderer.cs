@@ -21,6 +21,7 @@ internal sealed class D3D12BenchmarkRenderer : IDisposable
 {
     private const int BufferCount = 3;
     private const int FrameContextCount = 2;
+    private static readonly TimeSpan FrameCompletionTimeout = TimeSpan.FromSeconds(5);
 
     private readonly BenchmarkWindow window;
     private readonly IDXGIFactory4 factory;
@@ -412,7 +413,11 @@ internal sealed class D3D12BenchmarkRenderer : IDisposable
         }
 
         fence.SetEventOnCompletion(value, fenceEvent).CheckError();
-        fenceEvent.WaitOne();
+        if (!fenceEvent.WaitOne(FrameCompletionTimeout))
+        {
+            throw new TimeoutException(
+                $"D3D12 frame fence did not complete within {FrameCompletionTimeout.TotalSeconds:F0} seconds.");
+        }
     }
 
     private sealed record PendingFrame(

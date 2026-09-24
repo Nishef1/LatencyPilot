@@ -17,13 +17,20 @@ public sealed class GpuAutoAffinityProgressPlan
 
     public int ScreeningCandidateCount { get; }
     public GpuAutoAffinitySearchScope SearchScope { get; }
-    public int FinalistCandidateCount => SearchScope == GpuAutoAffinitySearchScope.Full ? Math.Min(3, CandidateCount) : 0;
+    public int FinalistCandidateCount => SearchScope == GpuAutoAffinitySearchScope.Full
+        ? Math.Min(GpuAutoAffinitySession.MaximumFinalists, CandidateCount)
+        : 0;
+    public int AdaptiveShortlistCandidateCount => SearchScope == GpuAutoAffinitySearchScope.Full
+        ? Math.Min(GpuAutoAffinitySession.MaximumAdaptiveShortlistCandidates, CandidateCount)
+        : 0;
     public static int AdditionalFinalistUnitsPerCandidate => 12;
+    public static int AdditionalShortlistUnitsPerCandidate => 4;
 
-    // Adaptive work estimate: each pair has candidate warm-up/score + Original warm-up/score.
+    // Maximum adaptive work estimate. Pair retries add their own units dynamically.
     public int InitialTotalUnits => SearchScope == GpuAutoAffinitySearchScope.OriginalDiagnostics
         ? 1 + GpuOriginalBaselinePolicy.MaximumScoredObservationCount
         : 1 + 3 + 2 + (ScreeningCandidateCount * 4) +
+          (AdaptiveShortlistCandidateCount * AdditionalShortlistUnitsPerCandidate) +
           (FinalistCandidateCount == 0 ? 0 : 2 + (FinalistCandidateCount * AdditionalFinalistUnitsPerCandidate) + 2);
 
     public static GpuAutoAffinityProgressPlan Create(

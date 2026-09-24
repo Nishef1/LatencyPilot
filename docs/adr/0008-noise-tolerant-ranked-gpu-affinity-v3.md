@@ -1,8 +1,8 @@
 # ADR 0008 — Noise-tolerant ranked GPU affinity v3
 
-Status: **Accepted and implemented in source** (2026-09-24)
+Status: **Superseded by ADR 0009 for new evidence** (2026-09-24)
 
-Supersedes ADR 0007 for new GPU measurement/ranking evidence. ADR 0007 remains the historical v2 contract. ADR 0006 remains the product/safety authority.
+Superseded ADR 0007 for v3 GPU measurement/ranking evidence. ADR 0007 remains the historical v2 contract. ADR 0006 remains the product/safety authority.
 
 ## Decision
 

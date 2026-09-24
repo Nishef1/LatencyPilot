@@ -23,10 +23,14 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
     private const int KernelMaximumEvents = 2_000_000;
     private const double MinimumOverlapRatio = 0.95;
+    private const double MaximumScoredWindowOverrunRatio = 1.10;
+    private const double MinimumControlledFramesPerSecond = 20d;
     private const double MinimumCpuBusyAbsoluteDriftPercent = 10d;
     private const double MaximumCpuBusyRelativeDrift = 0.25d;
     private const int MinimumOriginalCpuBusySamples = 3;
     private static readonly TimeSpan CollectorTailSlack = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan TrialDeadlineSlack = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan RendererRecreateDeadline = TimeSpan.FromSeconds(35);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly string deviceInstanceId;
@@ -204,7 +208,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                     "GPU candidate post-apply verification failed before ownership could be transferred to the session.");
             }
 
-            await benchmark.RecreateRendererAsync(cancellationToken).ConfigureAwait(false);
+            await RecreateBenchmarkRendererAsync(cancellationToken).ConfigureAwait(false);
             mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
                 DateTimeOffset.UtcNow,
                 "RecreateBenchmarkRenderer",
@@ -319,7 +323,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                     "GPU candidate rollback completed, but the exact original stored state could not be verified.");
             }
 
-            await benchmark.RecreateRendererAsync(cancellationToken).ConfigureAwait(false);
+            await RecreateBenchmarkRendererAsync(cancellationToken).ConfigureAwait(false);
             mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
                 DateTimeOffset.UtcNow,
                 "RecreateBenchmarkRendererAfterRollback",
@@ -444,7 +448,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
 
         var isWarmup = request.Phase.EndsWith("-warmup", StringComparison.Ordinal);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(request.Duration + TimeSpan.FromSeconds(60));
+        deadline.CancelAfter(request.Duration + TrialDeadlineSlack);
 
         GpuBenchmarkTrialArtifact artifact;
         KernelLatencyCaptureResult kernel;
@@ -609,7 +613,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         // Crop the extended kernel window to the scored benchmark artifact
         // interval so D3D12 device recreation + pre-roll idle cannot pollute
         // placement proof or driver guardrails.
-        var scopedKernel = CropKernelToArtifact(kernel, artifact.StartedAtUtc, artifact.EndedAtUtc);
+        var scopedKernel = CropKernelToArtifact(kernel, artifact);
         var attributionAttempted = !isWarmup && kernel.IsValid && storedBefore && storedAfter;
         if (attributionAttempted)
         {
@@ -888,6 +892,28 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             hard.AddRange(continuity.Reasons);
         }
 
+        if (!request.Phase.EndsWith("-warmup", StringComparison.Ordinal))
+        {
+            var scoredDurationMs = GetScoredDurationMilliseconds(artifact);
+            var requestedDurationMs = request.Duration.TotalMilliseconds;
+            if (!double.IsFinite(scoredDurationMs) ||
+                scoredDurationMs < requestedDurationMs * MinimumOverlapRatio ||
+                scoredDurationMs > requestedDurationMs * MaximumScoredWindowOverrunRatio)
+            {
+                hard.Add(
+                    $"Benchmark scored QPC window {scoredDurationMs:F1} ms is outside the allowed {MinimumOverlapRatio:P0}–{MaximumScoredWindowOverrunRatio:P0} range of the requested {requestedDurationMs:F0} ms interval.");
+            }
+
+            var minimumFrames = Math.Max(
+                GpuBenchmarkVideoStats.MinimumSampleCount,
+                checked((int)Math.Ceiling(request.Duration.TotalSeconds * MinimumControlledFramesPerSecond)));
+            if (artifact.Frames.Count < minimumFrames)
+            {
+                hard.Add(
+                    $"Benchmark produced only {artifact.Frames.Count} controlled frames; at least {minimumFrames} are required for this scored interval.");
+            }
+        }
+
         if (!kernel.IsValid)
         {
             soft.Add("Kernel ETW capture integrity is not clean; external timing cross-checks are best-effort.");
@@ -929,14 +955,18 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
 
     private static KernelLatencyCaptureResult CropKernelToArtifact(
         KernelLatencyCaptureResult kernel,
-        DateTimeOffset artifactStart,
-        DateTimeOffset artifactEnd)
+        GpuBenchmarkTrialArtifact artifact)
     {
-        var offsetStartMs = (artifactStart - kernel.StartedAtUtc).TotalMilliseconds - 1000d;
-        var offsetEndMs = (artifactEnd - kernel.StartedAtUtc).TotalMilliseconds + 1000d;
-        if (!double.IsFinite(offsetStartMs) || !double.IsFinite(offsetEndMs) || offsetEndMs <= 0)
+        var scoredDurationMs = GetScoredDurationMilliseconds(artifact);
+        var offsetStartMs = (artifact.StartedAtUtc - kernel.StartedAtUtc).TotalMilliseconds;
+        var offsetEndMs = offsetStartMs + scoredDurationMs;
+        if (!double.IsFinite(offsetStartMs) ||
+            !double.IsFinite(offsetEndMs) ||
+            !double.IsFinite(scoredDurationMs) ||
+            scoredDurationMs <= 0d ||
+            offsetEndMs <= offsetStartMs)
         {
-            return kernel;
+            return kernel with { Events = [] };
         }
 
         var scoped = kernel.Events
@@ -944,6 +974,25 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 item.TimeStampRelativeMilliseconds <= offsetEndMs)
             .ToArray();
         return kernel with { Events = scoped };
+    }
+
+    private static double GetScoredDurationMilliseconds(GpuBenchmarkTrialArtifact artifact)
+    {
+        if (artifact.StartedAtQpc <= 0 ||
+            artifact.EndedAtQpc <= artifact.StartedAtQpc ||
+            artifact.QpcFrequency <= 0)
+        {
+            return double.NaN;
+        }
+
+        return (artifact.EndedAtQpc - artifact.StartedAtQpc) * 1000d / artifact.QpcFrequency;
+    }
+
+    private async Task RecreateBenchmarkRendererAsync(CancellationToken cancellationToken)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(RendererRecreateDeadline);
+        await benchmark.RecreateRendererAsync(deadline.Token).ConfigureAwait(false);
     }
 
     private double[] FilterDriverDurations(

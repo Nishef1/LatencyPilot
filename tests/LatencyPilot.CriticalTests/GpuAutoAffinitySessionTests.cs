@@ -22,7 +22,7 @@ public sealed class GpuAutoAffinitySessionTests
             pressure,
             null,
             0x51A7,
-            GpuAutoAffinitySession.V2ScreeningDuration);
+            GpuAutoAffinitySession.ScreeningDuration);
         var backend = new ScriptedBackend();
 
         var result = await new GpuAutoAffinitySession(backend).RunAsync(request);
@@ -43,8 +43,10 @@ public sealed class GpuAutoAffinitySessionTests
             new byte[] { 0, 1, 2, 3 },
             result.Report.ValidatedProcessors.Select(static processor => processor.Number).ToArray(),
             "The two physical-core representatives and both selected SMT siblings should be screened on this synthetic topology.");
-        Assert.AreEqual(3, result.Report.Finalists.Count);
-        Assert.IsTrue(result.Report.Finalists.All(static finalist => finalist.PairNumbers.Count == 3));
+        Assert.AreEqual(2, result.Report.Finalists.Count);
+        Assert.IsTrue(result.Report.Finalists.All(static finalist =>
+            finalist.PairNumbers.Count is >= 2 and <= 3),
+            "Adaptive finalist confirmation must use two rounds by default and at most one uncertainty-driven extension.");
         Assert.AreEqual(new LogicalProcessorId(0, 3), result.Report.BestObservedProcessor);
         Assert.AreEqual("High", result.Report.SelectionConfidence);
         var winningFinalist = result.Report.Finalists.Single(static finalist => finalist.Processor == new LogicalProcessorId(0, 3));
@@ -99,7 +101,7 @@ public sealed class GpuAutoAffinitySessionTests
         var (topology, pressure) = CreateSmtTopology();
         var request = new GpuAutoAffinitySessionRequest(
             Guid.NewGuid(), topology, pressure, null, 0x51A7,
-            GpuAutoAffinitySession.V2ScreeningDuration);
+            GpuAutoAffinitySession.ScreeningDuration);
 
         var missingFinalEtw = new ScriptedBackend(finalEtwUnavailable: true);
         var missingFinalResult = await new GpuAutoAffinitySession(missingFinalEtw).RunAsync(request);
@@ -131,7 +133,7 @@ public sealed class GpuAutoAffinitySessionTests
         var (topology, pressure) = CreateSmtTopology();
         var request = new GpuAutoAffinitySessionRequest(
             Guid.NewGuid(), topology, pressure, null, 0x51A7,
-            GpuAutoAffinitySession.V2ScreeningDuration);
+            GpuAutoAffinitySession.ScreeningDuration);
 
         var recoverableOriginalBackend = new ScriptedBackend(recoverableOriginalOutlier: true);
         var recoverable = await new GpuAutoAffinitySession(recoverableOriginalBackend).RunAsync(request);

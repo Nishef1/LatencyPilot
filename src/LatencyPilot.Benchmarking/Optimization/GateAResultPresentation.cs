@@ -185,7 +185,9 @@ public static class GateAResultPresentation
                         : terminalOriginalVerified
                             ? compared is null
                                 ? "No valid candidate evidence · Original restored"
-                                : $"Best observed · CPU {compared.Processor.Number} · Original restored"
+                                : compared.DecisionOnePercentLowEffect is <= 0d
+                                    ? $"No beneficial candidate · CPU {compared.Processor.Number} best tested · Original restored"
+                                    : $"Best observed · CPU {compared.Processor.Number} · Original restored"
                             : "Result needs attention";
         var summary = BuildSummary(report, compared, metrics, verifiedKeep, baselineQualificationFailed);
         var gateAResultEligible = report.SearchScope == GpuAutoAffinitySearchScope.Full && report.GateAClosureEligible;
@@ -603,6 +605,10 @@ public static class GateAResultPresentation
 
         return
         [
+            new GateADecisionEvidenceRow(
+                "Reference state",
+                "Windows/driver Original",
+                "Original is the exact pre-test GPU interrupt-affinity policy captured from Windows/driver state. It is not CPU 0; CPU 0 is tested as a separate explicit candidate."),
             new GateADecisionEvidenceRow(
                 "Best-observed ranking",
                 primaryState,

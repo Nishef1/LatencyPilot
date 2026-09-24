@@ -177,10 +177,10 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 
 ## Immediate execution ladder
 
-1. **Completed now:** v3 source separates best-observed ranking/confidence from Keep, removes noise-only early stops, uses median/MAD uncertainty, and reports actual median before/after FPS/ms with direct percentage change plus the separate drift-adjusted paired ranking effect.
+1. **Completed now:** v4 source keeps best-observed ranking separate from Keep, adds bounded uncertainty-aware shortlist/recheck, reduces finalists to top two with adaptive 15-second confirmation, and preserves actual before/after FPS/ms plus drift-adjusted paired ranking effects.
 2. **Evidence:** hosted `Tests` are green on source/test revision `7e64cbb7c66ce809a2de617c7026e3387d3c2ddb`. Existing consolidated contracts now fail if ordinary noise erases a valid best-observed CPU, RestoreOriginal hides that rank, or the user-visible raw percentage stops matching the displayed before/after medians.
-3. **Still open:** physical owner evidence for the v3 GPU Gate A remains required; public product mutation stays unarmed.
-4. **Next stage:** run the exact-head full v3 search and inspect best-observed rank, confidence, FPS/ms gains, rollback and final placement.
+3. **Still open:** physical owner evidence for the v4 GPU Gate A remains required; public product mutation stays unarmed.
+4. **Next stage:** run the exact-head full v4 search and inspect shortlist retention, top-two confirmation count, total runtime, best-observed rank, confidence, FPS/ms gains, rollback and final placement.
 5. **After that:** repeat the search, exercise Stop safely/failure recovery, and complete real WinUI/accessibility inspection before product mutation arming.
 
 ## Completion rule

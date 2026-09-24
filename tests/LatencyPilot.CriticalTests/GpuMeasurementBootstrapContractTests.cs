@@ -133,6 +133,11 @@ public sealed class GpuMeasurementBootstrapContractTests
         StringAssert.Contains(gateBackendSource, "artifact.StartedAtQpc");
         StringAssert.Contains(gateBackendSource, "artifact.EndedAtQpc");
         StringAssert.Contains(gateBackendSource, "artifact.QpcFrequency");
+        StringAssert.Contains(gateBackendSource, "GetScoredDurationMilliseconds");
+        StringAssert.Contains(gateBackendSource, "CropKernelToArtifact(kernel, artifact)",
+            "Kernel ETW must be cropped to the benchmark-owned scored QPC duration instead of the post-drain wall-clock end.");
+        Assert.IsFalse(gateBackendSource.Contains("artifact.StartedAtUtc, artifact.EndedAtUtc", StringComparison.Ordinal),
+            "Kernel placement/guardrail evidence must not include the post-drain wall-clock tail.");
 
         var parse = typeof(PresentMonConsoleFrameMetricsReader).GetMethods(
                 BindingFlags.Static | BindingFlags.NonPublic)
