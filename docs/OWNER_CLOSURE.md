@@ -79,40 +79,45 @@ A green read-only audit JSON plus UI evidence is **not** Phase 2 closure by itse
 
 Only after those checks and the automated audit agree may Phase 2 be marked physically closed.
 
-## 5. Run paired-v2 GPU Gate A
+## 5. Run observer-isolated v5 GPU Gate A
 
 After the exact revision is green and the prerequisite read-only substrate is understood, follow `docs/PHASE3_PHYSICAL_VALIDATION.md`.
 
 GPU Gate A is a **different measurement shape** from the five-window Real-world baseline. It uses the built-in deterministic D3D12 benchmark and direct local controls:
 
 ```text
-bounded Original qualification
-→ Original before → Candidate → Original after
-→ physical-core representative screen
-→ bounded SMT sibling refinement
-→ up to 3 finalists
-→ 3 independent 30 s local pairs per finalist
+3–5 Original observations for robust median/MAD variability
+→ Original before → Candidate → Original after local pairs
+→ Stage-A physical-core representative screen
+→ bounded uncertainty-aware core/sibling refinement
+→ observed top four logical CPUs rechecked for 10 s when available
+→ at most one uncertainty-overlapping fifth challenger
+→ top two finalists
+→ two shuffled 15 s local pairs per finalist
+→ optional third 15 s round only while uncertainty remains
+→ best-observed CPU + confidence
+→ separate Keep guardrails
 → final clean target-only ETW ISR-placement proof before Keep
 ```
 
 Do not feed the Real-world Phase 2 baseline into GPU candidate ranking or treat it as a substitute for the Gate A local controls.
 
-Key paired-v2 closure rules:
+Key v5 closure rules:
 
-- screening windows are 10 s;
+- screening/recheck windows are 10 s and finalist windows are 15 s;
 - raw observations remain unchanged;
 - paired effect is derived from the geometric mean of adjacent Original controls;
-- local Original movement above the bounded drift budget invalidates that pair rather than becoming candidate benefit;
-- one fresh retry is allowed for an unstable pair;
-- two consecutive candidates that exhaust retry stop safely and retain exact Original;
-- full search screens one eligible logical representative per physical core before refining promising siblings;
-- finalist count is capped at three;
-- each accepted finalist needs three valid 30 s local pairs;
-- finalists within one percentage point are a practical tie and must be presented as such;
-- final Keep requires attributable runtime GPU ISR placement on the requested logical processor;
+- one fresh retry is allowed for high local drift, but a structurally valid retry remains rankable and lowers confidence rather than erasing the candidate;
+- full search screens one eligible logical representative per physical core before bounded refinement;
+- Stage C rechecks the observed top four logical CPUs when available and admits at most one additional uncertainty-overlapping challenger;
+- only the top two advance to finalist confirmation;
+- two shuffled 15 s finalist pairs are the default, with one third round only while uncertainty still overlaps;
+- rank 1 remains the best-observed estimate even when confidence is low or a practical tie is present;
+- Keep guardrails are independent from ranking;
+- final Keep requires attributable target-only runtime GPU ISR placement on the requested logical processor;
 - terminal stored state and journal ownership must verify.
 
-A successful Gate A session also needs the in-product result/evidence path inspected: validated report → evidence ZIP → Overview decision presentation. The UI must distinguish raw observations, paired effects, persisted decision/finalist authority and verified terminal state.
+A successful Gate A session also needs the in-product result/evidence path inspected: validated report → evidence ZIP → Overview decision presentation. The UI must distinguish raw observations, paired effects, persisted decision/finalist authority, confidence and verified terminal state.
 
 `GateAClosureEligible` means source/evidence eligibility only. Product copy should say **Evidence eligible** and must not imply that physical Gate A is already closed.
 
@@ -122,7 +127,7 @@ Do not expose or arm public mutation before Gate A is physically proven.
 
 Gate A closure requires more than one happy-path run. On the same exact clean green revision:
 
-1. run the complete paired-v2 search and preserve the full evidence bundle;
+1. run the complete v5 search and preserve the full evidence bundle;
 2. return to exact Original and repeat the whole search for practical reproducibility;
 3. run a separate search and invoke **Stop safely** while a candidate mutation is owned; require exact Original and `unresolved=0`;
 4. exercise one supported failure/recovery path from the existing physical-validation tooling; require exact Original or explicit fail-closed/manual-intervention state, then zero unresolved ownership before closure;

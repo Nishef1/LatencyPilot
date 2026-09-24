@@ -312,11 +312,11 @@ Physical Gate A therefore remains a separate requirement on one exact clean gree
 
 - Structurally valid evidence is ranked; ordinary noise lowers confidence rather than deleting rank 1.
 - Do not call a low-confidence rank proof of superiority.
-- Historical v1/v2 aggregates are not reinterpreted as v3.
+- Historical v1/v2/v3/v4 aggregates are not reinterpreted as v5.
 - Do not treat registry state as runtime placement proof.
 - Do not hide noisy attempts or structural failures.
 - Do not turn optional missing telemetry into zero or success.
 - Do not lengthen warm-up or invent isolation machinery merely to force a cleaner result.
 - Keep may restore Original even when the report has a best-observed CPU.
 
-See ADR 0008 and `docs/PHASE3_PHYSICAL_VALIDATION.md` for the authoritative v3 procedure.
+See ADR 0010 and `docs/PHASE3_PHYSICAL_VALIDATION.md` for the authoritative v5 procedure.

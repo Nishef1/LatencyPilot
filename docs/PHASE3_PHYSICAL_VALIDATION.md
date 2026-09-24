@@ -122,11 +122,11 @@ The developer UI may run:
 Original only · no system changes
 ```
 
-This path performs no GPU affinity write or restart. It is useful context for current variability and graphics-hook warnings, but it does not gate the full v3 search solely because the environment is noisy.
+This path performs no GPU affinity write or restart. It is useful context for current variability and graphics-hook warnings, but it does not gate the full v5 search solely because the environment is noisy.
 
 A structurally broken diagnostic still needs investigation before interpreting a full run.
 
-## 5. Run the complete v3 GPU Gate A search
+## 5. Run the complete v5 GPU Gate A search
 
 Expected flow:
 
@@ -353,7 +353,7 @@ Never make a run green by deleting the journal.
 
 ## 14. Repeat the whole search
 
-Return to exact Original and run the full v3 search a second time on the same source revision and comparable conditions.
+Return to exact Original and run the full v5 search a second time on the same source revision and comparable conditions.
 
 Compare:
 

@@ -354,7 +354,7 @@ The GPU and xHCI choices are sequential, not a generic Pareto optimizer.
 
 The non-elevated App may inspect stored affinity policy and translated allocated interrupt resources for latency-sensitive present devices. A development-only one-shot elevated helper permits manual CPU selection only for the already-bounded GPU and USBXHCI mutation targets. It reuses the durable mutation journal, target restart/reboot handling and exact rollback substrate; it does not expose an arbitrary registry writer.
 
-A manual change is retained only after the active translated interrupt-resource affinity resolves entirely to the requested single group-0 CPU. Failure to establish that active allocation rolls back exact Original. Reboot-pending xHCI work resumes only when the requested CPU matches the journaled candidate. Other device categories remain read-only.
+A manual change first requires the translated interrupt-resource affinity to resolve entirely to the requested single group-0 CPU, but that assignment is only provenance/preflight. Keep additionally requires a clean ETW capture with attributable target-only ISR execution. GPU uses the existing GPU runtime verifier; xHCI uses a controller-specific `USBXHCI` module verifier and fails closed when more than one present controller shares that driver service because the shared module stream cannot be attributed safely to one controller. Any failed runtime proof rolls back exact Original. Reboot-pending xHCI work resumes only when the requested CPU matches the journaled candidate. Other device categories remain read-only.
 
 This developer surface is separate from public product IPC. `MutationAvailable=false` remains required until the physical/product arming gates close.
 
@@ -404,7 +404,7 @@ The arming chain is:
 
 ```text
 exact-head green CI
-→ physical noise-tolerant v3 GPU Gate A
+→ physical observer-isolated symmetric v5 GPU Gate A
 → repeated whole-search / confidence evidence
 → Stop safely + supported recovery exercise
 → real Windows result/accessibility inspection

@@ -117,7 +117,7 @@ LatencyMon is not a dependency; LatencyPilot uses its own ETW evidence.
 
 ## Phase 3 — Automatic GPU core search
 
-**State: NOISE-TOLERANT V3 SOURCE + HOSTED CONTRACTS IMPLEMENTED; PHYSICAL PROOF OPEN**
+**State: OBSERVER-ISOLATED V5 SOURCE + HOSTED CONTRACTS IMPLEMENTED; PHYSICAL PROOF OPEN**
 
 Current source workflow:
 
@@ -242,7 +242,8 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] bounded reversible xHCI/controller-affinity mutation source;
 - [x] exact stored-state snapshot and durable journal integration;
 - [x] restart-required/reboot-pending state plus exact rollback/recovery source;
-- [ ] controller-specific ETW runtime-placement verification in the integrated product flow;
+- [x] fail-closed controller-specific ETW runtime-placement verifier primitive for an unambiguous single present `USBXHCI` controller;
+- [ ] integrate controller-specific ETW runtime verification into the automatic product flow and retain fail-closed behavior when shared-module attribution is ambiguous;
 - [ ] Raw Input timing sanity check after apply;
 - [ ] integrated rollback of USB/xHCI while preserving a proven GPU winner when USB verification fails;
 - [ ] representative high-polling hardware physical evidence.

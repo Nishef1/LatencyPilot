@@ -1,12 +1,12 @@
 # ADR 0006 — Simple automatic interrupt-affinity v1
 
-Status: **Accepted; GPU measurement/search/ranking superseded by ADR 0007**  
+Status: **Accepted; GPU measurement/search/ranking superseded by ADR 0010**  
 Originally accepted: 2026-09-18  
-Reconciled: 2026-09-21
+Reconciled: 2026-09-24
 
 ADR 0006 remains authoritative for the narrow v1 **product scope, mutation/recovery ownership, GPU→xHCI sequencing, public arming gates and completion shape**.
 
-ADR 0007 supersedes the former GPU measurement, screening, ranking and finalist-confirmation details that previously lived here. Do not use historical time-local/block-control text from older revisions of ADR 0006 as current GPU method authority.
+ADR 0010 supersedes the former GPU measurement, screening, ranking and finalist-confirmation details that previously lived here. ADRs 0007–0009 remain historical method contracts only. Do not use historical time-local/block-control text from older revisions of ADR 0006 as current GPU method authority.
 
 ## Product goal
 
@@ -64,23 +64,25 @@ Existing read-only/future/recovery code in those areas may remain, but it must n
 
 Current GPU method authority is:
 
-[`0008-noise-tolerant-ranked-gpu-affinity-v3.md`](0008-noise-tolerant-ranked-gpu-affinity-v3.md)
+[`0010-observer-isolated-symmetric-gpu-affinity-v5.md`](0010-observer-isolated-symmetric-gpu-affinity-v5.md)
 
 In brief, current source uses:
 
 ```text
 3–5 scored Original observations for robust median/MAD variability
 → direct Original-before → Candidate → Original-after local pairs
-→ one retry for high local drift, then keep structurally valid evidence rankable
-→ physical-core representatives and bounded top-3 refinement
-→ up to 3 finalists
-→ 3 shuffled 30 s local pairs per finalist
-→ always rank valid finalist evidence
+→ one retry for high local drift while structurally valid evidence remains rankable
+→ physical-core representatives with bounded uncertainty-aware refinement
+→ observed top four logical CPUs rechecked, plus at most one uncertainty-overlapping fifth challenger
+→ top two finalists
+→ two shuffled 15 s local pairs per finalist
+→ one third 15 s round only while uncertainty still overlaps
+→ always rank structurally valid finalist evidence
 → confidence describes uncertainty
 → Keep is a separate guardrail + final target-only kernel-ETW decision
 ```
 
-New method identity is `gpu-affinity-benchmark-v3`; report schema is `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2 evidence remains historical and is never reinterpreted as v3.
+New method identity is `gpu-affinity-benchmark-v5`; report schema remains `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2/v3/v4 evidence remains historical and is never reinterpreted as v5.
 
 The broad product rule is unchanged: **a measured performance result is not sufficient for Keep; runtime placement and terminal state must verify.**
 
@@ -157,7 +159,7 @@ stored interrupt policy
 
 Stored registry policy proves configuration intent only. ConfigMgr resource data is provenance/context. Runtime ETW evidence owns effective placement claims.
 
-GPU Keep requires clean attributable target-only ISR placement under ADR 0007.
+GPU Keep requires clean attributable target-only ISR placement under ADR 0010.
 
 The integrated xHCI path must independently establish controller-specific runtime placement before that subsystem can be called verified.
 
@@ -195,7 +197,7 @@ The dependency chain is:
 
 ```text
 exact-head green hosted Tests
-→ noise-tolerant v3 GPU physical Gate A
+→ observer-isolated symmetric v5 GPU physical Gate A
 → whole-search repeatability / explicit instability
 → Stop safely + supported recovery exercise
 → real Windows result/accessibility inspection

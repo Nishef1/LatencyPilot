@@ -100,7 +100,8 @@ The Devices page now exposes a development-only manual affinity surface without 
 - current stored interrupt policy / `AssignmentSetOverride` and translated allocated interrupt-resource masks are shown separately for latency-sensitive present devices;
 - GPU and USBXHCI are the only editable targets because they already have bounded journal/restart/rollback ownership;
 - network, audio, storage, HID and other latency-sensitive devices remain read-only;
-- manual Apply uses an elevated one-shot helper: exact snapshot → journal → apply/restart → allocated-resource affinity verification → Keep, or exact rollback on failed verification;
+- manual Apply uses an elevated one-shot helper: exact snapshot → journal → apply/restart → translated allocated-resource preflight → clean target-only ETW ISR runtime proof → Keep, or exact rollback on failed verification;
+- GPU manual verification reuses the existing GPU runtime-placement verifier; xHCI now has a controller-specific `USBXHCI` ISR verifier and deliberately fails closed when more than one present controller shares that driver service because the shared module stream is ambiguous;
 - a reboot-pending xHCI experiment may resume only for the same journaled CPU candidate;
 - Restore is per-device and only unwinds retained changes actually owned by the LatencyPilot mutation journal; an external pre-existing override is never claimed or overwritten as LatencyPilot-owned;
 - the App blocks manual mutation while GPU Gate A is running.
@@ -135,7 +136,7 @@ Candidate bars remain based on persisted paired 1%-low effect and UI code does n
 
 After a verified GPU Keep, current source can stop the GPU benchmark, capture quiet ETW headroom, resolve primary Raw Input routes to exact xHCI controllers, exclude the GPU winner's physical core, rank remaining CPUs by interrupt duration/tail evidence, and persist the recommendation.
 
-The xHCI recommendation remains read-only/product-gated until the shared mutation/recovery substrate closes physical GPU Gate A and the integrated xHCI verification path is completed.
+The xHCI recommendation remains read-only/product-gated until the shared mutation/recovery substrate closes physical GPU Gate A. A fail-closed controller-specific ETW runtime-placement verifier now exists for unambiguous single-`USBXHCI`-controller systems, but the automatic product apply/verify flow and multi-controller attribution remain open.
 
 ## Verification state
 
@@ -199,11 +200,11 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 
 ## Immediate execution ladder
 
-1. **Completed now:** v5 source preserves best-observed ranking/Keep separation, rechecks the observed top four before the finalist cut, isolates external-observer startup outside the scored QPC window, removes fixed-SMT worker contention asymmetry with exact physical-core worker masks, keeps two 15-second finalists plus one uncertainty-driven optional third round, and separates finalist-confirmed values from screening-only values in result UX.
-2. **Evidence:** hosted `Tests` are green on combined GPU-v5 + manual-device-affinity source/test revision `48c7f5d8a7cb55d8796c1f073e4184f16b758ef7`. Contracts cover the bounded GPU/xHCI-only dev surface, same-CPU xHCI reboot resume, active allocated-resource verification before Keep, automatic rollback on verification failure, and per-device journal-owned restore. This ledger-only update must also be exact-head green before the source state is treated as verified.
-3. **Still open:** one exact-head physical owner v5 GPU Gate A run remains required; public product mutation stays unarmed.
-4. **Next stage:** once this final ledger HEAD is green, run Full v5 once with overlays/capture disabled where practical and inspect observer-settle, top-four recheck retention, top-two confirmation count, total runtime, best-observed rank, confidence, FPS/ms gains, rollback and final placement.
-5. **After that:** repeat the v5 search, exercise Stop safely/failure recovery, and complete real WinUI/accessibility inspection before product mutation arming.
+1. **Completed now:** manual GPU/xHCI affinity no longer treats registry/ConfigMgr assignment as runtime proof. GPU manual Keep requires the existing target-only ETW verifier; xHCI has a new fail-closed `USBXHCI` ISR runtime verifier for an unambiguous single present controller. Canonical v3/v2 method drift is reconciled to ADR 0010 / v5.
+2. **Evidence:** source and durable contract tests are committed on `aa561ade7b2cd86902e8b67c041f7bfcb05c2d44` plus the current runtime-verifier/doc changes; exact-head hosted `Tests` for the final combined revision are pending and must be green before source verification is closed.
+3. **Still open:** physical owner v5 GPU Gate A, repeat/recovery/render inspection, representative xHCI hardware evidence, automatic xHCI product integration and all downstream arming/release gates remain physical/product work rather than hosted-CI claims.
+4. **Next stage:** run hosted `Tests` on the exact final source/doc revision. If green, freeze that SHA for the owner-local Full v5 Gate A run; do not add typed public mutation IPC before the physical gate closes.
+5. **After that:** repeat the v5 search, exercise Stop safely/failure recovery and real WinUI accessibility; only then proceed to typed allowlisted App → Service mutation and integrated xHCI/before-after product flow.
 
 ## Completion rule
 
