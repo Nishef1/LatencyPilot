@@ -88,7 +88,7 @@ public sealed class GpuBenchmarkFrozenWorkload
         if (workers.Any(worker => worker.Group != processorGroup))
         {
             throw new ArgumentException(
-                "gpu-affinity-benchmark-v1 currently requires a single processor group.",
+                "gpu-affinity-benchmark-v5 currently requires a single processor group.",
                 nameof(workerProcessors));
         }
 
