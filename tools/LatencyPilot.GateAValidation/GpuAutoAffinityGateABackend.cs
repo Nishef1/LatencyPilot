@@ -668,7 +668,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             artifact.FrozenWorkload.WorkerMap,
             artifact.FrozenWorkload.SimulationIterationsPerWorker,
             artifact.FrozenWorkload.CommandBatchesPerWorker,
-            artifact.FrozenWorkload.Seed);
+            artifact.FrozenWorkload.Seed,
+            artifact.FrozenWorkload.WorkerAffinityMasks);
         var gpuIdentity = string.Create(
             CultureInfo.InvariantCulture,
             $"{continuityBefore.GraphicsTarget.DeviceInstanceId}|{continuityBefore.GraphicsTarget.AdapterName}");
@@ -882,6 +883,18 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             artifact.WorkerChecksums.Count != artifact.FrozenWorkload.WorkerMap.Count)
         {
             hard.Add("Benchmark frozen worker map/checksum evidence is incomplete.");
+        }
+
+        var workerMasks = artifact.FrozenWorkload.WorkerAffinityMasks;
+        if (workerMasks is null ||
+            workerMasks.Count != artifact.FrozenWorkload.WorkerMap.Count ||
+            workerMasks.Any(static mask => mask == 0) ||
+            artifact.FrozenWorkload.WorkerMap.Where(
+                (worker, index) => worker.Number >= 64 ||
+                    (workerMasks[index] & (1UL << worker.Number)) == 0).Any())
+        {
+            hard.Add(
+                "Benchmark physical-core worker affinity-mask provenance is incomplete or inconsistent with the worker map.");
         }
         if (!storedBefore || !storedAfter)
         {

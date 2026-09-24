@@ -13,13 +13,15 @@ public enum GpuBenchmarkTrialRole
 
 public sealed class GpuBenchmarkFrozenWorkload
 {
-    private const string IdentitySchema = "gpu-affinity-benchmark-workload-v1";
+    private const string IdentitySchema = "gpu-affinity-benchmark-workload-v2";
     private readonly IReadOnlyList<LogicalProcessorId> workerProcessors;
+    private readonly IReadOnlyList<ulong> workerAffinityMasks;
 
     private GpuBenchmarkFrozenWorkload(
         int width,
         int height,
         IReadOnlyList<LogicalProcessorId> workerProcessors,
+        IReadOnlyList<ulong> workerAffinityMasks,
         int simulationIterationsPerWorker,
         int commandBatchesPerWorker,
         int seed,
@@ -28,6 +30,7 @@ public sealed class GpuBenchmarkFrozenWorkload
         Width = width;
         Height = height;
         this.workerProcessors = workerProcessors;
+        this.workerAffinityMasks = workerAffinityMasks;
         SimulationIterationsPerWorker = simulationIterationsPerWorker;
         CommandBatchesPerWorker = commandBatchesPerWorker;
         Seed = seed;
@@ -39,6 +42,8 @@ public sealed class GpuBenchmarkFrozenWorkload
     public int Height { get; }
 
     public IReadOnlyList<LogicalProcessorId> WorkerProcessors => workerProcessors;
+
+    public IReadOnlyList<ulong> WorkerAffinityMasks => workerAffinityMasks;
 
     public int SimulationIterationsPerWorker { get; }
 
@@ -54,7 +59,8 @@ public sealed class GpuBenchmarkFrozenWorkload
         IEnumerable<LogicalProcessorId> workerProcessors,
         int simulationIterationsPerWorker,
         int commandBatchesPerWorker,
-        int seed)
+        int seed,
+        IEnumerable<ulong>? workerAffinityMasks = null)
     {
         if (width is < 320 or > 7680)
         {
@@ -90,11 +96,26 @@ public sealed class GpuBenchmarkFrozenWorkload
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(commandBatchesPerWorker);
         ArgumentOutOfRangeException.ThrowIfNegative(seed);
 
+        var masks = workerAffinityMasks?.ToArray() ??
+            workers.Select(static worker => 1UL << worker.Number).ToArray();
+        if (masks.Length != workers.Length ||
+            masks.Any(static mask => mask == 0) ||
+            workers.Where((worker, index) =>
+                worker.Number >= 64 ||
+                (masks[index] & (1UL << worker.Number)) == 0).Any())
+        {
+            throw new ArgumentException(
+                "Benchmark worker affinity masks must match the worker map and include every representative logical processor.",
+                nameof(workerAffinityMasks));
+        }
+
         var frozenWorkers = Array.AsReadOnly(workers);
+        var frozenMasks = Array.AsReadOnly(masks);
         return new GpuBenchmarkFrozenWorkload(
             width,
             height,
             frozenWorkers,
+            frozenMasks,
             simulationIterationsPerWorker,
             commandBatchesPerWorker,
             seed,
@@ -102,6 +123,7 @@ public sealed class GpuBenchmarkFrozenWorkload
                 width,
                 height,
                 workers,
+                masks,
                 simulationIterationsPerWorker,
                 commandBatchesPerWorker,
                 seed));
@@ -111,6 +133,7 @@ public sealed class GpuBenchmarkFrozenWorkload
         int width,
         int height,
         IReadOnlyList<LogicalProcessorId> workers,
+        IReadOnlyList<ulong> workerAffinityMasks,
         int simulationIterationsPerWorker,
         int commandBatchesPerWorker,
         int seed)
@@ -126,7 +149,9 @@ public sealed class GpuBenchmarkFrozenWorkload
             string.Join(',', workers.Select(static processor =>
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"{processor.Group}:{processor.Number}"))));
+                    $"{processor.Group}:{processor.Number}"))),
+            string.Join(',', workerAffinityMasks.Select(static mask =>
+                mask.ToString("X16", CultureInfo.InvariantCulture))));
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))
             .ToLowerInvariant();
