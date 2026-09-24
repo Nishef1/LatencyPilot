@@ -19,7 +19,7 @@ try
     var topology = ProcessorTopologyReader.Capture();
     if (topology.ProcessorGroupCount != 1)
     {
-        throw new NotSupportedException("gpu-affinity-benchmark-v1 currently requires exactly one Windows processor group.");
+        throw new NotSupportedException("gpu-affinity-benchmark-v5 currently requires exactly one Windows processor group.");
     }
     if (options.WorkerCount > topology.PhysicalCoreCount)
     {
