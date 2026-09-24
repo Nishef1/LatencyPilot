@@ -9,6 +9,7 @@ internal sealed record FrozenBenchmarkWorkload(
     int CommandBatchesPerWorker,
     int SimulationIterationsPerWorker,
     IReadOnlyList<LogicalProcessorId> WorkerMap,
+    IReadOnlyList<ulong> WorkerAffinityMasks,
     int Seed,
     int Width,
     int Height);
@@ -27,15 +28,24 @@ internal sealed class BenchmarkWorkload
     private readonly BenchmarkOptions options;
     private readonly TextWriter output;
     private readonly IReadOnlyList<LogicalProcessorId> workerMap;
+    private readonly IReadOnlyList<ulong> workerAffinityMasks;
 
     internal BenchmarkWorkload(
         BenchmarkOptions options,
         TextWriter output,
-        IReadOnlyList<LogicalProcessorId> workerMap)
+        IReadOnlyList<LogicalProcessorId> workerMap,
+        IReadOnlyList<ulong> workerAffinityMasks)
     {
         this.options = options;
         this.output = output;
         this.workerMap = workerMap;
+        this.workerAffinityMasks = workerAffinityMasks;
+        if (workerAffinityMasks.Count != workerMap.Count)
+        {
+            throw new ArgumentException(
+                "Benchmark worker affinity-mask count must match the worker map.",
+                nameof(workerAffinityMasks));
+        }
     }
 
     internal Task<FrozenBenchmarkWorkload> CalibrateAsync(
@@ -96,6 +106,7 @@ internal sealed class BenchmarkWorkload
             commandBatches,
             simulationIterations,
             workerMap.ToArray(),
+            workerAffinityMasks.ToArray(),
             options.Seed,
             options.Width,
             options.Height));
@@ -260,7 +271,8 @@ internal sealed class BenchmarkWorkload
                 workload.WorkerMap.ToArray(),
                 workload.Seed,
                 workload.Width,
-                workload.Height),
+                workload.Height,
+                workload.WorkerAffinityMasks.ToArray()),
             frames.Select(static frame => new GpuBenchmarkArtifactFrame(
                 frame.FrameIndex,
                 frame.CpuRecordingMilliseconds,

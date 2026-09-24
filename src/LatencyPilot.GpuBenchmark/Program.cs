@@ -27,11 +27,28 @@ try
             $"Requested {options.WorkerCount} workers but Windows reports only {topology.PhysicalCoreCount} physical cores.");
     }
 
-    var workerMap = topology.Cores.Take(options.WorkerCount)
+    var workerCores = topology.Cores.Take(options.WorkerCount).ToArray();
+    var workerMap = workerCores
         .Select(static core => core.LogicalProcessors
             .OrderBy(static processor => processor.Group)
             .ThenBy(static processor => processor.Number)
             .First())
+        .ToArray();
+    var workerAffinityMasks = workerCores
+        .Select(static core =>
+        {
+            ulong mask = 0;
+            foreach (var processor in core.LogicalProcessors)
+            {
+                if (processor.Number >= 64)
+                {
+                    throw new NotSupportedException(
+                        "gpu-affinity-benchmark-v5 requires logical processor numbers below 64 in its single Windows processor group.");
+                }
+                mask |= 1UL << processor.Number;
+            }
+            return mask;
+        })
         .ToArray();
 
     BenchmarkProtocol.WriteProgress(
@@ -41,9 +58,14 @@ try
         0d,
         $"Initializing D3D12 benchmark at {options.Width}x{options.Height} with {workerMap.Length} physical-core workers.");
 
-    var benchmark = new BenchmarkWorkload(options, Console.Out, workerMap);
+    var benchmark = new BenchmarkWorkload(options, Console.Out, workerMap, workerAffinityMasks);
     await using var rendererOwner = await BenchmarkRendererOwner.CreateAsync(
-        () => new D3D12BenchmarkRenderer(options.Width, options.Height, workerMap, options.Seed));
+        () => new D3D12BenchmarkRenderer(
+            options.Width,
+            options.Height,
+            workerMap,
+            workerAffinityMasks,
+            options.Seed));
     var frozen = await rendererOwner.CalibrateAsync(benchmark);
     BenchmarkProtocol.WriteProgress(
         Console.Out,

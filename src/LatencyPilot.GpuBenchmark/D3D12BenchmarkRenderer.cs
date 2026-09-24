@@ -53,12 +53,20 @@ internal sealed class D3D12BenchmarkRenderer : IDisposable
         int width,
         int height,
         IReadOnlyList<LogicalProcessorId> workerProcessors,
+        IReadOnlyList<ulong> workerAffinityMasks,
         int seed)
     {
         ArgumentNullException.ThrowIfNull(workerProcessors);
+        ArgumentNullException.ThrowIfNull(workerAffinityMasks);
         if (workerProcessors.Count == 0)
         {
             throw new ArgumentException("At least one benchmark worker is required.", nameof(workerProcessors));
+        }
+        if (workerAffinityMasks.Count != workerProcessors.Count)
+        {
+            throw new ArgumentException(
+                "Every benchmark worker requires exactly one physical-core affinity mask.",
+                nameof(workerAffinityMasks));
         }
 
         window = new BenchmarkWindow(width, height);
@@ -168,6 +176,7 @@ internal sealed class D3D12BenchmarkRenderer : IDisposable
             .Select((processor, index) => new CpuRenderWorker(
                 device,
                 processor,
+                workerAffinityMasks[index],
                 index,
                 workerProcessors.Count,
                 width,

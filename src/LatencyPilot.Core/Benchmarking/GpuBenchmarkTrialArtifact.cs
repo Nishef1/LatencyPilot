@@ -8,7 +8,8 @@ public sealed record GpuBenchmarkArtifactWorkload(
     IReadOnlyList<LogicalProcessorId> WorkerMap,
     int Seed,
     int Width,
-    int Height);
+    int Height,
+    IReadOnlyList<ulong>? WorkerAffinityMasks = null);
 
 public readonly record struct GpuBenchmarkArtifactFrame(
     long FrameIndex,
