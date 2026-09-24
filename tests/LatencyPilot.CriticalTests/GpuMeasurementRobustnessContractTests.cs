@@ -74,6 +74,8 @@ public sealed class GpuMeasurementRobustnessContractTests
             "External collectors must remain alive across the entire pre-score observer-settle budget.");
         StringAssert.Contains(workloadSource, "MinimumObserverSettleDuration");
         StringAssert.Contains(workloadSource, "ObserverQuietTailDuration");
+        StringAssert.Contains(workloadSource, "ObserverTransientMedianMultiplier",
+            "Observer transient detection must scale with normal benchmark cadence instead of assuming every system renders below 10 ms.");
         StringAssert.Contains(workloadSource, "pendingSettleFrame",
             "Pending in-flight frames must participate in the quiet-tail gate before scored QPC timing begins.");
         StringAssert.Contains(workerSource, "Mask = affinityMask",
