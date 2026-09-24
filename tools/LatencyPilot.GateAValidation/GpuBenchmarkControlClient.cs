@@ -132,10 +132,16 @@ internal sealed class GpuBenchmarkControlClient : IAsyncDisposable
     internal async Task<string> RunTrialAsync(
         int runNumber,
         TimeSpan duration,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool observerActive = false)
     {
         ObjectDisposedException.ThrowIf(stopped, this);
-        var command = GpuBenchmarkControlCommand.RunTrial(sessionId, token, runNumber, duration);
+        var command = GpuBenchmarkControlCommand.RunTrial(
+            sessionId,
+            token,
+            runNumber,
+            duration,
+            observerActive);
         if (!GpuBenchmarkControlProtocol.TryValidate(command, sessionId, token, out var reason))
         {
             throw new ArgumentException(reason, nameof(duration));

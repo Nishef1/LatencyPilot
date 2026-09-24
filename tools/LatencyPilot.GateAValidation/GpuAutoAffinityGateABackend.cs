@@ -514,7 +514,8 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             var artifactPathTask = benchmark.RunTrialAsync(
                 request.RunNumber,
                 request.Duration,
-                deadline.Token);
+                deadline.Token,
+                observerActive: true);
 
             await Task.WhenAll(kernelTask, artifactPathTask).ConfigureAwait(false);
             kernel = await kernelTask.ConfigureAwait(false);

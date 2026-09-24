@@ -63,12 +63,18 @@ internal sealed class BenchmarkRendererOwner : IAsyncDisposable
         BenchmarkWorkload benchmark,
         FrozenBenchmarkWorkload workload,
         TimeSpan duration,
+        bool observerActive = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(benchmark);
         ArgumentNullException.ThrowIfNull(workload);
         return InvokeAsync(
-            active => benchmark.RunTrialAsync(active, workload, duration, cancellationToken).GetAwaiter().GetResult(),
+            active => benchmark.RunTrialAsync(
+                active,
+                workload,
+                duration,
+                observerActive,
+                cancellationToken).GetAwaiter().GetResult(),
             cancellationToken);
     }
 

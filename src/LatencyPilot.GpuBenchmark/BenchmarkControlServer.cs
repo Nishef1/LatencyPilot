@@ -141,6 +141,7 @@ internal sealed class BenchmarkControlServer(
                     benchmark,
                     frozenWorkload,
                     TimeSpan.FromMilliseconds(command.DurationMilliseconds),
+                    command.ObserverActive,
                     cancellationToken).ConfigureAwait(false);
                 await File.WriteAllTextAsync(
                     artifactPath, JsonSerializer.Serialize(artifact, JsonOptions),

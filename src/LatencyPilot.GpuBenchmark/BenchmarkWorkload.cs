@@ -116,12 +116,13 @@ internal sealed class BenchmarkWorkload
         D3D12BenchmarkRenderer renderer,
         FrozenBenchmarkWorkload workload,
         CancellationToken cancellationToken = default) =>
-        RunTrialAsync(renderer, workload, options.Duration, cancellationToken);
+        RunTrialAsync(renderer, workload, options.Duration, observerActive: false, cancellationToken);
 
     internal Task<GpuBenchmarkTrialArtifact> RunTrialAsync(
         D3D12BenchmarkRenderer renderer,
         FrozenBenchmarkWorkload workload,
         TimeSpan duration,
+        bool observerActive,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(workload);
@@ -141,27 +142,48 @@ internal sealed class BenchmarkWorkload
             150_000d));
         var frames = new List<BenchmarkFrameTelemetry>(expectedFrames);
 
-        // Scored Gate A trials start external observers shortly before invoking the
-        // benchmark. The 2026-09-24 physical v4 evidence showed a phase-locked observer
-        // startup transient roughly two seconds after collector startup, so a fixed
-        // one-second settle could move that observer cost into the 1%-low tail. Require
-        // both a minimum settle and a quiet tail after the last large transient, with a
-        // hard upper bound so startup can never hang indefinitely.
-        BenchmarkProtocol.WriteProgress(
-            output,
-            options.SessionId,
-            "observer-settle",
-            0d,
-            "Settling benchmark and observer startup before the scored QPC window.");
-        renderer.BeginMeasurementWindow();
-        var observerSettle = Stopwatch.StartNew();
-        TimeSpan? lastObserverTransient = null;
-        while (observerSettle.Elapsed < MaximumObserverSettleDuration)
+        if (observerActive)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (renderer.RenderFrame(
-                    workload.SimulationIterationsPerWorker,
-                    workload.CommandBatchesPerWorker) is { } settleFrame)
+            // Scored Gate A trials start external observers shortly before invoking the
+            // benchmark. The 2026-09-24 physical v4 evidence showed a phase-locked observer
+            // startup transient roughly two seconds after collector startup, so a fixed
+            // one-second settle could move that observer cost into the 1%-low tail. Require
+            // both a minimum settle and a quiet tail after the last large transient, with a
+            // hard upper bound so startup can never hang indefinitely.
+            BenchmarkProtocol.WriteProgress(
+                output,
+                options.SessionId,
+                "observer-settle",
+                0d,
+                "Settling benchmark and observer startup before the scored QPC window.");
+            renderer.BeginMeasurementWindow();
+            var observerSettle = Stopwatch.StartNew();
+            TimeSpan? lastObserverTransient = null;
+            while (observerSettle.Elapsed < MaximumObserverSettleDuration)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (renderer.RenderFrame(
+                        workload.SimulationIterationsPerWorker,
+                        workload.CommandBatchesPerWorker) is { } settleFrame)
+                {
+                    ValidateFrame(settleFrame);
+                    if (settleFrame.FramePeriodMilliseconds >= ObserverTransientFramePeriodMilliseconds)
+                    {
+                        lastObserverTransient = observerSettle.Elapsed;
+                    }
+                }
+    
+                var elapsed = observerSettle.Elapsed;
+                var minimumSatisfied = elapsed >= MinimumObserverSettleDuration;
+                var quietTailSatisfied = lastObserverTransient is null ||
+                    elapsed - lastObserverTransient.Value >= ObserverQuietTailDuration;
+                if (minimumSatisfied && quietTailSatisfied)
+                {
+                    break;
+                }
+            }
+    
+            foreach (var settleFrame in renderer.DrainFrames())
             {
                 ValidateFrame(settleFrame);
                 if (settleFrame.FramePeriodMilliseconds >= ObserverTransientFramePeriodMilliseconds)
@@ -169,33 +191,16 @@ internal sealed class BenchmarkWorkload
                     lastObserverTransient = observerSettle.Elapsed;
                 }
             }
-
-            var elapsed = observerSettle.Elapsed;
-            var minimumSatisfied = elapsed >= MinimumObserverSettleDuration;
-            var quietTailSatisfied = lastObserverTransient is null ||
-                elapsed - lastObserverTransient.Value >= ObserverQuietTailDuration;
-            if (minimumSatisfied && quietTailSatisfied)
+    
+            if (observerSettle.Elapsed >= MaximumObserverSettleDuration &&
+                lastObserverTransient is { } lastTransient &&
+                observerSettle.Elapsed - lastTransient < ObserverQuietTailDuration)
             {
-                break;
+                throw new InvalidDataException(
+                    "Benchmark observers did not reach a quiet pre-score interval before the bounded settle deadline.");
             }
-        }
-
-        foreach (var settleFrame in renderer.DrainFrames())
-        {
-            ValidateFrame(settleFrame);
-            if (settleFrame.FramePeriodMilliseconds >= ObserverTransientFramePeriodMilliseconds)
-            {
-                lastObserverTransient = observerSettle.Elapsed;
+    
             }
-        }
-
-        if (observerSettle.Elapsed >= MaximumObserverSettleDuration &&
-            lastObserverTransient is { } lastTransient &&
-            observerSettle.Elapsed - lastTransient < ObserverQuietTailDuration)
-        {
-            throw new InvalidDataException(
-                "Benchmark observers did not reach a quiet pre-score interval before the bounded settle deadline.");
-        }
 
         // Keep observer work outside the scored interval. Frame periods are measured
         // between Present calls, so serialization/console flushing between frames

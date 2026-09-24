@@ -16,22 +16,25 @@ public sealed record GpuBenchmarkControlCommand(
     string Token,
     GpuBenchmarkControlCommandKind Kind,
     int RunNumber,
-    int DurationMilliseconds)
+    int DurationMilliseconds,
+    bool ObserverActive = false)
 {
-    public const string SchemaId = "latencypilot-gpu-benchmark-control-v1";
+    public const string SchemaId = "latencypilot-gpu-benchmark-control-v2";
 
     public static GpuBenchmarkControlCommand RunTrial(
         Guid sessionId,
         string token,
         int runNumber,
-        TimeSpan duration) =>
+        TimeSpan duration,
+        bool observerActive = false) =>
         new(
             SchemaId,
             sessionId,
             token,
             GpuBenchmarkControlCommandKind.RunTrial,
             runNumber,
-            checked((int)duration.TotalMilliseconds));
+            checked((int)duration.TotalMilliseconds),
+            observerActive);
 
     public static GpuBenchmarkControlCommand RecreateRenderer(Guid sessionId, string token) =>
         new(
@@ -122,7 +125,7 @@ public static class GpuBenchmarkControlProtocol
 
                 break;
             case GpuBenchmarkControlCommandKind.RecreateRenderer:
-                if (command.RunNumber != 0 || command.DurationMilliseconds != 0)
+                if (command.RunNumber != 0 || command.DurationMilliseconds != 0 || command.ObserverActive)
                 {
                     reason = "Benchmark renderer-recreation command must not carry trial state.";
                     return false;
@@ -130,7 +133,7 @@ public static class GpuBenchmarkControlProtocol
 
                 break;
             case GpuBenchmarkControlCommandKind.Stop:
-                if (command.RunNumber != 0 || command.DurationMilliseconds != 0)
+                if (command.RunNumber != 0 || command.DurationMilliseconds != 0 || command.ObserverActive)
                 {
                     reason = "Benchmark stop command must not carry trial state.";
                     return false;
