@@ -566,8 +566,16 @@ public sealed class SourceRevisionIdentityTests
             "Gate A must compare current stored policy to the exact session-original snapshot before candidate apply.");
         StringAssert.Contains(
             gateABackendSource,
-            "await benchmark.RecreateRendererAsync(cancellationToken).ConfigureAwait(false);",
-            "The D3D12 renderer must be recreated after GPU affinity activation so warm-up and score can share the warmed renderer.");
+            "await RecreateBenchmarkRendererAsync(cancellationToken).ConfigureAwait(false);",
+            "GPU affinity activation and rollback must recreate the D3D12 renderer through the bounded wrapper before warm-up/score continue.");
+        StringAssert.Contains(
+            gateABackendSource,
+            "deadline.CancelAfter(RendererRecreateDeadline);",
+            "Renderer recreation must have a hard deadline rather than allowing a device-reset path to block indefinitely.");
+        StringAssert.Contains(
+            gateABackendSource,
+            "await benchmark.RecreateRendererAsync(deadline.Token).ConfigureAwait(false);",
+            "The bounded renderer wrapper must forward its deadline token to the benchmark control client.");
         StringAssert.Contains(
             gateABackendSource,
             "RecreateBenchmarkRendererAfterRollback",

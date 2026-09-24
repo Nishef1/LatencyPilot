@@ -43,10 +43,17 @@ public sealed class GpuAutoAffinitySessionTests
             "Only the bounded top two should receive adaptive finalist confirmation.");
         Assert.IsTrue(result.Report.Pairs.All(static pair =>
             pair.Verdict == GpuAutoAffinityPairVerdict.Valid && pair.ControlMovement == 0d));
-        CollectionAssert.AreEquivalent(
-            new byte[] { 0, 1, 2, 3 },
-            result.Report.ValidatedProcessors.Select(static processor => processor.Number).ToArray(),
-            "The two physical-core representatives and both selected SMT siblings should be screened on this synthetic topology.");
+        var validated = result.Report.ValidatedProcessors
+            .Select(static processor => processor.Number)
+            .ToArray();
+        CollectionAssert.Contains(validated, (byte)0,
+            "Every physical core must contribute its representative before adaptive pruning.");
+        CollectionAssert.Contains(validated, (byte)2,
+            "Every physical core must contribute its representative before adaptive pruning.");
+        CollectionAssert.Contains(validated, (byte)3,
+            "The promising core's SMT sibling must be refined before the shortlist.");
+        Assert.AreEqual(3, validated.Length,
+            "The clearly weaker physical core's sibling should be pruned instead of adding an unnecessary measurement.");
         Assert.AreEqual(2, result.Report.Finalists.Count);
         Assert.IsTrue(result.Report.Finalists.All(static finalist =>
             finalist.PairNumbers.Count is >= 2 and <= 3),
