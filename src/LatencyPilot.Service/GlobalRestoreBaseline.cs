@@ -67,11 +67,32 @@ internal sealed class GlobalRestoreBaselineExecutor
     internal GlobalRestoreBaselineResult Restore()
     {
         using var operationLock = MutationOperationLock.Acquire();
+        EnsureNoUnresolvedMutations();
+        return RestorePlan(GlobalRestoreBaselinePlanner.Create(journal.GetRetainedChangesNewestFirst()));
+    }
+
+    internal GlobalRestoreBaselineResult RestoreTarget(string targetId)
+    {
+        using var operationLock = MutationOperationLock.Acquire();
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetId);
+        EnsureNoUnresolvedMutations();
+
+        var retained = journal.GetRetainedChangesNewestFirst()
+            .Where(entry => string.Equals(entry.TargetId, targetId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return RestorePlan(GlobalRestoreBaselinePlanner.Create(retained));
+    }
+
+    private void EnsureNoUnresolvedMutations()
+    {
         var unresolved = journal.GetUnresolved();
         if (unresolved.Count != 0)
-            throw new InvalidOperationException("Restore original settings is blocked while any mutation experiment is unresolved. Recover or resume it first.");
+            throw new InvalidOperationException(
+                "Restore original settings is blocked while any mutation experiment is unresolved. Recover or resume it first.");
+    }
 
-        var plan = GlobalRestoreBaselinePlanner.Create(journal.GetRetainedChangesNewestFirst());
+    private GlobalRestoreBaselineResult RestorePlan(GlobalRestoreBaselinePlan plan)
+    {
         var restored = new List<Guid>(plan.Actions.Count);
         foreach (var action in plan.Actions)
         {
