@@ -79,7 +79,8 @@ internal static class ManualDeviceAffinityRunner
 
         return report.Status switch
         {
-            "AppliedAndKept" or "AlreadyConfigured" or "Restored" or "NoLatencyPilotChange" => 0,
+            "AppliedAndKept" or "AlreadyConfigured" or "Restored" or "NoLatencyPilotChange"
+                when report.Succeeded => 0,
             "RebootRequired" => 3,
             _ => 1,
         };
@@ -96,12 +97,13 @@ internal static class ManualDeviceAffinityRunner
             ? "No retained LatencyPilot mutation owns this device, so no registry or device state was changed."
             : $"Restored {result.RestoredCount.ToString(CultureInfo.InvariantCulture)} retained LatencyPilot change(s) for this device to their exact captured original state.";
 
+        var restoredExperiment = result.RestoredExperimentIds.FirstOrDefault();
         return CreateReport(
             options,
             status,
             succeeded: true,
             device,
-            experimentId: result.RestoredExperimentIds.FirstOrDefault() is var id && id != Guid.Empty ? id : null,
+            experimentId: restoredExperiment == Guid.Empty ? null : restoredExperiment,
             restartRequired: false,
             verification: result.RestoredCount == 0 ? "No owned retained change." : "Exact journal-owned original state restored.",
             message);
@@ -156,7 +158,7 @@ internal static class ManualDeviceAffinityRunner
             var verified = VerifyAllocatedAffinity(options.DeviceInstanceId, candidate.AffinityMask, out var masks, out var reason);
             return CreateReport(
                 options,
-                "AlreadyConfigured",
+                verified ? "AlreadyConfigured" : "AlreadyStoredUnverified",
                 succeeded: verified,
                 device,
                 experimentId: null,
@@ -164,7 +166,7 @@ internal static class ManualDeviceAffinityRunner
                 verification: reason,
                 message: verified
                     ? "The requested GPU affinity was already stored and its allocated interrupt resources match the requested CPU. No write was attempted."
-                    : "The requested GPU affinity is already stored, but allocated interrupt-resource verification is unavailable or does not match. No write was attempted.",
+                    : "The requested GPU affinity is already stored, but active allocated interrupt resources do not prove it. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
                 allocatedMasks: masks);
         }
 
@@ -247,8 +249,24 @@ internal static class ManualDeviceAffinityRunner
                     $"The existing xHCI experiment is {pending[0].State}; recover or restore it before applying another manual affinity.");
             }
 
+            var pendingCandidate = DeviceInterruptMutationJournalCodec
+                .DeserializeCandidate(pending[0].CandidateStateJson)
+                .ToAffinityCandidate();
+            if (pendingCandidate.ProcessorGroup != candidate.ProcessorGroup ||
+                pendingCandidate.ProcessorNumber != candidate.ProcessorNumber ||
+                pendingCandidate.AffinityMask != candidate.AffinityMask)
+            {
+                throw new InvalidOperationException(
+                    $"The pending xHCI experiment targets CPU {pendingCandidate.ProcessorNumber}; select that same CPU to resume it, or restore/recover the pending experiment first.");
+            }
+
             var resumed = transaction.ResumeAfterReboot(pending[0].ExperimentId);
-            if (resumed.Entry.State != MutationJournalState.Applied)
+            if (resumed.Entry.State == MutationJournalState.Applied)
+            {
+                return VerifyAndKeepXhci(transaction, options, candidate, pending[0].ExperimentId);
+            }
+
+            if (resumed.Entry.State == MutationJournalState.ApplyRebootPending)
             {
                 return CreateReport(
                     options,
@@ -261,7 +279,9 @@ internal static class ManualDeviceAffinityRunner
                     message: "The stored xHCI candidate is still awaiting reboot activation/verification.");
             }
 
-            return VerifyAndKeepXhci(transaction, options, candidate, pending[0].ExperimentId);
+            throw new InvalidOperationException(
+                resumed.Entry.FailureReason ??
+                $"xHCI reboot resume stopped in {resumed.Entry.State}; recover the journal before another manual change.");
         }
 
         EnsureNoUnresolvedMutation(journal);
@@ -271,7 +291,7 @@ internal static class ManualDeviceAffinityRunner
             var verified = VerifyAllocatedAffinity(options.DeviceInstanceId, candidate.AffinityMask, out var masks, out var reason);
             return CreateReport(
                 options,
-                "AlreadyConfigured",
+                verified ? "AlreadyConfigured" : "AlreadyStoredUnverified",
                 succeeded: verified,
                 TryGetPresentDevice(options.DeviceInstanceId),
                 experimentId: null,
@@ -279,7 +299,7 @@ internal static class ManualDeviceAffinityRunner
                 verification: reason,
                 message: verified
                     ? "The requested xHCI affinity was already stored and active; no LatencyPilot write was required."
-                    : "The requested xHCI affinity is already stored, but allocated interrupt-resource verification is unavailable or does not match.",
+                    : "The requested xHCI affinity is already stored, but active allocated interrupt resources do not prove it. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
                 allocatedMasks: masks);
         }
 
