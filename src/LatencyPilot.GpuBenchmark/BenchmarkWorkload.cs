@@ -19,7 +19,10 @@ internal sealed class BenchmarkWorkload
     private const int MaximumCommandBatches = 4096;
     private const int MinimumSimulationIterations = 1_000;
     private static readonly TimeSpan WarmupDuration = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan ObserverSettleDuration = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MinimumObserverSettleDuration = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan MaximumObserverSettleDuration = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan ObserverQuietTailDuration = TimeSpan.FromMilliseconds(500);
+    private const double ObserverTransientFramePeriodMilliseconds = 10d;
     private static readonly TimeSpan CalibrationProgressInterval = TimeSpan.FromMilliseconds(250);
     private readonly BenchmarkOptions options;
     private readonly TextWriter output;
@@ -128,9 +131,11 @@ internal sealed class BenchmarkWorkload
         var frames = new List<BenchmarkFrameTelemetry>(expectedFrames);
 
         // Scored Gate A trials start external observers shortly before invoking the
-        // benchmark. Run one bounded unscored workload second so collector/JIT/page-in
-        // startup cannot become the first scored Original's tail. This is repeated for
-        // every trial to keep treatment symmetric; its frames are drained and discarded.
+        // benchmark. The 2026-09-24 physical v4 evidence showed a phase-locked observer
+        // startup transient roughly two seconds after collector startup, so a fixed
+        // one-second settle could move that observer cost into the 1%-low tail. Require
+        // both a minimum settle and a quiet tail after the last large transient, with a
+        // hard upper bound so startup can never hang indefinitely.
         BenchmarkProtocol.WriteProgress(
             output,
             options.SessionId,
@@ -139,7 +144,8 @@ internal sealed class BenchmarkWorkload
             "Settling benchmark and observer startup before the scored QPC window.");
         renderer.BeginMeasurementWindow();
         var observerSettle = Stopwatch.StartNew();
-        while (observerSettle.Elapsed < ObserverSettleDuration)
+        TimeSpan? lastObserverTransient = null;
+        while (observerSettle.Elapsed < MaximumObserverSettleDuration)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (renderer.RenderFrame(
@@ -147,11 +153,37 @@ internal sealed class BenchmarkWorkload
                     workload.CommandBatchesPerWorker) is { } settleFrame)
             {
                 ValidateFrame(settleFrame);
+                if (settleFrame.FramePeriodMilliseconds >= ObserverTransientFramePeriodMilliseconds)
+                {
+                    lastObserverTransient = observerSettle.Elapsed;
+                }
+            }
+
+            var elapsed = observerSettle.Elapsed;
+            var minimumSatisfied = elapsed >= MinimumObserverSettleDuration;
+            var quietTailSatisfied = lastObserverTransient is null ||
+                elapsed - lastObserverTransient.Value >= ObserverQuietTailDuration;
+            if (minimumSatisfied && quietTailSatisfied)
+            {
+                break;
             }
         }
+
         foreach (var settleFrame in renderer.DrainFrames())
         {
             ValidateFrame(settleFrame);
+            if (settleFrame.FramePeriodMilliseconds >= ObserverTransientFramePeriodMilliseconds)
+            {
+                lastObserverTransient = observerSettle.Elapsed;
+            }
+        }
+
+        if (observerSettle.Elapsed >= MaximumObserverSettleDuration &&
+            lastObserverTransient is { } lastTransient &&
+            observerSettle.Elapsed - lastTransient < ObserverQuietTailDuration)
+        {
+            throw new InvalidDataException(
+                "Benchmark observers did not reach a quiet pre-score interval before the bounded settle deadline.");
         }
 
         // Keep observer work outside the scored interval. Frame periods are measured
