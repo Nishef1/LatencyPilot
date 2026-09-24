@@ -708,6 +708,39 @@
                                     </Border>
                                 </Grid>
 
+                                <Border x:Name="ManualDeviceAffinityCard"
+                                        Visibility="Collapsed"
+                                        Style="{StaticResource DashboardCardStyle}">
+                                    <Grid ColumnSpacing="16" RowSpacing="8">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="Manual device affinity · Development lab"
+                                                       Style="{StaticResource SubsectionTitleTextStyle}" />
+                                            <TextBlock Text="Inspect current interrupt policies for latency-sensitive devices. Manual writes are limited to GPU and USBXHCI targets with journaled verify/rollback."
+                                                       TextWrapping="Wrap"
+                                                       Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock x:Name="ManualDeviceAffinityStatusText"
+                                                       Text="Current policy inspection is read-only until you explicitly apply a supported target."
+                                                       TextWrapping="Wrap"
+                                                       Style="{StaticResource CaptionTextStyle}" />
+                                        </StackPanel>
+                                        <Button x:Name="ManualDeviceAffinityButton"
+                                                Grid.Column="1"
+                                                Content="Manage affinity"
+                                                Click="ManualDeviceAffinityButton_Click"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                VerticalAlignment="Center"
+                                                AutomationProperties.Name="Manage manual device interrupt affinity" />
+                                    </Grid>
+                                </Border>
+
                                 <Border x:Name="SystemInventoryCard" Style="{StaticResource DashboardCardStyle}">
                                     <Grid x:Name="SystemInventoryCardGrid" ColumnSpacing="18" RowSpacing="10">
                                         <Grid.RowDefinitions>
