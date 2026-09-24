@@ -29,6 +29,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
     private const double MaximumCpuBusyRelativeDrift = 0.25d;
     private const int MinimumOriginalCpuBusySamples = 3;
     private static readonly TimeSpan CollectorTailSlack = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ObserverSettleCollectorBudget = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TrialDeadlineSlack = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan RendererRecreateDeadline = TimeSpan.FromSeconds(35);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -514,7 +515,7 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             // Provision/start the pinned standalone collector only for scored
             // or final-verification evidence. PresentMon emits CPUStartQPC and is
             // cropped against the benchmark's exact scored QPC interval.
-            var presentMonWindow = request.Duration;
+            var presentMonWindow = request.Duration + ObserverSettleCollectorBudget;
             var presentMonStart = await TryStartOptionalPresentMonAsync(
                 benchmarkProcessId,
                 presentMonWindow,
@@ -523,7 +524,10 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             // exception or cancellation must dispose it as well as the happy path.
             await using var presentMonSession = presentMonStart.Session;
 
-            var kernelDuration = request.Duration + CollectorTailSlack;
+            var kernelDuration =
+                request.Duration +
+                ObserverSettleCollectorBudget +
+                CollectorTailSlack;
             var kernelTask = Task.Run(
                 () => KernelLatencyCapture.Capture(
                     new KernelLatencyCaptureOptions(kernelDuration, KernelMaximumEvents),
