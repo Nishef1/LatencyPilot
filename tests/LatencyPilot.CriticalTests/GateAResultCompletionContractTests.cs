@@ -154,12 +154,12 @@ public sealed class GateAResultCompletionContractTests
             presentation.Contains("candidate.Phase, \"finalists\"", StringComparison.Ordinal),
             "The result presentation must use the actual persisted finalist phase name.");
 
-        var resultExperience = File.ReadAllText(FindRepositoryFile(
+        var resultSurfaceSource = File.ReadAllText(FindRepositoryFile(
             "src",
             "LatencyPilot.App",
             "GateAResultExperience.cs"));
-        StringAssert.Contains(resultExperience, "Final confirmed");
-        StringAssert.Contains(resultExperience, "Screening only · not directly comparable to finalist medians",
+        StringAssert.Contains(resultSurfaceSource, "Final confirmed");
+        StringAssert.Contains(resultSurfaceSource, "Screening only · not directly comparable to finalist medians",
             "Different evidence-authority levels must not be rendered as one apparent ranking.");
 
         var candidateChart = File.ReadAllText(FindRepositoryFile(
