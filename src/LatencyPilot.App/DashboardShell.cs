@@ -49,6 +49,7 @@ public sealed partial class MainWindow
         CardElevation.Apply(ServiceStatusCard);
         CardElevation.Apply(ObservationCard);
         CardElevation.Apply(DeveloperValidationCard);
+        CardElevation.Apply(ManualDeviceAffinityCard);
         CardElevation.Apply(SystemInventoryCard);
         CardElevation.ApplyToChildren(BaselineAnchor);
         CardElevation.ApplyToChildren(DevicesSummaryGrid);
@@ -151,6 +152,16 @@ public sealed partial class MainWindow
             ? HorizontalAlignment.Right
             : HorizontalAlignment.Left;
         InspectDeviceEvidenceButton.Margin = inventoryActionInline
+            ? new Thickness(0)
+            : new Thickness(0, 4, 0, 0);
+
+        var manualAffinityActionInline = contentWidth >= 760d;
+        Grid.SetColumn(ManualDeviceAffinityButton, manualAffinityActionInline ? 1 : 0);
+        Grid.SetRow(ManualDeviceAffinityButton, manualAffinityActionInline ? 0 : 1);
+        ManualDeviceAffinityButton.HorizontalAlignment = manualAffinityActionInline
+            ? HorizontalAlignment.Right
+            : HorizontalAlignment.Left;
+        ManualDeviceAffinityButton.Margin = manualAffinityActionInline
             ? new Thickness(0)
             : new Thickness(0, 4, 0, 0);
 
