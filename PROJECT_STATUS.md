@@ -179,10 +179,10 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 
 ## Immediate execution ladder
 
-1. **Completed now:** v4 source keeps best-observed ranking separate from Keep, adds bounded uncertainty-aware shortlist/recheck, reduces finalists to top two with adaptive 15-second confirmation, and preserves actual before/after FPS/ms plus drift-adjusted paired ranking effects.
-2. **Evidence:** implementation revision `578be014fb382145e979691c8fdc7dc776a74754` exposed only a CA1859 analyzer failure before test execution completed; this follow-up fixes that compile issue plus progress/README integration. Exact-head hosted `Tests` are pending and must be green before physical evidence is accepted.
+1. **Completed now:** v4 source keeps best-observed ranking separate from Keep, uses a bounded uncertainty-aware shortlist/recheck, guarantees the observed top two logical CPUs survive the short-screen cut when at least two valid candidates exist, reduces finalist confirmation to two 15-second pairs with one optional uncertainty-driven third round, bounds renderer/worker waits, validates minimum frame/QPC coverage, and preserves actual before/after FPS/ms plus the separate drift-adjusted paired ranking effect.
+2. **Evidence:** hosted `Tests` are green on source/test revision `80a64a7ad52214c16d41886c17c2fadc9e72aed7`. Canonical methodology/runbook documents now match the adaptive v4 pipeline, and stale active `V2*` duration aliases were removed from the Gate A path.
 3. **Still open:** physical owner evidence for the v4 GPU Gate A remains required; public product mutation stays unarmed.
-4. **Next stage:** run the exact-head full v4 search and inspect shortlist retention, top-two confirmation count, total runtime, best-observed rank, confidence, FPS/ms gains, rollback and final placement.
+4. **Next stage:** run the exact-head full v4 search and inspect whether CPU8-like noisy near-leaders survive the shortlist, how many finalists need the optional third round, total runtime, best-observed rank, confidence, FPS/ms gains, rollback and final placement.
 5. **After that:** repeat the search, exercise Stop safely/failure recovery, and complete real WinUI/accessibility inspection before product mutation arming.
 
 ## Completion rule
