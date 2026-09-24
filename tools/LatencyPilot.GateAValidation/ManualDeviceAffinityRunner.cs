@@ -461,17 +461,21 @@ internal static class ManualDeviceAffinityRunner
         {
             var rollback = transaction.Rollback(experimentId);
             var restored = rollback.Entry.State == MutationJournalState.Reverted && rollback.OriginalStateRestored;
+            var rollbackNeedsReboot =
+                rollback.Entry.State == MutationJournalState.RollbackRebootPending;
             return CreateReport(
                 options,
-                "VerificationFailedRolledBack",
+                rollbackNeedsReboot ? "RebootRequired" : "VerificationFailedRolledBack",
                 succeeded: false,
                 TryGetPresentDevice(options.DeviceInstanceId),
                 experimentId,
-                restartRequired: rollback.Entry.State == MutationJournalState.RollbackRebootPending,
+                restartRequired: rollbackNeedsReboot,
                 verification: verification,
-                message: restored
+                message: restored && !rollbackNeedsReboot
                     ? "xHCI affinity did not pass translated-assignment plus controller-attributed runtime ISR verification; exact original state was restored."
-                    : "xHCI affinity verification failed and rollback still requires recovery/reboot attention.",
+                    : rollbackNeedsReboot
+                        ? "xHCI runtime verification failed. The exact original policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again."
+                        : "xHCI affinity verification failed and rollback still requires recovery attention.",
                 allocatedMasks: masks);
         }
 
@@ -503,10 +507,21 @@ internal static class ManualDeviceAffinityRunner
             new KernelLatencyCaptureOptions(
                 ManualRuntimePlacementCaptureDuration,
                 ObservationProtocol.MaximumCaptureEvents));
-        var placement = GpuInterruptRuntimePlacementVerifier.Analyze(
-            capture,
-            deviceInstanceId,
-            candidate);
+        GpuInterruptRuntimePlacementEvidence placement;
+        try
+        {
+            placement = GpuInterruptRuntimePlacementVerifier.Analyze(
+                capture,
+                deviceInstanceId,
+                candidate);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException)
+        {
+            return new(
+                false,
+                $"GPU runtime attribution is unavailable: {exception.Message}");
+        }
+
         var storedAfter = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
         var storedAfterMatches = GpuInterruptAffinityStateComparer.MatchesCandidate(storedAfter, candidate);
         var confirmed = GpuInterruptRuntimePlacementVerifier.ConfirmsGateAPlacement(
@@ -530,10 +545,21 @@ internal static class ManualDeviceAffinityRunner
             new KernelLatencyCaptureOptions(
                 ManualRuntimePlacementCaptureDuration,
                 ObservationProtocol.MaximumCaptureEvents));
-        var placement = XhciInterruptRuntimePlacementVerifier.Analyze(
-            capture,
-            deviceInstanceId,
-            candidate);
+        XhciInterruptRuntimePlacementEvidence placement;
+        try
+        {
+            placement = XhciInterruptRuntimePlacementVerifier.Analyze(
+                capture,
+                deviceInstanceId,
+                candidate);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException)
+        {
+            return new(
+                false,
+                $"xHCI runtime attribution is unavailable: {exception.Message}");
+        }
+
         var confirmed = capture.IsValid && placement.ConfirmsRequestedPlacement;
 
         return new(
