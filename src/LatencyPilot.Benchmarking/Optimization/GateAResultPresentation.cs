@@ -67,6 +67,7 @@ public sealed record GateACandidateBar(
     bool IsCompared)
 {
     public double? OnePercentLowEffect { get; init; }
+    public bool IsFinalistEvidence { get; init; }
 }
 
 public sealed record GateATrialPoint(
@@ -455,17 +456,23 @@ public static class GateAResultPresentation
         return order.Where(processor => HasDecisionMetrics(latestByProcessor[processor])).Select(processor =>
         {
             var candidate = latestByProcessor[processor];
+            var isFinalistEvidence = string.Equals(
+                candidate.Phase,
+                FinalistPhaseName,
+                StringComparison.Ordinal);
             var isKept = verifiedKeep && report.FinalProcessor == processor;
             var isCompared = comparedProcessor == processor;
             var state = isKept
                 ? "Kept"
-                : isCompared
-                    ? "Not kept"
-                    : candidate.Verdict.Equals("Rejected", StringComparison.OrdinalIgnoreCase)
-                        ? "Rejected"
-                        : string.Equals(candidate.Verdict, "Inconclusive", StringComparison.OrdinalIgnoreCase)
-                            ? "Inconclusive"
-                            : "Tested";
+                : isFinalistEvidence
+                    ? isCompared ? "Final confirmed · not kept" : "Final confirmed"
+                    : isCompared
+                        ? "Best screening · diagnostic"
+                        : candidate.Verdict.Equals("Rejected", StringComparison.OrdinalIgnoreCase)
+                            ? "Rejected"
+                            : string.Equals(candidate.Verdict, "Inconclusive", StringComparison.OrdinalIgnoreCase)
+                                ? "Inconclusive"
+                                : "Screening only";
             return new GateACandidateBar(
                 processor,
                 candidate.PhysicalCoreIndex,
@@ -482,6 +489,7 @@ public static class GateAResultPresentation
                 isCompared)
             {
                 OnePercentLowEffect = candidate.DecisionOnePercentLowEffect,
+                IsFinalistEvidence = isFinalistEvidence,
             };
         }).ToArray();
     }
