@@ -234,7 +234,7 @@ Structural evidence failures must still abort/fail closed.
 
 - candidates are aggregated by paired 1%-low effect and bounded uncertainty;
 - no more than four plausible physical-core hypotheses are refined;
-- the observed top two hypotheses remain eligible whenever two structurally valid hypotheses exist;
+- a clearly implausible physical-core hypothesis may be pruned after its representative screen;
 - only untested eligible siblings are added.
 
 ### Stage C

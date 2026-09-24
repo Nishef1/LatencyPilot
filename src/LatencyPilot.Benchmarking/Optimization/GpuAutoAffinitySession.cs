@@ -942,12 +942,18 @@ public sealed class GpuAutoAffinitySession
     }
 
     private static HashSet<int> SelectPhysicalCoreHypotheses(List<PairMeasurement> measurements) =>
-        SelectPlausibleScreeningAggregates(measurements, MaximumPhysicalCoreHypotheses)
+        SelectPlausibleScreeningAggregates(
+                measurements,
+                MaximumPhysicalCoreHypotheses,
+                minimumGuaranteedCount: 1)
             .Select(static aggregate => aggregate.Candidate.PhysicalCoreIndex)
             .ToHashSet();
 
     private static GpuAffinityCandidate[] SelectAdaptiveShortlist(List<PairMeasurement> measurements) =>
-        SelectPlausibleScreeningAggregates(measurements, MaximumAdaptiveShortlistCandidates)
+        SelectPlausibleScreeningAggregates(
+                measurements,
+                MaximumAdaptiveShortlistCandidates,
+                minimumGuaranteedCount: 2)
             .Select(static aggregate => aggregate.Candidate)
             .ToArray();
 
@@ -969,7 +975,8 @@ public sealed class GpuAutoAffinitySession
 
     private static ScreeningAggregate[] SelectPlausibleScreeningAggregates(
         List<PairMeasurement> measurements,
-        int maximumCount)
+        int maximumCount,
+        int minimumGuaranteedCount)
     {
         var ordered = BuildScreeningAggregates(measurements)
             .OrderByDescending(static aggregate => aggregate.MedianOnePercentLowEffect)
@@ -983,17 +990,16 @@ public sealed class GpuAutoAffinitySession
         }
 
         var boundedMaximum = Math.Min(maximumCount, ordered.Length);
-        var guaranteedCount = Math.Min(2, boundedMaximum);
+        var guaranteedCount = Math.Min(Math.Max(1, minimumGuaranteedCount), boundedMaximum);
         var guaranteed = ordered.Take(guaranteedCount);
         if (guaranteedCount == boundedMaximum)
         {
             return guaranteed.ToArray();
         }
 
-        // Never let one noisy point estimate collapse a multi-candidate search to
-        // one CPU. The observed top two stay alive whenever two structurally valid
-        // candidates exist; uncertainty is used only to admit additional plausible
-        // challengers up to the bounded budget.
+        // Physical-core refinement may prune to one clearly superior hypothesis,
+        // but the logical-CPU shortlist must preserve the observed top two whenever
+        // two structurally valid CPUs exist. Uncertainty only admits extra challengers.
         var plausibilityFloor = ordered[0].MedianOnePercentLowEffect - CandidateMetricEquivalenceTolerance;
         var challengers = ordered
             .Skip(guaranteedCount)
