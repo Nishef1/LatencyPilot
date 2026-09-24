@@ -25,7 +25,7 @@ preflight / quiet check
 → show before/after evidence + Restore original settings
 ```
 
-Product/safety authority remains ADR 0006. GPU measurement/search/ranking authority is ADR 0008; ADR 0007 remains the historical paired-v2 contract.
+Product/safety authority remains ADR 0006. GPU measurement/search/ranking authority is ADR 0010; ADR 0009 remains historical v4 evidence for new runs.
 
 ### v1 includes
 
@@ -45,6 +45,8 @@ Product/safety authority remains ADR 0006. GPU measurement/search/ranking author
 ### Not in the v1 automatic path
 
 NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, power-plan tuning, generic debloating and a generic cross-subsystem/Pareto optimizer.
+
+A development-only manual affinity lab may inspect these device categories read-only. Manual writes remain limited to the existing journaled GPU and USBXHCI mutation targets and do not widen the automatic v1 scope or public privileged API.
 
 ---
 
