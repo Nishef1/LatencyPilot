@@ -17,6 +17,7 @@ internal sealed class CpuRenderWorker : IDisposable
     private readonly RawRect[] region;
     private readonly Color4[] colors;
     private readonly LogicalProcessorId processor;
+    private readonly ulong affinityMask;
     private FrameRequest request;
     private Exception? failure;
     private bool stop;
@@ -25,6 +26,7 @@ internal sealed class CpuRenderWorker : IDisposable
     internal CpuRenderWorker(
         ID3D12Device device,
         LogicalProcessorId processor,
+        ulong affinityMask,
         int workerIndex,
         int workerCount,
         int width,
@@ -33,6 +35,15 @@ internal sealed class CpuRenderWorker : IDisposable
         int frameContextCount)
     {
         this.processor = processor;
+        if (affinityMask == 0 ||
+            processor.Number >= 64 ||
+            (affinityMask & (1UL << processor.Number)) == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(affinityMask),
+                "Benchmark worker affinity must be a non-zero physical-core mask containing its representative processor.");
+        }
+        this.affinityMask = affinityMask;
         ArgumentOutOfRangeException.ThrowIfLessThan(frameContextCount, 1);
 
         frameResources = Enumerable.Range(0, frameContextCount)
@@ -135,7 +146,7 @@ internal sealed class CpuRenderWorker : IDisposable
     {
         try
         {
-            PinCurrentThread(processor);
+            PinCurrentThread(processor, affinityMask);
             while (true)
             {
                 start.WaitOne();
@@ -180,17 +191,17 @@ internal sealed class CpuRenderWorker : IDisposable
         resources.CommandList.Close();
     }
 
-    private static void PinCurrentThread(LogicalProcessorId processor)
+    private static void PinCurrentThread(LogicalProcessorId processor, ulong affinityMask)
     {
         if (processor.Number >= 64)
         {
             throw new NotSupportedException(
-                "gpu-affinity-benchmark-v1 supports processor numbers below 64 in each group.");
+                "gpu-affinity-benchmark-v4 supports processor numbers below 64 in each group.");
         }
 
         var affinity = new GroupAffinity
         {
-            Mask = 1UL << processor.Number,
+            Mask = affinityMask,
             Group = processor.Group,
         };
         if (!SetThreadGroupAffinity(GetCurrentThread(), in affinity, out _))
