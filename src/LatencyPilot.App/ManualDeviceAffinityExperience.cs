@@ -738,34 +738,32 @@ public sealed partial class MainWindow
             },
         };
 
-    private Border BuildManualAffinityStatusBanner(TextBlock statusText) =>
-        new()
+    private Border BuildManualAffinityStatusBanner(TextBlock statusText)
+    {
+        var grid = new Grid { ColumnSpacing = 10d };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(
+            new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+
+        grid.Children.Add(new TextBlock
+        {
+            Text = "Status",
+            Style = AppStyle("MetricLabelTextStyle"),
+            Foreground = ThemeBrush("MutedTextBrush"),
+        });
+        Grid.SetColumn(statusText, 1);
+        grid.Children.Add(statusText);
+
+        return new Border
         {
             Padding = new Thickness(10d),
             CornerRadius = new CornerRadius(8d),
             Background = ThemeBrush("SurfaceAltBrush"),
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(1d),
-            Child = new Grid
-            {
-                ColumnSpacing = 10d,
-                ColumnDefinitions =
-                {
-                    new ColumnDefinition { Width = GridLength.Auto },
-                    new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) },
-                },
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = "Status",
-                        Style = AppStyle("MetricLabelTextStyle"),
-                        Foreground = ThemeBrush("MutedTextBrush"),
-                    },
-                    statusText,
-                },
-            },
+            Child = grid,
         };
+    }
 
     private Border BuildManualAffinityPill(string text, string foregroundKey, string backgroundKey) =>
         new()
