@@ -1167,6 +1167,7 @@ public sealed class GpuAutoAffinitySession
             var pairs = measurements[candidate.Processor];
             GpuAutoAffinityFinalistReport report;
             var recommendedForKeep = false;
+            var guardrailReasons = new List<string>();
 
             if (pairs.Count == 0)
             {
@@ -1211,7 +1212,6 @@ public sealed class GpuAutoAffinitySession
                     Math.Max(KeepGuardrailRegressionTolerance, effectMad),
                     KeepGuardrailRegressionTolerance,
                     MaximumKeepGuardrailRegressionTolerance);
-                var guardrailReasons = new List<string>();
                 if (medianAvg < -keepGuardrailTolerance)
                 {
                     guardrailReasons.Add(
