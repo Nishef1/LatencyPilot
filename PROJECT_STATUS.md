@@ -202,7 +202,7 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 ## Immediate execution ladder
 
 1. **Completed now:** the manual interrupt-affinity surface has been rebuilt as an independent modern WinUI tool window rather than an in-app `ContentDialog`. Major sections stay vertically stacked; low-value copy is compressed; device search, concise identity, Fluent icons, policy/assignment tiles, inline single-CPU selection and direct Apply/Restore actions now mirror the accepted visual direction while preserving the existing mutation safety model.
-2. **Evidence:** source is committed on top of the previously green classic-tool/runtime-affinity contract. Exact-head hosted `Tests` for this independent-window revision are pending; hosted CI can prove compilation/analyzer/contracts but not visual quality.
+2. **Evidence:** hosted `Tests` are green on exact source/fix revision `24db0156039337b894015233e1708d55a82a9712` (workflow run 1636). This proves compilation/analyzer/critical contracts for the independent-window implementation, but not visual quality. This ledger-only update must also be exact-head green.
 3. **Still open:** owner-Windows render inspection of the independent window (Light/Dark/High Contrast, text scale, keyboard, 16/32/64-CPU layouts) plus the existing physical v5 GPU/xHCI/recovery gates. Public product mutation remains unarmed.
 4. **Next stage:** get exact-head hosted `Tests` green, then inspect the real independent window on owner hardware and fix any clipping, CPU-grid density, icon, focus, or theme issues found in the render.
 5. **After that:** freeze the exact revision for Full v5 Gate A and continue the physical repeat/recovery/accessibility chain before any public App → Service mutation arming.
