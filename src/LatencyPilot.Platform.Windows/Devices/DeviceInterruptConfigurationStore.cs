@@ -245,5 +245,16 @@ public static class DeviceInterruptConfigurationStore
     private static bool ValuesEqual(RegistryValueSnapshot a, RegistryValueSnapshot b) => a.Exists == b.Exists && a.Kind == b.Kind && a.Data.AsSpan().SequenceEqual(b.Data);
     private static bool TryDword(RegistryValueSnapshot value, out uint result) { if (value.Exists && value.Kind == RegistryValueKind.DWord && value.Data.Length == 4) { result = BinaryPrimitives.ReadUInt32LittleEndian(value.Data); return true; } result = 0; return false; }
     private static bool TryMask(RegistryValueSnapshot value, out ulong result) { if (value.Exists && value.Kind == RegistryValueKind.Binary && value.Data.Length is > 0 and <= 8) { Span<byte> p = stackalloc byte[8]; p.Clear(); value.Data.CopyTo(p); result = BinaryPrimitives.ReadUInt64LittleEndian(p); return true; } result = 0; return false; }
-    private static void ValidateCandidate(DeviceInterruptAffinityCandidate c) { if (c.ProcessorGroup != 0 || c.ProcessorNumber >= 64 || c.AffinityMask != (1UL << c.ProcessorNumber)) throw new ArgumentException("xHCI affinity candidate must be one valid group-0 KAFFINITY bit.", nameof(c)); }
+    private static void ValidateCandidate(DeviceInterruptAffinityCandidate c)
+    {
+        if (c.ProcessorGroup != 0 ||
+            c.ProcessorNumber >= 64 ||
+            c.AffinityMask == 0 ||
+            c.ProcessorNumber != GpuInterruptAffinityCandidate.GetPrimaryProcessorNumber(c.AffinityMask))
+        {
+            throw new ArgumentException(
+                "xHCI affinity candidate must be a non-empty canonical group-0 KAFFINITY set.",
+                nameof(c));
+        }
+    }
 }

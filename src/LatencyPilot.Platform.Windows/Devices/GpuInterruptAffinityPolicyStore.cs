@@ -49,10 +49,68 @@ public sealed record GpuInterruptAffinityCandidate(
             throw new NotSupportedException("Target processor cannot be represented by an x64 KAFFINITY mask.");
         }
 
+        return CreateMask(topology, 1UL << processor.Number);
+    }
+
+    public static GpuInterruptAffinityCandidate CreateMask(
+        ProcessorTopologySnapshot topology,
+        ulong affinityMask)
+    {
+        ArgumentNullException.ThrowIfNull(topology);
+
+        if (topology.ProcessorGroupCount != 1)
+        {
+            throw new NotSupportedException(
+                "GPU interrupt-affinity mutation v1 supports exactly one processor group.");
+        }
+
+        if (affinityMask == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(affinityMask),
+                "Target processor mask must contain at least one logical processor.");
+        }
+
+        ulong availableMask = 0;
+        foreach (var processor in topology.Cores.SelectMany(static core => core.LogicalProcessors))
+        {
+            if (processor.Group == 0 && processor.Number < 64)
+            {
+                availableMask |= 1UL << processor.Number;
+            }
+        }
+
+        if ((affinityMask & ~availableMask) != 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(affinityMask),
+                "Target processor mask contains a logical processor that does not exist in the captured topology.");
+        }
+
         return new GpuInterruptAffinityCandidate(
-            processor.Group,
-            processor.Number,
-            1UL << processor.Number);
+            0,
+            GetPrimaryProcessorNumber(affinityMask),
+            affinityMask);
+    }
+
+    public static byte GetPrimaryProcessorNumber(ulong affinityMask)
+    {
+        if (affinityMask == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(affinityMask),
+                "Affinity mask must contain at least one processor.");
+        }
+
+        for (byte processor = 0; processor < 64; processor++)
+        {
+            if ((affinityMask & (1UL << processor)) != 0)
+            {
+                return processor;
+            }
+        }
+
+        throw new InvalidOperationException("A non-zero x64 affinity mask did not contain a processor bit.");
     }
 }
 
@@ -96,9 +154,12 @@ public static class GpuInterruptAffinityPolicyStore
         }
 
         if (candidate.ProcessorNumber >= 64 ||
-            candidate.AffinityMask != (1UL << candidate.ProcessorNumber))
+            candidate.AffinityMask == 0 ||
+            candidate.ProcessorNumber != GpuInterruptAffinityCandidate.GetPrimaryProcessorNumber(candidate.AffinityMask))
         {
-            throw new ArgumentException("Candidate affinity mask does not match its target logical processor.", nameof(candidate));
+            throw new ArgumentException(
+                "Candidate affinity mask must be a non-empty canonical group-0 KAFFINITY set.",
+                nameof(candidate));
         }
 
         _ = GetPresentDisplayAdapter(original.DeviceInstanceId);

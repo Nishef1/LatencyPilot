@@ -465,10 +465,12 @@ internal sealed class GpuInterruptAffinityMutationTransaction
     private static void ValidateCandidateAgainstCurrentTopology(GpuInterruptAffinityCandidate candidate)
     {
         var topology = ProcessorTopologyReader.Capture();
-        var validated = GpuInterruptAffinityCandidate.Create(
+        var validated = GpuInterruptAffinityCandidate.CreateMask(
             topology,
-            new LogicalProcessorId(candidate.ProcessorGroup, candidate.ProcessorNumber));
-        if (validated.AffinityMask != candidate.AffinityMask)
+            candidate.AffinityMask);
+        if (validated.ProcessorGroup != candidate.ProcessorGroup ||
+            validated.ProcessorNumber != candidate.ProcessorNumber ||
+            validated.AffinityMask != candidate.AffinityMask)
         {
             throw new InvalidDataException(
                 "GPU affinity candidate no longer matches current processor topology.");

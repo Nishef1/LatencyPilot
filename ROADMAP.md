@@ -1,7 +1,7 @@
 # LatencyPilot Product Roadmap
 
 Status: **Authoritative completion plan**  
-Last updated: 2026-09-24
+Last updated: 2026-09-25
 
 `PROJECT_STATUS.md` owns current execution/evidence state. This file owns required product outcomes. Source-complete and physically validated are different claims.
 
@@ -46,7 +46,7 @@ Product/safety authority remains ADR 0006. GPU measurement/search/ranking author
 
 NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, power-plan tuning, generic debloating and a generic cross-subsystem/Pareto optimizer.
 
-A development-only manual affinity lab may inspect these device categories read-only. Manual writes remain limited to the existing journaled GPU and USBXHCI mutation targets and do not widen the automatic v1 scope or public privileged API.
+A development-only manual affinity lab may inspect these device categories read-only. Manual writes remain limited to the existing journaled GPU and USBXHCI mutation targets, may use a non-empty group-0 KAFFINITY processor set, and do not widen the automatic v1 scope or public privileged API. The automatic GPU search continues to evaluate one logical-CPU candidate at a time.
 
 ---
 

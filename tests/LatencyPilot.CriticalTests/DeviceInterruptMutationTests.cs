@@ -34,6 +34,17 @@ public sealed class DeviceInterruptMutationTests
             DeviceInterruptMutationJournalCodec.SerializeCandidate(candidate));
         Assert.AreEqual(DeviceInterruptMutationOperation.EnableMsi, candidateRoundTrip.Operation);
 
+        var multiMask = (1UL << 2) | (1UL << 4) | (1UL << 6);
+        var multiCandidate = DeviceInterruptMutationCandidate.XhciAffinity(
+            new DeviceInterruptAffinityCandidate(
+                0,
+                GpuInterruptAffinityCandidate.GetPrimaryProcessorNumber(multiMask),
+                multiMask));
+        var multiRoundTrip = DeviceInterruptMutationJournalCodec.DeserializeCandidate(
+            DeviceInterruptMutationJournalCodec.SerializeCandidate(multiCandidate));
+        Assert.AreEqual(multiMask, multiRoundTrip.AffinityMask);
+        Assert.AreEqual((byte)2, multiRoundTrip.ProcessorNumber);
+
         var root = FindRepositoryRoot();
         var storeSource = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Platform.Windows", "Devices", "DeviceInterruptConfigurationStore.cs"));
         StringAssert.Contains(storeSource, "MSISupported");
@@ -57,8 +68,13 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(manualRunnerSource, "XhciInterruptRuntimePlacementVerifier",
             "Manual xHCI Keep must require controller-attributed runtime ETW placement evidence.");
         StringAssert.Contains(manualRunnerSource, "ApplyRebootPending");
-        StringAssert.Contains(manualRunnerSource, "pendingCandidate.ProcessorNumber != candidate.ProcessorNumber",
-            "A reboot-pending xHCI experiment must not be resumed under a newly selected CPU.");
+        StringAssert.Contains(manualRunnerSource, "pendingCandidate.ProcessorNumber != candidate.ProcessorNumber");
+        StringAssert.Contains(manualRunnerSource, "pendingCandidate.AffinityMask != candidate.AffinityMask",
+            "A reboot-pending xHCI experiment must not be resumed under a newly selected processor mask.");
+        StringAssert.Contains(manualRunnerSource, "--mask",
+            "Manual affinity must accept an explicit KAFFINITY mask for multi-select.");
+        StringAssert.Contains(manualRunnerSource, "(resource.AffinityMask & ~targetMask) == 0",
+            "Allocated interrupt resources must remain inside the requested processor mask.");
         StringAssert.Contains(manualRunnerSource, "VerificationFailedRolledBack",
             "Manual affinity must fail closed and restore exact original state when active allocation is not verified.");
         StringAssert.Contains(manualRunnerSource, "does not claim ownership",
@@ -73,6 +89,10 @@ public sealed class DeviceInterruptMutationTests
             "Unsupported latency-sensitive devices must remain inspectable without exposing mutation.");
         StringAssert.Contains(appSource, "_gateAValidationRunning",
             "Manual mutation must not run concurrently with GPU Gate A.");
+        StringAssert.Contains(appSource, "HashSet<byte>",
+            "Manual affinity UI must support independent multi-selection of processor buttons.");
+        StringAssert.Contains(appSource, "Select all");
+        StringAssert.Contains(appSource, "--mask");
     }
 
     private static string FindRepositoryRoot()

@@ -91,17 +91,17 @@ The developer UI provides:
 - **Selected CPUs · restore Original** — real paired screening for an exact subset; diagnostic-only, no finalist Keep, always restores Original, cannot close Gate A.
 - **Original only · no system changes** — five 10 s Original observations with no affinity mutation or device restart.
 
-CPU selection uses current topology/CPU-set eligibility; unsupported topology fails safely. The dialog is a WinUI `ContentDialog` owned by the current `XamlRoot`.
+CPU selection uses current topology/CPU-set eligibility; unsupported topology fails safely. The diagnostic scope selector remains a WinUI `ContentDialog`; the manual interrupt-affinity tool is an independent WinUI window.
 
 ### Development manual device affinity lab
 
 The Devices page now exposes a development-only manual affinity surface without changing the public observation-only Service contract:
 
-- the development UI keeps the familiar Interrupt-Affinity Policy Configuration Tool information model, but now opens as an independent modern WinUI tool window with stacked device → selected-device → interrupt-affinity sections, search, concise identity details, Fluent device/action icons, inline single-CPU selection, and Current policy / Specified mask / Current assignment evidence;
+- the development UI keeps the familiar Interrupt-Affinity Policy Configuration Tool information model, but now opens as an independent modern WinUI tool window with stacked device → selected-device → interrupt-affinity sections, search, concise identity details, Fluent device/action icons, inline multi-CPU mask selection, and Current policy / Specified mask / Current assignment evidence;
 - current stored interrupt policy / `AssignmentSetOverride` and translated allocated interrupt-resource masks are shown separately for latency-sensitive present devices;
 - GPU and USBXHCI are the only editable targets because they already have bounded journal/restart/rollback ownership;
 - network, audio, storage, HID and other latency-sensitive devices remain read-only;
-- manual Apply uses an elevated one-shot helper: exact snapshot → journal → apply/restart → translated allocated-resource preflight → clean target-only ETW ISR runtime proof → Keep, or exact rollback on failed verification;
+- manual Apply accepts a non-empty group-0 KAFFINITY set and uses an elevated one-shot helper: exact snapshot → journal → apply/restart → verify every translated allocation stays inside the requested mask → clean ETW ISR proof that attributable runtime execution stays inside that mask → Keep, or exact rollback on failed verification;
 - GPU manual verification reuses the existing GPU runtime-placement verifier; xHCI now has a controller-specific `USBXHCI` ISR verifier and deliberately fails closed when more than one present controller shares that driver service because the shared module stream is ambiguous;
 - a reboot-pending xHCI experiment may resume only for the same journaled CPU candidate;
 - Restore is per-device and only unwinds retained changes actually owned by the LatencyPilot mutation journal; an external pre-existing override is never claimed or overwritten as LatencyPilot-owned;
@@ -201,11 +201,11 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 
 ## Immediate execution ladder
 
-1. **Completed now:** the manual interrupt-affinity surface has been rebuilt as an independent modern WinUI tool window rather than an in-app `ContentDialog`. Major sections stay vertically stacked; low-value copy is compressed; device search, concise identity, Fluent icons, policy/assignment tiles, inline single-CPU selection and direct Apply/Restore actions now mirror the accepted visual direction while preserving the existing mutation safety model.
-2. **Evidence:** hosted `Tests` are green on exact source/fix revision `24db0156039337b894015233e1708d55a82a9712` (workflow run 1636). This proves compilation/analyzer/critical contracts for the independent-window implementation, but not visual quality. This ledger-only update must also be exact-head green.
-3. **Still open:** owner-Windows render inspection of the independent window (Light/Dark/High Contrast, text scale, keyboard, 16/32/64-CPU layouts) plus the existing physical v5 GPU/xHCI/recovery gates. Public product mutation remains unarmed.
-4. **Next stage:** get exact-head hosted `Tests` green, then inspect the real independent window on owner hardware and fix any clipping, CPU-grid density, icon, focus, or theme issues found in the render.
-5. **After that:** freeze the exact revision for Full v5 Gate A and continue the physical repeat/recovery/accessibility chain before any public App → Service mutation arming.
+1. **Completed now:** manual GPU/xHCI affinity now supports true multi-select processor masks in the independent WinUI tool. The UI exposes independent CPU toggles plus Select all/Clear; the helper accepts an explicit 64-bit mask; shared bounded mutation/journal paths accept canonical non-empty group-0 KAFFINITY sets; translated allocation and ETW runtime verification fail closed if any active/observed interrupt escapes the requested mask. The automatic GPU search remains intentionally single-CPU candidate based.
+2. **Evidence:** implementation is committed on top of the previously green independent-window contract. Exact-head hosted `Tests` for the multi-mask revision are pending; Microsoft documents `AssignmentSetOverride` / `TargetedProcessors` as a KAFFINITY set rather than a single processor bit.
+3. **Still open:** owner-Windows physical/render proof for a real multi-CPU GPU mask and xHCI mask, including reboot-resume/restore behavior and 16/32/64-CPU layouts. Public product mutation remains unarmed.
+4. **Next stage:** get exact-head hosted `Tests` green, then exercise one 2+ CPU mask on owner hardware and confirm stored mask, translated allocations, attributable ISR placement and exact restore all agree.
+5. **After that:** continue Full v5 Gate A and the physical repeat/recovery/accessibility chain before any public App → Service mutation arming.
 
 ## Completion rule
 

@@ -111,9 +111,11 @@ public static class GpuInterruptAffinityJournalCodec
             throw new InvalidDataException("GPU affinity journal candidate is outside the v1 group-0 x64 boundary.");
         }
 
-        if (candidate.AffinityMask != (1UL << candidate.ProcessorNumber))
+        if (candidate.AffinityMask == 0 ||
+            candidate.ProcessorNumber != GpuInterruptAffinityCandidate.GetPrimaryProcessorNumber(candidate.AffinityMask))
         {
-            throw new InvalidDataException("GPU affinity journal candidate mask does not match its target logical processor.");
+            throw new InvalidDataException(
+                "GPU affinity journal candidate must contain a non-empty canonical group-0 KAFFINITY set.");
         }
     }
 }

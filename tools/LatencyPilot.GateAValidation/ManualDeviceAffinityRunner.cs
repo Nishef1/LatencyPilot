@@ -52,7 +52,7 @@ internal static class ManualDeviceAffinityRunner
         {
             var device = options?.DeviceInstanceId ?? "unknown";
             report = new ManualDeviceAffinityReport(
-                Schema: "latencypilot-manual-device-affinity-v1",
+                Schema: "latencypilot-manual-device-affinity-v2",
                 Action: options?.Action.ToString() ?? "Unknown",
                 Status: "Failed",
                 Succeeded: false,
@@ -60,6 +60,7 @@ internal static class ManualDeviceAffinityRunner
                 DisplayName: null,
                 TargetKind: options?.TargetKind.ToString(),
                 ProcessorNumber: options?.ProcessorNumber,
+                RequestedMask: options?.AffinityMask,
                 ExperimentId: experimentId,
                 RestartRequired: false,
                 StoredMask: TryReadStoredMask(device),
@@ -175,14 +176,13 @@ internal static class ManualDeviceAffinityRunner
         out Guid? experimentId)
     {
         experimentId = null;
-        if (options.ProcessorNumber is not { } processorNumber)
+        if (options.AffinityMask is not { } affinityMask)
         {
-            throw new ArgumentException("--processor is required for manual affinity apply.");
+            throw new ArgumentException("--mask or --processor is required for manual affinity apply.");
         }
 
         var topology = ProcessorTopologyReader.Capture();
-        var logicalProcessor = new LogicalProcessorId(0, processorNumber);
-        var validatedGpuCandidate = GpuInterruptAffinityCandidate.Create(topology, logicalProcessor);
+        var validatedGpuCandidate = GpuInterruptAffinityCandidate.CreateMask(topology, affinityMask);
 
         return options.TargetKind switch
         {
@@ -225,7 +225,7 @@ internal static class ManualDeviceAffinityRunner
                 ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
                 : new ManualRuntimePlacementVerification(
                     false,
-                    "Runtime ETW verification was skipped because the translated interrupt assignment did not match the requested CPU.");
+                    "Runtime ETW verification was skipped because the translated interrupt assignment escaped the requested processor mask.");
             var verified = assignmentVerified && runtime.Verified;
             return CreateReport(
                 options,
@@ -236,8 +236,8 @@ internal static class ManualDeviceAffinityRunner
                 restartRequired: false,
                 verification: $"{assignmentReason} {runtime.Reason}",
                 message: verified
-                    ? "The requested GPU affinity was already stored; Windows allocated it to the requested CPU and clean ETW observed only target-CPU GPU ISR execution. No write was attempted."
-                    : "The requested GPU affinity is already stored, but LatencyPilot could not prove both translated assignment and target-only runtime GPU ISR placement. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
+                    ? "The requested GPU affinity was already stored; Windows kept allocation inside the requested processor mask and clean ETW observed GPU ISR execution only inside that mask. No write was attempted."
+                    : "The requested GPU affinity is already stored, but LatencyPilot could not prove both translated assignment and requested-mask-only runtime GPU ISR placement. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
                 allocatedMasks: masks);
         }
 
@@ -265,7 +265,7 @@ internal static class ManualDeviceAffinityRunner
                 ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
                 : new ManualRuntimePlacementVerification(
                     false,
-                    "Runtime ETW verification was skipped because the translated interrupt assignment did not match the requested CPU.");
+                    "Runtime ETW verification was skipped because the translated interrupt assignment escaped the requested processor mask.");
             var verified = assignmentVerified && runtime.Verified;
             var verification = $"{assignmentReason} {runtime.Reason}";
             if (!verified)
@@ -293,7 +293,7 @@ internal static class ManualDeviceAffinityRunner
                 prepared.ExperimentId,
                 restartRequired: false,
                 verification: verification,
-                message: "GPU affinity was journaled, applied, restarted, verified by Windows translated assignment plus clean target-only ETW ISR placement, and retained as an explicit manual choice.",
+                message: "GPU affinity was journaled, applied, restarted, verified by Windows translated assignment plus clean requested-mask-only ETW ISR placement, and retained as an explicit manual choice.",
                 allocatedMasks: masks);
         }
         catch
@@ -340,7 +340,7 @@ internal static class ManualDeviceAffinityRunner
                 pendingCandidate.AffinityMask != candidate.AffinityMask)
             {
                 throw new InvalidOperationException(
-                    $"The pending xHCI experiment targets CPU {pendingCandidate.ProcessorNumber}; select that same CPU to resume it, or restore/recover the pending experiment first.");
+                    $"The pending xHCI experiment targets mask 0x{pendingCandidate.AffinityMask:X}; select that same processor mask to resume it, or restore/recover the pending experiment first.");
             }
 
             var resumed = transaction.ResumeAfterReboot(pending[0].ExperimentId);
@@ -388,7 +388,7 @@ internal static class ManualDeviceAffinityRunner
                 ? VerifyXhciRuntimePlacement(options.DeviceInstanceId, candidate)
                 : new ManualRuntimePlacementVerification(
                     false,
-                    "Runtime ETW verification was skipped because the translated interrupt assignment did not match the requested CPU.");
+                    "Runtime ETW verification was skipped because the translated interrupt assignment escaped the requested processor mask.");
             var verified = assignmentVerified && runtime.Verified;
             return CreateReport(
                 options,
@@ -399,8 +399,8 @@ internal static class ManualDeviceAffinityRunner
                 restartRequired: false,
                 verification: $"{assignmentReason} {runtime.Reason}",
                 message: verified
-                    ? "The requested xHCI affinity was already stored; Windows allocated it to the requested CPU and clean ETW observed only target-CPU USBXHCI ISR execution. No LatencyPilot write was required."
-                    : "The requested xHCI affinity is already stored, but LatencyPilot could not prove both translated assignment and controller-attributed target-only runtime ISR placement. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
+                    ? "The requested xHCI affinity was already stored; Windows kept allocation inside the requested processor mask and clean ETW observed USBXHCI ISR execution only inside that mask. No LatencyPilot write was required."
+                    : "The requested xHCI affinity is already stored, but LatencyPilot could not prove both translated assignment and controller-attributed requested-mask-only runtime ISR placement. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
                 allocatedMasks: masks);
         }
 
@@ -454,7 +454,7 @@ internal static class ManualDeviceAffinityRunner
             ? VerifyXhciRuntimePlacement(options.DeviceInstanceId, candidate)
             : new ManualRuntimePlacementVerification(
                 false,
-                "Runtime ETW verification was skipped because the translated interrupt assignment did not match the requested CPU.");
+                "Runtime ETW verification was skipped because the translated interrupt assignment escaped the requested processor mask.");
         var verified = assignmentVerified && runtime.Verified;
         var verification = $"{assignmentReason} {runtime.Reason}";
         if (!verified)
@@ -488,7 +488,7 @@ internal static class ManualDeviceAffinityRunner
             experimentId,
             restartRequired: false,
             verification: verification,
-            message: "xHCI affinity was journaled, applied, restarted, verified by Windows translated assignment plus clean controller-attributed target-only ETW ISR placement, and retained as an explicit manual choice.",
+            message: "xHCI affinity was journaled, applied, restarted, verified by Windows translated assignment plus clean controller-attributed requested-mask-only ETW ISR placement, and retained as an explicit manual choice.",
             allocatedMasks: masks);
     }
 
@@ -500,41 +500,42 @@ internal static class ManualDeviceAffinityRunner
         var storedBeforeMatches = GpuInterruptAffinityStateComparer.MatchesCandidate(storedBefore, candidate);
         if (!storedBeforeMatches)
         {
-            return new(false, "Stored GPU affinity no longer matches the requested candidate before ETW capture.");
+            return new(false, "Stored GPU affinity no longer matches the requested processor mask before ETW capture.");
         }
 
         var capture = KernelLatencyCapture.Capture(
             new KernelLatencyCaptureOptions(
                 ManualRuntimePlacementCaptureDuration,
                 ObservationProtocol.MaximumCaptureEvents));
-        GpuInterruptRuntimePlacementEvidence placement;
+        GpuInterruptIsrAttribution attribution;
         try
         {
-            placement = GpuInterruptRuntimePlacementVerifier.Analyze(
+            attribution = GpuInterruptRuntimePlacementVerifier.CaptureIsrAttribution(
                 capture,
-                deviceInstanceId,
-                candidate);
+                deviceInstanceId);
         }
         catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException)
         {
-            return new(
-                false,
-                $"GPU runtime attribution is unavailable: {exception.Message}");
+            return new(false, $"GPU runtime attribution is unavailable: {exception.Message}");
         }
 
+        var inMaskCount = attribution.Events.Count(
+            item => ProcessorIsInMask(candidate.AffinityMask, item.ProcessorNumber));
+        var offMaskCount = attribution.Events.Count - inMaskCount;
         var storedAfter = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
         var storedAfterMatches = GpuInterruptAffinityStateComparer.MatchesCandidate(storedAfter, candidate);
-        var confirmed = GpuInterruptRuntimePlacementVerifier.ConfirmsGateAPlacement(
-            storedBeforeMatches,
-            storedAfterMatches,
-            capture.IsValid,
-            placement);
+        var confirmed =
+            storedBeforeMatches &&
+            storedAfterMatches &&
+            capture.IsValid &&
+            attribution.Events.Count > 0 &&
+            offMaskCount == 0;
 
         return new(
             confirmed,
             confirmed
-                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {placement.MatchingResolvedIsrEventCount} attributable GPU ISR event(s), all on CPU {candidate.ProcessorNumber}."
-                : $"GPU runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={placement.MatchingResolvedIsrEventCount}, targetIsr={placement.TargetProcessorIsrEventCount}, offTargetIsr={placement.OffTargetIsrEventCount}, storedAfterMatch={storedAfterMatches}.");
+                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {attribution.Events.Count} attributable GPU ISR event(s), all inside {FormatProcessorMask(candidate.AffinityMask)}."
+                : $"GPU runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={attribution.Events.Count}, inMaskIsr={inMaskCount}, offMaskIsr={offMaskCount}, storedAfterMatch={storedAfterMatches}, requestedMask=0x{candidate.AffinityMask:X}.");
     }
 
     private static ManualRuntimePlacementVerification VerifyXhciRuntimePlacement(
@@ -545,28 +546,32 @@ internal static class ManualDeviceAffinityRunner
             new KernelLatencyCaptureOptions(
                 ManualRuntimePlacementCaptureDuration,
                 ObservationProtocol.MaximumCaptureEvents));
-        XhciInterruptRuntimePlacementEvidence placement;
+        XhciInterruptIsrAttribution attribution;
         try
         {
-            placement = XhciInterruptRuntimePlacementVerifier.Analyze(
+            attribution = XhciInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
                 capture,
                 deviceInstanceId,
-                candidate);
+                DeviceInventoryReader.CapturePresentDevices().Devices);
         }
         catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException)
         {
-            return new(
-                false,
-                $"xHCI runtime attribution is unavailable: {exception.Message}");
+            return new(false, $"xHCI runtime attribution is unavailable: {exception.Message}");
         }
 
-        var confirmed = capture.IsValid && placement.ConfirmsRequestedPlacement;
+        var inMaskCount = attribution.Events.Count(
+            item => ProcessorIsInMask(candidate.AffinityMask, item.ProcessorNumber));
+        var offMaskCount = attribution.Events.Count - inMaskCount;
+        var confirmed =
+            capture.IsValid &&
+            attribution.Events.Count > 0 &&
+            offMaskCount == 0;
 
         return new(
             confirmed,
             confirmed
-                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {placement.MatchingResolvedIsrEventCount} controller-attributed USBXHCI ISR event(s), all on CPU {candidate.ProcessorNumber}."
-                : $"xHCI runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={placement.MatchingResolvedIsrEventCount}, targetIsr={placement.TargetProcessorIsrEventCount}, offTargetIsr={placement.OffTargetIsrEventCount}.");
+                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {attribution.Events.Count} controller-attributed USBXHCI ISR event(s), all inside {FormatProcessorMask(candidate.AffinityMask)}."
+                : $"xHCI runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={attribution.Events.Count}, inMaskIsr={inMaskCount}, offMaskIsr={offMaskCount}, requestedMask=0x{candidate.AffinityMask:X}.");
     }
 
     private static bool VerifyAllocatedAffinity(
@@ -585,6 +590,12 @@ internal static class ManualDeviceAffinityRunner
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
+        if (targetMask == 0)
+        {
+            reason = "Requested processor mask is empty.";
+            return false;
+        }
+
         if (resources.ReadStatus != InterruptResourceReadStatus.Available || resources.Resources.Count == 0)
         {
             reason = $"Allocated interrupt resources are {resources.ReadStatus}; active affinity cannot be proven.";
@@ -593,11 +604,31 @@ internal static class ManualDeviceAffinityRunner
 
         var verified = resources.Resources.All(resource =>
             resource.ProcessorGroup == 0 &&
-            resource.AffinityMask == targetMask);
+            resource.AffinityMask != 0 &&
+            (resource.AffinityMask & ~targetMask) == 0);
+        var activeUnion = resources.Resources.Aggregate(
+            0UL,
+            static (mask, resource) =>
+                resource.ProcessorGroup == 0 ? mask | resource.AffinityMask : mask);
+
         reason = verified
-            ? $"All {resources.Resources.Count.ToString(CultureInfo.InvariantCulture)} allocated interrupt resource(s) resolve to group 0 mask 0x{targetMask:X}."
-            : $"Allocated interrupt resources do not all resolve to group 0 mask 0x{targetMask:X}.";
+            ? $"All {resources.Resources.Count.ToString(CultureInfo.InvariantCulture)} allocated interrupt resource(s) stay inside requested group-0 mask 0x{targetMask:X}; active union is 0x{activeUnion:X}."
+            : $"Allocated interrupt resources escape requested group-0 mask 0x{targetMask:X}; active union is 0x{activeUnion:X}.";
         return verified;
+    }
+
+    private static bool ProcessorIsInMask(ulong mask, int processorNumber) =>
+        processorNumber is >= 0 and < 64 &&
+        (mask & (1UL << processorNumber)) != 0;
+
+    private static string FormatProcessorMask(ulong mask)
+    {
+        var processors = Enumerable.Range(0, 64)
+            .Where(processor => (mask & (1UL << processor)) != 0)
+            .ToArray();
+        return processors.Length == 1
+            ? $"CPU {processors[0].ToString(CultureInfo.InvariantCulture)} (mask 0x{mask:X})"
+            : $"CPUs {string.Join(",", processors)} (mask 0x{mask:X})";
     }
 
     private static void EnsureNoUnresolvedMutation(MutationJournal journal)
@@ -693,6 +724,7 @@ internal static class ManualDeviceAffinityRunner
             DisplayName: device?.DisplayName,
             TargetKind: options.TargetKind.ToString(),
             ProcessorNumber: options.ProcessorNumber,
+            RequestedMask: options.AffinityMask,
             ExperimentId: experimentId,
             RestartRequired: restartRequired,
             StoredMask: device?.InterruptConfiguration.AssignmentSetOverrideMask,
@@ -726,6 +758,7 @@ internal static class ManualDeviceAffinityRunner
         ManualAffinityTargetKind TargetKind,
         string DeviceInstanceId,
         byte? ProcessorNumber,
+        ulong? AffinityMask,
         string OutputPath)
     {
         internal static ManualAffinityOptions Parse(string[] args)
@@ -746,7 +779,7 @@ internal static class ManualDeviceAffinityRunner
                     confirmation = true;
                     continue;
                 }
-                if (token is not ("--action" or "--target-kind" or "--device" or "--processor" or "--output"))
+                if (token is not ("--action" or "--target-kind" or "--device" or "--processor" or "--mask" or "--output"))
                 {
                     throw new ArgumentException($"Unknown manual affinity option '{token}'.");
                 }
@@ -789,9 +822,41 @@ internal static class ManualDeviceAffinityRunner
                 }
                 processor = parsed;
             }
-            if (action == ManualAffinityAction.Apply && processor is null)
+
+            ulong? affinityMask = null;
+            if (values.TryGetValue("--mask", out var maskText))
             {
-                throw new ArgumentException("--processor is required for manual affinity Apply.");
+                var normalized = maskText.Trim();
+                ulong parsedMask;
+                var parsed = normalized.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                    ? ulong.TryParse(normalized[2..], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out parsedMask)
+                    : ulong.TryParse(normalized, NumberStyles.None, CultureInfo.InvariantCulture, out parsedMask);
+                if (!parsed || parsedMask == 0)
+                {
+                    throw new ArgumentException(
+                        "--mask must be a non-zero 64-bit processor mask in decimal or 0x-prefixed hexadecimal form.");
+                }
+                affinityMask = parsedMask;
+            }
+
+            if (processor is { } cpu)
+            {
+                var singleMask = 1UL << cpu;
+                if (affinityMask is { } requestedMask && requestedMask != singleMask)
+                {
+                    throw new ArgumentException("--processor and --mask describe different processor selections.");
+                }
+                affinityMask ??= singleMask;
+            }
+
+            if (action == ManualAffinityAction.Apply && affinityMask is null)
+            {
+                throw new ArgumentException("--mask or --processor is required for manual affinity Apply.");
+            }
+
+            if (affinityMask is { } mask)
+            {
+                processor = GpuInterruptAffinityCandidate.GetPrimaryProcessorNumber(mask);
             }
 
             return new ManualAffinityOptions(
@@ -799,6 +864,7 @@ internal static class ManualDeviceAffinityRunner
                 targetKind,
                 Required("--device"),
                 processor,
+                affinityMask,
                 Path.GetFullPath(Required("--output")));
         }
     }
@@ -827,6 +893,7 @@ internal sealed record ManualDeviceAffinityReport(
     string? DisplayName,
     string? TargetKind,
     byte? ProcessorNumber,
+    ulong? RequestedMask,
     Guid? ExperimentId,
     bool RestartRequired,
     ulong? StoredMask,

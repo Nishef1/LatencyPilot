@@ -37,7 +37,9 @@ public static class GpuInterruptAffinityStateComparer
 
         return candidate.ProcessorGroup == 0 &&
                candidate.ProcessorNumber < 64 &&
-               candidate.AffinityMask == (1UL << candidate.ProcessorNumber) &&
+               candidate.AffinityMask != 0 &&
+               candidate.ProcessorNumber ==
+                   GpuInterruptAffinityCandidate.GetPrimaryProcessorNumber(candidate.AffinityMask) &&
                mask == candidate.AffinityMask;
     }
 

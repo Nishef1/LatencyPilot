@@ -207,7 +207,7 @@ public sealed partial class MainWindow
                     targetKind,
                     FormatStoredAffinity(device.InterruptConfiguration),
                     FormatAllocatedAffinity(device.InterruptResources),
-                    TrySingleCpu(device.InterruptConfiguration.AssignmentSetOverrideMask),
+                    device.InterruptConfiguration.AssignmentSetOverrideMask,
                     device.InterruptConfiguration.DevicePolicy == 4 &&
                     device.InterruptConfiguration.AssignmentSetOverrideMask is not null);
             })
@@ -658,11 +658,7 @@ public sealed partial class MainWindow
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var title = new StackPanel { Spacing = 2d };
-        var titleRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8d,
-        };
+        var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8d };
         titleRow.Children.Add(new FontIcon
         {
             FontFamily = new FontFamily("Segoe Fluent Icons"),
@@ -680,7 +676,7 @@ public sealed partial class MainWindow
         {
             Text = row.TargetKind is null
                 ? "This device is available for inspection only."
-                : "Choose one CPU for this verified manual experiment.",
+                : "Choose one or more CPUs for this verified manual processor mask.",
             Style = AppStyle("CaptionTextStyle"),
         });
         header.Children.Add(title);
@@ -697,12 +693,8 @@ public sealed partial class MainWindow
         var metrics = new Grid { ColumnSpacing = 8d };
         for (var index = 0; index < 3; index++)
         {
-            metrics.ColumnDefinitions.Add(new ColumnDefinition
-            {
-                Width = new GridLength(1d, GridUnitType.Star),
-            });
+            metrics.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
         }
-
         var policyTile = BuildManualAffinityMetricTile(
             "Current policy",
             FormatManualAffinityPolicy(row.Device.InterruptConfiguration));
@@ -721,9 +713,17 @@ public sealed partial class MainWindow
 
         if (row.TargetKind is not null)
         {
-            ManualAffinityCpuOption? selectedCpu = row.StoredSingleCpu is { } storedCpu
-                ? snapshot.CpuOptions.FirstOrDefault(option => option.Processor.Number == storedCpu)
-                : null;
+            var selectedProcessors = new HashSet<byte>();
+            if (row.StoredMask is { } storedMask)
+            {
+                foreach (var option in snapshot.CpuOptions)
+                {
+                    if ((storedMask & (1UL << option.Processor.Number)) != 0)
+                    {
+                        selectedProcessors.Add(option.Processor.Number);
+                    }
+                }
+            }
 
             var cpuHeader = new Grid { ColumnSpacing = 10d };
             cpuHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
@@ -731,25 +731,29 @@ public sealed partial class MainWindow
             var cpuTitle = new StackPanel { Spacing = 1d };
             cpuTitle.Children.Add(new TextBlock
             {
-                Text = "Processor target",
+                Text = "Processor mask",
                 Style = AppStyle("MetricLabelTextStyle"),
                 Foreground = ThemeBrush("TextBrush"),
             });
             cpuTitle.Children.Add(new TextBlock
             {
-                Text = "One processor is tested at a time; physical-core mapping is shown on hover.",
+                Text = "Select multiple processors when needed; every selected bit must exist in the current group-0 topology.",
                 Style = AppStyle("CaptionTextStyle"),
             });
             cpuHeader.Children.Add(cpuTitle);
 
-            var clearButton = new Button
+            var selectAllButton = new Button { Content = "Select all", Style = AppStyle("QuietButtonStyle") };
+            var clearButton = new Button { Content = "Clear", Style = AppStyle("QuietButtonStyle") };
+            var selectionActions = new StackPanel
             {
-                Content = "Clear",
-                Style = AppStyle("QuietButtonStyle"),
+                Orientation = Orientation.Horizontal,
+                Spacing = 4d,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            Grid.SetColumn(clearButton, 1);
-            cpuHeader.Children.Add(clearButton);
+            selectionActions.Children.Add(selectAllButton);
+            selectionActions.Children.Add(clearButton);
+            Grid.SetColumn(selectionActions, 1);
+            cpuHeader.Children.Add(selectionActions);
             panel.Children.Add(cpuHeader);
 
             var applyButton = new Button
@@ -771,15 +775,20 @@ public sealed partial class MainWindow
                         new TextBlock { Text = "Apply & verify" },
                     },
                 },
-                IsEnabled = selectedCpu is not null && !_manualDeviceAffinityBusy,
+            };
+            var selectionSummary = new TextBlock
+            {
+                Style = AppStyle("CaptionTextStyle"),
+                Foreground = ThemeBrush("MutedTextBrush"),
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
             };
 
             var cpuGrid = new Grid { ColumnSpacing = 6d, RowSpacing = 6d };
             var columnCount = Math.Min(8, Math.Max(1, snapshot.CpuOptions.Count));
             for (var column = 0; column < columnCount; column++)
             {
-                cpuGrid.ColumnDefinitions.Add(
-                    new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+                cpuGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
             }
             var rowCount = (int)Math.Ceiling(snapshot.CpuOptions.Count / (double)columnCount);
             for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
@@ -788,17 +797,32 @@ public sealed partial class MainWindow
             }
 
             var cpuButtons = new List<ToggleButton>();
-            void SelectCpu(ManualAffinityCpuOption? option)
+
+            ulong BuildSelectedMask()
             {
-                selectedCpu = option;
+                ulong mask = 0;
+                foreach (var processor in selectedProcessors)
+                {
+                    mask |= 1UL << processor;
+                }
+                return mask;
+            }
+
+            void RefreshSelection()
+            {
+                var mask = BuildSelectedMask();
                 foreach (var button in cpuButtons)
                 {
-                    button.IsChecked =
-                        option is not null &&
-                        button.Tag is ManualAffinityCpuOption candidate &&
-                        candidate.Processor.Equals(option.Processor);
+                    if (button.Tag is ManualAffinityCpuOption option)
+                    {
+                        button.IsChecked = selectedProcessors.Contains(option.Processor.Number);
+                    }
                 }
-                applyButton.IsEnabled = selectedCpu is not null && !_manualDeviceAffinityBusy;
+
+                applyButton.IsEnabled = mask != 0 && !_manualDeviceAffinityBusy;
+                selectionSummary.Text = mask == 0
+                    ? "No processors selected."
+                    : $"{selectedProcessors.Count.ToString(CultureInfo.InvariantCulture)} selected · {FormatMask(mask)} · mask 0x{mask:X}";
             }
 
             for (var index = 0; index < snapshot.CpuOptions.Count; index++)
@@ -808,7 +832,7 @@ public sealed partial class MainWindow
                 {
                     Content = $"CPU {option.Processor.Number.ToString(CultureInfo.InvariantCulture)}",
                     Tag = option,
-                    IsChecked = selectedCpu?.Processor.Equals(option.Processor) == true,
+                    IsChecked = selectedProcessors.Contains(option.Processor.Number),
                     MinHeight = 36d,
                     MinWidth = 70d,
                     Padding = new Thickness(8d, 5d, 8d, 5d),
@@ -818,14 +842,39 @@ public sealed partial class MainWindow
                 ToolTipService.SetToolTip(
                     cpuButton,
                     $"Physical core {option.PhysicalCoreIndex.ToString(CultureInfo.InvariantCulture)}");
-                cpuButton.Click += (_, _) => SelectCpu(option);
+                cpuButton.Click += (_, _) =>
+                {
+                    if (cpuButton.IsChecked == true)
+                    {
+                        selectedProcessors.Add(option.Processor.Number);
+                    }
+                    else
+                    {
+                        selectedProcessors.Remove(option.Processor.Number);
+                    }
+                    RefreshSelection();
+                };
                 Grid.SetRow(cpuButton, index / columnCount);
                 Grid.SetColumn(cpuButton, index % columnCount);
                 cpuGrid.Children.Add(cpuButton);
                 cpuButtons.Add(cpuButton);
             }
 
-            clearButton.Click += (_, _) => SelectCpu(null);
+            selectAllButton.Click += (_, _) =>
+            {
+                selectedProcessors.Clear();
+                foreach (var option in snapshot.CpuOptions)
+                {
+                    selectedProcessors.Add(option.Processor.Number);
+                }
+                RefreshSelection();
+            };
+            clearButton.Click += (_, _) =>
+            {
+                selectedProcessors.Clear();
+                RefreshSelection();
+            };
+
             panel.Children.Add(new Border
             {
                 Padding = new Thickness(8d),
@@ -865,48 +914,32 @@ public sealed partial class MainWindow
             AutomationProperties.SetName(
                 restoreButton,
                 $"Restore journal-owned original affinity for {row.Device.DisplayName}");
-
             restoreButton.Click += async (_, _) =>
-                await RunManualAffinityActionAsync(
-                    host,
-                    dialogStatusText,
-                    row,
-                    "Restore",
-                    null);
+                await RunManualAffinityActionAsync(host, dialogStatusText, row, "Restore", null);
 
             applyButton.Click += async (_, _) =>
             {
-                if (selectedCpu is null)
+                var mask = BuildSelectedMask();
+                if (mask == 0)
                 {
                     return;
                 }
 
-                await RunManualAffinityActionAsync(
-                    host,
-                    dialogStatusText,
-                    row,
-                    "Apply",
-                    selectedCpu.Processor.Number);
+                await RunManualAffinityActionAsync(host, dialogStatusText, row, "Apply", mask);
             };
 
             var actions = new Grid { ColumnSpacing = 8d };
             actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
             actions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             actions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            actions.Children.Add(new TextBlock
-            {
-                Text = row.HasExplicitOverride
-                    ? "An explicit mask is stored. LatencyPilot only owns it when the mutation journal says so."
-                    : "No explicit processor mask is currently stored.",
-                Style = AppStyle("CaptionTextStyle"),
-                Foreground = ThemeBrush(row.HasExplicitOverride ? "SemanticAttentionBrush" : "MutedTextBrush"),
-                VerticalAlignment = VerticalAlignment.Center,
-            });
+            actions.Children.Add(selectionSummary);
             Grid.SetColumn(restoreButton, 1);
             actions.Children.Add(restoreButton);
             Grid.SetColumn(applyButton, 2);
             actions.Children.Add(applyButton);
             panel.Children.Add(actions);
+
+            RefreshSelection();
         }
         else
         {
@@ -926,7 +959,7 @@ public sealed partial class MainWindow
 
         panel.Children.Add(new TextBlock
         {
-            Text = "Stored policy, Windows assignment, and runtime ISR proof are separate evidence. Supported changes are kept only after verification succeeds.",
+            Text = "Stored policy, Windows assignment, and runtime ISR proof are separate evidence. Supported changes are kept only when allocation and observed ISR execution stay inside the requested processor mask.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
             Foreground = ThemeBrush("MutedTextBrush"),
@@ -1137,7 +1170,7 @@ public sealed partial class MainWindow
         TextBlock dialogStatusText,
         ManualAffinityDeviceRow row,
         string action,
-        byte? processorNumber)
+        ulong? affinityMask)
     {
         if (_manualDeviceAffinityBusy || string.IsNullOrWhiteSpace(row.TargetKind))
         {
@@ -1157,10 +1190,10 @@ public sealed partial class MainWindow
         ManualDeviceAffinityButton.IsEnabled = false;
         SetManualAffinityStatus(
             dialogStatusText,
-            action == "Apply"
+            action == "Apply" && affinityMask is { } requestedMask
                 ? row.TargetKind == "Xhci"
-                    ? $"Applying CPU {processorNumber?.ToString(CultureInfo.InvariantCulture)} to {row.Device.DisplayName}. After UAC, keep moving the USB mouse/using USB input during the ~10 s ETW verification; Windows may briefly restart the controller…"
-                    : $"Applying CPU {processorNumber?.ToString(CultureInfo.InvariantCulture)} to {row.Device.DisplayName}. After UAC, keep representative graphics activity running during the ~10 s ETW verification; Windows may briefly restart the device…"
+                    ? $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep moving the USB mouse/using USB input during the ~10 s ETW verification; Windows may briefly restart the controller…"
+                    : $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep representative graphics activity running during the ~10 s ETW verification; Windows may briefly restart the device…"
                 : $"Restoring journal-owned original state for {row.Device.DisplayName}…",
             "SemanticAttentionBrush");
 
@@ -1170,7 +1203,7 @@ public sealed partial class MainWindow
                 action,
                 row.TargetKind,
                 row.Device.InstanceId,
-                processorNumber);
+                affinityMask);
             var status = report.Status == "RebootRequired"
                 ? "SemanticAttentionBrush"
                 : report.Status is "AppliedAndKept" or "AlreadyConfigured" or "Restored" or "NoLatencyPilotChange"
@@ -1179,7 +1212,7 @@ public sealed partial class MainWindow
             var message = report.Status == "RebootRequired"
                 ? action == "Restore"
                     ? $"{row.Device.DisplayName}: Windows requires a reboot to finish restoring the journal-owned original state. Reboot, reopen this panel, and choose Restore again."
-                    : $"{row.Device.DisplayName}: Windows requires a reboot. Reboot, reopen this panel, and select the same CPU again to resume the journaled experiment."
+                    : $"{row.Device.DisplayName}: Windows requires a reboot. Reboot, reopen this panel, and select the same processor mask again to resume the journaled experiment."
                 : $"{row.Device.DisplayName}: {report.Message}";
             SetManualAffinityStatus(
                 dialogStatusText,
@@ -1231,7 +1264,7 @@ public sealed partial class MainWindow
         string action,
         string targetKind,
         string deviceInstanceId,
-        byte? processorNumber)
+        ulong? affinityMask)
     {
         if (string.IsNullOrWhiteSpace(_gateARepositoryRoot))
         {
@@ -1280,10 +1313,10 @@ public sealed partial class MainWindow
         {
             startInfo.ArgumentList.Add(argument);
         }
-        if (processorNumber is { } cpu)
+        if (affinityMask is { } mask)
         {
-            startInfo.ArgumentList.Add("--processor");
-            startInfo.ArgumentList.Add(cpu.ToString(CultureInfo.InvariantCulture));
+            startInfo.ArgumentList.Add("--mask");
+            startInfo.ArgumentList.Add($"0x{mask:X}");
         }
 
         using var process = Process.Start(startInfo)
@@ -1308,7 +1341,7 @@ public sealed partial class MainWindow
             GateAJsonOptions)
             ?? throw new InvalidDataException("Manual affinity helper returned an empty report.");
 
-        if (!string.Equals(report.Schema, "latencypilot-manual-device-affinity-v1", StringComparison.Ordinal))
+        if (!string.Equals(report.Schema, "latencypilot-manual-device-affinity-v2", StringComparison.Ordinal))
         {
             throw new InvalidDataException($"Unsupported manual affinity report schema '{report.Schema}'.");
         }
@@ -1377,24 +1410,6 @@ public sealed partial class MainWindow
         };
     }
 
-    private static byte? TrySingleCpu(ulong? mask)
-    {
-        if (mask is not { } value || value == 0 || (value & (value - 1)) != 0)
-        {
-            return null;
-        }
-
-        for (byte cpu = 0; cpu < 64; cpu++)
-        {
-            if ((value & (1UL << cpu)) != 0)
-            {
-                return cpu;
-            }
-        }
-
-        return null;
-    }
-
     private sealed record ManualAffinitySnapshot(
         IReadOnlyList<ManualAffinityDeviceRow> Rows,
         IReadOnlyList<ManualAffinityCpuOption> CpuOptions);
@@ -1405,7 +1420,7 @@ public sealed partial class MainWindow
         string? TargetKind,
         string StoredAffinity,
         string AllocatedAffinity,
-        byte? StoredSingleCpu,
+        ulong? StoredMask,
         bool HasExplicitOverride);
 
     private sealed record ManualAffinityCpuOption(
@@ -1425,6 +1440,7 @@ public sealed partial class MainWindow
         string? DisplayName,
         string? TargetKind,
         byte? ProcessorNumber,
+        ulong? RequestedMask,
         Guid? ExperimentId,
         bool RestartRequired,
         ulong? StoredMask,
