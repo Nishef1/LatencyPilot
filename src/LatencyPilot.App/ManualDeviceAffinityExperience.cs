@@ -200,7 +200,9 @@ public sealed partial class MainWindow
                     ? "Gpu"
                     : string.Equals(device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase)
                         ? "Xhci"
-                        : null;
+                        : IsManualAudioMsiTarget(device)
+                            ? "AudioMsi"
+                            : null;
                 return new ManualAffinityDeviceRow(
                     device,
                     classified.ContainsKey(device.InstanceId) ? kind : null,
@@ -219,6 +221,12 @@ public sealed partial class MainWindow
 
         return new ManualAffinitySnapshot(rows, cpuOptions);
     }
+
+    private static bool IsManualAudioMsiTarget(PnPDeviceSnapshot device) =>
+        string.Equals(device.ServiceName, "HDAudBus", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(device.EnumeratorName, "PCI", StringComparison.OrdinalIgnoreCase) &&
+        device.InterruptConfiguration.ReadStatus == InterruptConfigurationReadStatus.Available &&
+        device.InterruptConfiguration.MsiSupported is 0 or 1;
 
     private void RenderManualAffinityWorkspace(
         StackPanel host,
@@ -243,7 +251,7 @@ public sealed partial class MainWindow
         });
         titleText.Children.Add(new TextBlock
         {
-            Text = "Inspect supported devices and assign a verified interrupt target.",
+            Text = "Inspect supported devices and apply only verified interrupt-affinity or MSI changes.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
         });
@@ -459,7 +467,13 @@ public sealed partial class MainWindow
         if (row.TargetKind is not null)
         {
             var badge = BuildManualAffinityPill(
-                row.TargetKind == "Gpu" ? "GPU · Supported" : "USBXHCI · Supported",
+                row.TargetKind switch
+                {
+                    "Gpu" => "GPU affinity · Supported",
+                    "Xhci" => "USBXHCI affinity · Supported",
+                    "AudioMsi" => "HDAudio MSI · Supported",
+                    _ => "Supported",
+                },
                 "SemanticGoodBrush",
                 "PremiumOverviewQuietBrush");
             badge.VerticalAlignment = VerticalAlignment.Center;
@@ -611,12 +625,190 @@ public sealed partial class MainWindow
             Style = AppStyle("DashboardCardStyle"),
             Child = summary,
         });
-        stack.Children.Add(BuildManualAffinityMaskPanel(
-            host,
-            snapshot,
-            row,
-            dialogStatusText));
+        stack.Children.Add(
+            row.TargetKind == "AudioMsi"
+                ? BuildManualMsiPanel(host, row, dialogStatusText)
+                : BuildManualAffinityMaskPanel(host, snapshot, row, dialogStatusText));
         return stack;
+    }
+
+    private Border BuildManualMsiPanel(
+        StackPanel host,
+        ManualAffinityDeviceRow row,
+        TextBlock dialogStatusText)
+    {
+        var configuration = row.Device.InterruptConfiguration;
+        var activeMsi =
+            DeviceInterruptConfigurationStore.IsMessageSignaledInterruptActive(
+                row.Device.InterruptResources);
+
+        var panel = new StackPanel { Spacing = 12d };
+        var header = new Grid { ColumnSpacing = 10d };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var title = new StackPanel { Spacing = 2d };
+        var titleRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8d,
+        };
+        titleRow.Children.Add(new FontIcon
+        {
+            FontFamily = new FontFamily("Segoe Fluent Icons"),
+            Glyph = "\uE767",
+            FontSize = 17d,
+            Foreground = ThemeBrush("AccentBrush"),
+        });
+        titleRow.Children.Add(new TextBlock
+        {
+            Text = "Message-signaled interrupts",
+            Style = AppStyle("SubsectionTitleTextStyle"),
+        });
+        title.Children.Add(titleRow);
+        title.Children.Add(new TextBlock
+        {
+            Text = "Enable MSI only when the HDAudio device already exposes the documented MSISupported DWORD. MessageNumberLimit is never changed.",
+            TextWrapping = TextWrapping.Wrap,
+            Style = AppStyle("CaptionTextStyle"),
+        });
+        header.Children.Add(title);
+
+        var stateBadge = BuildManualAffinityPill(
+            activeMsi == true ? "MSI active" : configuration.IsMsiConfiguredEnabled ? "Needs verification" : "Available",
+            activeMsi == true ? "SemanticGoodBrush" : "SemanticAttentionBrush",
+            activeMsi == true ? "PremiumOverviewQuietBrush" : "SurfaceAltBrush");
+        stateBadge.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(stateBadge, 1);
+        header.Children.Add(stateBadge);
+        panel.Children.Add(header);
+
+        var metrics = new Grid { ColumnSpacing = 8d };
+        for (var index = 0; index < 3; index++)
+        {
+            metrics.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1d, GridUnitType.Star),
+            });
+        }
+
+        var configuredTile = BuildManualAffinityMetricTile(
+            "Stored MSI policy",
+            configuration.MsiSupported switch
+            {
+                1 => "Enabled",
+                0 => "Disabled",
+                _ => "N/A",
+            });
+        var activeTile = BuildManualAffinityMetricTile(
+            "Active interrupt mode",
+            activeMsi switch
+            {
+                true => "Message-signaled",
+                false => "Line-based or mixed",
+                null => "Not proven",
+            });
+        var limitTile = BuildManualAffinityMetricTile(
+            "Message limit",
+            configuration.MessageNumberLimit?.ToString(CultureInfo.InvariantCulture) ?? "Driver default");
+
+        metrics.Children.Add(configuredTile);
+        Grid.SetColumn(activeTile, 1);
+        metrics.Children.Add(activeTile);
+        Grid.SetColumn(limitTile, 2);
+        metrics.Children.Add(limitTile);
+        panel.Children.Add(metrics);
+
+        var applyButton = new Button
+        {
+            Style = AppStyle("PrimaryButtonStyle"),
+            MinWidth = 170d,
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 7d,
+                Children =
+                {
+                    new FontIcon
+                    {
+                        FontFamily = new FontFamily("Segoe Fluent Icons"),
+                        Glyph = "\uE73E",
+                        FontSize = 14d,
+                    },
+                    new TextBlock
+                    {
+                        Text = configuration.IsMsiConfiguredEnabled
+                            ? "Verify MSI"
+                            : "Enable MSI & verify",
+                    },
+                },
+            },
+        };
+        AutomationProperties.SetName(
+            applyButton,
+            $"{(configuration.IsMsiConfiguredEnabled ? "Verify" : "Enable")} MSI for {row.Device.DisplayName}");
+        applyButton.Click += async (_, _) =>
+            await RunManualAffinityActionAsync(
+                host,
+                dialogStatusText,
+                row,
+                "Apply",
+                null);
+
+        var restoreButton = new Button
+        {
+            Style = AppStyle("SecondaryButtonStyle"),
+            MinWidth = 150d,
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 7d,
+                Children =
+                {
+                    new FontIcon
+                    {
+                        FontFamily = new FontFamily("Segoe Fluent Icons"),
+                        Glyph = "\uE777",
+                        FontSize = 14d,
+                    },
+                    new TextBlock { Text = "Restore original" },
+                },
+            },
+        };
+        AutomationProperties.SetName(
+            restoreButton,
+            $"Restore journal-owned original MSI state for {row.Device.DisplayName}");
+        restoreButton.Click += async (_, _) =>
+            await RunManualAffinityActionAsync(
+                host,
+                dialogStatusText,
+                row,
+                "Restore",
+                null);
+
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8d,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        actions.Children.Add(restoreButton);
+        actions.Children.Add(applyButton);
+        panel.Children.Add(actions);
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Keep requires both MSISupported=1 and active Windows interrupt resources marked as message-signaled after the device restart. If active MSI cannot be proven, LatencyPilot restores the exact original state.",
+            TextWrapping = TextWrapping.Wrap,
+            Style = AppStyle("CaptionTextStyle"),
+            Foreground = ThemeBrush("MutedTextBrush"),
+        });
+
+        return new Border
+        {
+            Style = AppStyle("DashboardCardStyle"),
+            Child = panel,
+        };
     }
 
     private Grid BuildManualAffinityIdentityRow(string label, string value)
@@ -1188,13 +1380,19 @@ public sealed partial class MainWindow
 
         _manualDeviceAffinityBusy = true;
         ManualDeviceAffinityButton.IsEnabled = false;
+        var actionStatus = action == "Apply"
+            ? row.TargetKind == "AudioMsi"
+                ? $"Enabling/verifying MSI for {row.Device.DisplayName}. Windows may briefly restart the audio controller; MessageNumberLimit will not be changed…"
+                : affinityMask is { } requestedMask
+                    ? row.TargetKind == "Xhci"
+                        ? $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep moving the USB mouse/using USB input during the ~10 s ETW verification; Windows may briefly restart the controller…"
+                        : $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep representative graphics activity running during the ~10 s ETW verification; Windows may briefly restart the device…"
+                    : $"Preparing supported interrupt change for {row.Device.DisplayName}…"
+            : $"Restoring journal-owned original state for {row.Device.DisplayName}…";
+
         SetManualAffinityStatus(
             dialogStatusText,
-            action == "Apply" && affinityMask is { } requestedMask
-                ? row.TargetKind == "Xhci"
-                    ? $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep moving the USB mouse/using USB input during the ~10 s ETW verification; Windows may briefly restart the controller…"
-                    : $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep representative graphics activity running during the ~10 s ETW verification; Windows may briefly restart the device…"
-                : $"Restoring journal-owned original state for {row.Device.DisplayName}…",
+            actionStatus,
             "SemanticAttentionBrush");
 
         try
@@ -1212,7 +1410,9 @@ public sealed partial class MainWindow
             var message = report.Status == "RebootRequired"
                 ? action == "Restore"
                     ? $"{row.Device.DisplayName}: Windows requires a reboot to finish restoring the journal-owned original state. Reboot, reopen this panel, and choose Restore again."
-                    : $"{row.Device.DisplayName}: Windows requires a reboot. Reboot, reopen this panel, and select the same processor mask again to resume the journaled experiment."
+                    : row.TargetKind == "AudioMsi"
+                        ? $"{row.Device.DisplayName}: Windows requires a reboot. Reboot, reopen this panel, and choose Enable MSI again to resume verification."
+                        : $"{row.Device.DisplayName}: Windows requires a reboot. Reboot, reopen this panel, and select the same processor mask again to resume the journaled experiment."
                 : $"{row.Device.DisplayName}: {report.Message}";
             SetManualAffinityStatus(
                 dialogStatusText,

@@ -5,7 +5,12 @@ using Microsoft.Win32;
 
 namespace LatencyPilot.Platform.Windows.Devices;
 
-public enum DeviceInterruptTargetKind { DisplayAdapter = 0, XhciController = 1 }
+public enum DeviceInterruptTargetKind
+{
+    DisplayAdapter = 0,
+    XhciController = 1,
+    HighDefinitionAudioController = 2,
+}
 
 public sealed record DeviceInterruptConfigurationSnapshot(
     string DeviceInstanceId, string DisplayName, string? DriverVersion, DeviceInterruptTargetKind TargetKind,
@@ -25,6 +30,7 @@ public static class DeviceInterruptConfigurationStore
     private const string MessageNumberLimitValue = "MessageNumberLimit";
     private const string DevicePolicyValue = "DevicePolicy";
     private const string AssignmentSetOverrideValue = "AssignmentSetOverride";
+    private const ushort CmResourceInterruptMessage = 0x0002;
 
     public static DeviceInterruptConfigurationSnapshot Capture(string deviceInstanceId)
     {
@@ -33,7 +39,7 @@ public static class DeviceInterruptConfigurationStore
             ?? throw new InvalidOperationException("Target hardware registry key is unavailable.");
         using var msi = hardware.OpenSubKey(MsiSubKey, false);
         using var affinity = hardware.OpenSubKey(AffinitySubKey, false);
-        var kind = device.ClassGuid == DisplayClass ? DeviceInterruptTargetKind.DisplayAdapter : DeviceInterruptTargetKind.XhciController;
+        var kind = GetTargetKind(device);
         return new DeviceInterruptConfigurationSnapshot(device.InstanceId, device.DisplayName, device.Driver.Version, kind,
             msi is not null, ReadValue(msi, MsiSupportedValue), ReadValue(msi, MessageNumberLimitValue),
             affinity is not null, ReadValue(affinity, DevicePolicyValue), ReadValue(affinity, AssignmentSetOverrideValue));
@@ -44,10 +50,32 @@ public static class DeviceInterruptConfigurationStore
 
     public static void EnsureMsiApplicable(DeviceInterruptConfigurationSnapshot snapshot)
     {
-        if (snapshot.TargetKind != DeviceInterruptTargetKind.DisplayAdapter)
-            throw new NotSupportedException("MSI enablement in v1 is limited to the present display adapter target.");
+        if (snapshot.TargetKind is not (
+                DeviceInterruptTargetKind.DisplayAdapter or
+                DeviceInterruptTargetKind.HighDefinitionAudioController))
+        {
+            throw new NotSupportedException(
+                "Bounded MSI enablement is limited to the present display adapter or a PCI High Definition Audio controller.");
+        }
+
         if (!TryDword(snapshot.MsiSupported, out var value) || value > 1)
-            throw new NotSupportedException("MSISupported must already exist as DWORD 0 or 1; LatencyPilot will not invent unsupported MSI policy.");
+        {
+            throw new NotSupportedException(
+                "MSISupported must already exist as DWORD 0 or 1; LatencyPilot will not invent unsupported MSI policy.");
+        }
+    }
+
+    public static bool? IsMessageSignaledInterruptActive(InterruptResourceSnapshot resources)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        if (resources.ReadStatus != InterruptResourceReadStatus.Available ||
+            resources.Resources.Count == 0)
+        {
+            return null;
+        }
+
+        return resources.Resources.All(resource =>
+            (resource.RawFlags & CmResourceInterruptMessage) != 0);
     }
 
     public static void ApplyMsi(DeviceInterruptConfigurationSnapshot original)
@@ -215,11 +243,34 @@ public static class DeviceInterruptConfigurationStore
     private static PnPDeviceSnapshot GetSupportedPresentTarget(string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
-        var device = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(d => string.Equals(d.InstanceId, id, StringComparison.OrdinalIgnoreCase))
+        var device = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(d =>
+            string.Equals(d.InstanceId, id, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException("Interrupt mutation target is not present.");
-        if (device.ClassGuid != DisplayClass && !string.Equals(device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase))
-            throw new NotSupportedException("Only the present display adapter or a USBXHCI controller is supported by this mutation store.");
+
+        _ = GetTargetKind(device);
         return device;
+    }
+
+    private static DeviceInterruptTargetKind GetTargetKind(PnPDeviceSnapshot device)
+    {
+        if (device.ClassGuid == DisplayClass)
+        {
+            return DeviceInterruptTargetKind.DisplayAdapter;
+        }
+
+        if (string.Equals(device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase))
+        {
+            return DeviceInterruptTargetKind.XhciController;
+        }
+
+        if (string.Equals(device.ServiceName, "HDAudBus", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(device.EnumeratorName, "PCI", StringComparison.OrdinalIgnoreCase))
+        {
+            return DeviceInterruptTargetKind.HighDefinitionAudioController;
+        }
+
+        throw new NotSupportedException(
+            "Only the present display adapter, USBXHCI controller, or PCI High Definition Audio controller is supported by this bounded mutation store.");
     }
 
     private static string HardwareSubPath(string id, string child) => $"SYSTEM\\CurrentControlSet\\Enum\\{id}\\{child}";

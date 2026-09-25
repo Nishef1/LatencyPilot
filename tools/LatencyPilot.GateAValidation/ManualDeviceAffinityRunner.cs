@@ -108,14 +108,12 @@ internal static class ManualDeviceAffinityRunner
                 .Where(entry =>
                     string.Equals(entry.TargetId, options.DeviceInstanceId, StringComparison.OrdinalIgnoreCase))
                 .ToArray();
-            if (targetPending.Length != 1 || unresolved.Count != 1 ||
-                !string.Equals(
-                    targetPending[0].Kind,
-                    DeviceInterruptMutationContract.XhciAffinityKind,
-                    StringComparison.Ordinal))
+            if (targetPending.Length != 1 ||
+                unresolved.Count != 1 ||
+                !DeviceInterruptMutationContract.IsSupportedKind(targetPending[0].Kind))
             {
                 throw new InvalidOperationException(
-                    "Restore is blocked by unresolved mutation work that is not one xHCI experiment owned by this device. Recover that work first.");
+                    "Restore is blocked by unresolved mutation work that is not one bounded device-interrupt experiment owned by this device. Recover that work first.");
             }
 
             var transaction = new DeviceInterruptMutationTransaction(journal);
@@ -135,7 +133,7 @@ internal static class ManualDeviceAffinityRunner
                     pending.ExperimentId,
                     restartRequired: true,
                     verification: rollback.Entry.FailureReason,
-                    message: "The exact original xHCI policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again.");
+                    message: "The exact original device-interrupt policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again.");
             }
 
             if (rollback.Entry.State != MutationJournalState.Reverted ||
@@ -143,7 +141,7 @@ internal static class ManualDeviceAffinityRunner
             {
                 throw new InvalidOperationException(
                     rollback.Entry.FailureReason ??
-                    $"xHCI restore stopped in {rollback.Entry.State}; recovery is required.");
+                    $"Device-interrupt restore stopped in {rollback.Entry.State}; recovery is required.");
             }
         }
 
@@ -176,6 +174,12 @@ internal static class ManualDeviceAffinityRunner
         out Guid? experimentId)
     {
         experimentId = null;
+
+        if (options.TargetKind == ManualAffinityTargetKind.AudioMsi)
+        {
+            return ApplyAudioMsi(journal, options, out experimentId);
+        }
+
         if (options.AffinityMask is not { } affinityMask)
         {
             throw new ArgumentException("--mask or --processor is required for manual affinity apply.");
@@ -200,8 +204,175 @@ internal static class ManualDeviceAffinityRunner
                     validatedGpuCandidate.AffinityMask),
                 out experimentId),
             _ => throw new NotSupportedException(
-                "Manual affinity mutation is supported only for the display adapter and USBXHCI controllers."),
+                "Manual interrupt mutation is supported only for GPU affinity, USBXHCI affinity, and bounded PCI HDAudio MSI enablement."),
         };
+    }
+
+    private static ManualDeviceAffinityReport ApplyAudioMsi(
+        MutationJournal journal,
+        ManualAffinityOptions options,
+        out Guid? experimentId)
+    {
+        experimentId = null;
+        var transaction = new DeviceInterruptMutationTransaction(journal);
+        var pending = journal.GetUnresolved()
+            .Where(entry =>
+                string.Equals(entry.TargetId, options.DeviceInstanceId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(entry.Kind, DeviceInterruptMutationContract.MsiKind, StringComparison.Ordinal))
+            .ToArray();
+
+        if (pending.Length > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one unresolved MSI mutation owns this device; recover them before another manual change.");
+        }
+
+        if (pending.Length == 1)
+        {
+            EnsureOnlyTargetPending(journal, pending[0].ExperimentId);
+            experimentId = pending[0].ExperimentId;
+            if (pending[0].State != MutationJournalState.ApplyRebootPending)
+            {
+                throw new InvalidOperationException(
+                    $"The existing MSI experiment is {pending[0].State}; recover or restore it before applying another manual MSI change.");
+            }
+
+            var resumed = transaction.ResumeAfterReboot(pending[0].ExperimentId);
+            if (resumed.Entry.State == MutationJournalState.Applied)
+            {
+                return VerifyAndKeepAudioMsi(transaction, options, pending[0].ExperimentId);
+            }
+
+            if (resumed.Entry.State == MutationJournalState.ApplyRebootPending)
+            {
+                return CreateReport(
+                    options,
+                    "RebootRequired",
+                    succeeded: false,
+                    TryGetPresentDevice(options.DeviceInstanceId),
+                    pending[0].ExperimentId,
+                    restartRequired: true,
+                    verification: resumed.Entry.FailureReason,
+                    message: "The stored HDAudio MSI candidate is still awaiting reboot activation/verification.");
+            }
+
+            throw new InvalidOperationException(
+                resumed.Entry.FailureReason ??
+                $"MSI reboot resume stopped in {resumed.Entry.State}; recover the journal before another manual change.");
+        }
+
+        EnsureNoUnresolvedMutation(journal);
+        var prepared = transaction.PrepareMsi(options.DeviceInstanceId);
+        if (prepared.NoWriteRequired)
+        {
+            var device = TryGetPresentDevice(options.DeviceInstanceId);
+            var active = device is not null &&
+                DeviceInterruptConfigurationStore.IsMessageSignaledInterruptActive(
+                    device.InterruptResources) == true;
+            return CreateReport(
+                options,
+                active ? "AlreadyConfigured" : "AlreadyStoredUnverified",
+                succeeded: active,
+                device,
+                experimentId: null,
+                restartRequired: false,
+                verification: active
+                    ? "MSISupported=1 and allocated interrupt resources carry CM_RESOURCE_INTERRUPT_MESSAGE."
+                    : "MSISupported=1 is stored, but active message-signaled interrupt resources could not be proven.",
+                message: active
+                    ? "HDAudio MSI is already configured and Windows allocated message-signaled interrupt resources. No LatencyPilot write was required."
+                    : "HDAudio MSI is already stored, but active MSI delivery could not be proven. No write was attempted and LatencyPilot does not claim ownership.");
+        }
+
+        var entry = prepared.Entry
+            ?? throw new InvalidOperationException("MSI prepare returned neither a no-op nor a journal entry.");
+        experimentId = entry.ExperimentId;
+
+        try
+        {
+            var applied = transaction.Apply(entry.ExperimentId);
+            if (applied.Entry.State == MutationJournalState.ApplyRebootPending)
+            {
+                return CreateReport(
+                    options,
+                    "RebootRequired",
+                    succeeded: false,
+                    TryGetPresentDevice(options.DeviceInstanceId),
+                    entry.ExperimentId,
+                    restartRequired: true,
+                    verification: applied.Entry.FailureReason,
+                    message: "HDAudio MSI is stored, but Windows requires a reboot before active MSI resources can be verified. Reboot, reopen this panel, and press Enable MSI again to resume this journaled experiment.");
+            }
+
+            if (applied.Entry.State != MutationJournalState.Applied)
+            {
+                throw new InvalidOperationException(
+                    applied.Entry.FailureReason ??
+                    $"HDAudio MSI apply stopped in {applied.Entry.State}.");
+            }
+
+            return VerifyAndKeepAudioMsi(transaction, options, entry.ExperimentId);
+        }
+        catch
+        {
+            TryRollbackDevice(transaction, journal, entry.ExperimentId);
+            throw;
+        }
+    }
+
+    private static ManualDeviceAffinityReport VerifyAndKeepAudioMsi(
+        DeviceInterruptMutationTransaction transaction,
+        ManualAffinityOptions options,
+        Guid experimentId)
+    {
+        var device = TryGetPresentDevice(options.DeviceInstanceId)
+            ?? throw new InvalidOperationException("The HDAudio MSI target is no longer present.");
+        var storedEnabled = device.InterruptConfiguration.IsMsiConfiguredEnabled;
+        var activeMsi =
+            DeviceInterruptConfigurationStore.IsMessageSignaledInterruptActive(
+                device.InterruptResources) == true;
+        var verified = storedEnabled && activeMsi;
+
+        if (!verified)
+        {
+            var rollback = transaction.Rollback(experimentId);
+            var rollbackNeedsReboot =
+                rollback.Entry.State == MutationJournalState.RollbackRebootPending;
+            var restored =
+                rollback.Entry.State == MutationJournalState.Reverted &&
+                rollback.OriginalStateRestored;
+            return CreateReport(
+                options,
+                rollbackNeedsReboot
+                    ? "RebootRequired"
+                    : restored
+                        ? "VerificationFailedRolledBack"
+                        : "VerificationFailedRecoveryRequired",
+                succeeded: false,
+                device,
+                experimentId,
+                restartRequired: rollbackNeedsReboot,
+                verification:
+                    $"storedMsiEnabled={storedEnabled}; activeMessageInterrupt={activeMsi}.",
+                message: rollbackNeedsReboot
+                    ? "HDAudio MSI could not be proven active. The exact original registry state is stored, but Windows requires a reboot before rollback activation can be verified."
+                    : restored
+                        ? "HDAudio MSI could not be proven from both stored policy and active message-signaled interrupt resources; the exact original state was restored."
+                        : "HDAudio MSI could not be proven and exact rollback did not reach a verified terminal state; recovery remains required.");
+        }
+
+        var kept = transaction.KeepVerified(experimentId, measurementVerified: true);
+        return CreateReport(
+            options,
+            "AppliedAndKept",
+            succeeded: kept.State == MutationJournalState.Kept,
+            device,
+            experimentId,
+            restartRequired: false,
+            verification:
+                "MSISupported=1 and allocated interrupt resources carry CM_RESOURCE_INTERRUPT_MESSAGE.",
+            message:
+                "HDAudio MSI was journaled, enabled, restarted, verified from active Windows interrupt resources, and retained. MessageNumberLimit was not changed.");
     }
 
     private static ManualDeviceAffinityReport ApplyGpu(
@@ -720,7 +891,7 @@ internal static class ManualDeviceAffinityRunner
         string message,
         IReadOnlyList<string>? allocatedMasks = null) =>
         new(
-            Schema: "latencypilot-manual-device-affinity-v1",
+            Schema: "latencypilot-manual-device-affinity-v2",
             Action: options.Action.ToString(),
             Status: status,
             Succeeded: succeeded,
@@ -813,7 +984,7 @@ internal static class ManualDeviceAffinityRunner
             if (!Enum.TryParse<ManualAffinityTargetKind>(Required("--target-kind"), ignoreCase: true, out var targetKind) ||
                 !Enum.IsDefined(targetKind))
             {
-                throw new ArgumentException("--target-kind must be Gpu or Xhci.");
+                throw new ArgumentException("--target-kind must be Gpu, Xhci, or AudioMsi.");
             }
 
             byte? processor = null;
@@ -853,9 +1024,16 @@ internal static class ManualDeviceAffinityRunner
                 affinityMask ??= singleMask;
             }
 
-            if (action == ManualAffinityAction.Apply && affinityMask is null)
+            if (action == ManualAffinityAction.Apply &&
+                targetKind != ManualAffinityTargetKind.AudioMsi &&
+                affinityMask is null)
             {
-                throw new ArgumentException("--mask or --processor is required for manual affinity Apply.");
+                throw new ArgumentException("--mask or --processor is required for manual GPU/xHCI affinity Apply.");
+            }
+
+            if (targetKind == ManualAffinityTargetKind.AudioMsi && affinityMask is not null)
+            {
+                throw new ArgumentException("AudioMsi does not accept a processor mask.");
             }
 
             if (affinityMask is { } mask)
@@ -884,6 +1062,7 @@ internal enum ManualAffinityTargetKind
 {
     Gpu = 0,
     Xhci = 1,
+    AudioMsi = 2,
 }
 
 internal sealed record ManualRuntimePlacementVerification(bool Verified, string Reason);
