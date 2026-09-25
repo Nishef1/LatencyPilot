@@ -202,7 +202,7 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 ## Immediate execution ladder
 
 1. **Completed now:** the manual interrupt-affinity development surface has been restructured around the familiar Windows tool model: a single device list, selected-device identity, Current policy / Specified mask / Current assignment, `Set mask`, read-only Advanced details, and a processor-selection flyout. The safety model is unchanged: one verified CPU per experiment, GPU/xHCI only, runtime ETW proof before Keep, exact rollback on failure.
-2. **Evidence:** this UI/source revision is committed on top of the green runtime-affinity contract. Exact-head hosted `Tests` for the final revision are pending; hosted CI can verify compilation/contracts but not visual quality.
+2. **Evidence:** hosted `Tests` are green on source revision `a6fd6a9757473d1e956b7e3222fbbed79b0bfaf0` (workflow run 1633). This proves compilation/analyzer/critical contracts for the redesigned classic-tool workflow, but not visual quality. This ledger-only update must also be exact-head green.
 3. **Still open:** real Windows render review of this redesigned dialog (Light/Dark/High Contrast, text scale, keyboard), plus the existing physical v5 GPU/xHCI/recovery gates. Public product mutation remains unarmed.
 4. **Next stage:** get exact-head hosted `Tests` green, then inspect the actual dialog on owner Windows against the reference tool screenshots and fix any clipping/selection/flyout issues found in the real render.
 5. **After that:** freeze the exact revision for Full v5 Gate A and continue the physical repeat/recovery/accessibility chain before any public App → Service mutation arming.
