@@ -25,7 +25,7 @@ preflight / quiet check
 → show before/after evidence + Restore original settings
 ```
 
-Product/safety authority remains ADR 0006. GPU measurement/search/ranking authority is ADR 0010; ADR 0009 remains historical v4 evidence for new runs.
+Product/safety authority remains ADR 0006. GPU measurement/search/ranking authority is ADR 0011; ADR 0010 remains historical v5 evidence and ADR 0009 remains historical v4 evidence for new runs.
 
 ### v1 includes
 
@@ -117,12 +117,14 @@ LatencyMon is not a dependency; LatencyPilot uses its own ETW evidence.
 
 ## Phase 3 — Automatic GPU core search
 
-**State: OBSERVER-ISOLATED V5 SOURCE + HOSTED CONTRACTS IMPLEMENTED; PHYSICAL PROOF OPEN**
+**State: RESTART-CANONICALIZED OBSERVER-ISOLATED V6 SOURCE + HOSTED CONTRACTS IMPLEMENTED; PHYSICAL PROOF OPEN**
 
 Current source workflow:
 
 ```text
 capture exact Original/default GPU affinity
+→ verify Original and perform one in-place GPU restart with the policy unchanged
+→ re-verify Original + driver identity and recreate the renderer
 → 5 s non-scored Original warm-up
 → collect 3 scored 10 s Original observations
 → if robust median/MAD variability is high, extend to at most 5 observations
@@ -172,9 +174,9 @@ Source checklist:
 - [x] result UX exposes actual Original → Candidate FPS/ms, absolute gain and paired percentage effect;
 - [x] custom selected-CPU diagnostic always restores Original;
 - [x] Original-only diagnostic performs no affinity mutation/restart;
-- [x] historical v1/v2/v3/v4 evidence is not reinterpreted as v5;
-- [ ] one exact clean green physical Gate A run on owner hardware using v5;
-- [ ] repeat the whole v5 search for practical reproducibility;
+- [x] historical v1/v2/v3/v4/v5 evidence is not reinterpreted as v6;
+- [ ] one exact clean green physical Gate A run on owner hardware using v6;
+- [ ] repeat the whole v6 search for practical reproducibility;
 - [ ] Stop safely + supported failure/recovery physical exercise;
 - [ ] rendered/taskbar/keyboard/accessibility inspection of the result surface.
 

@@ -14,11 +14,11 @@ It is not a registry-tweak pack, debloater, generic FPS booster, or a list of se
 ## Current authority
 
 - Product scope, mutation ownership, recovery and v1 sequencing: [`docs/adr/0006-simple-auto-interrupt-affinity-v1.md`](docs/adr/0006-simple-auto-interrupt-affinity-v1.md)
-- GPU measurement/search/ranking: [`docs/adr/0010-observer-isolated-symmetric-gpu-affinity-v5.md`](docs/adr/0010-observer-isolated-symmetric-gpu-affinity-v5.md)
+- GPU measurement/search/ranking: [`docs/adr/0011-restart-canonicalized-gpu-affinity-v6.md`](docs/adr/0011-restart-canonicalized-gpu-affinity-v6.md)
 - Live execution/evidence state: [`PROJECT_STATUS.md`](PROJECT_STATUS.md)
 - Required completion outcomes: [`ROADMAP.md`](ROADMAP.md)
 
-ADR 0010 supersedes ADR 0009 for new GPU measurement/ranking evidence. ADR 0009 remains historical v4 evidence; ADR 0006 still owns the broader product/safety contract.
+ADR 0011 supersedes ADR 0010 for new GPU measurement/ranking evidence. ADR 0010 remains historical v5 evidence, ADR 0009 remains historical v4 evidence, and ADR 0006 still owns the broader product/safety contract.
 
 ## v1 workflow
 
@@ -47,7 +47,7 @@ NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, 
 
 - Scope/safety/recovery foundations: **source complete**
 - Read-only ETW/topology/device evidence: **source substantially complete; physical closure remains**
-- GPU observer-isolated adaptive v5 search: **implemented in source; physical Gate A open**
+- GPU restart-canonicalized observer-isolated adaptive v6 search: **implemented in source; physical Gate A open**
 - Gate A result UX: **authoritative report → evidence ZIP → Overview result implemented; real render/accessibility inspection remains**
 - Final GPU Keep: **internal source requires hard ETW target-only ISR proof**
 - USB/input route + xHCI read-only evidence: **source exists**
@@ -58,16 +58,19 @@ NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, 
 - `ServiceBoundary.MutationAvailable`: **false**
 - Hosted CI: **software-contract evidence only**
 
-## GPU observer-isolated adaptive v5 measurement
+## GPU restart-canonicalized observer-isolated adaptive v6 measurement
 
-New GPU evidence uses method id `gpu-affinity-benchmark-v5` and report schema `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2/v3/v4 evidence remains historical and is never reinterpreted as v5. `Original` means the exact pre-test Windows/driver affinity policy; it is not CPU 0.
+New GPU evidence uses method id `gpu-affinity-benchmark-v6` and report schema `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2/v3/v4/v5 evidence remains historical and is never reinterpreted as v6. `Original` means the exact pre-test Windows/driver affinity policy; it is not CPU 0.
 
 ### 1. Original variability estimate
 
-Before any candidate mutation:
+Before any candidate mutation in Full/Selected-CPU paired search:
 
 ```text
-5 s non-scored Original warm-up
+verify exact Original
+→ one in-place GPU restart with Original unchanged
+→ re-verify Original + driver and recreate renderer
+→ 5 s non-scored Original warm-up
 → 3 × 10 s scored Original observations
 → median + relative MAD noise estimate
 → extend to observation 4/5 only when variability is elevated
@@ -133,7 +136,7 @@ Rank 1 is always the **best observed CPU** when valid ranked evidence exists. No
 
 Scored trials with external ETW/PresentMon observers use a bounded 2–4 s unscored startup settle and require a 500 ms quiet tail before the scored QPC boundary. Non-observer warm-ups skip that cost. Benchmark workers use the complete affinity mask of their physical core, and those masks are persisted/verified as frozen workload provenance.
 
-No Bayesian model, bootstrap simulation, scored-frame outlier deletion or hidden weighted score is used in v5.
+No Bayesian model, bootstrap simulation, scored-frame outlier deletion or hidden weighted score is used in v6.
 
 ## Final Keep is stricter than ranking
 
@@ -286,7 +289,7 @@ For XAML Hot Reload/Live Visual Tree, Visual Studio `F5` remains the preferred U
 
 ```text
 exact-head green CI
-→ observer-isolated adaptive v5 GPU Gate A physical search/restart/placement/rollback proof
+→ restart-canonicalized observer-isolated adaptive v6 GPU Gate A physical search/restart/placement/rollback proof
 → repeat whole search
 → Stop safely + supported recovery exercise
 → real Windows result/accessibility inspection

@@ -626,19 +626,15 @@ public static class GateAResultPresentation
                         primary,
                         "Valid candidates are always ranked. Noise changes confidence; it does not erase the best-observed CPU.")),
             new GateADecisionEvidenceRow(
-                "Selection confidence",
+                "Ranking confidence",
                 confidenceState,
                 compared is null
                     ? "No ranked candidate exists."
-                    : $"Confidence is {report.SelectionConfidence}. The displayed uncertainty/noise guide is {primary.UncertaintyFraction:P1}; it is descriptive and does not act as a winner threshold."),
+                    : $"Ranking confidence is {report.SelectionConfidence}. The displayed uncertainty/noise guide is {primary.UncertaintyFraction:P1}; it is descriptive and does not act as a winner threshold or a Keep decision."),
             new GateADecisionEvidenceRow(
                 "Keep guardrails",
                 guardrailState,
-                compared is null
-                    ? "Keep guardrails are unavailable because no candidate was ranked."
-                    : verifiedKeep
-                        ? "Positive median benefit, performance guardrails and final runtime placement all allowed the selected CPU to be retained."
-                        : "A best-observed CPU can still be reported when Keep is not recommended or final runtime placement cannot be proved; Original remains active in that case."),
+                DescribeKeepOutcome(report, compared, verifiedKeep)),
             new GateADecisionEvidenceRow(
                 "Runtime ISR placement",
                 placementState,
@@ -658,6 +654,41 @@ public static class GateAResultPresentation
                         ? "The exact original GPU affinity state was restored and verified."
                         : "The report does not prove a verified restored Original state."),
         ];
+    }
+
+    private static string DescribeKeepOutcome(
+        GpuAutoAffinityReport report,
+        GpuAutoAffinityCandidateReport? compared,
+        bool verifiedKeep)
+    {
+        if (compared is null)
+        {
+            return "Keep guardrails are unavailable because no candidate was ranked.";
+        }
+
+        if (verifiedKeep)
+        {
+            return "Positive median benefit, finalist consistency, performance guardrails and final runtime placement allowed the selected CPU to be retained.";
+        }
+
+        if (compared.RegressedGuardrails.Count > 0)
+        {
+            return string.Join(" ", compared.RegressedGuardrails);
+        }
+
+        var finalist = report.Finalists.FirstOrDefault(item => item.Processor == compared.Processor);
+        if (finalist is { RecommendedForKeep: false } &&
+            !string.IsNullOrWhiteSpace(finalist.Reason))
+        {
+            return finalist.Reason;
+        }
+
+        if (compared.DecisionOnePercentLowEffect is <= 0d)
+        {
+            return "The median paired 1% low benefit was non-positive, so Original remained active.";
+        }
+
+        return "A separate Keep requirement did not pass; Original remained active. Ranking and Keep are intentionally separate decisions.";
     }
 
     private static string BuildSummary(
@@ -689,7 +720,7 @@ public static class GateAResultPresentation
             var coverage = BuildCustomCoverageSummary(report);
             return compared is null
                 ? $"{coverage}. No selected CPU produced structurally valid ranking evidence. The exact Original policy was restored and verified."
-                : $"{coverage}. Best observed within the selected CPUs is CPU {compared.Processor.Number}. {gain} Confidence: {report.SelectionConfidence}. This diagnostic always restores Original.";
+                : $"{coverage}. Best observed within the selected CPUs is CPU {compared.Processor.Number}. {gain} Ranking confidence: {report.SelectionConfidence}. This diagnostic always restores Original.";
         }
 
         if (verifiedKeep && report.FinalProcessor is { } processor)
@@ -697,7 +728,7 @@ public static class GateAResultPresentation
             var tie = report.PracticalTie
                 ? " The top finalists are practically tied, so confidence is intentionally reduced."
                 : string.Empty;
-            return $"CPU {processor.Number} is the best observed CPU and passed the separate Keep safety checks. {gain} Confidence: {report.SelectionConfidence}.{tie}";
+            return $"CPU {processor.Number} is the best observed CPU and passed the separate Keep safety checks. {gain} Ranking confidence: {report.SelectionConfidence}.{tie}";
         }
 
         if (report.OriginalStateRestored && report.FinalStateVerified)
@@ -705,8 +736,8 @@ public static class GateAResultPresentation
             return compared is null
                 ? "LatencyPilot retained and verified the exact original GPU affinity policy because no structurally valid candidate could be ranked."
                 : compared.DecisionOnePercentLowEffect is <= 0d
-                    ? $"No tested CPU beat the Windows/driver Original on the primary paired 1% low metric. CPU {compared.Processor.Number} was the best tested candidate. {gain} Confidence: {report.SelectionConfidence}. The exact Original policy is restored and verified."
-                    : $"CPU {compared.Processor.Number} remains the best observed CPU even though it was not kept. {gain} Confidence: {report.SelectionConfidence}. The exact Original policy is restored and verified.";
+                    ? $"No tested CPU beat the Windows/driver Original on the primary paired 1% low metric. CPU {compared.Processor.Number} was the best tested candidate. {gain} Ranking confidence: {report.SelectionConfidence}. The exact Original policy is restored and verified."
+                    : $"CPU {compared.Processor.Number} remains the best observed CPU even though it was not kept. {gain} Ranking confidence: {report.SelectionConfidence}. Keep decision: {DescribeKeepOutcome(report, compared, verifiedKeep)} The exact Original policy is restored and verified.";
         }
 
         return "Gate A produced a report, but the terminal machine state is not fully verified. Use the evidence and recovery status below before continuing.";

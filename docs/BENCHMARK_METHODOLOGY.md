@@ -1,11 +1,11 @@
 # Benchmark Methodology
 
 Status: **V0.12 benchmark contract**  
-Last updated: 2026-09-24
+Last updated: 2026-09-25
 
 LatencyPilot exists to distinguish measurable effects from placebo, ordinary run-to-run variation, workload drift and unsafe/unverified state. It is not a generic Windows tweak collection.
 
-Current GPU measurement/search/ranking authority: **ADR 0010 — Observer-isolated symmetric GPU affinity v5**. ADR 0009 remains the historical v4 contract; ADR 0006 remains authoritative for the broader v1 product scope, safety, mutation/recovery ownership and product sequencing.
+Current GPU measurement/search/ranking authority: **ADR 0011 — Restart-canonicalized observer-isolated GPU affinity v6**. ADR 0010 remains the historical v5 contract, ADR 0009 remains historical v4, and ADR 0006 remains authoritative for the broader v1 product scope, safety, mutation/recovery ownership and product sequencing.
 
 ## 1. Evidence hierarchy
 
@@ -27,7 +27,7 @@ Purpose: ETW integrity, attribution, per-CPU concentration, obvious tail events 
 
 This remains the authoritative steady/manual RealWorld contract. It is intentionally separate from the synthetic GPU candidate-search method.
 
-### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v5`
+### 1.3 Automatic GPU affinity — `gpu-affinity-benchmark-v6`
 
 The product question is:
 
@@ -35,7 +35,7 @@ The product question is:
 
 A separate question asks whether that CPU is safe/useful enough to Keep.
 
-Windows/driver Original remains the exact reference/recovery state and is not CPU 0. CPU 0 is an explicit candidate. Historical `gpu-affinity-benchmark-v1`, `v2`, `v3` and `v4` evidence remains historical and is never reinterpreted as v5.
+Windows/driver Original remains the exact reference/recovery state and is not CPU 0. CPU 0 is an explicit candidate. Historical `gpu-affinity-benchmark-v1` through `v5` evidence remains historical and is never reinterpreted as v6.
 
 ## 2. Source hierarchy
 
@@ -90,6 +90,8 @@ The built-in normal-user D3D12 benchmark performs one startup calibration and fr
 
 Applying or rolling back GPU interrupt affinity restarts/activates the display adapter. The benchmark process remains alive for the search, while the D3D12 renderer/device is recreated after each transition before the next warm-up/scored observation. Frozen workload identity stays constant across candidates.
 
+For Full and Selected-CPU paired searches, v6 also performs one **pre-score canonicalization restart** while the exact captured Original affinity policy is still active. The Original policy and driver version must verify before and after that in-place restart; the renderer is then recreated before any benchmark warm-up or scored Original observation. This gives the initial Original estimate the same post-restart device/renderer history that later Original controls receive after candidate rollback. If the restart cannot complete in place, exact Original cannot be re-verified, or renderer recreation fails, scored search evidence does not begin.
+
 D3D12 GPU timestamps remain queue-owned evidence. PresentMon is not reinterpreted as direct GPU execution timing.
 
 ### 5.1 Controlled frame-period statistics
@@ -105,13 +107,18 @@ These are controlled comparison signals for the LatencyPilot workload, not claim
 
 ## 6. Initial Original variability estimate
 
-Before the first candidate mutation:
+Before the first candidate mutation in Full or Selected-CPU paired search:
 
-1. run a 5-second non-scored Original warm-up;
-2. capture three scored Original observations of exactly 10 seconds;
-3. compute median values and relative MAD (`median absolute deviation / median`);
-4. if robust 1%-low variability is above the preferred 3% guide, extend to observation four and then five;
-5. stop after at most five valid scored observations.
+1. verify the exact captured Original affinity policy and driver version;
+2. perform one real in-place display-adapter restart while that exact Original policy remains stored;
+3. re-verify exact Original + driver identity and recreate the D3D12 renderer;
+4. run a 5-second non-scored Original warm-up;
+5. capture three scored Original observations of exactly 10 seconds;
+6. compute median values and relative MAD (`median absolute deviation / median`);
+7. if robust 1%-low variability is above the preferred 3% guide, extend to observation four and then five;
+8. stop after at most five valid scored observations.
+
+The canonicalization restart is comparison-state preparation, not a candidate mutation. It is deliberately omitted from Original-only diagnostics, whose contract remains no device restart and no affinity mutation.
 
 All valid observations remain in the estimate and audit trail. A noisy but structurally valid Original does **not** block candidate testing. It lowers selection confidence.
 
@@ -312,11 +319,11 @@ Physical Gate A therefore remains a separate requirement on one exact clean gree
 
 - Structurally valid evidence is ranked; ordinary noise lowers confidence rather than deleting rank 1.
 - Do not call a low-confidence rank proof of superiority.
-- Historical v1/v2/v3/v4 aggregates are not reinterpreted as v5.
+- Historical v1/v2/v3/v4/v5 aggregates are not reinterpreted as v6.
 - Do not treat registry state as runtime placement proof.
 - Do not hide noisy attempts or structural failures.
 - Do not turn optional missing telemetry into zero or success.
 - Do not lengthen warm-up or invent isolation machinery merely to force a cleaner result.
 - Keep may restore Original even when the report has a best-observed CPU.
 
-See ADR 0010 and `docs/PHASE3_PHYSICAL_VALIDATION.md` for the authoritative v5 procedure.
+See ADR 0011 and `docs/PHASE3_PHYSICAL_VALIDATION.md` for the authoritative v6 procedure.

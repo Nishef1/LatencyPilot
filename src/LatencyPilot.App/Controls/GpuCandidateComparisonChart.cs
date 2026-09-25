@@ -97,7 +97,7 @@ public sealed class GpuCandidateComparisonChart : UserControl
 
         _emptyState.Visibility = Visibility.Collapsed;
         const double labelWidth = 86d;
-        const double stateWidth = 82d;
+        const double stateWidth = 122d;
         const double top = 32d;
         const double right = 10d;
         var plotLeft = labelWidth;

@@ -47,8 +47,14 @@ public sealed class GateAResultCompletionContractTests
         StringAssert.Contains(resultExperience, "Open raw report");
         StringAssert.Contains(resultExperience, "improvement",
             "The result metric card must render user-readable before/after absolute and percentage improvement.");
-        StringAssert.Contains(resultExperience, "Confidence:",
-            "The result hero must expose selection confidence separately from the selected CPU.");
+        StringAssert.Contains(resultExperience, "Ranking confidence:",
+            "The result hero must label ranking confidence explicitly so it cannot be mistaken for a Keep/safety verdict.");
+        StringAssert.Contains(resultExperience, "FormatMetricHeadline",
+            "Metric cards must keep the candidate value visually primary instead of rendering the full comparison sentence as the headline.");
+        StringAssert.Contains(resultExperience, "screening-finalists",
+            "Finalist local-pair evidence should be expanded by default while ordinary valid screening pairs remain compact.");
+        StringAssert.Contains(resultExperience, "More evidence",
+            "Secondary evidence actions should be grouped instead of competing visually with the primary ZIP action.");
         StringAssert.Contains(resultExperience, "BuildGateAPairEvidence",
             "The v2 result must expose the direct Original -> Candidate -> Original evidence instead of hiding it only in raw JSON.");
         StringAssert.Contains(resultExperience, "Original before");
@@ -77,6 +83,8 @@ public sealed class GateAResultCompletionContractTests
             "Terminal progress must let the owner copy the report path without displaying the full path inline.");
         StringAssert.Contains(progressExperience, "not reached",
             "Restricted runs must disclose selected/tested/not-reached coverage when early instability stops the search.");
+        StringAssert.Contains(progressExperience, "RankedCandidatesPanel.Visibility = Visibility.Collapsed",
+            "After completion the progress window must collapse its duplicate long candidate list and hand detailed evidence off to Overview.");
         Assert.IsFalse(progressExperience.Contains("Report: {reportPath}", StringComparison.Ordinal),
             "The terminal status paragraph must not append the raw report path.");
         Assert.IsFalse(
@@ -210,6 +218,10 @@ public sealed class GateAResultCompletionContractTests
             "The robust noise guide must be persisted for confidence/explanation without becoming a winner threshold.");
         StringAssert.Contains(sessionSource, "BestObservedProcessor",
             "A valid ranked CPU must survive into the terminal report even when the session restores Original.");
+        StringAssert.Contains(sessionSource, "PrepareOriginalComparisonStateAsync",
+            "Full/Custom scoring must explicitly canonicalize the Original comparison state before the first benchmark warm-up.");
+        StringAssert.Contains(sessionSource, "same post-restart comparison regime",
+            "The source must preserve the reason for pre-baseline canonicalization instead of silently changing benchmark history.");
 
         var scopeExperience = File.ReadAllText(FindRepositoryFile(
             "src",

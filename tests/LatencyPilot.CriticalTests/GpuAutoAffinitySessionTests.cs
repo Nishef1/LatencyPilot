@@ -27,6 +27,13 @@ public sealed class GpuAutoAffinitySessionTests
 
         var result = await new GpuAutoAffinitySession(backend).RunAsync(request);
 
+        var preparationIndex = backend.Events.IndexOf("prepare-original-comparison");
+        var initialWarmupIndex = backend.Events.FindIndex(static item =>
+            item.StartsWith("original:screening-warmup:", StringComparison.Ordinal));
+        Assert.IsGreaterThanOrEqualTo(0, preparationIndex);
+        Assert.IsGreaterThan(preparationIndex, initialWarmupIndex,
+            "Full search must canonicalize the Original GPU/renderer state before any benchmark warm-up or scored Original evidence.");
+
         Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, result.Recommendation);
         Assert.AreEqual(new LogicalProcessorId(0, 3), result.Finalist?.Processor);
         Assert.AreEqual(new LogicalProcessorId(0, 3), result.Report.FinalProcessor);
@@ -102,8 +109,21 @@ public sealed class GpuAutoAffinitySessionTests
             custom.Report.ValidatedProcessors.Select(static processor => processor.Number).ToArray());
         Assert.IsFalse(customBackend.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
         Assert.IsFalse(custom.Report.Trials.Any(static trial => trial.Phase == "final-verification"));
+        Assert.IsTrue(customBackend.Events.Contains("prepare-original-comparison"),
+            "Custom paired comparison also crosses GPU restart boundaries and must canonicalize Original first.");
         Assert.IsTrue(custom.Report.Reasons.Any(static reason =>
             reason.Contains("Best within selected CPUs", StringComparison.Ordinal)));
+
+        var originalOnlyBackend = new ScriptedBackend();
+        var originalOnly = await new GpuAutoAffinitySession(originalOnlyBackend).RunAsync(request with
+        {
+            SessionId = Guid.NewGuid(),
+            SearchScope = GpuAutoAffinitySearchScope.OriginalDiagnostics,
+        });
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, originalOnly.Recommendation);
+        Assert.IsFalse(originalOnlyBackend.Events.Contains("prepare-original-comparison"),
+            "Original-only diagnostics promise no GPU restart and must not use the Full/Custom comparison-state canonicalization.");
+        Assert.IsFalse(originalOnlyBackend.Events.Any(static item => item.StartsWith("apply:", StringComparison.Ordinal)));
     }
 
     [AuditCase]
@@ -249,6 +269,13 @@ public sealed class GpuAutoAffinitySessionTests
         }
 
         internal List<string> Events { get; } = [];
+
+        public Task PrepareOriginalComparisonStateAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Events.Add("prepare-original-comparison");
+            return Task.CompletedTask;
+        }
 
         public Task<GpuAutoAffinityTrialObservation> CaptureOriginalAsync(
             GpuAutoAffinityTrialRequest request,

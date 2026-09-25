@@ -1,9 +1,9 @@
 # LatencyPilot System Design
 
 Status: **Authoritative architecture baseline**  
-Last updated: 2026-09-24
+Last updated: 2026-09-25
 
-`ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence. ADR 0006 owns the narrow v1 product/safety direction. ADR 0010 owns the current GPU measurement/search/ranking method; ADR 0009 is historical v4 evidence for new runs.
+`ROADMAP.md` defines required outcomes. `PROJECT_STATUS.md` records current evidence. ADR 0006 owns the narrow v1 product/safety direction. ADR 0011 owns the current GPU measurement/search/ranking method; ADR 0010 is historical v5 evidence and ADR 0009 is historical v4 evidence for new runs.
 
 ## 1. Product model
 
@@ -125,7 +125,7 @@ Hardware-independent interpretation/orchestration:
 - percentile and robust statistical primitives;
 - steady `baseline-quality-v2` / `workload-stability-v1`;
 - GPU candidate generation from actual topology/current CPU-set evidence;
-- `gpu-affinity-benchmark-v5` evidence interpretation/readiness;
+- `gpu-affinity-benchmark-v6` evidence interpretation/readiness;
 - 3–5 Original observations with median/MAD variability;
 - direct local pair orchestration and drift retry;
 - Stage-A representatives plus bounded uncertainty-aware Stage-B refinement;
@@ -136,7 +136,7 @@ Hardware-independent interpretation/orchestration:
 - final Keep/Restore orchestration;
 - input/xHCI timing/headroom interpretation.
 
-There is no hidden weighted score. Short evidence is aggregated with median effect plus bounded uncertainty only to decide who deserves another measurement; finalists still rank by median paired 1%-low effect. Noise changes confidence, not rankability. Keep is a separate guardrail and runtime-placement decision owned by ADR 0010.
+There is no hidden weighted score. Short evidence is aggregated with median effect plus bounded uncertainty only to decide who deserves another measurement; finalists still rank by median paired 1%-low effect. Noise changes confidence, not rankability. Keep is a separate guardrail and runtime-placement decision owned by ADR 0011.
 
 ### `LatencyPilot.Protocol`
 
@@ -241,12 +241,15 @@ Unavailable evidence remains unavailable.
 
 `baseline-quality-v2` and `workload-stability-v1` remain the repeated RealWorld/manual evidence product. They are not forced into the synthetic GPU-search method.
 
-### Automatic GPU search — observer-isolated adaptive v5
+### Automatic GPU search — restart-canonicalized observer-isolated adaptive v6
 
-The benchmark process remains stable across the complete search. Workload calibration, process identity, seed, representative worker map and exact physical-core worker affinity masks remain frozen. Every affinity-triggered GPU transition is followed by renderer/device recreation before the next relevant warm-up/measurement.
+The benchmark process remains stable across the complete search. Workload calibration, process identity, seed, representative worker map and exact physical-core worker affinity masks remain frozen. Every affinity-triggered GPU transition is followed by renderer/device recreation before the next relevant warm-up/measurement. Before Full/Custom scoring begins, v6 also performs one verified in-place GPU restart under the unchanged exact Original policy and recreates the renderer, so the initial Original estimate starts in the same post-restart regime as later rollback controls.
 
 ```text
-5 s non-scored Original warm-up
+verify exact Original
+→ in-place GPU restart under unchanged Original policy
+→ re-verify Original + driver and recreate renderer
+→ 5 s non-scored Original warm-up
 → 3 × 10 s Original observations
 → extend to 4/5 only when robust median/MAD variability is high
 → fresh 10 s O0
@@ -324,7 +327,7 @@ The result UX exposes:
 
 ### Full search
 
-Authoritative machine-wide v5 search, subject to physical Gate A.
+Authoritative machine-wide v6 search, subject to physical Gate A.
 
 ### Selected CPUs / Custom
 
@@ -404,7 +407,7 @@ The arming chain is:
 
 ```text
 exact-head green CI
-→ physical observer-isolated symmetric v5 GPU Gate A
+→ physical restart-canonicalized observer-isolated v6 GPU Gate A
 → repeated whole-search / confidence evidence
 → Stop safely + supported recovery exercise
 → real Windows result/accessibility inspection

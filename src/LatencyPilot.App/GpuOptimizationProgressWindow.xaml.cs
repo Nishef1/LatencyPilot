@@ -85,6 +85,8 @@ public sealed partial class GpuOptimizationProgressWindow : Window
         if (report is not null)
         {
             ShowRankedResults(report);
+            RankedCandidatesPanel.Visibility = Visibility.Collapsed;
+            RankedSummaryText.Text += " Full candidate charts, local pairs and decision evidence are available on Overview.";
         }
         if (!terminalSnapshotReceived)
         {

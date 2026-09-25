@@ -1,6 +1,6 @@
 # Phase 3 Physical Validation Runbook
 
-This is the owner-local **GPU Gate A** procedure for the observer-isolated symmetric GPU search in ADR 0010. It does **not** arm public mutation. Protocol v6 remains observation-only and `ServiceBoundary.MutationAvailable=false`.
+This is the owner-local **GPU Gate A** procedure for the restart-canonicalized observer-isolated GPU search in ADR 0011. It does **not** arm public mutation. Protocol v6 remains observation-only and `ServiceBoundary.MutationAvailable=false`.
 
 ```text
 Run GPU Gate A
@@ -122,17 +122,19 @@ The developer UI may run:
 Original only · no system changes
 ```
 
-This path performs no GPU affinity write or restart. It is useful context for current variability and graphics-hook warnings, but it does not gate the full v5 search solely because the environment is noisy.
+This path performs no GPU affinity write or restart. It is useful context for current variability and graphics-hook warnings, but it does not gate the full v6 search solely because the environment is noisy.
 
 A structurally broken diagnostic still needs investigation before interpreting a full run.
 
-## 5. Run the complete v5 GPU Gate A search
+## 5. Run the complete v6 GPU Gate A search
 
 Expected flow:
 
 ```text
 normal-user benchmark + one UAC owner helper
 → capture exact Original stored state
+→ verify Original and perform one in-place GPU restart under that unchanged policy
+→ re-verify Original + driver identity and recreate the renderer
 → 5 s non-scored Original warm-up
 → 3 × 10 s scored Original observations
 → compute robust median/MAD variability
@@ -353,7 +355,7 @@ Never make a run green by deleting the journal.
 
 ## 14. Repeat the whole search
 
-Return to exact Original and run the full v5 search a second time on the same source revision and comparable conditions.
+Return to exact Original and run the full v6 search a second time on the same source revision and comparable conditions.
 
 Compare:
 

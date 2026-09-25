@@ -86,7 +86,7 @@ public sealed partial class MainWindow
             var confidenceIsHigh = string.Equals(result.SelectionConfidence, "High", StringComparison.OrdinalIgnoreCase);
             badges.Children.Add(BuildStatusBadge(
                 card,
-                $"Confidence: {result.SelectionConfidence}",
+                $"Ranking confidence: {result.SelectionConfidence}",
                 confidenceIsHigh ? "SemanticGoodBrush" : "SemanticAttentionBrush",
                 confidenceIsHigh ? "SemanticGoodSoftBrush" : "SemanticAttentionSoftBrush"));
         }
@@ -219,8 +219,15 @@ public sealed partial class MainWindow
             content.Children.Add(new TextBlock { Text = metric.Label, Style = AppStyle("MetricLabelTextStyle") });
             content.Children.Add(new TextBlock
             {
-                Text = FormatMetricComparison(metric),
+                Text = FormatMetricHeadline(metric),
                 Style = AppStyle("MetricValueTextStyle"),
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = FormatMetricComparison(metric),
+                Style = AppStyle("CaptionTextStyle"),
                 TextWrapping = TextWrapping.Wrap,
             });
             content.Children.Add(new TextBlock
@@ -234,7 +241,7 @@ public sealed partial class MainWindow
             content.Children.Add(new TextBlock
             {
                 Text = metric.ImprovementFraction is not null
-                    ? $"Median paired comparison · noise / uncertainty guide {metric.UncertaintyFraction:P1} · confidence {result.SelectionConfidence}"
+                    ? $"Median paired comparison · noise / uncertainty guide {metric.UncertaintyFraction:P1} · ranking confidence {result.SelectionConfidence}"
                     : "No comparable decision aggregate is available.",
                 Style = AppStyle("CaptionTextStyle"),
                 TextWrapping = TextWrapping.Wrap,
@@ -452,7 +459,9 @@ public sealed partial class MainWindow
                 {
                     Header = header,
                     Content = details,
-                    IsExpanded = false,
+                    IsExpanded =
+                        string.Equals(pair.Stage, "screening-finalists", StringComparison.Ordinal) ||
+                        pair.Verdict != GpuAutoAffinityPairVerdict.Valid,
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 };
@@ -540,11 +549,9 @@ public sealed partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
         });
 
-        var actions = new Grid { ColumnSpacing = 8d, RowSpacing = 8d };
+        var actions = new Grid { ColumnSpacing = 8d };
         actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
-        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
-        actions.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        actions.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var status = new TextBlock { Style = AppStyle("CaptionTextStyle"), TextWrapping = TextWrapping.Wrap };
 
         var openZip = ActionButton("Open ZIP", primary: true);
@@ -552,22 +559,25 @@ public sealed partial class MainWindow
         openZip.Click += (_, _) => OpenGateAEvidencePath(result.ZipPath, status, "ZIP");
         actions.Children.Add(openZip);
 
-        var copyZip = ActionButton("Copy ZIP path");
-        copyZip.IsEnabled = result.BundleAvailable;
+        var moreEvidence = ActionButton("More evidence");
+        moreEvidence.MinWidth = 150d;
+        var evidenceMenu = new MenuFlyout();
+
+        var copyZip = new MenuFlyoutItem { Text = "Copy ZIP path", IsEnabled = result.BundleAvailable };
         copyZip.Click += (_, _) => CopyGateAEvidencePath(result.ZipPath, status);
-        Grid.SetColumn(copyZip, 1);
-        actions.Children.Add(copyZip);
+        evidenceMenu.Items.Add(copyZip);
 
-        var openFolder = ActionButton("Open session folder");
+        var openFolder = new MenuFlyoutItem { Text = "Open session folder" };
         openFolder.Click += (_, _) => OpenGateAEvidencePath(result.SessionDirectory, status, "session folder");
-        Grid.SetRow(openFolder, 1);
-        actions.Children.Add(openFolder);
+        evidenceMenu.Items.Add(openFolder);
 
-        var openReport = ActionButton("Open raw report");
+        var openReport = new MenuFlyoutItem { Text = "Open raw report" };
         openReport.Click += (_, _) => OpenGateAEvidencePath(result.ReportPath, status, "raw report");
-        Grid.SetRow(openReport, 1);
-        Grid.SetColumn(openReport, 1);
-        actions.Children.Add(openReport);
+        evidenceMenu.Items.Add(openReport);
+
+        moreEvidence.Flyout = evidenceMenu;
+        Grid.SetColumn(moreEvidence, 1);
+        actions.Children.Add(moreEvidence);
 
         stack.Children.Add(actions);
         stack.Children.Add(status);
@@ -635,6 +645,21 @@ public sealed partial class MainWindow
             Grid.SetColumn(child, sideBySide ? index : 0);
             Grid.SetRow(child, sideBySide ? 0 : index);
         }
+    }
+
+    private static string FormatMetricHeadline(GateAMetricComparison metric)
+    {
+        if (metric.CandidateValue is { } candidate && double.IsFinite(candidate))
+        {
+            return $"{candidate:0.##} {metric.Unit}";
+        }
+
+        if (metric.ImprovementFraction is { } effect && double.IsFinite(effect))
+        {
+            return effect.ToString("+0.0%;-0.0%;0.0%", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return "—";
     }
 
     private static string FormatMetricComparison(GateAMetricComparison metric)

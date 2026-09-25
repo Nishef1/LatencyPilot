@@ -40,7 +40,7 @@ public sealed class GpuMeasurementRobustnessContractTests
         StringAssert.Contains(sessionSource, "MaximumFinalistPairs = 3");
         Assert.IsFalse(
             sessionSource.Contains("GpuRepeatabilityClusterSelector.Select(", StringComparison.Ordinal),
-            "The historical cluster selector may remain as a utility, but it must not own v5 ranking authority.");
+            "The historical cluster selector may remain as a utility, but it must not own v6 ranking authority.");
         StringAssert.Contains(reportSource, "BestObservedProcessor");
         StringAssert.Contains(reportSource, "SelectionConfidence");
         StringAssert.Contains(reportSource, "OnePercentLowEffectMedianAbsoluteDeviation");

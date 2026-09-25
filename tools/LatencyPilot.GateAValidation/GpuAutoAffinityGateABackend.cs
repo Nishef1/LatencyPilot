@@ -161,6 +161,91 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         };
     }
 
+    public async Task PrepareOriginalComparisonStateAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var before = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        var originalVerified =
+            string.Equals(before.DriverVersion, originalState.DriverVersion, StringComparison.OrdinalIgnoreCase) &&
+            GpuInterruptAffinityStateComparer.MatchesOriginal(before, originalState);
+        mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+            DateTimeOffset.UtcNow,
+            "CanonicalizeOriginalPreflight",
+            Guid.Empty,
+            null,
+            originalVerified,
+            ToStoredStateReport(before)));
+        if (!originalVerified)
+        {
+            throw new InvalidOperationException(
+                "Initial Original comparison state cannot be canonicalized because the captured Original policy or display-driver version is no longer active.");
+        }
+
+        var restart = GpuDeviceRestartCoordinator.RestartAfterConfigurationChange(deviceInstanceId);
+        if (!restart.RestartedInPlace)
+        {
+            var reason = restart.SystemRestartRequired
+                ? "Windows requires a system restart while canonicalizing the Original comparison state."
+                : $"The display adapter did not return as a healthy started devnode while canonicalizing Original (problem={restart.ProblemCode?.ToString(CultureInfo.InvariantCulture) ?? "none"}).";
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow,
+                "CanonicalizeOriginalRestartFailed",
+                Guid.Empty,
+                null,
+                StoredStateVerified: false,
+                ToStoredStateReport(before),
+                reason));
+            throw new InvalidOperationException(reason);
+        }
+
+        var after = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
+        var afterVerified =
+            string.Equals(after.DriverVersion, originalState.DriverVersion, StringComparison.OrdinalIgnoreCase) &&
+            GpuInterruptAffinityStateComparer.MatchesOriginal(after, originalState);
+        mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+            DateTimeOffset.UtcNow,
+            "CanonicalizeOriginalRestart",
+            Guid.Empty,
+            null,
+            afterVerified,
+            ToStoredStateReport(after)));
+        if (!afterVerified)
+        {
+            throw new InvalidOperationException(
+                "The exact Original GPU affinity state or display-driver version changed during the comparison-state restart.");
+        }
+
+        try
+        {
+            await RecreateBenchmarkRendererAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow,
+                "RecreateBenchmarkRendererForOriginalBaselineFailed",
+                Guid.Empty,
+                null,
+                StoredStateVerified: true,
+                ToStoredStateReport(after),
+                exception.Message));
+            throw;
+        }
+
+        mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+            DateTimeOffset.UtcNow,
+            "RecreateBenchmarkRendererForOriginalBaseline",
+            Guid.Empty,
+            null,
+            StoredStateVerified: true,
+            ToStoredStateReport(after)));
+    }
+
     public Task<GpuAutoAffinityTrialObservation> CaptureOriginalAsync(
         GpuAutoAffinityTrialRequest request,
         CancellationToken cancellationToken) =>

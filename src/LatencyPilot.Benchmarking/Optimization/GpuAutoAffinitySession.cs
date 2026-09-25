@@ -37,6 +37,8 @@ public sealed record GpuAutoAffinityTrialObservation(
 
 public interface IGpuAutoAffinitySessionBackend
 {
+    Task PrepareOriginalComparisonStateAsync(CancellationToken cancellationToken);
+
     Task<GpuAutoAffinityTrialObservation> CaptureOriginalAsync(
         GpuAutoAffinityTrialRequest request,
         CancellationToken cancellationToken);
@@ -153,6 +155,26 @@ public sealed class GpuAutoAffinitySession
 
         try
         {
+            if (request.SearchScope != GpuAutoAffinitySearchScope.OriginalDiagnostics)
+            {
+                try
+                {
+                    await backend.PrepareOriginalComparisonStateAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    throw new SessionAbortException(
+                        $"Original comparison-state preparation failed before scored evidence: {exception.GetType().Name}: {exception.Message}");
+                }
+
+                reasons.Add(
+                    "Before scored Original evidence, LatencyPilot performed one verified in-place GPU restart under the exact captured Original affinity policy and recreated the benchmark renderer. This puts the initial Original estimate and later paired controls in the same post-restart comparison regime.");
+            }
+
             var referenceObservation = await CaptureAcceptedAsync(
                 () => ++nextRunNumber,
                 "screening-warmup",
@@ -527,7 +549,7 @@ public sealed class GpuAutoAffinitySession
             if (!selected.RecommendedForKeep)
             {
                 reasons.Add(
-                    $"CPU {selected.Candidate.Processor.Number} remains the best observed CPU, but its median benefit is non-positive or a material guardrail regressed. The exact Original state is retained.");
+                    $"CPU {selected.Candidate.Processor.Number} remains the best observed CPU but was not kept. {selected.Report.Reason} The exact Original state is retained.");
                 var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
                 return CreateResult(
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
@@ -1189,10 +1211,27 @@ public sealed class GpuAutoAffinitySession
                     Math.Max(KeepGuardrailRegressionTolerance, effectMad),
                     KeepGuardrailRegressionTolerance,
                     MaximumKeepGuardrailRegressionTolerance);
-                var guardrailRegression =
-                    medianAvg < -keepGuardrailTolerance ||
-                    medianP99 < -keepGuardrailTolerance;
+                var guardrailReasons = new List<string>();
+                if (medianAvg < -keepGuardrailTolerance)
+                {
+                    guardrailReasons.Add(
+                        FormattableString.Invariant(
+                            $"AVG paired regression {Math.Abs(medianAvg):P1}; Keep limit {keepGuardrailTolerance:P1}."));
+                }
+                if (medianP99 < -keepGuardrailTolerance)
+                {
+                    guardrailReasons.Add(
+                        FormattableString.Invariant(
+                            $"Frame-p99 paired regression {Math.Abs(medianP99):P1}; Keep limit {keepGuardrailTolerance:P1}."));
+                }
+
+                var guardrailRegression = guardrailReasons.Count > 0;
                 var interruptRegression = HasMaterialInterruptTailRegression(pairs, out var interruptReason);
+                if (interruptRegression && !string.IsNullOrWhiteSpace(interruptReason))
+                {
+                    guardrailReasons.Add(interruptReason);
+                }
+
                 var requiredPositivePairs = RequiredPositivePairCount(pairs.Count);
                 recommendedForKeep =
                     medianPrimary > 0d &&
@@ -1205,7 +1244,9 @@ public sealed class GpuAutoAffinitySession
                     (recommendedForKeep
                         ? "This candidate may be kept if final runtime placement verifies."
                         : "It remains rankable as the best-observed candidate, but automatic Keep is not recommended by the measured benefit/guardrails.") +
-                    (string.IsNullOrWhiteSpace(interruptReason) ? string.Empty : $" {interruptReason}");
+                    (guardrailReasons.Count == 0
+                        ? string.Empty
+                        : $" Keep blocker(s): {string.Join(" ", guardrailReasons)}");
 
                 var medianOriginalLow1 = Median(beforeStats.Select((item, index) =>
                     GeometricMean(item.Low1PctFps, afterStats[index].Low1PctFps)));
@@ -1251,7 +1292,7 @@ public sealed class GpuAutoAffinitySession
                 pairs.Count,
                 report.MedianOnePercentLowEffect is null ? "Inconclusive" : "Ranked",
                 report.MedianFrameP99Effect,
-                [],
+                guardrailReasons.ToArray(),
                 report.Reason,
                 report.MedianCandidateOnePercentLowFps,
                 report.MedianCandidateAvgFps,
