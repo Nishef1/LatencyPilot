@@ -746,12 +746,19 @@
                                         </StackPanel>
                                         <Button x:Name="ManualDeviceAffinityButton"
                                                 Grid.Column="1"
-                                                Content="Open affinity tool"
                                                 Click="ManualDeviceAffinityButton_Click"
                                                 Style="{StaticResource SecondaryButtonStyle}"
-                                                MinWidth="148"
+                                                MinWidth="164"
                                                 VerticalAlignment="Center"
-                                                AutomationProperties.Name="Open manual device interrupt affinity lab" />
+                                                AutomationProperties.Name="Open manual device interrupt affinity lab">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                                          Glyph="&#xE950;"
+                                                          FontSize="15" />
+                                                <TextBlock Text="Open affinity tool"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
                                     </Grid>
                                 </Border>
 

@@ -2,7 +2,7 @@
 
 This is the live execution ledger for `ROADMAP.md`. Current source/runtime evidence owns actual state; plans and historical chat do not.
 
-Last updated: 2026-09-24
+Last updated: 2026-09-25
 
 ## Overall
 
@@ -97,7 +97,7 @@ CPU selection uses current topology/CPU-set eligibility; unsupported topology fa
 
 The Devices page now exposes a development-only manual affinity surface without changing the public observation-only Service contract:
 
-- the development UI now follows the familiar Interrupt-Affinity Policy Configuration Tool information model: one device list, selected-device identity, an `Interrupt affinity mask` panel with Current policy / Specified mask / Current assignment, and a separate processor-selection flyout;
+- the development UI keeps the familiar Interrupt-Affinity Policy Configuration Tool information model, but now opens as an independent modern WinUI tool window with stacked device → selected-device → interrupt-affinity sections, search, concise identity details, Fluent device/action icons, inline single-CPU selection, and Current policy / Specified mask / Current assignment evidence;
 - current stored interrupt policy / `AssignmentSetOverride` and translated allocated interrupt-resource masks are shown separately for latency-sensitive present devices;
 - GPU and USBXHCI are the only editable targets because they already have bounded journal/restart/rollback ownership;
 - network, audio, storage, HID and other latency-sensitive devices remain read-only;
@@ -201,10 +201,10 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 
 ## Immediate execution ladder
 
-1. **Completed now:** the manual interrupt-affinity development surface has been restructured around the familiar Windows tool model: a single device list, selected-device identity, Current policy / Specified mask / Current assignment, `Set mask`, read-only Advanced details, and a processor-selection flyout. The safety model is unchanged: one verified CPU per experiment, GPU/xHCI only, runtime ETW proof before Keep, exact rollback on failure.
-2. **Evidence:** hosted `Tests` are green on source revision `a6fd6a9757473d1e956b7e3222fbbed79b0bfaf0` (workflow run 1633). This proves compilation/analyzer/critical contracts for the redesigned classic-tool workflow, but not visual quality. This ledger-only update must also be exact-head green.
-3. **Still open:** real Windows render review of this redesigned dialog (Light/Dark/High Contrast, text scale, keyboard), plus the existing physical v5 GPU/xHCI/recovery gates. Public product mutation remains unarmed.
-4. **Next stage:** get exact-head hosted `Tests` green, then inspect the actual dialog on owner Windows against the reference tool screenshots and fix any clipping/selection/flyout issues found in the real render.
+1. **Completed now:** the manual interrupt-affinity surface has been rebuilt as an independent modern WinUI tool window rather than an in-app `ContentDialog`. Major sections stay vertically stacked; low-value copy is compressed; device search, concise identity, Fluent icons, policy/assignment tiles, inline single-CPU selection and direct Apply/Restore actions now mirror the accepted visual direction while preserving the existing mutation safety model.
+2. **Evidence:** source is committed on top of the previously green classic-tool/runtime-affinity contract. Exact-head hosted `Tests` for this independent-window revision are pending; hosted CI can prove compilation/analyzer/contracts but not visual quality.
+3. **Still open:** owner-Windows render inspection of the independent window (Light/Dark/High Contrast, text scale, keyboard, 16/32/64-CPU layouts) plus the existing physical v5 GPU/xHCI/recovery gates. Public product mutation remains unarmed.
+4. **Next stage:** get exact-head hosted `Tests` green, then inspect the real independent window on owner hardware and fix any clipping, CPU-grid density, icon, focus, or theme issues found in the render.
 5. **After that:** freeze the exact revision for Full v5 Gate A and continue the physical repeat/recovery/accessibility chain before any public App → Service mutation arming.
 
 ## Completion rule
