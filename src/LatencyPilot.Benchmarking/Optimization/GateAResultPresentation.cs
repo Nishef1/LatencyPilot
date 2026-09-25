@@ -181,14 +181,14 @@ public static class GateAResultPresentation
                         : $"Best observed · CPU {compared.Processor.Number} · diagnostic only"
                     : verifiedKeep && report.FinalProcessor is { } selectedProcessor
                         ? report.PracticalTie
-                            ? $"Best observed in practical tie · CPU {selectedProcessor.Number} kept"
-                            : $"Winner · CPU {selectedProcessor.Number} kept"
+                            ? $"Best observed this run · practical tie · CPU {selectedProcessor.Number} kept"
+                            : $"Best observed this run · CPU {selectedProcessor.Number} kept"
                         : terminalOriginalVerified
                             ? compared is null
                                 ? "No valid candidate evidence · Original restored"
                                 : compared.DecisionOnePercentLowEffect is <= 0d
                                     ? $"No beneficial candidate · CPU {compared.Processor.Number} best tested · Original restored"
-                                    : $"Best observed · CPU {compared.Processor.Number} · Original restored"
+                                    : $"Best observed this run · CPU {compared.Processor.Number} · Original restored"
                             : "Result needs attention";
         var summary = BuildSummary(report, compared, metrics, verifiedKeep, baselineQualificationFailed);
         var gateAResultEligible = report.SearchScope == GpuAutoAffinitySearchScope.Full && report.GateAClosureEligible;
@@ -204,8 +204,8 @@ public static class GateAResultPresentation
                 : report.SearchScope == GpuAutoAffinitySearchScope.Custom
                     ? $"CPU {compared.Processor.Number} · Best within selected CPUs · diagnostic only · Original restored"
                     : verifiedKeep
-                        ? $"CPU {compared.Processor.Number} · kept"
-                        : $"CPU {compared.Processor.Number} · best measured · comparison only · not kept";
+                        ? $"CPU {compared.Processor.Number} · best observed this run · kept"
+                        : $"CPU {compared.Processor.Number} · best observed this run · comparison only · not kept";
         var bundleStatus = bundle.Succeeded
             ? "Shareable evidence ZIP is ready."
             : string.IsNullOrWhiteSpace(bundle.Error)

@@ -238,7 +238,7 @@ If healthy ETW proves resolved GPU ISR activity contradicts the requested candid
 
 ## 13. Final Keep validity
 
-A performance winner is not enough.
+A best-observed performance candidate is not enough.
 
 Before Keep:
 
@@ -320,6 +320,7 @@ Physical Gate A therefore remains a separate requirement on one exact clean gree
 - Structurally valid evidence is ranked; ordinary noise lowers confidence rather than deleting rank 1.
 - Do not call a low-confidence rank proof of superiority.
 - Historical v1/v2/v3/v4/v5 aggregates are not reinterpreted as v6.
+- A cross-run repeatability comparison is valid only when method id, source revision, GPU/driver identity, topology identity and frozen-workload identity match. Otherwise the runs are different experiments; do not vote across their CPU winners.
 - Do not treat registry state as runtime placement proof.
 - Do not hide noisy attempts or structural failures.
 - Do not turn optional missing telemetry into zero or success.

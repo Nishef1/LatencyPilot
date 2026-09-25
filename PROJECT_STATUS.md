@@ -211,7 +211,7 @@ Graphics-hook warnings such as `nvspcap64.dll` remain explicit interference cont
 ## Immediate execution ladder
 
 1. **Completed now:** v1 scope has been simplified around the measured sequential GPU → primary-input xHCI path. Dormant MSI stage metadata and speculative network benchmark/profile/Pareto optimizer source are removed while read-only RSS/network diagnostics remain. ADR 0006 is reconciled to ADR 0011/v6, and the Measure UI now explains the three-step automatic path plus diagnostics-only domains.
-2. **Evidence:** source/docs/UI changes are on the current main revision; exact-head hosted **Tests are pending** and remain software-contract evidence only. No new physical GPU/xHCI claim is made by this cleanup.
+2. **Evidence:** scope-cleanup revision `6d9a008994539b8becf02d0cb41cff31a9fd2f90` passed hosted **Tests** in workflow run `36191321201`. This follow-up only clarifies result wording and cross-run comparison authority; its exact HEAD must also be green before being used for physical evidence. No new physical GPU/xHCI claim is made by this cleanup.
 3. **Still open:** exact-head Tests, one clean physical v6 Full run + repeat/recovery exercise, real render/accessibility inspection, and integrated automatic xHCI apply/runtime verification. Public product mutation remains unarmed.
 4. **Next stage:** get exact-head hosted Tests green; then run the v6 Full Gate A on owner hardware and inspect both the canonicalized GPU evidence and the simplified Measure surface on real Windows.
 5. **After that:** close representative xHCI physical apply/verify/rollback evidence, combined reboot/resume, then arm only the narrow typed GPU+xHCI product flow before release closure.
