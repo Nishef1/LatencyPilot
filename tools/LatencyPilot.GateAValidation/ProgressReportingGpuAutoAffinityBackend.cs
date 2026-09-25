@@ -11,6 +11,9 @@ internal sealed class ProgressReportingGpuAutoAffinityBackend(
 {
     private readonly Dictionary<Guid, GpuAffinityCandidate> activeCandidates = [];
 
+    public Task PrepareOriginalComparisonStateAsync(CancellationToken cancellationToken) =>
+        inner.PrepareOriginalComparisonStateAsync(cancellationToken);
+
     public async Task<GpuAutoAffinityTrialObservation> CaptureOriginalAsync(
         GpuAutoAffinityTrialRequest request,
         CancellationToken cancellationToken)
