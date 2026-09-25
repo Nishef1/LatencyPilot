@@ -524,18 +524,22 @@ internal static class ManualDeviceAffinityRunner
         var offMaskCount = attribution.Events.Count - inMaskCount;
         var storedAfter = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
         var storedAfterMatches = GpuInterruptAffinityStateComparer.MatchesCandidate(storedAfter, candidate);
+        var directDriverAttribution = attribution.IsAuthoritativeForKeep;
         var confirmed =
             storedBeforeMatches &&
             storedAfterMatches &&
             capture.IsValid &&
+            directDriverAttribution &&
             attribution.Events.Count > 0 &&
             offMaskCount == 0;
 
         return new(
             confirmed,
             confirmed
-                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {attribution.Events.Count} attributable GPU ISR event(s), all inside {FormatProcessorMask(candidate.AffinityMask)}."
-                : $"GPU runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={attribution.Events.Count}, inMaskIsr={inMaskCount}, offMaskIsr={offMaskCount}, storedAfterMatch={storedAfterMatches}, requestedMask=0x{candidate.AffinityMask:X}.");
+                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {attribution.Events.Count} direct display-driver GPU ISR event(s), all inside {FormatProcessorMask(candidate.AffinityMask)}."
+                : directDriverAttribution
+                    ? $"GPU runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={attribution.Events.Count}, inMaskIsr={inMaskCount}, offMaskIsr={offMaskCount}, storedAfterMatch={storedAfterMatches}, requestedMask=0x{candidate.AffinityMask:X}."
+                    : $"GPU runtime placement was not proven because attribution used {attribution.Mode}/{attribution.ModuleName}; shared WDDM fallback is diagnostic only and cannot authorize Keep.");
     }
 
     private static ManualRuntimePlacementVerification VerifyXhciRuntimePlacement(

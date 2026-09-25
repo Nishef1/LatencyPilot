@@ -102,6 +102,7 @@ public sealed class GpuAutoAffinitySession
     private const int MaximumFinalistPairs = 3;
     private const string ShortlistPhaseName = "screening-shortlist";
     private const string FinalistPhaseName = "screening-finalists";
+    private const string DirectGpuIsrAttributionMode = "display-driver-kmd";
     private static readonly TimeSpan TransitionWarmupDuration = TimeSpan.FromSeconds(5);
 
     private readonly IGpuAutoAffinitySessionBackend backend;
@@ -1467,7 +1468,7 @@ public sealed class GpuAutoAffinitySession
                 activeExperiment = null;
                 var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
                 reasons.Add(
-                    "The paired GPU winner was not kept because final kernel ETW could not prove target-only runtime ISR placement on the selected CPU.");
+                    "The paired GPU winner was not kept because final kernel ETW could not prove direct display-driver ISR placement exclusively on the selected CPU.");
                 return CreateResult(
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
                     restored, restored, candidateReports, trialReports, pairReports, finalistReports,
@@ -1492,7 +1493,7 @@ public sealed class GpuAutoAffinitySession
             await backend.KeepAsync(keptId, CancellationToken.None).ConfigureAwait(false);
             activeExperiment = null;
             reasons.Add(
-                $"Best observed CPU {finalist.Processor.Number} was kept after final kernel-ETW target-only ISR placement proof.");
+                $"Best observed CPU {finalist.Processor.Number} was kept after final direct display-driver kernel-ETW ISR placement proof.");
             return CreateResult(
                 request, startedAtUtc, GpuOptimizationRecommendation.KeepCandidate, finalist,
                 finalStateVerified: true, originalStateRestored: false,
@@ -1534,7 +1535,11 @@ public sealed class GpuAutoAffinitySession
         observation.Placement is { } placement &&
         placement.TargetProcessor == finalist.Processor &&
         placement.ConfirmsRequestedPlacement &&
-        observation.InterruptEvidence is { IsrSampleCount: > 0 };
+        observation.InterruptEvidence is
+        {
+            IsrSampleCount: > 0,
+            IsrAttributionMode: DirectGpuIsrAttributionMode,
+        };
 
     private async Task RollbackAndVerifyOriginalAsync(
         Guid experimentId,

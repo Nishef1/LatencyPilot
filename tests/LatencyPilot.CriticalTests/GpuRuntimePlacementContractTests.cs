@@ -123,7 +123,10 @@ public sealed class GpuRuntimePlacementContractTests
         Assert.AreEqual(1, attribution.UnresolvedIsrEventCount);
         var dispatchPlacement = GpuInterruptRuntimePlacementVerifier.Analyze(
             attribution, new GpuInterruptAffinityCandidate(0, 3, 1UL << 3));
-        Assert.IsTrue(dispatchPlacement.ConfirmsRequestedPlacement);
+        Assert.IsTrue(dispatchPlacement.HasRuntimeEvidence);
+        Assert.IsFalse(dispatchPlacement.HasAuthoritativeDeviceAttribution);
+        Assert.IsFalse(dispatchPlacement.ConfirmsRequestedPlacement,
+            "Shared dxgkrnl ISR placement is diagnostic context only; it cannot prove device-specific GPU Keep.");
         Assert.AreEqual(attribution.Events.Count, dispatchPlacement.TargetProcessorIsrEventCount);
         Assert.IsTrue(attribution.Events.All(static item => item.DurationMicroseconds == 5d));
         var directCapture = dispatchCapture with
@@ -144,6 +147,20 @@ public sealed class GpuRuntimePlacementContractTests
                 dispatchCapture, target.InstanceId, [target, target with { InstanceId = "PCI\\SECOND" }]));
         Assert.ThrowsExactly<InvalidOperationException>(() =>
             GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(dispatchCapture, "PCI\\MISSING", [target]));
+
+        var targetCandidate = new GpuInterruptAffinityCandidate(0, 3, 1UL << 3);
+        Assert.IsTrue(GpuInterruptRuntimePlacementVerifier.ConfirmsAllocatedAffinity(
+            InterruptResourceSnapshot.Available(
+                [new AllocatedInterruptResourceSnapshot(26, 0, 1UL << 3, 0x2)]),
+            targetCandidate,
+            out var allocationReason),
+            allocationReason);
+        Assert.IsFalse(GpuInterruptRuntimePlacementVerifier.ConfirmsAllocatedAffinity(
+            InterruptResourceSnapshot.Available(
+                [new AllocatedInterruptResourceSnapshot(26, 0, 1UL << 0, 0x2)]),
+            targetCandidate,
+            out _),
+            "Stored affinity intent is insufficient when Windows translated allocation remains on another CPU.");
 
         var xhciTarget = new PnPDeviceSnapshot(
             "PCI\\VEN_1022&DEV_TEST_XHCI",

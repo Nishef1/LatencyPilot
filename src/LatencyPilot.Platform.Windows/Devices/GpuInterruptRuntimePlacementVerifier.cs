@@ -13,7 +13,14 @@ public sealed record GpuInterruptIsrAttribution(
     string ModuleName,
     string Mode,
     IReadOnlyList<KernelLatencyEvent> Events,
-    int UnresolvedIsrEventCount);
+    int UnresolvedIsrEventCount)
+{
+    public bool IsAuthoritativeForKeep =>
+        string.Equals(
+            Mode,
+            GpuInterruptRuntimePlacementVerifier.DirectDriverAttributionMode,
+            StringComparison.Ordinal);
+}
 
 public sealed record GpuInterruptRuntimePlacementEvidence(
     string DeviceInstanceId,
@@ -36,7 +43,14 @@ public sealed record GpuInterruptRuntimePlacementEvidence(
             ? OffTargetIsrEventCount == 0
             : null;
 
+    public bool HasAuthoritativeDeviceAttribution =>
+        string.Equals(
+            AttributionMode,
+            GpuInterruptRuntimePlacementVerifier.DirectDriverAttributionMode,
+            StringComparison.Ordinal);
+
     public bool ConfirmsRequestedPlacement =>
+        HasAuthoritativeDeviceAttribution &&
         HasRuntimeEvidence &&
         TargetProcessorIsrEventCount == MatchingResolvedIsrEventCount &&
         OffTargetIsrEventCount == 0;
@@ -44,6 +58,9 @@ public sealed record GpuInterruptRuntimePlacementEvidence(
 
 public static class GpuInterruptRuntimePlacementVerifier
 {
+    public const string DirectDriverAttributionMode = "display-driver-kmd";
+    public const string WddmFallbackAttributionMode = "wddm-graphics-kernel-dispatch";
+
     private static readonly Guid DisplayDeviceClass = new("4D36E968-E325-11CE-BFC1-08002BE10318");
     private const string WddmGraphicsKernelModule = "dxgkrnl";
 
@@ -115,8 +132,8 @@ public static class GpuInterruptRuntimePlacementVerifier
             ? WddmGraphicsKernelModule
             : serviceName;
         var attributionMode = useWddmFallback
-            ? "wddm-graphics-kernel-dispatch"
-            : "display-driver-kmd";
+            ? WddmFallbackAttributionMode
+            : DirectDriverAttributionMode;
         var matching = useWddmFallback
             ? capture.Events
                 .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
@@ -166,6 +183,45 @@ public static class GpuInterruptRuntimePlacementVerifier
             AttributionModuleName = attribution.ModuleName,
             AttributionMode = attribution.Mode,
         };
+    }
+
+    public static bool ConfirmsAllocatedAffinity(
+        InterruptResourceSnapshot resources,
+        GpuInterruptAffinityCandidate candidate,
+        out string reason)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        ArgumentNullException.ThrowIfNull(candidate);
+
+        if (candidate.ProcessorGroup != 0 ||
+            candidate.AffinityMask == 0 ||
+            candidate.ProcessorNumber >= 64)
+        {
+            reason = "Requested GPU affinity candidate is not a valid group-0 x64 KAFFINITY set.";
+            return false;
+        }
+
+        if (resources.ReadStatus != InterruptResourceReadStatus.Available ||
+            resources.Resources.Count == 0)
+        {
+            reason =
+                $"Allocated interrupt resources are {resources.ReadStatus}; active GPU placement cannot be proven.";
+            return false;
+        }
+
+        var activeUnion = resources.Resources.Aggregate(
+            0UL,
+            static (mask, resource) =>
+                resource.ProcessorGroup == 0 ? mask | resource.AffinityMask : mask);
+        var withinRequestedMask = resources.Resources.All(resource =>
+            resource.ProcessorGroup == candidate.ProcessorGroup &&
+            resource.AffinityMask != 0 &&
+            (resource.AffinityMask & ~candidate.AffinityMask) == 0);
+
+        reason = withinRequestedMask
+            ? $"All {resources.Resources.Count} allocated GPU interrupt resource(s) stay inside requested mask 0x{candidate.AffinityMask:X}; active union is 0x{activeUnion:X}."
+            : $"Allocated GPU interrupt resources escape requested mask 0x{candidate.AffinityMask:X}; active union is 0x{activeUnion:X}.";
+        return withinRequestedMask;
     }
 
     private static bool ModuleMatchesService(string? modulePath, string serviceName)

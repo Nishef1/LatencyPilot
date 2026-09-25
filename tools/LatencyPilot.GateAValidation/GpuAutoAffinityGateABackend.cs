@@ -132,12 +132,13 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
                 StringComparison.Ordinal) &&
             report.FinalProcessor is not null;
         var matchesExpected = expectsCandidate && report.FinalProcessor is { } finalProcessor
-            ? driverStable && GpuInterruptAffinityStateComparer.MatchesCandidate(
+            ? VerifyStoredAndAllocatedCandidate(
                 current,
                 new GpuInterruptAffinityCandidate(
                     finalProcessor.Group,
                     finalProcessor.Number,
-                    1UL << finalProcessor.Number))
+                    1UL << finalProcessor.Number),
+                out _)
             : matchesOriginal;
 
         var finalStateVerified = report.FinalStateVerified && unresolvedCount == 0 && matchesExpected;
@@ -280,13 +281,28 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
 
         if (GpuInterruptAffinityStateComparer.MatchesCandidate(currentBefore, expected))
         {
+            if (!VerifyActiveAllocatedAffinity(expected, out var existingAllocationReason))
+            {
+                mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                    DateTimeOffset.UtcNow,
+                    "MeasureExistingCandidateAllocationUnverified",
+                    Guid.Empty,
+                    candidate.Processor,
+                    StoredStateVerified: false,
+                    ToStoredStateReport(currentBefore),
+                    existingAllocationReason));
+                throw new InvalidOperationException(
+                    $"The requested GPU affinity is already stored, but Windows active interrupt allocation does not prove it: {existingAllocationReason}");
+            }
+
             mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
                 DateTimeOffset.UtcNow,
                 "MeasureExistingCandidateNoWrite",
                 Guid.Empty,
                 candidate.Processor,
                 StoredStateVerified: true,
-                ToStoredStateReport(currentBefore)));
+                ToStoredStateReport(currentBefore),
+                existingAllocationReason));
             return Guid.Empty;
         }
 
@@ -311,8 +327,31 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             if (!verified)
             {
                 throw new InvalidOperationException(
-                    "GPU candidate post-apply verification failed before ownership could be transferred to the session.");
+                    "GPU candidate post-apply stored-policy verification failed before ownership could be transferred to the session.");
             }
+
+            if (!VerifyActiveAllocatedAffinity(ToMutationCandidate(candidate), out var allocationReason))
+            {
+                mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                    DateTimeOffset.UtcNow,
+                    "ApplyCandidateActiveAllocationMismatch",
+                    experimentId,
+                    candidate.Processor,
+                    StoredStateVerified: false,
+                    ToStoredStateReport(current),
+                    allocationReason));
+                throw new InvalidOperationException(
+                    $"GPU candidate was stored and the device restarted, but active Windows interrupt allocation did not move inside the requested mask: {allocationReason}");
+            }
+
+            mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
+                DateTimeOffset.UtcNow,
+                "ApplyCandidateActiveAllocation",
+                experimentId,
+                candidate.Processor,
+                StoredStateVerified: true,
+                ToStoredStateReport(current),
+                allocationReason));
 
             await RecreateBenchmarkRendererAsync(cancellationToken).ConfigureAwait(false);
             mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
@@ -461,22 +500,23 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
 
         mutation.AwaitDecision(experimentId);
         var current = GpuInterruptAffinityPolicyStore.Capture(deviceInstanceId);
-        var verified = string.Equals(
-                current.DriverVersion,
-                originalState.DriverVersion,
-                StringComparison.OrdinalIgnoreCase) &&
-            GpuInterruptAffinityStateComparer.MatchesCandidate(current, ToMutationCandidate(candidate));
+        var expected = ToMutationCandidate(candidate);
+        var verified = VerifyStoredAndAllocatedCandidate(
+            current,
+            expected,
+            out var allocationReason);
         mutationAudit.Add(new GpuAutoAffinityMutationAuditEntry(
             DateTimeOffset.UtcNow,
             "KeepCandidatePreflight",
             experimentId,
             candidate.Processor,
             verified,
-            ToStoredStateReport(current)));
+            ToStoredStateReport(current),
+            allocationReason));
         if (!verified)
         {
             throw new InvalidOperationException(
-                "GPU candidate pre-keep verification failed; the keep decision was not terminalized.");
+                $"GPU candidate pre-keep verification failed; stored policy and active allocation were not both proven. {allocationReason}");
         }
 
         mutation.KeepCandidate(experimentId);
@@ -512,10 +552,47 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
         var expected = ToMutationCandidate(candidate);
         var ownershipValid = experimentId == Guid.Empty ||
             (ownedCandidates.TryGetValue(experimentId, out var owned) && owned == candidate);
-        return Task.FromResult(
-            ownershipValid &&
-            string.Equals(current.DriverVersion, originalState.DriverVersion, StringComparison.OrdinalIgnoreCase) &&
-            GpuInterruptAffinityStateComparer.MatchesCandidate(current, expected));
+        var verified = ownershipValid &&
+            VerifyStoredAndAllocatedCandidate(current, expected, out _);
+        return Task.FromResult(verified);
+    }
+
+    private bool VerifyStoredAndAllocatedCandidate(
+        GpuInterruptAffinitySnapshot current,
+        GpuInterruptAffinityCandidate candidate,
+        out string allocationReason)
+    {
+        var storedVerified =
+            string.Equals(
+                current.DriverVersion,
+                originalState.DriverVersion,
+                StringComparison.OrdinalIgnoreCase) &&
+            GpuInterruptAffinityStateComparer.MatchesCandidate(current, candidate);
+        if (!storedVerified)
+        {
+            allocationReason = "Stored GPU affinity policy or display-driver version does not match the requested candidate.";
+            return false;
+        }
+
+        return VerifyActiveAllocatedAffinity(candidate, out allocationReason);
+    }
+
+    private bool VerifyActiveAllocatedAffinity(
+        GpuInterruptAffinityCandidate candidate,
+        out string reason)
+    {
+        var device = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(item =>
+            string.Equals(item.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase));
+        if (device is null)
+        {
+            reason = "The target display adapter is no longer present.";
+            return false;
+        }
+
+        return GpuInterruptRuntimePlacementVerifier.ConfirmsAllocatedAffinity(
+            device.InterruptResources,
+            candidate,
+            out reason);
     }
 
     private async Task<GpuAutoAffinityTrialObservation> CaptureAsync(
@@ -730,6 +807,12 @@ internal sealed class GpuAutoAffinityGateABackend : IGpuAutoAffinitySessionBacke
             try
             {
                 isrAttribution = GpuInterruptRuntimePlacementVerifier.CaptureIsrAttribution(scopedKernel, deviceInstanceId);
+                if (!isrAttribution.IsAuthoritativeForKeep)
+                {
+                    softNotes.Add(
+                        "GPU ISR attribution fell back to the shared WDDM dxgkrnl stream. It remains diagnostic context only and cannot prove a final device-specific Keep.");
+                }
+
                 if (isrAttribution.Events.Count > 0)
                 {
                     referenceIsrModuleName ??= isrAttribution.ModuleName;

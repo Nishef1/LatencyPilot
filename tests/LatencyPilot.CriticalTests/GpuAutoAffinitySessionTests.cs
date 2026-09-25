@@ -144,6 +144,13 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsFalse(missingFinalEtw.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)));
         Assert.IsTrue(missingFinalEtw.Events.Any(static item => item == "rollback:0:3"));
 
+        var fallbackOnlyFinal = new ScriptedBackend(finalFallbackAttribution: true);
+        var fallbackOnlyResult = await new GpuAutoAffinitySession(fallbackOnlyFinal)
+            .RunAsync(request with { SessionId = Guid.NewGuid() });
+        Assert.AreEqual(GpuOptimizationRecommendation.RestoreOriginal, fallbackOnlyResult.Recommendation);
+        Assert.IsFalse(fallbackOnlyFinal.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)),
+            "Shared WDDM/dxgkrnl fallback must never authorize final GPU Keep.");
+
         var invalidKeep = new ScriptedBackend(failKeep: true);
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             new GpuAutoAffinitySession(invalidKeep).RunAsync(request with { SessionId = Guid.NewGuid() }));
@@ -247,6 +254,7 @@ public sealed class GpuAutoAffinitySessionTests
         private readonly bool recoverableOriginalOutlier;
         private readonly bool persistentlyNoisyOriginal;
         private readonly bool unstablePairControls;
+        private readonly bool finalFallbackAttribution;
         private int captureSequence;
         private int originalQualificationIndex;
         private int unstableControlIndex;
@@ -258,7 +266,8 @@ public sealed class GpuAutoAffinitySessionTests
             bool cancelDuringFirstScoredCandidate = false,
             bool recoverableOriginalOutlier = false,
             bool persistentlyNoisyOriginal = false,
-            bool unstablePairControls = false)
+            bool unstablePairControls = false,
+            bool finalFallbackAttribution = false)
         {
             this.finalEtwUnavailable = finalEtwUnavailable;
             this.failKeep = failKeep;
@@ -266,6 +275,7 @@ public sealed class GpuAutoAffinitySessionTests
             this.recoverableOriginalOutlier = recoverableOriginalOutlier;
             this.persistentlyNoisyOriginal = persistentlyNoisyOriginal;
             this.unstablePairControls = unstablePairControls;
+            this.finalFallbackAttribution = finalFallbackAttribution;
         }
 
         internal List<string> Events { get; } = [];
@@ -363,7 +373,14 @@ public sealed class GpuAutoAffinitySessionTests
                 ? new GpuAutoAffinityPlacementProof(candidate.Processor, 100, 0)
                 : null;
             var interruptEvidence = finalVerification && !finalEtwUnavailable
-                ? new GpuAutoAffinityInterruptEvidence("nvlddmkm.sys", "resolved", 100, 100, 0)
+                ? new GpuAutoAffinityInterruptEvidence(
+                    finalFallbackAttribution ? "dxgkrnl.sys" : "nvlddmkm.sys",
+                    finalFallbackAttribution
+                        ? "wddm-graphics-kernel-dispatch"
+                        : "display-driver-kmd",
+                    100,
+                    100,
+                    0)
                 : null;
             return Task.FromResult(CreateObservation(request, fps, placement, interruptEvidence));
         }
