@@ -277,7 +277,7 @@ public sealed class AuditClosureIntegrationTests
             "C:\\evidence\\session",
             "C:\\evidence\\session\\gpu-auto-affinity-report.json",
             new GateAEvidenceBundleExportResult("C:\\evidence\\session.zip", null));
-        Assert.AreEqual("Winner · CPU 7 kept", keepPresentation.Title);
+        Assert.AreEqual("Best observed this run · CPU 7 kept", keepPresentation.Title);
         Assert.AreEqual("Evidence eligible", keepPresentation.EligibilityLabel,
             "Source/evidence eligibility must not be presented as if the whole physical Gate A were already closed.");
         Assert.AreEqual(cpu7, keepPresentation.ComparedProcessor);
@@ -309,7 +309,7 @@ public sealed class AuditClosureIntegrationTests
             "C:\\evidence\\session",
             "C:\\evidence\\session\\gpu-auto-affinity-report.json",
             new GateAEvidenceBundleExportResult(null, "ZIP destination is locked."));
-        Assert.AreEqual("Best observed · CPU 7 · Original restored", restorePresentation.Title,
+        Assert.AreEqual("Best observed this run · CPU 7 · Original restored", restorePresentation.Title,
             "Restoring Original must not erase a structurally valid best-observed CPU.");
         Assert.AreEqual("Development evidence", restorePresentation.EligibilityLabel);
         Assert.AreEqual(cpu7, restorePresentation.ComparedProcessor,
