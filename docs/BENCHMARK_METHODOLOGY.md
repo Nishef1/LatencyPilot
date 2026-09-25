@@ -199,7 +199,7 @@ A difference of at most one percentage point remains a practical tie. A practica
 
 Selection confidence is explanatory metadata derived from already-collected evidence: lead over runner-up, effect MAD, Original robust variability, positive-pair consistency and practical-tie state. It is not a Keep gate and no hidden weighted score is used.
 
-Keep is evaluated separately. A positive median primary effect and bounded performance guardrails are required before the final runtime-placement check; final target-only ISR proof remains mandatory.
+Keep is evaluated separately. A positive median primary effect and bounded performance guardrails are required before the final runtime-placement check. Stored registry intent is not enough: translated Windows interrupt resources must remain inside the requested mask before scored candidate evidence is accepted, and final Keep requires direct display-driver target-only ISR proof. Shared `dxgkrnl` fallback is diagnostic only.
 
 0.1% low remains diagnostic tail context.
 
@@ -244,12 +244,13 @@ Before Keep:
 
 1. apply the selected finalist once more;
 2. verify exact stored candidate state;
-3. run the final non-scored warm-up;
-4. capture final kernel ETW;
-5. require clean ETW integrity and zero lost events;
-6. require attributable GPU ISR samples;
-7. require requested target-only runtime placement with zero resolved off-target ISR;
-8. verify terminal stored state.
+3. verify translated allocated interrupt resources are non-empty and confined to the requested processor mask;
+4. run the final non-scored warm-up;
+5. capture final kernel ETW;
+6. require clean ETW integrity and zero lost events;
+7. require direct display-driver-attributed GPU ISR samples; a shared `dxgkrnl` fallback cannot authorize Keep;
+8. require requested target-only runtime placement with zero resolved off-target ISR;
+9. verify terminal stored state and active allocation again before Keep.
 
 If final runtime placement cannot be proved, exact Original is restored.
 

@@ -31,7 +31,7 @@ preflight / quiet-context capture
 → top-four 10 s recheck shortlist + at most one uncertainty-overlapping fifth challenger → top 2
 → two shuffled 15 s pairs per finalist; third pair only if uncertainty remains
 → best-observed CPU + confidence
-→ separate Keep guardrails + final target-only GPU ISR placement proof
+→ separate Keep guardrails + active allocated-resource proof + final direct-driver target-only GPU ISR placement proof
 → measure free CPU interrupt headroom
 → Raw Input → USB → xHCI resolution
 → reversible xHCI affinity
@@ -84,7 +84,7 @@ Current source implements ADR 0011:
 16. Every structurally valid finalist is ranked by median paired 1%-low effect.
 17. MAD, Original variability, lead over runner-up, pair consistency and practical-tie state produce `High`/`Medium`/`Low` **ranking confidence**; confidence never gates rank or Keep.
 18. `RecommendedForKeep` is separate: positive median benefit, positive-pair consistency and bounded AVG/frame-p99/interrupt-tail guardrails.
-19. Final Keep still requires exact stored state and clean attributable target-only GPU ISR placement. Otherwise exact Original is restored while the best-observed CPU remains in the report.
+19. Final Keep requires exact stored state, non-empty translated GPU interrupt resources confined to the requested mask, and clean **direct display-driver** target-only GPU ISR placement. Shared `dxgkrnl` fallback remains diagnostic only. Otherwise exact Original is restored while the best-observed CPU remains in the report.
 
 The v6 method keeps the existing v3 report schema and persists raw trials/pairs, finalist medians, effect MAD, positive-pair count, noise guide, raw median Original/Candidate FPS/ms, `BestObservedProcessor`, `SelectionConfidence`, structured finalist guardrail reasons, provenance and terminal state. Historical v5 and earlier evidence is never reinterpreted as v6.
 
@@ -104,11 +104,13 @@ The Devices page now exposes a development-only manual affinity surface without 
 
 - the development UI keeps the familiar Interrupt-Affinity Policy Configuration Tool information model, but now opens as an independent modern WinUI tool window with stacked device → selected-device → interrupt-affinity sections, search, concise identity details, Fluent device/action icons, inline multi-CPU mask selection, and Current policy / Specified mask / Current assignment evidence;
 - current stored interrupt policy / `AssignmentSetOverride` and translated allocated interrupt-resource masks are shown separately for latency-sensitive present devices;
-- GPU and USBXHCI are the only editable targets because they already have bounded journal/restart/rollback ownership;
-- network, audio, storage, HID and other latency-sensitive devices remain read-only;
-- manual Apply accepts a non-empty group-0 KAFFINITY set and uses an elevated one-shot helper: exact snapshot → journal → apply/restart → verify every translated allocation stays inside the requested mask → clean ETW ISR proof that attributable runtime execution stays inside that mask → Keep, or exact rollback on failed verification;
-- GPU manual verification reuses the existing GPU runtime-placement verifier; xHCI now has a controller-specific `USBXHCI` ISR verifier and deliberately fails closed when more than one present controller shares that driver service because the shared module stream is ambiguous;
-- a reboot-pending xHCI experiment may resume only for the same journaled CPU candidate;
+- GPU and USBXHCI expose editable affinity masks because they already have bounded journal/restart/rollback ownership;
+- a present PCI `HDAudBus` controller may additionally expose bounded manual MSI enable/restore when `MSISupported` already exists as DWORD 0/1; `MessageNumberLimit` is never changed;
+- network, storage, HID and other unsupported latency-sensitive devices remain read-only;
+- manual GPU/xHCI Apply accepts a non-empty group-0 KAFFINITY set and uses an elevated one-shot helper: exact snapshot → journal → apply/restart → verify every translated allocation stays inside the requested mask → clean ETW ISR proof → Keep, or exact rollback on failed verification;
+- GPU manual verification requires **direct display-driver** ISR attribution; shared `dxgkrnl` fallback is shown only as diagnostic context. xHCI uses a controller-specific `USBXHCI` ISR verifier and deliberately fails closed when more than one present controller shares that driver service because the shared module stream is ambiguous;
+- manual HDAudio MSI Keep requires both stored `MSISupported=1` and active Windows interrupt resources carrying `CM_RESOURCE_INTERRUPT_MESSAGE`;
+- reboot-pending xHCI/MSI experiments resume only through the same journal-owned target/candidate;
 - Restore is per-device and only unwinds retained changes actually owned by the LatencyPilot mutation journal; an external pre-existing override is never claimed or overwritten as LatencyPilot-owned;
 - the App blocks manual mutation while GPU Gate A is running.
 
@@ -156,7 +158,8 @@ The v6 work reuses the consolidated critical-test budget. New/updated contracts 
 - best-observed CPU persists independently from Keep/Restore;
 - selection confidence is metadata rather than a winner threshold;
 - result presentation includes actual before/after FPS/ms plus absolute and percentage improvement;
-- final target-only ISR placement and rollback safety remain separate Keep requirements.
+- final GPU Keep requires stored policy + active translated allocation + direct display-driver target-only ISR placement, while shared `dxgkrnl` fallback stays diagnostic-only;
+- bounded HDAudio MSI never tunes `MessageNumberLimit` and requires active message-signaled resource verification before manual Keep.
 
 Exact-head hosted **Tests** are mandatory for every revision used as physical closure evidence. An older green run is never reused for a newer SHA.
 
@@ -185,7 +188,7 @@ Current v6 physical validation must prove on one exact clean green revision:
 11. actual before/after FPS/ms and paired percentage effect render correctly;
 12. Keep guardrails remain separate from rank and the concrete failed guardrail is shown when a best-observed CPU is not kept;
 13. exact rollback succeeds between candidates and on failure/cancellation;
-14. final ETW proves attributable target-only GPU ISR placement before Keep;
+14. translated GPU interrupt resources remain inside the requested CPU mask and final ETW proves **direct display-driver** target-only GPU ISR placement before Keep; shared `dxgkrnl` fallback cannot close this gate;
 15. terminal state verifies with `unresolved=0`;
 16. **Stop safely** and one supported failure/recovery path restore exact Original;
 17. a second full v6 search produces comparable ranking/confidence behavior without requiring identical decimals;
@@ -210,11 +213,11 @@ Graphics-hook warnings such as `nvspcap64.dll` remain explicit interference cont
 
 ## Immediate execution ladder
 
-1. **Completed now:** v1 scope has been simplified around the measured sequential GPU → primary-input xHCI path. Dormant MSI stage metadata and speculative network benchmark/profile/Pareto optimizer source are removed while read-only RSS/network diagnostics remain. ADR 0006 is reconciled to ADR 0011/v6, and the Measure UI now explains the three-step automatic path plus diagnostics-only domains.
-2. **Evidence:** scope-cleanup revision `6d9a008994539b8becf02d0cb41cff31a9fd2f90` passed hosted **Tests** in workflow run `36191321201`. This follow-up only clarifies result wording and cross-run comparison authority; its exact HEAD must also be green before being used for physical evidence. No new physical GPU/xHCI claim is made by this cleanup.
-3. **Still open:** exact-head Tests, one clean physical v6 Full run + repeat/recovery exercise, real render/accessibility inspection, and integrated automatic xHCI apply/runtime verification. Public product mutation remains unarmed.
-4. **Next stage:** get exact-head hosted Tests green; then run the v6 Full Gate A on owner hardware and inspect both the canonicalized GPU evidence and the simplified Measure surface on real Windows.
-5. **After that:** close representative xHCI physical apply/verify/rollback evidence, combined reboot/resume, then arm only the narrow typed GPU+xHCI product flow before release closure.
+1. **Completed now:** GPU affinity verification is tightened so a stored `AssignmentSetOverride` is no longer treated as effective placement by itself. After every candidate restart the automatic Gate A path now requires non-empty translated interrupt resources confined to the requested mask before measurement; candidate verification and Keep re-check active allocation. Final Keep additionally requires direct display-driver ISR attribution, while shared `dxgkrnl` fallback remains diagnostic-only. The development manual lab now also supports one bounded PCI `HDAudBus` MSI experiment with exact journal/rollback ownership, no `MessageNumberLimit` tuning, and active `CM_RESOURCE_INTERRUPT_MESSAGE` verification.
+2. **Evidence:** implementation revisions `7e0aaa7e7359805686cb15e4cfd9c26a653f325a` (GPU placement hardening) and `8cc535ea965654e3ff4f435bf4b6043302c8100f` (manual HDAudio MSI) are on `main`. Exact-head hosted Tests for the reconciled source/docs revision are pending; no new physical placement/MSI claim is made until owner-hardware verification.
+3. **Still open:** exact-head Tests; one clean physical v6 Full run proving stored mask → translated allocation → direct-driver ISR placement; repeat/recovery/render inspection; one owner-hardware HDAudio MSI enable/active-resource/restore exercise; integrated automatic xHCI apply/runtime verification. Public product mutation remains unarmed.
+4. **Next stage:** get exact-head hosted Tests green. Then run GPU Gate A on owner hardware and inspect the mutation audit plus active resource masks before interpreting LatencyMon DPC placement. Separately exercise HDAudio MSI once and verify the active resource flag plus exact Restore.
+5. **After that:** repeat the full GPU search for reproducibility, close Stop-safely/recovery/render gates, then continue the narrow GPU→xHCI product arming chain. Manual HDAudio MSI remains development-only unless a later owner decision adds it to product scope.
 
 ## Completion rule
 

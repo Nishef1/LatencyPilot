@@ -46,7 +46,7 @@ Product/safety authority remains ADR 0006. GPU measurement/search/ranking author
 
 NIC/RSS mutation, audio/storage affinity, BIOS changes, HAGS changes, MSI-mode forcing, power-plan/timer/HPET/processor-performance changes, mouse/keyboard `DataQueueSize` tuning, automatic polling-rate changes, PCI bridge/root-complex affinity, generic debloating and a generic cross-subsystem/Pareto optimizer.
 
-A development-only manual affinity lab may inspect these device categories read-only. Manual writes remain limited to the existing journaled GPU and USBXHCI mutation targets, may use a non-empty group-0 KAFFINITY processor set, and do not widen the automatic v1 scope or public privileged API. The automatic GPU search continues to evaluate one logical-CPU candidate at a time.
+A development-only manual interrupt lab may inspect all latency-sensitive categories read-only. Manual affinity writes remain limited to the journaled GPU and USBXHCI targets and may use a non-empty group-0 KAFFINITY processor set. In addition, a present PCI `HDAudBus` controller may expose bounded manual MSI enable/restore only when an existing `MSISupported` DWORD is 0/1; `MessageNumberLimit` is never tuned and active `CM_RESOURCE_INTERRUPT_MESSAGE` resources must verify before Keep. None of these development actions widen the automatic v1 scope or public privileged API. The automatic GPU search continues to evaluate one logical-CPU candidate at a time.
 
 ---
 

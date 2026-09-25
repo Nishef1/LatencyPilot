@@ -51,7 +51,7 @@ Outside the v1 automatic path:
 - audio interrupt-affinity mutation;
 - BIOS changes;
 - HAGS changes;
-- MSI-mode toggles;
+- automatic MSI-mode toggles;
 - power-plan tuning;
 - generic debloating;
 - generic cross-subsystem/Pareto optimization;
@@ -64,6 +64,21 @@ Outside the v1 automatic path:
 - PCI bridge/root-complex affinity mutation.
 
 Existing read-only diagnostics in those areas may remain, but speculative benchmark/profile/optimizer code must not be kept merely for hypothetical future scope.
+
+### Development-only manual HDAudio MSI exception
+
+Owner-directed development tooling may expose a **manual**, journaled PCI High Definition Audio controller MSI experiment without adding MSI to the automatic v1 optimizer.
+
+Eligibility and Keep are deliberately narrow:
+
+- target must be a present PCI device using the `HDAudBus` service;
+- `MSISupported` must already exist as a documented REG_DWORD with value 0 or 1;
+- LatencyPilot may set only `MSISupported=1`; it never creates/tunes `MessageNumberLimit`;
+- the exact original MSI registry state is journaled before the write;
+- Windows must restart the target in place or explicitly request a reboot;
+- after activation, allocated interrupt resources must carry `CM_RESOURCE_INTERRUPT_MESSAGE`; stored registry intent alone is not success;
+- failed active verification rolls back exact Original or remains recovery-required;
+- this lab capability does not arm public mutation IPC and is not an automatic recommendation.
 
 ### v1 simplicity rule
 
@@ -169,7 +184,7 @@ stored interrupt policy
 
 Stored registry policy proves configuration intent only. ConfigMgr resource data is provenance/context. Runtime ETW evidence owns effective placement claims.
 
-GPU Keep requires clean attributable target-only ISR placement under ADR 0011.
+GPU Keep requires three distinct proofs under ADR 0011: the requested stored policy, translated allocated interrupt resources confined to the requested processor mask, and clean **direct display-driver** target-only ISR placement. A shared `dxgkrnl` WDDM ISR stream may remain diagnostic context but is not device-specific enough to authorize Keep.
 
 The integrated xHCI path must independently establish controller-specific runtime placement before that subsystem can be called verified.
 

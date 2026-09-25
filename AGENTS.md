@@ -26,7 +26,7 @@ Measure → Experiment → Verify → Compare → Keep or Revert
 
 ## 2. Non-goals
 
-Do not turn LatencyPilot into a registry tweak collection, debloater, service-disabling script, opaque FPS booster, timer/HPET/PPM folklore tool, security-disabling utility, overclocking tool, or benchmark that claims physical click-to-photon latency without physical instrumentation. In v1 do not add automatic NIC/RSS, audio/storage affinity, MSI-mode forcing, mouse/keyboard queue-size tuning, polling-rate changes, PCI bridge affinity or a joint weighted/Pareto subsystem optimizer.
+Do not turn LatencyPilot into a registry tweak collection, debloater, service-disabling script, opaque FPS booster, timer/HPET/PPM folklore tool, security-disabling utility, overclocking tool, or benchmark that claims physical click-to-photon latency without physical instrumentation. In v1 do not add automatic NIC/RSS, audio/storage affinity, automatic MSI-mode forcing, mouse/keyboard queue-size tuning, polling-rate changes, PCI bridge affinity or a joint weighted/Pareto subsystem optimizer. The development-only manual lab may expose one bounded PCI HDAudio MSI enable/restore experiment only when an existing `MSISupported` DWORD proves driver-declared applicability, `MessageNumberLimit` is left untouched, active message-signaled resources are independently verified after restart, and exact journal-owned rollback remains available.
 
 ## 3. Frozen current stack
 
