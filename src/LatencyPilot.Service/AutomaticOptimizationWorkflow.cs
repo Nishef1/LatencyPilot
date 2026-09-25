@@ -4,10 +4,9 @@ public enum AutomaticOptimizationStage
 {
     OriginalMeasurement = 0,
     GpuAffinity = 1,
-    Msi = 2,
-    PrimaryInputUsbXhci = 3,
-    FinalVerification = 4,
-    Report = 5,
+    PrimaryInputUsbXhci = 2,
+    FinalVerification = 3,
+    Report = 4,
 }
 
 public enum AutomaticOptimizationStageDisposition

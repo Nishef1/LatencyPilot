@@ -41,7 +41,7 @@ preflight / quiet check
 → Restore original settings
 ```
 
-NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, power-plan tuning, generic debloating and a generic cross-subsystem optimizer are outside the v1 automatic path.
+NIC/RSS mutation, audio/storage affinity, BIOS changes, HAGS changes, MSI-mode forcing, power-plan/timer/HPET/processor-performance tweaks, mouse/keyboard queue-size tuning, automatic polling-rate changes, generic debloating and a generic cross-subsystem optimizer are outside the v1 automatic path.
 
 ## Current state
 
@@ -219,9 +219,9 @@ Raw Input device
 → exact xHCI controller
 ```
 
-After a verified GPU Keep, v1 can choose a separate CPU from remaining interrupt headroom using DPC duration + ISR duration + tail spikes, with counts as context. The selected mutation target is the interrupt-owning xHCI/controller rather than blindly the leaf mouse.
+After the GPU reaches a verified terminal state, v1 stops the GPU workload and takes one fresh bounded quiet ETW headroom capture. It chooses a separate CPU from remaining interrupt headroom using DPC duration + ISR duration + tail spikes, with counts as context. GPU rank is not reused as a USB rank, and there is no second per-CPU USB benchmark or joint GPU/xHCI score. The selected mutation target is the interrupt-owning xHCI/controller rather than blindly the leaf mouse.
 
-System-changing xHCI affinity remains product-unarmed until GPU Gate A physically proves the shared mutation/recovery substrate and the integrated xHCI runtime-verification path closes.
+System-changing xHCI affinity remains product-unarmed until GPU Gate A physically proves the shared mutation/recovery substrate and the integrated xHCI runtime-verification path closes. Controller-specific Keep fails closed when multiple present controllers share `USBXHCI.sys` and runtime evidence cannot be attributed to one controller. Raw Input timing remains host-observed consistency context, not click-to-photon latency.
 
 ## Architecture
 

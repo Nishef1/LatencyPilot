@@ -2,7 +2,7 @@
 
 This file is authoritative for coding agents and contributors working in this repository.
 
-LatencyPilot is a **measurement-first Windows 11 latency experimentation platform**, not a generic optimizer. The engineering objective is to make low-level tuning measurable, attributable, reversible and safe enough to reason about.
+LatencyPilot is a **measurement-first Windows 11 interrupt-affinity product with read-only diagnostics**, not a generic optimizer. The v1 automatic mutation surface is intentionally limited to GPU and the exact xHCI controller that owns the selected primary-input route. The engineering objective is to make those changes measurable, attributable, reversible and safe enough to reason about.
 
 Before changing code, read:
 
@@ -26,7 +26,7 @@ Measure → Experiment → Verify → Compare → Keep or Revert
 
 ## 2. Non-goals
 
-Do not turn LatencyPilot into a registry tweak collection, debloater, service-disabling script, opaque FPS booster, timer/HPET folklore tool, security-disabling utility, overclocking tool, or benchmark that claims physical click-to-photon latency without physical instrumentation.
+Do not turn LatencyPilot into a registry tweak collection, debloater, service-disabling script, opaque FPS booster, timer/HPET/PPM folklore tool, security-disabling utility, overclocking tool, or benchmark that claims physical click-to-photon latency without physical instrumentation. In v1 do not add automatic NIC/RSS, audio/storage affinity, MSI-mode forcing, mouse/keyboard queue-size tuning, polling-rate changes, PCI bridge affinity or a joint weighted/Pareto subsystem optimizer.
 
 ## 3. Frozen current stack
 

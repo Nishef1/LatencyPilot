@@ -25,7 +25,7 @@ preflight / quiet check
 → show before/after evidence + Restore original settings
 ```
 
-Product/safety authority remains ADR 0006. GPU measurement/search/ranking authority is ADR 0011; ADR 0010 remains historical v5 evidence and ADR 0009 remains historical v4 evidence for new runs.
+Product/safety authority remains ADR 0006. GPU measurement/search/ranking authority is ADR 0011; ADR 0010 remains historical v5 evidence and ADR 0009 remains historical v4 evidence for new runs. GPU and xHCI are intentionally sequential: GPU ranking is never reused as a USB ranking, and v1 has no joint weighted/Pareto allocator.
 
 ### v1 includes
 
@@ -44,7 +44,7 @@ Product/safety authority remains ADR 0006. GPU measurement/search/ranking author
 
 ### Not in the v1 automatic path
 
-NIC/RSS mutation, audio affinity, BIOS changes, HAGS changes, MSI-mode toggles, power-plan tuning, generic debloating and a generic cross-subsystem/Pareto optimizer.
+NIC/RSS mutation, audio/storage affinity, BIOS changes, HAGS changes, MSI-mode forcing, power-plan/timer/HPET/processor-performance changes, mouse/keyboard `DataQueueSize` tuning, automatic polling-rate changes, PCI bridge/root-complex affinity, generic debloating and a generic cross-subsystem/Pareto optimizer.
 
 A development-only manual affinity lab may inspect these device categories read-only. Manual writes remain limited to the existing journaled GPU and USBXHCI mutation targets, may use a non-empty group-0 KAFFINITY processor set, and do not widen the automatic v1 scope or public privileged API. The automatic GPU search continues to evaluate one logical-CPU candidate at a time.
 
@@ -228,6 +228,7 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] Raw Input host timing metrics;
 - [x] xHCI DPC/ISR attribution/readiness source;
 - [x] post-GPU quiet ETW headroom capture after verified GPU Keep;
+- [x] keep GPU and xHCI decisions sequential: no second per-CPU USB tournament and no joint weighted/Pareto score;
 - [x] exclude the whole physical core containing the GPU winner, including SMT sibling;
 - [x] rank CPU headroom by total DPC+ISR duration, then p99 interrupt tail, then event-count context;
 - [x] bind recommendation to the exact interrupt-owning xHCI controller;
@@ -244,7 +245,7 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] bounded reversible xHCI/controller-affinity mutation source;
 - [x] exact stored-state snapshot and durable journal integration;
 - [x] restart-required/reboot-pending state plus exact rollback/recovery source;
-- [x] fail-closed controller-specific ETW runtime-placement verifier primitive for an unambiguous single present `USBXHCI` controller;
+- [x] fail-closed controller-specific ETW runtime-placement verifier primitive for an unambiguous single present `USBXHCI` controller; a shared module stream across multiple present controllers is not accepted as controller-specific proof;
 - [ ] integrate controller-specific ETW runtime verification into the automatic product flow and retain fail-closed behavior when shared-module attribution is ambiguous;
 - [ ] Raw Input timing sanity check after apply;
 - [ ] integrated rollback of USB/xHCI while preserving a proven GPU winner when USB verification fails;

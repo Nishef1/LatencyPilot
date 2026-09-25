@@ -51,11 +51,13 @@ High Contrast never depends on translucency and continues to use Windows system 
 There are four primary destinations:
 
 1. **Overview** — current latency evidence, baseline/readiness summary, charts, and the next meaningful action.
-2. **Measure** — quick snapshot and five-window baseline preparation/capture.
-3. **Devices** — Graphics, Network/RSS, and USB/xHCI read-only evidence.
+2. **Measure** — quick snapshot, repeatable baseline, and a compact three-step v1 scope cue: GPU → primary-input xHCI → verify/restore.
+3. **Devices** — Graphics and USB/xHCI evidence for the v1 path plus clearly labeled diagnostics-only Network/RSS evidence.
 4. **Evidence** — exact distributions, attribution, baseline windows, measurement context, and export/provenance.
 
 Baseline is a measurement workflow, not a fifth top-level destination. Appearance lives in the navigation footer rather than competing with product destinations.
+
+The Measure page must make scope legible before technical detail: GPU and primary-input xHCI are the only automatic v1 targets; Network, audio, storage, MSI/timers, power and queue-size tweaks are diagnostic-only. Do not add profile selectors, weighted-score controls or subsystem-tuning toggles for deferred domains.
 
 The old custom button rail and scroll-to-section navigation are not part of the current design. Navigation selection always corresponds to the visible view.
 

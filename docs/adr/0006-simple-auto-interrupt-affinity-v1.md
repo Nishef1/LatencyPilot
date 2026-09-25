@@ -1,12 +1,12 @@
 # ADR 0006 — Simple automatic interrupt-affinity v1
 
-Status: **Accepted; GPU measurement/search/ranking superseded by ADR 0010**  
+Status: **Accepted; GPU measurement/search/ranking superseded by ADR 0011**  
 Originally accepted: 2026-09-18  
-Reconciled: 2026-09-24
+Reconciled: 2026-09-25
 
 ADR 0006 remains authoritative for the narrow v1 **product scope, mutation/recovery ownership, GPU→xHCI sequencing, public arming gates and completion shape**.
 
-ADR 0010 supersedes the former GPU measurement, screening, ranking and finalist-confirmation details that previously lived here. ADRs 0007–0009 remain historical method contracts only. Do not use historical time-local/block-control text from older revisions of ADR 0006 as current GPU method authority.
+ADR 0011 supersedes the former GPU measurement, screening, ranking and finalist-confirmation details that previously lived here. ADR 0010 remains the historical v5 contract and ADRs 0007–0009 remain earlier historical method contracts. Do not use historical GPU-method text from older revisions of ADR 0006 as current authority.
 
 ## Product goal
 
@@ -56,20 +56,30 @@ Outside the v1 automatic path:
 - generic debloating;
 - generic cross-subsystem/Pareto optimization;
 - undocumented kernel mutation;
-- broad multi-vector/MSI-X search inferred only from registry/resource folklore.
+- broad multi-vector/MSI-X search inferred only from registry/resource folklore;
+- mouse/keyboard `DataQueueSize` tuning;
+- timer/HPET or processor-performance-interval tweaks;
+- automatic polling-rate changes;
+- storage/NVMe interrupt-affinity mutation;
+- PCI bridge/root-complex affinity mutation.
 
-Existing read-only/future/recovery code in those areas may remain, but it must not silently expand or gate v1.
+Existing read-only diagnostics in those areas may remain, but speculative benchmark/profile/optimizer code must not be kept merely for hypothetical future scope.
+
+### v1 simplicity rule
+
+GPU and primary-input xHCI are solved **sequentially**, not with a joint weighted score or Pareto allocator. GPU evidence owns the GPU decision. After the GPU reaches a verified terminal state, one fresh bounded quiet ETW capture owns xHCI CPU-headroom selection. GPU ranking is useful context, but it is not reinterpreted as a USB ranking and v1 does not run a second per-CPU USB tournament.
 
 ## GPU measurement authority
 
 Current GPU method authority is:
 
-[`0010-observer-isolated-symmetric-gpu-affinity-v5.md`](0010-observer-isolated-symmetric-gpu-affinity-v5.md)
+[`0011-restart-canonicalized-gpu-affinity-v6.md`](0011-restart-canonicalized-gpu-affinity-v6.md)
 
 In brief, current source uses:
 
 ```text
-3–5 scored Original observations for robust median/MAD variability
+verify exact Original → one in-place GPU restart with Original unchanged → recreate renderer
+→ 3–5 scored Original observations for robust median/MAD variability
 → direct Original-before → Candidate → Original-after local pairs
 → one retry for high local drift while structurally valid evidence remains rankable
 → physical-core representatives with bounded uncertainty-aware refinement
@@ -82,7 +92,7 @@ In brief, current source uses:
 → Keep is a separate guardrail + final target-only kernel-ETW decision
 ```
 
-New method identity is `gpu-affinity-benchmark-v5`; report schema remains `latencypilot-gpu-auto-affinity-report-v3`. Historical v1/v2/v3/v4 evidence remains historical and is never reinterpreted as v5.
+New method identity is `gpu-affinity-benchmark-v6`; report schema remains `latencypilot-gpu-auto-affinity-report-v3`. Historical v1–v5 evidence remains historical and is never reinterpreted as v6.
 
 The broad product rule is unchanged: **a measured performance result is not sufficient for Keep; runtime placement and terminal state must verify.**
 
@@ -130,11 +140,11 @@ There is no generic privileged shell, arbitrary process launcher or arbitrary re
 The automatic v1 path is intentionally sequential rather than a generic multi-subsystem optimizer.
 
 1. Establish/retain one verified GPU state first.
-2. Capture fresh interrupt-headroom evidence after that GPU state.
+2. Stop the GPU workload and capture one fresh bounded quiet interrupt-headroom window after that GPU state; do not reuse GPU rank as a USB score.
 3. Resolve the primary Raw Input route through USB topology to the exact interrupt-owning xHCI controller.
 4. Exclude the whole physical core containing a kept GPU target when choosing the xHCI target.
 5. Choose xHCI placement from measured interrupt duration/tail evidence, with counts as context rather than cost by themselves.
-6. Apply xHCI affinity only after the shared mutation/recovery substrate is physically proven and the integrated controller-specific verification path exists.
+6. Apply xHCI affinity only after the shared mutation/recovery substrate is physically proven and the integrated controller-specific verification path exists. Runtime attribution must be unambiguous; a shared `USBXHCI.sys` module stream is insufficient when multiple present controllers cannot be distinguished.
 7. If xHCI verification fails, restore the xHCI state while preserving a separately proven GPU state when that ownership can be demonstrated safely; otherwise fail closed to the broader baseline.
 
 The selected target is the interrupt-owning controller, not blindly the leaf mouse device.
@@ -159,7 +169,7 @@ stored interrupt policy
 
 Stored registry policy proves configuration intent only. ConfigMgr resource data is provenance/context. Runtime ETW evidence owns effective placement claims.
 
-GPU Keep requires clean attributable target-only ISR placement under ADR 0010.
+GPU Keep requires clean attributable target-only ISR placement under ADR 0011.
 
 The integrated xHCI path must independently establish controller-specific runtime placement before that subsystem can be called verified.
 
@@ -197,7 +207,7 @@ The dependency chain is:
 
 ```text
 exact-head green hosted Tests
-→ observer-isolated symmetric v5 GPU physical Gate A
+→ restart-canonicalized observer-isolated v6 GPU physical Gate A
 → whole-search repeatability / explicit instability
 → Stop safely + supported recovery exercise
 → real Windows result/accessibility inspection

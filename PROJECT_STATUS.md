@@ -42,6 +42,8 @@ preflight / quiet-context capture
 
 NIC/RSS mutation, audio affinity, BIOS/HAGS/MSI/power changes and a generic cross-subsystem optimizer remain outside the v1 automatic path.
 
+The v1 decisions are deliberately sequential: GPU benchmark evidence owns only the GPU decision; after the GPU reaches a verified terminal state, one fresh quiet ETW headroom capture selects the primary-input xHCI CPU. There is no joint GPU/xHCI weighted score and no second per-CPU USB benchmark.
+
 ## Implemented source
 
 ### Measurement/recovery foundations
@@ -56,7 +58,9 @@ Implemented:
 - exact stored-state snapshot/restore primitives;
 - non-elevated App plus narrow privileged helper/service boundaries;
 - GPU interrupt-affinity mutation, target restart, renderer recreation and exact rollback;
-- Raw Input → USB hub/port → xHCI read-only topology and input-host timing source.
+- Raw Input → USB hub/port → xHCI read-only topology and input-host timing source;
+- read-only NIC/RSS, audio and storage diagnostics remain available without automatic mutation;
+- speculative network benchmark/profile/Pareto optimizer source has been removed from the v1 code path.
 
 ### GPU restart-canonicalized observer-isolated adaptive v6 contract
 
@@ -206,13 +210,11 @@ Graphics-hook warnings such as `nvspcap64.dll` remain explicit interference cont
 
 ## Immediate execution ladder
 
-1. **Completed now:** source has moved to `gpu-affinity-benchmark-v6`. Full and Selected-CPU paired search canonicalize the exact Original state with one verified in-place GPU restart + renderer recreation before any warm-up/scored baseline. Original-only diagnostics remain restart-free. Result UX now labels **ranking confidence** explicitly, surfaces concrete Keep-blocker evidence, gives metric cards a concise value hierarchy, expands finalist/noisy pairs by default, prevents candidate-state text truncation, compacts Evidence actions, and collapses the duplicate long candidate list in the terminal progress window.
-2. **Evidence:** the design change is grounded in the 2026-09-25 owner v5 bundle from `071abc671352ee698c38e23851828f2667ef0e4b`, which safely restored Original but exposed a large pre-restart → post-restart Original regime shift. Hosted exact-head Tests for this v6 implementation are pending and remain software-contract evidence only.
-3. **Still open:** one new physical v6 Full run on owner hardware, then a repeat run, Stop-safely/recovery exercise, and render/accessibility inspection. The manual multi-CPU GPU/xHCI mask path also still needs owner-hardware proof. Public product mutation remains unarmed.
-4. **Next stage:** get exact-head hosted Tests green, then run v6 Full Gate A and inspect the persisted mutation audit for the canonical Original restart plus the first/ongoing Original controls for regime continuity.
-5. **After that:** repeat the whole v6 search and close physical recovery/render gates before any typed public mutation IPC or normal-user arming.
-
-
+1. **Completed now:** v1 scope has been simplified around the measured sequential GPU → primary-input xHCI path. Dormant MSI stage metadata and speculative network benchmark/profile/Pareto optimizer source are removed while read-only RSS/network diagnostics remain. ADR 0006 is reconciled to ADR 0011/v6, and the Measure UI now explains the three-step automatic path plus diagnostics-only domains.
+2. **Evidence:** source/docs/UI changes are on the current main revision; exact-head hosted **Tests are pending** and remain software-contract evidence only. No new physical GPU/xHCI claim is made by this cleanup.
+3. **Still open:** exact-head Tests, one clean physical v6 Full run + repeat/recovery exercise, real render/accessibility inspection, and integrated automatic xHCI apply/runtime verification. Public product mutation remains unarmed.
+4. **Next stage:** get exact-head hosted Tests green; then run the v6 Full Gate A on owner hardware and inspect both the canonicalized GPU evidence and the simplified Measure surface on real Windows.
+5. **After that:** close representative xHCI physical apply/verify/rollback evidence, combined reboot/resume, then arm only the narrow typed GPU+xHCI product flow before release closure.
 
 ## Completion rule
 

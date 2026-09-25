@@ -507,10 +507,10 @@
                                         <ColumnDefinition x:Name="MeasureHeaderActionsColumn" Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="6">
-                                        <TextBlock Text="SNAPSHOT OR REPEATABLE BASELINE" Style="{StaticResource HeroEyebrowTextStyle}" />
+                                        <TextBlock Text="MEASURE FIRST &#x2022; OPTIMIZE ONLY WHEN VERIFIED" Style="{StaticResource HeroEyebrowTextStyle}" />
                                         <TextBlock Text="Measure" Style="{StaticResource HeroTitleTextStyle}" />
                                         <Border Style="{StaticResource HeroAccentBarStyle}" />
-                                        <TextBlock Text="Capture a snapshot or build a repeatable baseline."
+                                        <TextBlock Text="Build evidence first. GPU and primary-input xHCI are the only automatic v1 targets."
                                                    Style="{StaticResource MutedBodyTextStyle}" />
                                     </StackPanel>
                                     <StackPanel x:Name="MeasureHeaderActions" Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -539,6 +539,52 @@
                                         </Button>
                                     </StackPanel>
                                 </Grid>
+
+                                <Border x:Name="OptimizationScopeCard" Style="{StaticResource DashboardCardStyle}">
+                                    <StackPanel Spacing="12">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="Automatic v1 path" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                <TextBlock Text="One measured sequence. No profile matrix or hidden weighted score." Style="{StaticResource CaptionTextStyle}" />
+                                            </StackPanel>
+                                            <Border Grid.Column="1" Style="{StaticResource PillBorderStyle}" VerticalAlignment="Center">
+                                                <TextBlock Text="GPU &#x2192; xHCI" FontSize="10" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                            </Border>
+                                        </Grid>
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0" Style="{StaticResource MetricTileStyle}">
+                                                <StackPanel Spacing="5">
+                                                    <TextBlock Text="1 &#x00B7; GPU" Style="{StaticResource MetricLabelTextStyle}" />
+                                                    <TextBlock Text="Benchmark the GPU affinity candidates and keep only a verified terminal state." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
+                                                <StackPanel Spacing="5">
+                                                    <TextBlock Text="2 &#x00B7; Input / xHCI" Style="{StaticResource MetricLabelTextStyle}" />
+                                                    <TextBlock Text="Take fresh interrupt-headroom evidence, exclude the GPU physical core, then target the exact input controller." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Grid.Column="2" Style="{StaticResource MetricTileStyle}">
+                                                <StackPanel Spacing="5">
+                                                    <TextBlock Text="3 &#x00B7; Verify or restore" Style="{StaticResource MetricLabelTextStyle}" />
+                                                    <TextBlock Text="Prove runtime ISR placement. If proof fails, restore the exact original state." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                        <TextBlock Text="Network, audio, storage, MSI/timers, power and queue-size tweaks stay diagnostics-only in v1."
+                                                   TextWrapping="Wrap"
+                                                   Style="{StaticResource CaptionTextStyle}" />
+                                    </StackPanel>
+                                </Border>
 
                                 <Grid x:Name="BaselineAnchor" ColumnSpacing="12" RowSpacing="12">
                                     <Grid.RowDefinitions>
@@ -627,7 +673,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="2">
                                             <TextBlock Text="Developer validation" Style="{StaticResource MetricLabelTextStyle}" />
-                                            <TextBlock Text="Development-only GPU affinity validation for this checkout."
+                                            <TextBlock Text="Development-only GPU v6 validation. Automatic xHCI remains physically gated."
                                                        Style="{StaticResource CaptionTextStyle}" />
                                             <TextBlock x:Name="DeveloperValidationStatusText"
                                                        Text="Ready. Requires a clean main checkout at one exact revision."
@@ -681,7 +727,7 @@
                                                 <TextBlock Text="Graphics" Style="{StaticResource SubsectionTitleTextStyle}" />
                                             </StackPanel>
                                             <TextBlock x:Name="DisplayEvidenceText" Text="—" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                            <TextBlock Text="Adapter, driver, interrupt state" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Text="Automatic v1 target &#x00B7; adapter, driver, interrupt state" Style="{StaticResource CaptionTextStyle}" />
                                         </StackPanel>
                                     </Border>
 
@@ -692,7 +738,7 @@
                                                 <TextBlock Text="Network" Style="{StaticResource SubsectionTitleTextStyle}" />
                                             </StackPanel>
                                             <TextBlock x:Name="NetworkEvidenceText" Text="—" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                            <TextBlock Text="Adapter, RSS, route state" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Text="Diagnostics only &#x00B7; RSS, driver, route state" Style="{StaticResource CaptionTextStyle}" />
                                         </StackPanel>
                                     </Border>
 
@@ -703,7 +749,7 @@
                                                 <TextBlock Text="USB / xHCI" Style="{StaticResource SubsectionTitleTextStyle}" />
                                             </StackPanel>
                                             <TextBlock x:Name="UsbEvidenceText" Text="—" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                            <TextBlock Text="Controller, route, interrupt state" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Text="Automatic v1 target &#x00B7; exact controller, route, interrupt state" Style="{StaticResource CaptionTextStyle}" />
                                         </StackPanel>
                                     </Border>
                                 </Grid>
