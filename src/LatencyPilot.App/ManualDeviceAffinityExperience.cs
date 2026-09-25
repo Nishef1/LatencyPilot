@@ -62,21 +62,24 @@ public sealed partial class MainWindow
             };
             var host = new StackPanel
             {
-                Spacing = 14d,
+                Spacing = 12d,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                MaxWidth = 620d,
+                MinWidth = 620d,
+                MaxWidth = 720d,
             };
-            RenderManualAffinityRows(host, snapshot, dialogStatusText);
+            RenderManualAffinityWorkspace(host, snapshot, dialogStatusText);
 
             var dialog = new ContentDialog
             {
                 XamlRoot = RootGrid.XamlRoot,
-                Title = "Manage interrupt affinity",
-                CloseButtonText = "Close",
+                Title = "Interrupt affinity policy",
+                CloseButtonText = "Done",
                 DefaultButton = ContentDialogButton.Close,
+                MinWidth = 660d,
+                MaxWidth = 760d,
                 Content = new ScrollViewer
                 {
-                    MaxHeight = 720d,
+                    MaxHeight = 740d,
                     Padding = new Thickness(0, 4, 8, 8),
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -153,32 +156,29 @@ public sealed partial class MainWindow
         return new ManualAffinitySnapshot(rows, cpuOptions);
     }
 
-    private void RenderManualAffinityRows(
+    private void RenderManualAffinityWorkspace(
         StackPanel host,
         ManualAffinitySnapshot snapshot,
-        TextBlock dialogStatusText)
+        TextBlock dialogStatusText,
+        string? selectedDeviceInstanceId = null)
     {
         host.Children.Clear();
 
-        var intro = new StackPanel { Spacing = 4d };
+        var intro = new StackPanel { Spacing = 3d };
         intro.Children.Add(new TextBlock
         {
-            Text = "Development-only surface · exact rollback available",
+            Text = "DEVELOPMENT LAB",
             Style = AppStyle("HeroEyebrowTextStyle"),
             Foreground = ThemeBrush("AccentBrush"),
         });
         intro.Children.Add(new TextBlock
         {
-            Text = "Inspect the current Windows state, select a supported target CPU, then let the journaled helper apply, verify and roll back the change if evidence is insufficient.",
+            Text = "Choose a device, inspect its interrupt-affinity policy, then set a verified processor mask for supported targets.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("BodyTextStyle"),
         });
         host.Children.Add(intro);
-        host.Children.Add(BuildManualAffinityInfoBanner());
         host.Children.Add(BuildManualAffinityStatusBanner(dialogStatusText));
-
-        var editableRows = snapshot.Rows.Where(static row => row.TargetKind is not null).ToArray();
-        var readOnlyRows = snapshot.Rows.Where(static row => row.TargetKind is null).ToArray();
 
         if (snapshot.Rows.Count == 0)
         {
@@ -187,7 +187,7 @@ public sealed partial class MainWindow
                 Style = AppStyle("SubtleCardStyle"),
                 Child = new TextBlock
                 {
-                    Text = "No latency-sensitive device with interrupt evidence is currently available.",
+                    Text = "No device with interrupt-affinity evidence is currently available.",
                     TextWrapping = TextWrapping.Wrap,
                     Style = AppStyle("MutedBodyTextStyle"),
                 },
@@ -195,51 +195,541 @@ public sealed partial class MainWindow
             return;
         }
 
-        if (editableRows.Length > 0)
+        host.Children.Add(new TextBlock
         {
-            host.Children.Add(BuildManualAffinitySectionHeader(
-                "Editable devices",
-                "Supported mutation targets: display adapters and USBXHCI controllers."));
-            foreach (var row in editableRows)
+            Text = "Devices",
+            Style = AppStyle("MetricLabelTextStyle"),
+            Foreground = ThemeBrush("MutedTextBrush"),
+        });
+
+        var deviceList = new ListView
+        {
+            Height = 270d,
+            SelectionMode = ListViewSelectionMode.Single,
+            IsItemClickEnabled = false,
+            Background = ThemeBrush("SurfaceAltBrush"),
+            BorderBrush = ThemeBrush("BorderBrush"),
+            BorderThickness = new Thickness(1d),
+            Padding = new Thickness(4d),
+        };
+        AutomationProperties.SetName(deviceList, "Devices with interrupt affinity evidence");
+
+        var detailHost = new StackPanel { Spacing = 10d };
+        ListViewItem? selectedItem = null;
+        var preferredRow = snapshot.Rows.FirstOrDefault(row =>
+            string.Equals(
+                row.Device.InstanceId,
+                selectedDeviceInstanceId,
+                StringComparison.OrdinalIgnoreCase))
+            ?? snapshot.Rows.FirstOrDefault(static row => row.TargetKind is not null)
+            ?? snapshot.Rows[0];
+
+        foreach (var row in snapshot.Rows)
+        {
+            var item = new ListViewItem
             {
-                host.Children.Add(BuildManualAffinityRow(host, snapshot, row, dialogStatusText));
+                Tag = row,
+                Padding = new Thickness(8d, 6d, 8d, 6d),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Content = BuildManualAffinityDeviceListItem(row),
+            };
+            AutomationProperties.SetName(
+                item,
+                $"{row.Device.DisplayName}, {(row.TargetKind is null ? "read only" : "editable")}");
+            deviceList.Items.Add(item);
+            if (ReferenceEquals(row, preferredRow))
+            {
+                selectedItem = item;
             }
         }
 
-        if (readOnlyRows.Length > 0)
+        void RenderSelectedDevice()
         {
-            host.Children.Add(BuildManualAffinitySectionHeader(
-                "Read-only devices",
-                "Observed for context only. No mutation control is exposed for these devices."));
-            foreach (var row in readOnlyRows)
+            detailHost.Children.Clear();
+            if (deviceList.SelectedItem is not ListViewItem { Tag: ManualAffinityDeviceRow row })
             {
-                host.Children.Add(BuildManualAffinityRow(host, snapshot, row, dialogStatusText));
+                return;
             }
+
+            detailHost.Children.Add(
+                BuildManualAffinityDeviceDetail(
+                    host,
+                    snapshot,
+                    row,
+                    dialogStatusText));
         }
+
+        deviceList.SelectionChanged += (_, _) => RenderSelectedDevice();
+        host.Children.Add(deviceList);
+        host.Children.Add(detailHost);
+        host.Children.Add(BuildManualAffinityInfoBanner());
+
+        deviceList.SelectedItem = selectedItem ?? deviceList.Items[0];
+        RenderSelectedDevice();
+    }
+
+    private Grid BuildManualAffinityDeviceListItem(ManualAffinityDeviceRow row)
+    {
+        var grid = new Grid { ColumnSpacing = 12d };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var text = new StackPanel { Spacing = 1d };
+        text.Children.Add(new TextBlock
+        {
+            Text = row.Device.DisplayName,
+            MaxLines = 1,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Style = AppStyle("BodyTextStyle"),
+        });
+        text.Children.Add(new TextBlock
+        {
+            Text = row.Device.ServiceName ?? row.Kind?.ToString() ?? "Device",
+            MaxLines = 1,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Style = AppStyle("CaptionTextStyle"),
+            Foreground = ThemeBrush("MutedTextBrush"),
+        });
+        grid.Children.Add(text);
+
+        var badge = BuildManualAffinityPill(
+            row.TargetKind == "Gpu"
+                ? "GPU"
+                : row.TargetKind == "Xhci"
+                    ? "USBXHCI"
+                    : "Read only",
+            row.TargetKind is null ? "MutedTextBrush" : "AccentBrush",
+            row.TargetKind is null ? "SurfaceAltBrush" : "PremiumOverviewQuietBrush");
+        badge.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(badge, 1);
+        grid.Children.Add(badge);
+        return grid;
+    }
+
+    private Border BuildManualAffinityDeviceDetail(
+        StackPanel host,
+        ManualAffinitySnapshot snapshot,
+        ManualAffinityDeviceRow row,
+        TextBlock dialogStatusText)
+    {
+        var content = new StackPanel { Spacing = 10d };
+
+        var header = new Grid { ColumnSpacing = 12d };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var heading = new StackPanel { Spacing = 2d };
+        heading.Children.Add(new TextBlock
+        {
+            Text = row.Device.DisplayName,
+            TextWrapping = TextWrapping.Wrap,
+            Style = AppStyle("SubsectionTitleTextStyle"),
+        });
+        heading.Children.Add(new TextBlock
+        {
+            Text = $"{row.Kind?.ToString() ?? "Other"} · {row.Device.ServiceName ?? "service unavailable"}",
+            TextWrapping = TextWrapping.Wrap,
+            Style = AppStyle("CaptionTextStyle"),
+            Foreground = ThemeBrush("MutedTextBrush"),
+        });
+        header.Children.Add(heading);
+
+        var advancedButton = new Button
+        {
+            Content = "Advanced…",
+            Style = AppStyle("QuietButtonStyle"),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        AutomationProperties.SetName(
+            advancedButton,
+            $"Show advanced interrupt details for {row.Device.DisplayName}");
+        advancedButton.Click += (_, _) => ShowManualAffinityAdvancedFlyout(advancedButton, row);
+        Grid.SetColumn(advancedButton, 1);
+        header.Children.Add(advancedButton);
+        content.Children.Add(header);
+
+        content.Children.Add(BuildManualAffinityPropertyRow(
+            "DevObj name",
+            row.Device.InstanceId));
+        if (row.Device.Parent.ReadStatus == DeviceParentReadStatus.Available &&
+            !string.IsNullOrWhiteSpace(row.Device.Parent.ParentInstanceId))
+        {
+            content.Children.Add(BuildManualAffinityPropertyRow(
+                "Parent device",
+                row.Device.Parent.ParentInstanceId!));
+        }
+
+        content.Children.Add(
+            BuildManualAffinityMaskPanel(
+                host,
+                snapshot,
+                row,
+                dialogStatusText));
+
+        return new Border
+        {
+            Style = AppStyle("SubtleCardStyle"),
+            Child = content,
+        };
+    }
+
+    private Border BuildManualAffinityMaskPanel(
+        StackPanel host,
+        ManualAffinitySnapshot snapshot,
+        ManualAffinityDeviceRow row,
+        TextBlock dialogStatusText)
+    {
+        var panel = new StackPanel { Spacing = 9d };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Interrupt affinity mask",
+            Style = AppStyle("SubsectionTitleTextStyle"),
+        });
+
+        var body = new Grid { ColumnSpacing = 14d };
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(185d) });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+
+        var actions = new StackPanel { Spacing = 8d };
+        var setMaskButton = new Button
+        {
+            Content = "Set mask",
+            Style = AppStyle("SecondaryButtonStyle"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsEnabled = row.TargetKind is not null && !_manualDeviceAffinityBusy,
+        };
+        AutomationProperties.SetName(
+            setMaskButton,
+            $"Set processor affinity mask for {row.Device.DisplayName}");
+        setMaskButton.Click += (_, _) =>
+            ShowManualAffinityProcessorFlyout(
+                setMaskButton,
+                host,
+                snapshot,
+                row,
+                dialogStatusText);
+
+        var restoreButton = new Button
+        {
+            Content = "Restore LatencyPilot original",
+            Style = AppStyle("QuietButtonStyle"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsEnabled = row.TargetKind is not null && !_manualDeviceAffinityBusy,
+        };
+        AutomationProperties.SetName(
+            restoreButton,
+            $"Restore journal-owned original affinity for {row.Device.DisplayName}");
+        restoreButton.Click += async (_, _) =>
+            await RunManualAffinityActionAsync(
+                host,
+                dialogStatusText,
+                row,
+                "Restore",
+                null);
+
+        actions.Children.Add(setMaskButton);
+        actions.Children.Add(restoreButton);
+        if (row.TargetKind is null)
+        {
+            actions.Children.Add(new TextBlock
+            {
+                Text = "Read only",
+                TextWrapping = TextWrapping.Wrap,
+                Style = AppStyle("CaptionTextStyle"),
+                Foreground = ThemeBrush("MutedTextBrush"),
+            });
+        }
+        else
+        {
+            actions.Children.Add(new TextBlock
+            {
+                Text = "One CPU per verified manual experiment.",
+                TextWrapping = TextWrapping.Wrap,
+                Style = AppStyle("CaptionTextStyle"),
+                Foreground = ThemeBrush("MutedTextBrush"),
+            });
+        }
+
+        body.Children.Add(actions);
+
+        var values = new StackPanel { Spacing = 7d };
+        values.Children.Add(BuildManualAffinityPropertyRow(
+            "Current policy",
+            FormatManualAffinityPolicy(row.Device.InterruptConfiguration)));
+        values.Children.Add(BuildManualAffinityPropertyRow(
+            "Specified mask",
+            FormatManualSpecifiedMask(row.Device.InterruptConfiguration)));
+        values.Children.Add(BuildManualAffinityPropertyRow(
+            "Current assignment",
+            row.AllocatedAffinity));
+        values.Children.Add(BuildManualAffinityPropertyRow(
+            "Ownership",
+            row.HasExplicitOverride
+                ? "Explicit override stored; LatencyPilot only owns it when its mutation journal says so."
+                : "No explicit specified-processors override stored.",
+            row.HasExplicitOverride ? "SemanticAttentionBrush" : "MutedTextBrush"));
+
+        Grid.SetColumn(values, 1);
+        body.Children.Add(values);
+        panel.Children.Add(body);
+
+        return new Border
+        {
+            Padding = new Thickness(12d),
+            CornerRadius = new CornerRadius(10d),
+            Background = ThemeBrush("SurfaceAltBrush"),
+            BorderBrush = ThemeBrush("BorderBrush"),
+            BorderThickness = new Thickness(1d),
+            Child = panel,
+        };
+    }
+
+    private Grid BuildManualAffinityPropertyRow(
+        string label,
+        string value,
+        string? valueBrushKey = null)
+    {
+        var grid = new Grid { ColumnSpacing = 10d };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130d) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+
+        grid.Children.Add(new TextBlock
+        {
+            Text = label,
+            Style = AppStyle("CaptionTextStyle"),
+            Foreground = ThemeBrush("MutedTextBrush"),
+        });
+        var valueText = new TextBlock
+        {
+            Text = value,
+            TextWrapping = TextWrapping.Wrap,
+            Style = AppStyle("CaptionTextStyle"),
+            Foreground = ThemeBrush(valueBrushKey ?? "TextBrush"),
+        };
+        Grid.SetColumn(valueText, 1);
+        grid.Children.Add(valueText);
+        return grid;
+    }
+
+    private void ShowManualAffinityProcessorFlyout(
+        Button anchor,
+        StackPanel host,
+        ManualAffinitySnapshot snapshot,
+        ManualAffinityDeviceRow row,
+        TextBlock dialogStatusText)
+    {
+        if (row.TargetKind is null || _manualDeviceAffinityBusy)
+        {
+            return;
+        }
+
+        ManualAffinityCpuOption? selectedCpu = row.StoredSingleCpu is { } storedCpu
+            ? snapshot.CpuOptions.FirstOrDefault(option => option.Processor.Number == storedCpu)
+            : null;
+
+        var title = new TextBlock
+        {
+            Text = "Processor affinity policy",
+            Style = AppStyle("SubsectionTitleTextStyle"),
+        };
+        var description = new TextBlock
+        {
+            Text = "Choose the CPU that may service this device's interrupts. LatencyPilot verifies one processor at a time and rolls back if runtime evidence does not match.",
+            TextWrapping = TextWrapping.Wrap,
+            Style = AppStyle("CaptionTextStyle"),
+            Foreground = ThemeBrush("MutedTextBrush"),
+        };
+
+        var cpuGrid = new Grid { ColumnSpacing = 18d, RowSpacing = 5d };
+        var columnCount = snapshot.CpuOptions.Count >= 12
+            ? 4
+            : snapshot.CpuOptions.Count >= 6
+                ? 2
+                : 1;
+        for (var column = 0; column < columnCount; column++)
+        {
+            cpuGrid.ColumnDefinitions.Add(
+                new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+        }
+
+        var rowCount = (int)Math.Ceiling(snapshot.CpuOptions.Count / (double)columnCount);
+        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
+        {
+            cpuGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        }
+
+        var applyButton = new Button
+        {
+            Content = "Apply & verify runtime",
+            Style = AppStyle("PrimaryButtonStyle"),
+            IsEnabled = selectedCpu is not null,
+        };
+        var groupName = $"ManualAffinityCpu-{Guid.NewGuid():N}";
+        for (var index = 0; index < snapshot.CpuOptions.Count; index++)
+        {
+            var option = snapshot.CpuOptions[index];
+            var radio = new RadioButton
+            {
+                Content = $"CPU {option.Processor.Number.ToString(CultureInfo.InvariantCulture)}",
+                GroupName = groupName,
+                IsChecked = selectedCpu?.Processor.Number == option.Processor.Number,
+                Tag = option,
+                MinWidth = 90d,
+            };
+            ToolTipService.SetToolTip(
+                radio,
+                $"Physical core {option.PhysicalCoreIndex.ToString(CultureInfo.InvariantCulture)}");
+            radio.Checked += (_, _) =>
+            {
+                selectedCpu = option;
+                applyButton.IsEnabled = !_manualDeviceAffinityBusy;
+            };
+            Grid.SetRow(radio, index % rowCount);
+            Grid.SetColumn(radio, index / rowCount);
+            cpuGrid.Children.Add(radio);
+        }
+
+        var flyout = new Flyout();
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            Style = AppStyle("QuietButtonStyle"),
+        };
+        cancelButton.Click += (_, _) => flyout.Hide();
+        applyButton.Click += async (_, _) =>
+        {
+            if (selectedCpu is null)
+            {
+                return;
+            }
+
+            var cpu = selectedCpu;
+            flyout.Hide();
+            await RunManualAffinityActionAsync(
+                host,
+                dialogStatusText,
+                row,
+                "Apply",
+                cpu.Processor.Number);
+        };
+
+        var buttonRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8d,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        buttonRow.Children.Add(cancelButton);
+        buttonRow.Children.Add(applyButton);
+
+        var content = new StackPanel
+        {
+            Spacing = 12d,
+            MinWidth = 420d,
+            MaxWidth = 520d,
+        };
+        content.Children.Add(title);
+        content.Children.Add(description);
+        content.Children.Add(new Border
+        {
+            Padding = new Thickness(10d),
+            CornerRadius = new CornerRadius(8d),
+            Background = ThemeBrush("SurfaceAltBrush"),
+            BorderBrush = ThemeBrush("BorderBrush"),
+            BorderThickness = new Thickness(1d),
+            Child = cpuGrid,
+        });
+        content.Children.Add(buttonRow);
+
+        flyout.Content = content;
+        flyout.ShowAt(anchor);
+    }
+
+    private void ShowManualAffinityAdvancedFlyout(
+        Button anchor,
+        ManualAffinityDeviceRow row)
+    {
+        var configuration = row.Device.InterruptConfiguration;
+        var resources = row.Device.InterruptResources;
+        var details = new StackPanel
+        {
+            Spacing = 8d,
+            MinWidth = 420d,
+            MaxWidth = 520d,
+        };
+        details.Children.Add(new TextBlock
+        {
+            Text = "Advanced device details",
+            Style = AppStyle("SubsectionTitleTextStyle"),
+        });
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "Service",
+            row.Device.ServiceName ?? "N/A"));
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "Manufacturer",
+            row.Device.Manufacturer ?? "N/A"));
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "Driver version",
+            row.Device.Driver.Version ?? "N/A"));
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "Driver provider",
+            row.Device.Driver.Provider ?? "N/A"));
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "INF",
+            row.Device.Driver.InfPath ?? "N/A"));
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "MSI configured",
+            configuration.MsiSupported is null
+                ? "N/A"
+                : configuration.IsMsiConfiguredEnabled ? "Yes" : "No"));
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "Message limit",
+            configuration.MessageNumberLimit?.ToString(CultureInfo.InvariantCulture) ?? "N/A"));
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "Policy read",
+            configuration.ReadStatus.ToString()));
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "Resource read",
+            resources.ReadStatus.ToString()));
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "Stored summary",
+            row.StoredAffinity));
+
+        var flyout = new Flyout
+        {
+            Content = new ScrollViewer
+            {
+                MaxHeight = 520d,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = details,
+            },
+        };
+        flyout.ShowAt(anchor);
     }
 
     private Border BuildManualAffinityInfoBanner() =>
         new()
         {
-            Padding = new Thickness(12d),
-            CornerRadius = new CornerRadius(12d),
+            Padding = new Thickness(10d),
+            CornerRadius = new CornerRadius(10d),
             Background = ThemeBrush("PremiumOverviewQuietBrush"),
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(1d),
             Child = new StackPanel
             {
-                Spacing = 3d,
+                Spacing = 2d,
                 Children =
                 {
                     new TextBlock
                     {
-                        Text = "Stored policy ≠ active assignment ≠ runtime proof",
-                        Style = AppStyle("SubsectionTitleTextStyle"),
+                        Text = "Stored policy ≠ current assignment ≠ runtime proof",
+                        Style = AppStyle("MetricLabelTextStyle"),
                         Foreground = ThemeBrush("TextBrush"),
                     },
                     new TextBlock
                     {
-                        Text = "The panel keeps these evidence layers separate. A new setting is retained only after translated allocation and clean target-only ETW ISR verification succeed.",
+                        Text = "Set mask is available only for GPU and USBXHCI. A new setting is kept only after Windows assignment and target-only ETW ISR verification both succeed.",
                         TextWrapping = TextWrapping.Wrap,
                         Style = AppStyle("CaptionTextStyle"),
                         Foreground = ThemeBrush("MutedTextBrush"),
@@ -251,19 +741,24 @@ public sealed partial class MainWindow
     private Border BuildManualAffinityStatusBanner(TextBlock statusText) =>
         new()
         {
-            Padding = new Thickness(12d),
-            CornerRadius = new CornerRadius(10d),
+            Padding = new Thickness(10d),
+            CornerRadius = new CornerRadius(8d),
             Background = ThemeBrush("SurfaceAltBrush"),
             BorderBrush = ThemeBrush("BorderBrush"),
             BorderThickness = new Thickness(1d),
-            Child = new StackPanel
+            Child = new Grid
             {
-                Spacing = 3d,
+                ColumnSpacing = 10d,
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition { Width = GridLength.Auto },
+                    new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) },
+                },
                 Children =
                 {
                     new TextBlock
                     {
-                        Text = "Session status",
+                        Text = "Status",
                         Style = AppStyle("MetricLabelTextStyle"),
                         Foreground = ThemeBrush("MutedTextBrush"),
                     },
@@ -272,197 +767,10 @@ public sealed partial class MainWindow
             },
         };
 
-    private static Border BuildManualAffinitySectionHeader(string title, string description) =>
-        new()
-        {
-            Margin = new Thickness(0d, 4d, 0d, -4d),
-            Child = new StackPanel
-            {
-                Spacing = 2d,
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = title,
-                        Style = AppStyle("SubsectionTitleTextStyle"),
-                    },
-                    new TextBlock
-                    {
-                        Text = description,
-                        TextWrapping = TextWrapping.Wrap,
-                        Style = AppStyle("CaptionTextStyle"),
-                    },
-                },
-            },
-        };
-
-    private Border BuildManualAffinityRow(
-        StackPanel host,
-        ManualAffinitySnapshot snapshot,
-        ManualAffinityDeviceRow row,
-        TextBlock dialogStatusText)
-    {
-        var title = new TextBlock
-        {
-            Text = row.Device.DisplayName,
-            TextWrapping = TextWrapping.Wrap,
-            Style = AppStyle("SubsectionTitleTextStyle"),
-        };
-        var identity = new TextBlock
-        {
-            Text = $"{row.Kind?.ToString() ?? "Other"} · {row.Device.ServiceName ?? "service unavailable"} · {row.Device.InstanceId}",
-            TextWrapping = TextWrapping.Wrap,
-            Style = AppStyle("CaptionTextStyle"),
-            Foreground = ThemeBrush("MutedTextBrush"),
-        };
-
-        var badges = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 6d,
-            HorizontalAlignment = HorizontalAlignment.Right,
-        };
-        badges.Children.Add(BuildManualAffinityPill(
-            row.TargetKind == "Gpu" ? "GPU" : row.TargetKind == "Xhci" ? "USBXHCI" : "Other",
-            row.TargetKind is null ? "MutedTextBrush" : "AccentBrush",
-            row.TargetKind is null ? "SurfaceAltBrush" : "PremiumOverviewQuietBrush"));
-        badges.Children.Add(BuildManualAffinityPill(
-            row.TargetKind is null ? "Read-only" : "Editable",
-            row.TargetKind is null ? "MutedTextBrush" : "SemanticGoodBrush",
-            row.TargetKind is null ? "SurfaceAltBrush" : "SemanticGoodSoftBrush"));
-
-        var header = new Grid { ColumnSpacing = 12d };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var heading = new StackPanel { Spacing = 2d };
-        heading.Children.Add(title);
-        heading.Children.Add(identity);
-        header.Children.Add(heading);
-        Grid.SetColumn(badges, 1);
-        header.Children.Add(badges);
-
-        var metrics = new Grid { ColumnSpacing = 8d, RowSpacing = 8d };
-        metrics.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
-        metrics.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
-        metrics.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        metrics.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var storedMetric = BuildManualAffinityMetric("Stored policy", row.StoredAffinity);
-        var activeMetric = BuildManualAffinityMetric("Active assignment", row.AllocatedAffinity);
-        var ownershipMetric = BuildManualAffinityMetric(
-            "Ownership",
-            row.HasExplicitOverride
-                ? "Explicit override stored; ownership is only claimed when the journal owns it."
-                : "No explicit specified-processors override stored.",
-            row.HasExplicitOverride ? "SemanticAttentionBrush" : "MutedTextBrush");
-        metrics.Children.Add(storedMetric);
-        Grid.SetColumn(activeMetric, 1);
-        metrics.Children.Add(activeMetric);
-        Grid.SetRow(ownershipMetric, 1);
-        Grid.SetColumnSpan(ownershipMetric, 2);
-        metrics.Children.Add(ownershipMetric);
-
-        var cardContent = new StackPanel { Spacing = 12d };
-        cardContent.Children.Add(header);
-        cardContent.Children.Add(metrics);
-
-        if (row.TargetKind is not null)
-        {
-            var picker = new ComboBox
-            {
-                PlaceholderText = "Choose target CPU",
-                ItemsSource = snapshot.CpuOptions,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                MinHeight = 40d,
-            };
-            if (row.StoredSingleCpu is { } currentCpu)
-            {
-                picker.SelectedItem = snapshot.CpuOptions.FirstOrDefault(
-                    option => option.Processor.Number == currentCpu);
-            }
-
-            var applyButton = new Button
-            {
-                Content = "Apply & verify",
-                Style = AppStyle("PrimaryButtonStyle"),
-                IsEnabled = picker.SelectedItem is not null,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-            };
-            AutomationProperties.SetName(
-                applyButton,
-                $"Apply manual interrupt affinity for {row.Device.DisplayName}");
-            picker.SelectionChanged += (_, _) =>
-                applyButton.IsEnabled = !_manualDeviceAffinityBusy && picker.SelectedItem is not null;
-            applyButton.Click += async (_, _) =>
-            {
-                if (picker.SelectedItem is not ManualAffinityCpuOption cpu)
-                {
-                    return;
-                }
-
-                await RunManualAffinityActionAsync(
-                    host,
-                    dialogStatusText,
-                    row,
-                    "Apply",
-                    cpu.Processor.Number);
-            };
-
-            var restoreButton = new Button
-            {
-                Content = "Restore this device",
-                Style = AppStyle("QuietButtonStyle"),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-            };
-            AutomationProperties.SetName(
-                restoreButton,
-                $"Restore journal-owned original affinity for {row.Device.DisplayName}");
-            restoreButton.Click += async (_, _) =>
-                await RunManualAffinityActionAsync(host, dialogStatusText, row, "Restore", null);
-
-            cardContent.Children.Add(new TextBlock
-            {
-                Text = "Target processor",
-                Style = AppStyle("MetricLabelTextStyle"),
-                Foreground = ThemeBrush("MutedTextBrush"),
-            });
-            cardContent.Children.Add(picker);
-
-            var actionGrid = new Grid { ColumnSpacing = 8d };
-            actionGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
-            actionGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
-            actionGrid.Children.Add(applyButton);
-            Grid.SetColumn(restoreButton, 1);
-            actionGrid.Children.Add(restoreButton);
-            cardContent.Children.Add(actionGrid);
-        }
-        else
-        {
-            cardContent.Children.Add(new Border
-            {
-                Padding = new Thickness(10d, 8d, 10d, 8d),
-                CornerRadius = new CornerRadius(8d),
-                Background = ThemeBrush("SurfaceAltBrush"),
-                Child = new TextBlock
-                {
-                    Text = "Read only · observation only; no mutation control is available for this device.",
-                    TextWrapping = TextWrapping.Wrap,
-                    Style = AppStyle("CaptionTextStyle"),
-                    Foreground = ThemeBrush("MutedTextBrush"),
-                },
-            });
-        }
-
-        return new Border
-        {
-            Style = AppStyle("SubtleCardStyle"),
-            Child = cardContent,
-        };
-    }
-
     private Border BuildManualAffinityPill(string text, string foregroundKey, string backgroundKey) =>
         new()
         {
-            Padding = new Thickness(8d, 4d, 8d, 4d),
+            Padding = new Thickness(7d, 3d, 7d, 3d),
             CornerRadius = new CornerRadius(999d),
             Background = ThemeBrush(backgroundKey),
             Child = new TextBlock
@@ -474,33 +782,36 @@ public sealed partial class MainWindow
             },
         };
 
-    private Border BuildManualAffinityMetric(string label, string value, string? valueBrushKey = null) =>
-        new()
+    private static string FormatManualAffinityPolicy(InterruptConfigurationSnapshot configuration)
+    {
+        if (configuration.ReadStatus != InterruptConfigurationReadStatus.Available)
         {
-            Padding = new Thickness(10d, 8d, 10d, 8d),
-            CornerRadius = new CornerRadius(8d),
-            Background = ThemeBrush("SurfaceAltBrush"),
-            Child = new StackPanel
-            {
-                Spacing = 3d,
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = label,
-                        Style = AppStyle("MetricLabelTextStyle"),
-                        Foreground = ThemeBrush("MutedTextBrush"),
-                    },
-                    new TextBlock
-                    {
-                        Text = value,
-                        TextWrapping = TextWrapping.Wrap,
-                        Style = AppStyle("CaptionTextStyle"),
-                        Foreground = ThemeBrush(valueBrushKey ?? "TextBrush"),
-                    },
-                },
-            },
+            return configuration.ReadStatus.ToString();
+        }
+
+        return configuration.DevicePolicy switch
+        {
+            null => "N/A · Windows/driver default",
+            0 => "Machine default",
+            1 => "All close processors",
+            2 => "One close processor",
+            3 => "All processors",
+            4 => "Specified processors",
+            5 => "Spread MSI messages",
+            var value => $"Policy {Convert.ToString(value, CultureInfo.InvariantCulture)}",
         };
+    }
+
+    private static string FormatManualSpecifiedMask(InterruptConfigurationSnapshot configuration)
+    {
+        if (configuration.ReadStatus != InterruptConfigurationReadStatus.Available ||
+            configuration.AssignmentSetOverrideMask is not { } affinity)
+        {
+            return "N/A";
+        }
+
+        return $"{FormatMask(affinity)} · 0x{affinity:X}";
+    }
 
     private async Task RunManualAffinityActionAsync(
         StackPanel host,
@@ -543,18 +854,25 @@ public sealed partial class MainWindow
                 processorNumber);
             var status = report.Status == "RebootRequired"
                 ? "SemanticAttentionBrush"
-                : report.Status is "Kept" or "Restored"
+                : report.Status is "AppliedAndKept" or "AlreadyConfigured" or "Restored" or "NoLatencyPilotChange"
                     ? "SemanticGoodBrush"
                     : "TextBrush";
+            var message = report.Status == "RebootRequired"
+                ? action == "Restore"
+                    ? $"{row.Device.DisplayName}: Windows requires a reboot to finish restoring the journal-owned original state. Reboot, reopen this panel, and choose Restore again."
+                    : $"{row.Device.DisplayName}: Windows requires a reboot. Reboot, reopen this panel, and select the same CPU again to resume the journaled experiment."
+                : $"{row.Device.DisplayName}: {report.Message}";
             SetManualAffinityStatus(
                 dialogStatusText,
-                report.Status == "RebootRequired"
-                    ? $"{row.Device.DisplayName}: Windows requires a reboot. Reboot, reopen this panel, and apply the same CPU again to resume the same journaled experiment."
-                    : $"{row.Device.DisplayName}: {report.Message}",
+                message,
                 status);
 
             var refreshed = await Task.Run(CaptureManualAffinitySnapshot);
-            RenderManualAffinityRows(host, refreshed, dialogStatusText);
+            RenderManualAffinityWorkspace(
+                host,
+                refreshed,
+                dialogStatusText,
+                row.Device.InstanceId);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {

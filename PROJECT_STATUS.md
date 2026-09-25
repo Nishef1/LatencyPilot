@@ -97,6 +97,7 @@ CPU selection uses current topology/CPU-set eligibility; unsupported topology fa
 
 The Devices page now exposes a development-only manual affinity surface without changing the public observation-only Service contract:
 
+- the development UI now follows the familiar Interrupt-Affinity Policy Configuration Tool information model: one device list, selected-device identity, an `Interrupt affinity mask` panel with Current policy / Specified mask / Current assignment, and a separate processor-selection flyout;
 - current stored interrupt policy / `AssignmentSetOverride` and translated allocated interrupt-resource masks are shown separately for latency-sensitive present devices;
 - GPU and USBXHCI are the only editable targets because they already have bounded journal/restart/rollback ownership;
 - network, audio, storage, HID and other latency-sensitive devices remain read-only;
@@ -200,11 +201,11 @@ Dirty runs remain development evidence only. Public mutation remains unarmed unt
 
 ## Immediate execution ladder
 
-1. **Completed now:** manual GPU/xHCI affinity no longer treats registry/ConfigMgr assignment as runtime proof. GPU manual Keep requires the existing target-only ETW verifier; xHCI has a new fail-closed `USBXHCI` ISR runtime verifier for an unambiguous single present controller. Canonical v3/v2 method drift is reconciled to ADR 0010 / v5.
-2. **Evidence:** hosted `Tests` are green on combined source/doc revision `78e847022b0612de63c8a67de0e886fee0b1383e` (workflow run 1629). The run covers the GPU/xHCI manual runtime-verifier source, fail-closed attribution, rollback/reboot reporting, durable contracts and reconciled v5 canonical docs. This ledger-only update must also be exact-head green before source verification is closed.
-3. **Still open:** physical owner v5 GPU Gate A, repeat/recovery/render inspection, representative xHCI hardware evidence, automatic xHCI product integration and all downstream arming/release gates remain physical/product work rather than hosted-CI claims.
-4. **Next stage:** run hosted `Tests` on the exact final source/doc revision. If green, freeze that SHA for the owner-local Full v5 Gate A run; do not add typed public mutation IPC before the physical gate closes.
-5. **After that:** repeat the v5 search, exercise Stop safely/failure recovery and real WinUI accessibility; only then proceed to typed allowlisted App → Service mutation and integrated xHCI/before-after product flow.
+1. **Completed now:** the manual interrupt-affinity development surface has been restructured around the familiar Windows tool model: a single device list, selected-device identity, Current policy / Specified mask / Current assignment, `Set mask`, read-only Advanced details, and a processor-selection flyout. The safety model is unchanged: one verified CPU per experiment, GPU/xHCI only, runtime ETW proof before Keep, exact rollback on failure.
+2. **Evidence:** this UI/source revision is committed on top of the green runtime-affinity contract. Exact-head hosted `Tests` for the final revision are pending; hosted CI can verify compilation/contracts but not visual quality.
+3. **Still open:** real Windows render review of this redesigned dialog (Light/Dark/High Contrast, text scale, keyboard), plus the existing physical v5 GPU/xHCI/recovery gates. Public product mutation remains unarmed.
+4. **Next stage:** get exact-head hosted `Tests` green, then inspect the actual dialog on owner Windows against the reference tool screenshots and fix any clipping/selection/flyout issues found in the real render.
+5. **After that:** freeze the exact revision for Full v5 Gate A and continue the physical repeat/recovery/accessibility chain before any public App → Service mutation arming.
 
 ## Completion rule
 

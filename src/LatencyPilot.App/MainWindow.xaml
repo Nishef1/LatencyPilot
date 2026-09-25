@@ -728,15 +728,15 @@
                                                 <Border Style="{StaticResource PillBorderStyle}"
                                                         Background="{ThemeResource PremiumOverviewQuietBrush}"
                                                         VerticalAlignment="Center">
-                                                    <TextBlock Text="Read-only surface"
+                                                    <TextBlock Text="Developer only"
                                                                FontSize="10"
                                                                FontWeight="SemiBold"
                                                                Foreground="{ThemeResource MutedTextBrush}" />
                                                 </Border>
                                             </StackPanel>
-                                            <TextBlock Text="Manage interrupt affinity"
+                                            <TextBlock Text="Interrupt affinity policy"
                                                        Style="{StaticResource SubsectionTitleTextStyle}" />
-                                            <TextBlock Text="Inspect stored policy, active assignment and runtime proof as separate evidence. Supported GPU and USBXHCI changes use journaled verification and exact rollback."
+                                            <TextBlock Text="A familiar device-list and mask view, with LatencyPilot runtime verification and exact rollback for supported GPU and USBXHCI changes."
                                                        TextWrapping="Wrap"
                                                        Style="{StaticResource CaptionTextStyle}" />
                                             <TextBlock x:Name="ManualDeviceAffinityStatusText"
@@ -746,7 +746,7 @@
                                         </StackPanel>
                                         <Button x:Name="ManualDeviceAffinityButton"
                                                 Grid.Column="1"
-                                                Content="Open affinity lab"
+                                                Content="Open affinity tool"
                                                 Click="ManualDeviceAffinityButton_Click"
                                                 Style="{StaticResource SecondaryButtonStyle}"
                                                 MinWidth="148"
