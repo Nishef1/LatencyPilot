@@ -85,6 +85,16 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(restore, "XhciInterruptAffinity");
         StringAssert.Contains(restore, "DeviceInterruptMutationTransaction");
 
+        var runScript = File.ReadAllText(Path.Combine(root, "run.ps1"));
+        StringAssert.Contains(runScript, "-ResultPath");
+        StringAssert.Contains(runScript, "Protected Service installation failed: $installDetail",
+            "The non-elevated launcher must surface the elevated installer failure instead of reducing it to an exit code.");
+
+        var installScript = File.ReadAllText(Path.Combine(root, "scripts", "Install-Service.ps1"));
+        StringAssert.Contains(installScript, "latencypilot-service-install-result-v1");
+        StringAssert.Contains(installScript, "Write-InstallResult -Status 'Failed'",
+            "The elevated installer must persist its concrete failure reason for the parent launcher.");
+
         var recovery = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Service", "DeviceInterruptRecoveryInspector.cs"));
         StringAssert.Contains(recovery, "Diverged");
         StringAssert.Contains(recovery, "ResumeAfterReboot");

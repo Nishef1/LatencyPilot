@@ -1,7 +1,8 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
-    [string]$SourceServiceDirectory
+    [string]$SourceServiceDirectory,
+    [string]$ResultPath
 )
 
 Set-StrictMode -Version Latest
@@ -9,6 +10,50 @@ $ErrorActionPreference = 'Stop'
 
 $serviceName = 'LatencyPilot.Observation'
 $displayName = 'LatencyPilot Observation Service'
+
+function Write-InstallResult {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Status,
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ResultPath)) {
+        return
+    }
+
+    $resultDirectory = Split-Path -Parent $ResultPath
+    if (-not [string]::IsNullOrWhiteSpace($resultDirectory)) {
+        New-Item -ItemType Directory -Path $resultDirectory -Force | Out-Null
+    }
+
+    $payload = [ordered]@{
+        schema = 'latencypilot-service-install-result-v1'
+        status = $Status
+        message = $Message
+        serviceName = $serviceName
+        timestampUtc = [DateTimeOffset]::UtcNow.ToString('O')
+    } | ConvertTo-Json -Compress
+
+    [System.IO.File]::WriteAllText(
+        $ResultPath,
+        $payload,
+        [System.Text.UTF8Encoding]::new($false))
+}
+
+trap {
+    $message = $_.Exception.Message
+    try {
+        Write-InstallResult -Status 'Failed' -Message $message
+    }
+    catch {
+        # Installation failure remains authoritative even if diagnostics cannot be persisted.
+    }
+
+    [Console]::Error.WriteLine($message)
+    exit 1
+}
 
 if ([string]::IsNullOrWhiteSpace($SourceServiceDirectory)) {
     $SourceServiceDirectory = Join-Path $PSScriptRoot 'Service'
@@ -126,4 +171,6 @@ if ($LASTEXITCODE -ne 0) {
 Start-Service -Name $serviceName
 (Get-Service -Name $serviceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(15))
 
-Write-Host "LatencyPilot observation service is running from protected path: $serviceExe"
+$successMessage = "LatencyPilot observation service is running from protected path: $serviceExe"
+Write-Host $successMessage
+Write-InstallResult -Status 'Succeeded' -Message $successMessage

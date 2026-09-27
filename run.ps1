@@ -81,10 +81,34 @@ try {
 
     Write-Host 'Updating the protected LocalSystem observation Service (UAC may prompt)...' -ForegroundColor Yellow
     $serviceInstallStartedAt = [DateTimeOffset]::UtcNow.AddSeconds(-1)
-    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$installServiceScript`" -SourceServiceDirectory `"$serviceOutput`""
-    $installer = Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
-    if ($installer.ExitCode -ne 0) {
-        throw "Protected Service installation failed with exit code $($installer.ExitCode)."
+    $serviceInstallResultPath = Join-Path (
+        [System.IO.Path]::GetTempPath()) "latencypilot-service-install-$([Guid]::NewGuid().ToString('N')).json"
+    try {
+        $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$installServiceScript`" -SourceServiceDirectory `"$serviceOutput`" -ResultPath `"$serviceInstallResultPath`""
+        $installer = Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
+
+        $installDetail = $null
+        if (Test-Path -LiteralPath $serviceInstallResultPath -PathType Leaf) {
+            try {
+                $installResult = Get-Content -LiteralPath $serviceInstallResultPath -Raw -ErrorAction Stop |
+                    ConvertFrom-Json -ErrorAction Stop
+                $installDetail = [string]$installResult.message
+            }
+            catch {
+                $installDetail = Get-Content -LiteralPath $serviceInstallResultPath -Raw -ErrorAction SilentlyContinue
+            }
+        }
+
+        if ($installer.ExitCode -ne 0) {
+            if (-not [string]::IsNullOrWhiteSpace($installDetail)) {
+                throw "Protected Service installation failed: $installDetail"
+            }
+
+            throw "Protected Service installation failed with exit code $($installer.ExitCode). The elevated installer returned no diagnostic result."
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $serviceInstallResultPath -Force -ErrorAction SilentlyContinue
     }
 
     $service = Get-Service -Name $serviceName -ErrorAction Stop
