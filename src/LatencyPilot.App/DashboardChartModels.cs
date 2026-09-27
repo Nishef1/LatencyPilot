@@ -80,8 +80,15 @@ internal static class CardElevation
 
     internal static void Apply(Border? card)
     {
-        if (card is null || DashboardThemeResources.IsHighContrastMode())
+        if (card is null)
         {
+            return;
+        }
+
+        if (DashboardThemeResources.IsHighContrastMode())
+        {
+            card.Shadow = null;
+            card.Translation = Vector3.Zero;
             return;
         }
 

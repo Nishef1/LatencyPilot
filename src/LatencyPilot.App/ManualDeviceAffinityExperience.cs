@@ -590,8 +590,8 @@ public sealed partial class MainWindow
         {
             Text = row.TargetKind switch
             {
-                "Gpu" => "Verified manual GPU interrupt-affinity target.",
-                "Xhci" => "Verified manual primary-input USB controller target.",
+                "Gpu" => "Supported manual GPU interrupt-affinity target.",
+                "Xhci" => "Supported manual USB xHCI interrupt-affinity target.",
                 _ => "Inspection only · no mutation control is exposed.",
             },
             TextWrapping = TextWrapping.Wrap,
