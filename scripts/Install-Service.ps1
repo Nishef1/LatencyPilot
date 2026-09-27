@@ -80,12 +80,22 @@ $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 
 function Assert-RecoverySafeForReplacement {
     $installedServiceExe = Join-Path $managedServiceDirectory 'LatencyPilot.Service.exe'
+    $checkerExecutable = $installedServiceExe
+    $checkerDescription = 'installed recovery host'
+
     if (-not (Test-Path -LiteralPath $installedServiceExe -PathType Leaf)) {
-        throw 'Existing LatencyPilot recovery tools are incomplete. Repair the current installation before replacing the Service.'
+        # A partially removed/corrupted protected directory cannot repair itself
+        # because its old recovery host is gone. The freshly built Service exposes
+        # the same read-only --check-uninstall contract, so use it only to inspect
+        # the shared ProgramData journal. Replacement is still blocked unless that
+        # checker proves there are no retained or unresolved managed changes.
+        $checkerExecutable = $sourceServiceExe
+        $checkerDescription = 'freshly built read-only recovery checker'
+        Write-Warning 'Installed LatencyPilot recovery host is missing. Using the freshly built Service only to verify the mutation journal before repairing the protected installation.'
     }
 
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $installedServiceExe
+    $startInfo.FileName = $checkerExecutable
     $startInfo.Arguments = '--check-uninstall'
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
@@ -95,18 +105,24 @@ function Assert-RecoverySafeForReplacement {
     $checker.StartInfo = $startInfo
     try {
         if (-not $checker.Start()) {
-            throw 'Existing LatencyPilot recovery checker could not start.'
+            throw "LatencyPilot $checkerDescription could not start."
         }
         $outputTask = $checker.StandardOutput.ReadToEndAsync()
         $errorTask = $checker.StandardError.ReadToEndAsync()
         if (-not $checker.WaitForExit(15000)) {
             $checker.Kill()
-            throw 'Existing LatencyPilot recovery checker timed out.'
+            throw "LatencyPilot $checkerDescription timed out."
         }
         $output = $outputTask.GetAwaiter().GetResult().Trim()
         $details = $errorTask.GetAwaiter().GetResult().Trim()
         if ($checker.ExitCode -ne 0 -or $output -ne 'LATENCYPILOT_UNINSTALL_SAFE_V1') {
-            throw "Service replacement is blocked until all managed changes are restored and the mutation journal is healthy. $details"
+            $detailSuffix = if ([string]::IsNullOrWhiteSpace($details)) {
+                "The $checkerDescription did not return the expected safety token."
+            }
+            else {
+                $details
+            }
+            throw "Service replacement is blocked until all managed changes are restored and the mutation journal is healthy. $detailSuffix"
         }
     }
     finally {

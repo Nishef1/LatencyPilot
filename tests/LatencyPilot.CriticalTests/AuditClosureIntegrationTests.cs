@@ -94,6 +94,10 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(installScript, "latencypilot-service-install-result-v1");
         StringAssert.Contains(installScript, "Write-InstallResult -Status 'Failed'",
             "The elevated installer must persist its concrete failure reason for the parent launcher.");
+        StringAssert.Contains(installScript, "$checkerExecutable = $sourceServiceExe",
+            "A missing protected recovery executable must be repairable only through the freshly built read-only journal checker.");
+        StringAssert.Contains(installScript, "LATENCYPILOT_UNINSTALL_SAFE_V1",
+            "Repair must continue to require the canonical read-only safety token before replacement.");
 
         var recovery = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Service", "DeviceInterruptRecoveryInspector.cs"));
         StringAssert.Contains(recovery, "Diverged");
