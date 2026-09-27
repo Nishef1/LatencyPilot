@@ -161,6 +161,12 @@ public sealed class GpuRuntimePlacementContractTests
                 target.InstanceId,
                 [target, target with { InstanceId = "PCI\\SECOND_SAME_SERVICE" }]),
             "Direct ISR evidence is still ambiguous when multiple present adapters share the target driver service.");
+        Assert.ThrowsExactly<NotSupportedException>(() =>
+            GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+                directCapture,
+                target.InstanceId,
+                [target, distinctServiceAdapter with { ServiceName = null }]),
+            "Direct ISR evidence must fail closed when another present adapter lacks driver-service identity.");
 
         Assert.AreEqual(0, GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
             dispatchCapture with { Events = [] }, target.InstanceId, [target]).Events.Count);

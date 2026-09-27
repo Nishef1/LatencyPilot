@@ -117,21 +117,27 @@ public static class GpuInterruptRuntimePlacementVerifier
         }
 
         var serviceName = NormalizeModuleStem(target.ServiceName);
-        var sameServiceAdapterCount = displayAdapters.Count(device =>
-            !string.IsNullOrWhiteSpace(device.ServiceName) &&
-            string.Equals(
-                NormalizeModuleStem(device.ServiceName),
-                serviceName,
-                StringComparison.OrdinalIgnoreCase));
+        var targetServiceIsUnique = displayAdapters
+            .Where(device =>
+                !string.Equals(
+                    device.InstanceId,
+                    target.InstanceId,
+                    StringComparison.OrdinalIgnoreCase))
+            .All(device =>
+                !string.IsNullOrWhiteSpace(device.ServiceName) &&
+                !string.Equals(
+                    NormalizeModuleStem(device.ServiceName),
+                    serviceName,
+                    StringComparison.OrdinalIgnoreCase));
         var driverMatching = capture.Events
             .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
             .Where(item => ModuleMatchesService(item.ModulePath, serviceName))
             .ToArray();
 
-        if (driverMatching.Length > 0 && sameServiceAdapterCount != 1)
+        if (driverMatching.Length > 0 && !targetServiceIsUnique)
         {
             throw new NotSupportedException(
-                "Direct display-driver ISR attribution is ambiguous because multiple present display adapters use the target driver service.");
+                "Direct display-driver ISR attribution is ambiguous because another present display adapter either shares the target driver service or does not expose enough driver-service identity to prove uniqueness.");
         }
 
         var useWddmFallback = driverMatching.Length == 0;
