@@ -43,6 +43,7 @@ The active shell is native WinUI 3:
 - A compact custom title bar carries product identity and the real read-only state.
 - A native `NavigationView` owns adaptive primary navigation.
 - Content cards use semantic surfaces and borders so the application remains readable when Windows transparency is disabled.
+- Cards stay spatially stable on hover. Use tone, border, selection, or control-state feedback instead of translating/lifting whole content surfaces.
 
 High Contrast never depends on translucency and continues to use Windows system colors.
 

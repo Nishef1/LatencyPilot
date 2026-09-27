@@ -108,6 +108,8 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(appSource, "HashSet<byte>",
             "Manual affinity UI must support independent multi-selection of processor buttons.");
         StringAssert.Contains(appSource, "Select all");
+        StringAssert.Contains(appSource, "Supported only",
+            "The manual affinity inspector should prioritize the verified actionable targets while keeping inspection-only devices available.");
         StringAssert.Contains(appSource, "--mask");
         Assert.IsFalse(appSource.Contains("AudioMsi", StringComparison.Ordinal),
             "HDAudio MSI must not be exposed as an editable development UI target.");
