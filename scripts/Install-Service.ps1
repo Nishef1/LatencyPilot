@@ -173,4 +173,9 @@ Start-Service -Name $serviceName
 
 $successMessage = "LatencyPilot observation service is running from protected path: $serviceExe"
 Write-Host $successMessage
-Write-InstallResult -Status 'Succeeded' -Message $successMessage
+try {
+    Write-InstallResult -Status 'Succeeded' -Message $successMessage
+}
+catch {
+    Write-Warning "Service installation succeeded, but the diagnostic result could not be persisted: $($_.Exception.Message)"
+}
