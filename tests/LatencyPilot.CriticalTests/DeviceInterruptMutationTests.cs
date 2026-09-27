@@ -33,20 +33,9 @@ public sealed class DeviceInterruptMutationTests
         {
             TargetKind = DeviceInterruptTargetKind.HighDefinitionAudioController,
         };
-        DeviceInterruptConfigurationStore.EnsureMsiApplicable(audioOriginal);
-        Assert.AreEqual(
-            true,
-            DeviceInterruptConfigurationStore.IsMessageSignaledInterruptActive(
-                InterruptResourceSnapshot.Available(
-                    [new AllocatedInterruptResourceSnapshot(55, 0, 1UL << 10, 0x0002)])));
-        Assert.AreEqual(
-            false,
-            DeviceInterruptConfigurationStore.IsMessageSignaledInterruptActive(
-                InterruptResourceSnapshot.Available(
-                    [new AllocatedInterruptResourceSnapshot(55, 0, 1UL << 10, 0x0000)])));
-        Assert.IsNull(
-            DeviceInterruptConfigurationStore.IsMessageSignaledInterruptActive(
-                InterruptResourceSnapshot.NoAllocatedConfiguration(0)));
+        Assert.ThrowsExactly<NotSupportedException>(() =>
+            DeviceInterruptConfigurationStore.EnsureMsiApplicable(audioOriginal),
+            "New HDAudio MSI mutation must stay disabled until active message-signaled delivery has an authoritative verifier.");
 
         var candidate = DeviceInterruptMutationCandidate.EnableMsi();
         var candidateRoundTrip = DeviceInterruptMutationJournalCodec.DeserializeCandidate(
@@ -70,7 +59,8 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(storeSource, "MessageNumberLimit");
         StringAssert.Contains(storeSource, "HDAudBus");
         StringAssert.Contains(storeSource, "HighDefinitionAudioController");
-        StringAssert.Contains(storeSource, "CmResourceInterruptMessage");
+        Assert.IsFalse(storeSource.Contains("CmResourceInterruptMessage", StringComparison.Ordinal),
+            "IRQ_DES_64 flags must never be reinterpreted as CM_PARTIAL_RESOURCE_DESCRIPTOR message-signaled flags.");
         Assert.IsFalse(storeSource.Contains("SetValue(MessageNumberLimitValue", StringComparison.Ordinal),
             "LatencyPilot must never tune MessageNumberLimit as part of bounded MSI enablement.");
         var txSource = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Service", "DeviceInterruptMutationTransaction.cs"));
@@ -85,7 +75,8 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Gpu");
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Xhci");
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.AudioMsi");
-        StringAssert.Contains(manualRunnerSource, "VerifyAndKeepAudioMsi");
+        Assert.IsFalse(manualRunnerSource.Contains("VerifyAndKeepAudioMsi", StringComparison.Ordinal),
+            "The superseded HDAudio MSI Apply/Keep path must not return.");
         StringAssert.Contains(manualRunnerSource, "latencypilot-manual-device-affinity-v2");
         StringAssert.Contains(manualRunnerSource, "VerifyAllocatedAffinity");
         StringAssert.Contains(manualRunnerSource, "GpuInterruptRuntimePlacementVerifier",
@@ -118,9 +109,8 @@ public sealed class DeviceInterruptMutationTests
             "Manual affinity UI must support independent multi-selection of processor buttons.");
         StringAssert.Contains(appSource, "Select all");
         StringAssert.Contains(appSource, "--mask");
-        StringAssert.Contains(appSource, "AudioMsi");
-        StringAssert.Contains(appSource, "Enable MSI & verify");
-        StringAssert.Contains(appSource, "MessageNumberLimit is never changed");
+        Assert.IsFalse(appSource.Contains("AudioMsi", StringComparison.Ordinal),
+            "HDAudio MSI must not be exposed as an editable development UI target.");
     }
 
     private static string FindRepositoryRoot()

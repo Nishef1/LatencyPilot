@@ -51,7 +51,7 @@ Outside the v1 automatic path:
 - audio interrupt-affinity mutation;
 - BIOS changes;
 - HAGS changes;
-- automatic MSI-mode toggles;
+- MSI-mode toggles;
 - power-plan tuning;
 - generic debloating;
 - generic cross-subsystem/Pareto optimization;
@@ -65,20 +65,11 @@ Outside the v1 automatic path:
 
 Existing read-only diagnostics in those areas may remain, but speculative benchmark/profile/optimizer code must not be kept merely for hypothetical future scope.
 
-### Development-only manual HDAudio MSI exception
+### Superseded HDAudio MSI lab and recovery compatibility
 
-Owner-directed development tooling may expose a **manual**, journaled PCI High Definition Audio controller MSI experiment without adding MSI to the automatic v1 optimizer.
+Development revisions beginning at `8cc535ea965654e3ff4f435bf4b6043302c8100f` briefly exposed manual PCI HDAudio MSI Apply/Keep. That verifier was invalid: the ConfigMgr `IRQ_DES_64.IRQD_Flags` field describes IRQ sharing/triggering and is not the `CM_PARTIAL_RESOURCE_DESCRIPTOR.Flags` field that can carry `CM_RESOURCE_INTERRUPT_MESSAGE`. New HDAudio MSI Apply/Keep is therefore disabled.
 
-Eligibility and Keep are deliberately narrow:
-
-- target must be a present PCI device using the `HDAudBus` service;
-- `MSISupported` must already exist as a documented REG_DWORD with value 0 or 1;
-- LatencyPilot may set only `MSISupported=1`; it never creates/tunes `MessageNumberLimit`;
-- the exact original MSI registry state is journaled before the write;
-- Windows must restart the target in place or explicitly request a reboot;
-- after activation, allocated interrupt resources must carry `CM_RESOURCE_INTERRUPT_MESSAGE`; stored registry intent alone is not success;
-- failed active verification rolls back exact Original or remains recovery-required;
-- this lab capability does not arm public mutation IPC and is not an automatic recommendation.
+The target kind and Restore parsing may remain only for exact recovery of journal-owned HDAudio state created by those superseded development builds. Recovery compatibility is not an eligible mutation surface and must not be used to infer active MSI delivery.
 
 ### v1 simplicity rule
 

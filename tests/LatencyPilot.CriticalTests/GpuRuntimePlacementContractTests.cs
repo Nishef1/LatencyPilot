@@ -140,11 +140,34 @@ public sealed class GpuRuntimePlacementContractTests
         Assert.AreEqual(1, directAttribution.Events.Count);
         Assert.IsFalse(GpuInterruptRuntimePlacementVerifier.Analyze(
             directAttribution, new GpuInterruptAffinityCandidate(0, 3, 1UL << 3)).ConfirmsRequestedPlacement);
+
+        var distinctServiceAdapter = target with
+        {
+            InstanceId = "PCI\\SECOND_INTEL",
+            DisplayName = "Test integrated GPU",
+            ServiceName = "igdkmdn64",
+        };
+        var multiAdapterDirectAttribution = GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+            directCapture,
+            target.InstanceId,
+            [target, distinctServiceAdapter]);
+        Assert.AreEqual(GpuInterruptRuntimePlacementVerifier.DirectDriverAttributionMode, multiAdapterDirectAttribution.Mode);
+        Assert.AreEqual(1, multiAdapterDirectAttribution.Events.Count,
+            "A second display adapter using a different driver service must not block direct target-driver ISR attribution.");
+
+        Assert.ThrowsExactly<NotSupportedException>(() =>
+            GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+                directCapture,
+                target.InstanceId,
+                [target, target with { InstanceId = "PCI\\SECOND_SAME_SERVICE" }]),
+            "Direct ISR evidence is still ambiguous when multiple present adapters share the target driver service.");
+
         Assert.AreEqual(0, GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
             dispatchCapture with { Events = [] }, target.InstanceId, [target]).Events.Count);
         Assert.ThrowsExactly<NotSupportedException>(() =>
             GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
-                dispatchCapture, target.InstanceId, [target, target with { InstanceId = "PCI\\SECOND" }]));
+                dispatchCapture, target.InstanceId, [target, distinctServiceAdapter]),
+            "Shared dxgkrnl fallback must remain fail-closed on multi-adapter systems.");
         Assert.ThrowsExactly<InvalidOperationException>(() =>
             GpuInterruptRuntimePlacementVerifier.ResolveIsrAttribution(dispatchCapture, "PCI\\MISSING", [target]));
 

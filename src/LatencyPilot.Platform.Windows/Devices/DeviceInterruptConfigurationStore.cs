@@ -30,7 +30,6 @@ public static class DeviceInterruptConfigurationStore
     private const string MessageNumberLimitValue = "MessageNumberLimit";
     private const string DevicePolicyValue = "DevicePolicy";
     private const string AssignmentSetOverrideValue = "AssignmentSetOverride";
-    private const ushort CmResourceInterruptMessage = 0x0002;
 
     public static DeviceInterruptConfigurationSnapshot Capture(string deviceInstanceId)
     {
@@ -50,12 +49,10 @@ public static class DeviceInterruptConfigurationStore
 
     public static void EnsureMsiApplicable(DeviceInterruptConfigurationSnapshot snapshot)
     {
-        if (snapshot.TargetKind is not (
-                DeviceInterruptTargetKind.DisplayAdapter or
-                DeviceInterruptTargetKind.HighDefinitionAudioController))
+        if (snapshot.TargetKind != DeviceInterruptTargetKind.DisplayAdapter)
         {
             throw new NotSupportedException(
-                "Bounded MSI enablement is limited to the present display adapter or a PCI High Definition Audio controller.");
+                "New MSI enablement is limited to the present display adapter. PCI HDAudio remains recognized only for exact recovery of journal-owned state created by superseded development builds.");
         }
 
         if (!TryDword(snapshot.MsiSupported, out var value) || value > 1)
@@ -63,19 +60,6 @@ public static class DeviceInterruptConfigurationStore
             throw new NotSupportedException(
                 "MSISupported must already exist as DWORD 0 or 1; LatencyPilot will not invent unsupported MSI policy.");
         }
-    }
-
-    public static bool? IsMessageSignaledInterruptActive(InterruptResourceSnapshot resources)
-    {
-        ArgumentNullException.ThrowIfNull(resources);
-        if (resources.ReadStatus != InterruptResourceReadStatus.Available ||
-            resources.Resources.Count == 0)
-        {
-            return null;
-        }
-
-        return resources.Resources.All(resource =>
-            (resource.RawFlags & CmResourceInterruptMessage) != 0);
     }
 
     public static void ApplyMsi(DeviceInterruptConfigurationSnapshot original)
@@ -263,6 +247,10 @@ public static class DeviceInterruptConfigurationStore
             return DeviceInterruptTargetKind.XhciController;
         }
 
+        // Recovery compatibility only: revisions that briefly exposed the
+        // development HDAudio MSI lab may still own an exact journaled state.
+        // Keep the target readable/restorable, but EnsureMsiApplicable blocks
+        // any new HDAudio MSI experiment.
         if (string.Equals(device.ServiceName, "HDAudBus", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(device.EnumeratorName, "PCI", StringComparison.OrdinalIgnoreCase))
         {

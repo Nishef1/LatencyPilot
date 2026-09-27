@@ -110,12 +110,6 @@ public static class GpuInterruptRuntimePlacementVerifier
                 "The requested GPU runtime-verification target is not a present display adapter.");
         }
 
-        if (displayAdapters.Length != 1)
-        {
-            throw new NotSupportedException(
-                "WDDM graphics-kernel ISR fallback requires exactly one present display adapter so the shared dxgkrnl ISR stream cannot be attributed to the wrong GPU.");
-        }
-
         if (string.IsNullOrWhiteSpace(target.ServiceName))
         {
             throw new InvalidOperationException(
@@ -123,11 +117,29 @@ public static class GpuInterruptRuntimePlacementVerifier
         }
 
         var serviceName = NormalizeModuleStem(target.ServiceName);
+        var sameServiceAdapterCount = displayAdapters.Count(device =>
+            !string.IsNullOrWhiteSpace(device.ServiceName) &&
+            string.Equals(
+                NormalizeModuleStem(device.ServiceName),
+                serviceName,
+                StringComparison.OrdinalIgnoreCase));
         var driverMatching = capture.Events
             .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
             .Where(item => ModuleMatchesService(item.ModulePath, serviceName))
             .ToArray();
+
+        if (driverMatching.Length > 0 && sameServiceAdapterCount != 1)
+        {
+            throw new NotSupportedException(
+                "Direct display-driver ISR attribution is ambiguous because multiple present display adapters use the target driver service.");
+        }
+
         var useWddmFallback = driverMatching.Length == 0;
+        if (useWddmFallback && displayAdapters.Length != 1)
+        {
+            throw new NotSupportedException(
+                "WDDM graphics-kernel ISR fallback requires exactly one present display adapter so the shared dxgkrnl ISR stream cannot be attributed to the wrong GPU.");
+        }
         var attributionModuleName = useWddmFallback
             ? WddmGraphicsKernelModule
             : serviceName;

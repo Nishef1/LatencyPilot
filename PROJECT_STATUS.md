@@ -105,12 +105,12 @@ The Devices page now exposes a development-only manual affinity surface without 
 - the development UI keeps the familiar Interrupt-Affinity Policy Configuration Tool information model, but now opens as an independent modern WinUI tool window with stacked device → selected-device → interrupt-affinity sections, search, concise identity details, Fluent device/action icons, inline multi-CPU mask selection, and Current policy / Specified mask / Current assignment evidence;
 - current stored interrupt policy / `AssignmentSetOverride` and translated allocated interrupt-resource masks are shown separately for latency-sensitive present devices;
 - GPU and USBXHCI expose editable affinity masks because they already have bounded journal/restart/rollback ownership;
-- a present PCI `HDAudBus` controller may additionally expose bounded manual MSI enable/restore when `MSISupported` already exists as DWORD 0/1; `MessageNumberLimit` is never changed;
-- network, storage, HID and other unsupported latency-sensitive devices remain read-only;
+- network, audio, storage, HID and other unsupported latency-sensitive devices remain read-only in the UI;
+- recovery compatibility is retained only so an HDAudio MSI experiment journaled by the superseded development build can still Restore its exact original state; no new HDAudio MSI Apply/Keep is exposed;
 - manual GPU/xHCI Apply accepts a non-empty group-0 KAFFINITY set and uses an elevated one-shot helper: exact snapshot → journal → apply/restart → verify every translated allocation stays inside the requested mask → clean ETW ISR proof → Keep, or exact rollback on failed verification;
 - GPU manual verification requires **direct display-driver** ISR attribution; shared `dxgkrnl` fallback is shown only as diagnostic context. xHCI uses a controller-specific `USBXHCI` ISR verifier and deliberately fails closed when more than one present controller shares that driver service because the shared module stream is ambiguous;
-- manual HDAudio MSI Keep requires both stored `MSISupported=1` and active Windows interrupt resources carrying `CM_RESOURCE_INTERRUPT_MESSAGE`;
-- reboot-pending xHCI/MSI experiments resume only through the same journal-owned target/candidate;
+- the helper keeps `AudioMsi` parsing only for Restore/recovery compatibility; `IRQ_DES_64.IRQD_Flags` is not treated as proof of message-signaled delivery;
+- reboot-pending xHCI experiments resume only through the same journal-owned target/candidate;
 - Restore is per-device and only unwinds retained changes actually owned by the LatencyPilot mutation journal; an external pre-existing override is never claimed or overwritten as LatencyPilot-owned;
 - the App blocks manual mutation while GPU Gate A is running.
 
@@ -159,7 +159,7 @@ The v6 work reuses the consolidated critical-test budget. New/updated contracts 
 - selection confidence is metadata rather than a winner threshold;
 - result presentation includes actual before/after FPS/ms plus absolute and percentage improvement;
 - final GPU Keep requires stored policy + active translated allocation + direct display-driver target-only ISR placement, while shared `dxgkrnl` fallback stays diagnostic-only;
-- bounded HDAudio MSI never tunes `MessageNumberLimit` and requires active message-signaled resource verification before manual Keep.
+- direct GPU ISR attribution remains usable on multi-adapter systems only when the target driver service is unique; shared-service direct attribution and multi-adapter `dxgkrnl` fallback remain fail-closed.
 
 Exact-head hosted **Tests** are mandatory for every revision used as physical closure evidence. An older green run is never reused for a newer SHA.
 
@@ -213,11 +213,11 @@ Graphics-hook warnings such as `nvspcap64.dll` remain explicit interference cont
 
 ## Immediate execution ladder
 
-1. **Completed now:** GPU affinity verification is tightened so a stored `AssignmentSetOverride` is no longer treated as effective placement by itself. After every candidate restart the automatic Gate A path now requires non-empty translated interrupt resources confined to the requested mask before measurement; candidate verification and Keep re-check active allocation. Final Keep additionally requires direct display-driver ISR attribution, while shared `dxgkrnl` fallback remains diagnostic-only. The development manual lab now also supports one bounded PCI `HDAudBus` MSI experiment with exact journal/rollback ownership, no `MessageNumberLimit` tuning, and active `CM_RESOURCE_INTERRUPT_MESSAGE` verification.
-2. **Evidence:** reconciled source/docs revision `bbe6abc925014ec7f4825bebc8d2c947357fc94e` passed hosted **Tests** in workflow run **#1648** (`36194222895`). This proves compilation/analyzer/critical contracts for active GPU allocation verification, direct-driver Keep attribution and bounded HDAudio MSI ownership, but not physical hardware behavior. This ledger-only update must also be exact-head green.
-3. **Still open:** exact-head Tests; one clean physical v6 Full run proving stored mask → translated allocation → direct-driver ISR placement; repeat/recovery/render inspection; one owner-hardware HDAudio MSI enable/active-resource/restore exercise; integrated automatic xHCI apply/runtime verification. Public product mutation remains unarmed.
-4. **Next stage:** get exact-head hosted Tests green. Then run GPU Gate A on owner hardware and inspect the mutation audit plus active resource masks before interpreting LatencyMon DPC placement. Separately exercise HDAudio MSI once and verify the active resource flag plus exact Restore.
-5. **After that:** repeat the full GPU search for reproducibility, close Stop-safely/recovery/render gates, then continue the narrow GPU→xHCI product arming chain. Manual HDAudio MSI remains development-only unless a later owner decision adds it to product scope.
+1. **Completed now:** the latest-commit audit found and corrected two verification defects. GPU direct-driver ISR attribution no longer rejects a second display adapter merely for existing; it is accepted only when the target driver service is unique, while shared-service attribution and multi-adapter `dxgkrnl` fallback remain fail-closed. The development HDAudio MSI Apply/Keep path was removed because it incorrectly interpreted `IRQ_DES_64.IRQD_Flags` as `CM_RESOURCE_INTERRUPT_MESSAGE`; HDAudio stays read-only and recovery-only Restore compatibility is preserved for any already journaled state.
+2. **Evidence:** the source review was reconciled against the Windows ConfigMgr/WDM resource contracts and the existing critical tests were updated without increasing the permanent-test count. The older green workflow **#1648** belongs to superseded revision `bbe6abc925014ec7f4825bebc8d2c947357fc94e` and is not reused as exact-head evidence; hosted **Tests for this revision are pending**.
+3. **Still open:** exact-head Tests; one clean physical v6 Full run proving stored mask → translated allocation → direct-driver ISR placement; repeat/recovery/render inspection; integrated automatic xHCI apply/runtime verification. Public product mutation remains unarmed.
+4. **Next stage:** get exact-head hosted Tests green, then run GPU Gate A on owner hardware and inspect the mutation audit plus active resource masks before interpreting latency placement.
+5. **After that:** repeat the full GPU search for reproducibility, close Stop-safely/recovery/render gates, then continue the narrow GPU→xHCI product arming chain.
 
 ## Completion rule
 
