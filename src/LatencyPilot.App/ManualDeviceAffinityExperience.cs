@@ -686,7 +686,7 @@ public sealed partial class MainWindow
         header.Children.Add(title);
 
         var stateBadge = BuildManualAffinityPill(
-            row.TargetKind is null ? "Read only" : "Ready",
+            row.TargetKind is null ? "Read only" : "Supported",
             row.TargetKind is null ? "MutedTextBrush" : "SemanticGoodBrush",
             row.TargetKind is null ? "SurfaceAltBrush" : "PremiumOverviewQuietBrush");
         stateBadge.VerticalAlignment = VerticalAlignment.Center;
@@ -714,6 +714,26 @@ public sealed partial class MainWindow
         Grid.SetColumn(assignmentTile, 2);
         metrics.Children.Add(assignmentTile);
         panel.Children.Add(metrics);
+
+        if (row.TargetKind is not null &&
+            row.Device.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available)
+        {
+            panel.Children.Add(new Border
+            {
+                Padding = new Thickness(10d, 8d, 10d, 8d),
+                CornerRadius = new CornerRadius(8d),
+                Background = ThemeBrush("SurfaceAltBrush"),
+                BorderBrush = ThemeBrush("BorderBrush"),
+                BorderThickness = new Thickness(1d),
+                Child = new TextBlock
+                {
+                    Text = $"Current assignment is {row.Device.InterruptResources.ReadStatus}. Apply & verify re-reads allocation from the elevated helper and will not keep a change unless both active allocation and live ISR placement are proven.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Style = AppStyle("CaptionTextStyle"),
+                    Foreground = ThemeBrush("SemanticAttentionBrush"),
+                },
+            });
+        }
 
         if (row.TargetKind is not null)
         {
@@ -1107,8 +1127,18 @@ public sealed partial class MainWindow
             "Policy read",
             configuration.ReadStatus.ToString()));
         details.Children.Add(BuildManualAffinityPropertyRow(
+            "Policy native status",
+            configuration.NativeErrorCode is { } policyStatus
+                ? $"0x{policyStatus:X8}"
+                : "N/A"));
+        details.Children.Add(BuildManualAffinityPropertyRow(
             "Resource read",
             resources.ReadStatus.ToString()));
+        details.Children.Add(BuildManualAffinityPropertyRow(
+            "Resource native status",
+            resources.NativeStatusCode is { } resourceStatus
+                ? $"0x{resourceStatus:X8}"
+                : "N/A"));
         details.Children.Add(BuildManualAffinityPropertyRow(
             "Stored summary",
             row.StoredAffinity));
