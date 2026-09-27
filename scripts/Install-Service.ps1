@@ -77,6 +77,15 @@ $isManagedSource = [string]::Equals(
     $managedServiceDirectory,
     [System.StringComparison]::OrdinalIgnoreCase)
 $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+$programDataStateDirectory = Join-Path $env:ProgramData 'LatencyPilot'
+$hasProgramDataState = Test-Path -LiteralPath $programDataStateDirectory -PathType Container
+
+# A stale protected directory without a Service registration or any
+# ProgramData state is an incomplete first-install residue, not an existing
+# recovery installation. There is no journal-owned mutation to recover in
+# this state, so it may be replaced. Once either the Service or its state
+# footprint exists, the recovery checker remains mandatory.
+$isFreshInstall = $null -eq $existing -and -not $hasProgramDataState
 
 function Assert-RecoverySafeForReplacement {
     $installedServiceExe = Join-Path $managedServiceDirectory 'LatencyPilot.Service.exe'
@@ -134,7 +143,7 @@ function Assert-RecoverySafeForReplacement {
 # Prove the old recovery state is clean before stopping or replacing it. Inno
 # Setup performs the equivalent pre-copy check when source and destination are
 # already the managed installation directory.
-if (-not $isManagedSource -and
+if (-not $isManagedSource -and -not $isFreshInstall -and
     ((Test-Path -LiteralPath $managedServiceDirectory -PathType Container) -or $null -ne $existing)) {
     Assert-RecoverySafeForReplacement
 }
@@ -146,7 +155,8 @@ if ($null -ne $existing -and $existing.Status -ne 'Stopped') {
 
 if (-not $isManagedSource) {
     # Re-check after service shutdown so a journal update during stop cannot be missed.
-    if ((Test-Path -LiteralPath $managedServiceDirectory -PathType Container) -or $null -ne $existing) {
+    if (-not $isFreshInstall -and
+        ((Test-Path -LiteralPath $managedServiceDirectory -PathType Container) -or $null -ne $existing)) {
         Assert-RecoverySafeForReplacement
     }
 

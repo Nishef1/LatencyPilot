@@ -98,6 +98,10 @@ public sealed class AuditClosureIntegrationTests
             "A missing protected recovery executable must be repairable only through the freshly built read-only journal checker.");
         StringAssert.Contains(installScript, "LATENCYPILOT_UNINSTALL_SAFE_V1",
             "Repair must continue to require the canonical read-only safety token before replacement.");
+        StringAssert.Contains(installScript, "$isFreshInstall",
+            "A state-less first install must not deadlock on a missing journal before the Service has ever started.");
+        StringAssert.Contains(installScript, "-not $isFreshInstall",
+            "Recovery preflight must remain mandatory for any existing state-bearing installation.");
 
         var recovery = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Service", "DeviceInterruptRecoveryInspector.cs"));
         StringAssert.Contains(recovery, "Diverged");
