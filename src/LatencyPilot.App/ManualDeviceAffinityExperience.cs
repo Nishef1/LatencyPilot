@@ -930,35 +930,6 @@ public sealed partial class MainWindow
             {
                 var mask = BuildSelectedMask();
                 _manualAffinityDraftMasks[row.Device.InstanceId] = mask;
-
-                synchronizingCpuSelection = true;
-                try
-                {
-                    foreach (var button in cpuButtons)
-                    {
-                        if (button.Tag is not ManualAffinityCpuOption option)
-                        {
-                            continue;
-                        }
-
-                        var selected = selectedProcessors.Contains(option.Processor.Number);
-                        button.IsChecked = selected;
-                        button.Background = selected
-                            ? ThemeBrush("AccentBrush")
-                            : ThemeBrush("SurfaceStrongBrush");
-                        button.Foreground = selected
-                            ? ThemeBrush("OnAccentBrush")
-                            : ThemeBrush("TextBrush");
-                        button.BorderBrush = selected
-                            ? ThemeBrush("AccentBrush")
-                            : ThemeBrush("BorderBrush");
-                    }
-                }
-                finally
-                {
-                    synchronizingCpuSelection = false;
-                }
-
                 applyButton.IsEnabled = mask != 0 && !_manualDeviceAffinityBusy;
                 selectionSummary.Text = mask == 0
                     ? "No CPUs selected."
@@ -1014,8 +985,23 @@ public sealed partial class MainWindow
                             return;
                         }
 
-                        selectedProcessors.Add(option.Processor.Number);
-                        RefreshSelection();
+                        try
+                        {
+                            selectedProcessors.Add(option.Processor.Number);
+                            RefreshSelection();
+                        }
+                        catch (Exception exception)
+                        {
+                            Logger.Error(
+                                exception,
+                                "CPU selection failed for {DeviceInstanceId} processor {Processor}.",
+                                row.Device.InstanceId,
+                                option.Processor.Number);
+                            SetManualAffinityStatus(
+                                dialogStatusText,
+                                $"CPU selection failed: {exception.Message}",
+                                "SemanticFailureBrush");
+                        }
                     };
                     cpuButton.Unchecked += (_, _) =>
                     {
@@ -1024,8 +1010,23 @@ public sealed partial class MainWindow
                             return;
                         }
 
-                        selectedProcessors.Remove(option.Processor.Number);
-                        RefreshSelection();
+                        try
+                        {
+                            selectedProcessors.Remove(option.Processor.Number);
+                            RefreshSelection();
+                        }
+                        catch (Exception exception)
+                        {
+                            Logger.Error(
+                                exception,
+                                "CPU deselection failed for {DeviceInstanceId} processor {Processor}.",
+                                row.Device.InstanceId,
+                                option.Processor.Number);
+                            SetManualAffinityStatus(
+                                dialogStatusText,
+                                $"CPU deselection failed: {exception.Message}",
+                                "SemanticFailureBrush");
+                        }
                     };
                     Grid.SetColumn(cpuButton, siblingIndex);
                     siblingGrid.Children.Add(cpuButton);
@@ -1049,16 +1050,43 @@ public sealed partial class MainWindow
 
             selectAllButton.Click += (_, _) =>
             {
-                selectedProcessors.Clear();
-                foreach (var option in snapshot.CpuOptions)
+                synchronizingCpuSelection = true;
+                try
                 {
-                    selectedProcessors.Add(option.Processor.Number);
+                    selectedProcessors.Clear();
+                    foreach (var option in snapshot.CpuOptions)
+                    {
+                        selectedProcessors.Add(option.Processor.Number);
+                    }
+
+                    foreach (var button in cpuButtons)
+                    {
+                        button.IsChecked = true;
+                    }
                 }
+                finally
+                {
+                    synchronizingCpuSelection = false;
+                }
+
                 RefreshSelection();
             };
             clearButton.Click += (_, _) =>
             {
-                selectedProcessors.Clear();
+                synchronizingCpuSelection = true;
+                try
+                {
+                    selectedProcessors.Clear();
+                    foreach (var button in cpuButtons)
+                    {
+                        button.IsChecked = false;
+                    }
+                }
+                finally
+                {
+                    synchronizingCpuSelection = false;
+                }
+
                 RefreshSelection();
             };
 
