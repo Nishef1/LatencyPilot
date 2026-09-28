@@ -346,8 +346,7 @@ internal sealed class GpuGateAProgressFile
             return (null, null);
         }
 
-        if (phase.StartsWith("screening-representative", StringComparison.Ordinal) ||
-            phase.StartsWith("screening-sibling", StringComparison.Ordinal))
+        if (phase.StartsWith("screening-logical", StringComparison.Ordinal))
         {
             if (!screeningCandidates.TryGetValue(candidate.Processor, out var index))
             {
