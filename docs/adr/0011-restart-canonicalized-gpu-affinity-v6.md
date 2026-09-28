@@ -36,7 +36,7 @@ v6 does **not** change:
 - the exact Original policy as the recovery/reference state;
 - local geometric-mean pair effects;
 - one bounded retry for high local control movement;
-- Stage-A physical-core coverage, uncertainty-aware refinement, top-four recheck, or bounded top-two finalist confirmation;
+- exhaustive first-pass paired coverage of every eligible logical CPU, uncertainty-aware top-four-plus-optional-fifth recheck, and bounded top-two finalist confirmation;
 - median paired 1%-low ranking authority;
 - High/Medium/Low ranking confidence;
 - separate AVG/frame-p99/interrupt-tail Keep guardrails;
@@ -56,4 +56,4 @@ Graphics-hook observations such as `nvspcap64.dll` remain interference context o
 
 ## Consequences
 
-The full search pays one additional display-adapter restart before scoring, but no extra scored benchmark windows. This should remove a large one-time pre-restart/post-restart regime mismatch without weakening local pairing, finalist confirmation, guardrails, rollback, or physical-evidence requirements.
+The v6 canonicalization still adds one display-adapter restart before scoring. Full search additionally requires one paired first-pass screen for every eligible logical CPU so an untested SMT sibling cannot be silently excluded from the machine-wide winner search; only repeat work remains adaptive. This should remove a large one-time pre-restart/post-restart regime mismatch without weakening local pairing, finalist confirmation, guardrails, rollback, or physical-evidence requirements.
