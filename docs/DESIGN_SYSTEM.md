@@ -138,6 +138,8 @@ Desktop intent:
 
 All four primary destinations must remain usable at narrow effective content widths. Header actions relocate below their heading instead of being parked in zero-width columns. Devices and Evidence grids reflow rather than clipping or creating horizontal scroll.
 
+Development tool windows follow the same rule. The interrupt-affinity inspector uses a side-by-side device master/detail layout at desktop widths and collapses to a stacked flow below its compact breakpoint. The device list owns selection/search/filtering; the detail pane owns evidence and actions. Do not repeat the selected device as multiple nested cards.
+
 ## Change checklist
 
 Before adding or changing visual behavior, ask:

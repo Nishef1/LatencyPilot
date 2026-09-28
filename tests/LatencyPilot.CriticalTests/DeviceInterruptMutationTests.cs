@@ -108,8 +108,14 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(appSource, "HashSet<byte>",
             "Manual affinity UI must support independent multi-selection of processor buttons.");
         StringAssert.Contains(appSource, "Select all");
-        StringAssert.Contains(appSource, "Supported only",
-            "The manual affinity inspector should prioritize the verified actionable targets while keeping inspection-only devices available.");
+        StringAssert.Contains(appSource, "Show all",
+            "The manual affinity inspector should prioritize supported targets while keeping inspection-only devices discoverable.");
+        StringAssert.Contains(appSource, "GroupBy(static option => option.PhysicalCoreIndex)",
+            "Logical CPU choices must preserve physical-core/SMT grouping in the manual selector.");
+        StringAssert.Contains(appSource, "AppWindowTitleBar.IsCustomizationSupported()",
+            "The independent tool window must keep its title chrome aligned with the application theme when Windows supports customization.");
+        StringAssert.Contains(appSource, "restoreMayBeNeeded",
+            "Restore must be hidden from the proven-default case without blocking recovery when current policy inspection is unavailable.");
         StringAssert.Contains(appSource, "--mask");
         Assert.IsFalse(appSource.Contains("AudioMsi", StringComparison.Ordinal),
             "HDAudio MSI must not be exposed as an editable development UI target.");

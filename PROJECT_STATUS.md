@@ -102,7 +102,7 @@ CPU selection uses current topology/CPU-set eligibility; unsupported topology fa
 
 The Devices page now exposes a development-only manual affinity surface without changing the public observation-only Service contract:
 
-- the development UI keeps the familiar Interrupt-Affinity Policy Configuration Tool information model, but now opens as an independent modern WinUI tool window with stacked device → selected-device → interrupt-affinity sections, search, concise identity details, Fluent device/action icons, inline multi-CPU mask selection, and Current policy / Specified mask / Current assignment evidence;
+- the development UI keeps the familiar Interrupt-Affinity Policy Configuration Tool information model, but now opens as an independent modern WinUI tool window with an adaptive device master/detail layout, supported-target-first filtering, theme-matched title chrome, concise advanced identity details, Fluent device/action icons, physical-core-grouped multi-CPU selection, and Current policy / Specified mask / Current assignment evidence;
 - current stored interrupt policy / `AssignmentSetOverride` and translated allocated interrupt-resource masks are shown separately for latency-sensitive present devices;
 - GPU and USBXHCI expose editable affinity masks because they already have bounded journal/restart/rollback ownership;
 - network, audio, storage, HID and other unsupported latency-sensitive devices remain read-only in the UI;
