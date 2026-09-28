@@ -303,7 +303,7 @@ public sealed partial class MainWindow
         };
         var deviceList = new ListView
         {
-            Height = 540d,
+            Height = 180d,
             SelectionMode = ListViewSelectionMode.Single,
             IsItemClickEnabled = false,
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
@@ -389,20 +389,32 @@ public sealed partial class MainWindow
         workspaceGrid.Children.Add(detailHost);
         host.Children.Add(workspaceGrid);
 
+        var compactLayout = false;
+        var visibleDeviceCount = 0;
+
+        void RefreshDeviceListHeight()
+        {
+            var desired = 12d + (visibleDeviceCount * 48d);
+            deviceList.Height = Math.Clamp(
+                desired,
+                120d,
+                compactLayout ? 210d : 520d);
+        }
+
         void ApplyWorkspaceLayout(double width)
         {
-            var compact = width > 0d && width < 760d;
-            workspaceGrid.ColumnDefinitions[0].Width = compact
+            compactLayout = width > 0d && width < 760d;
+            workspaceGrid.ColumnDefinitions[0].Width = compactLayout
                 ? new GridLength(1d, GridUnitType.Star)
                 : new GridLength(292d);
-            workspaceGrid.ColumnDefinitions[1].Width = compact
+            workspaceGrid.ColumnDefinitions[1].Width = compactLayout
                 ? new GridLength(0d)
                 : new GridLength(1d, GridUnitType.Star);
             Grid.SetColumn(masterCard, 0);
             Grid.SetRow(masterCard, 0);
-            Grid.SetColumn(detailHost, compact ? 0 : 1);
-            Grid.SetRow(detailHost, compact ? 1 : 0);
-            deviceList.Height = compact ? 210d : 540d;
+            Grid.SetColumn(detailHost, compactLayout ? 0 : 1);
+            Grid.SetRow(detailHost, compactLayout ? 1 : 0);
+            RefreshDeviceListHeight();
         }
 
         workspaceGrid.SizeChanged += (_, args) => ApplyWorkspaceLayout(args.NewSize.Width);
@@ -444,6 +456,8 @@ public sealed partial class MainWindow
                      (row.Device.ServiceName?.Contains(normalized, StringComparison.OrdinalIgnoreCase) ?? false) ||
                      (row.Kind?.ToString().Contains(normalized, StringComparison.OrdinalIgnoreCase) ?? false)))
                 .ToArray();
+            visibleDeviceCount = filtered.Length;
+            RefreshDeviceListHeight();
 
             ListViewItem? preferredItem = null;
             foreach (var row in filtered)
