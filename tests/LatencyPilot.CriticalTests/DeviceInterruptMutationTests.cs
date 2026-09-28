@@ -158,6 +158,10 @@ public sealed class DeviceInterruptMutationTests
 
         var appSource = File.ReadAllText(Path.Combine(
             root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
+        var appProjectSource = File.ReadAllText(Path.Combine(
+            root, "src", "LatencyPilot.App", "LatencyPilot.App.csproj"));
+        StringAssert.Contains(appProjectSource, "Microsoft.Data.Sqlite",
+            "The self-contained App must carry the SQLite runtime used by its project-referenced mutation journal inspector.");
         StringAssert.Contains(appSource, "if (row.TargetKind is not null)",
             "The shared processor-mask control path must remain explicit in the affinity workspace.");
         StringAssert.Contains(appSource, "_gateAValidationRunning",
