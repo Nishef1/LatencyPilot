@@ -408,13 +408,15 @@ internal static class GpuAutoAffinityGateARunner
             var capture = KernelLatencyCapture.Capture(
                 new KernelLatencyCaptureOptions(TimeSpan.FromSeconds(10), 500_000),
                 cancellationToken);
-            var routes = InputDeviceRouteReader.Capture();
+            var deviceInventory = DeviceInventoryReader.CapturePresentDevices();
+            var routes = InputDeviceRouteReader.Capture(deviceInventory);
             var recommendation = UsbAffinityRecommendationPlanner.Create(
                 topology,
                 capture,
                 routes,
                 gpuWinner,
-                primaryInputDeviceInstanceId);
+                primaryInputDeviceInstanceId,
+                deviceInventory);
             var evidence = recommendation.CpuEvidence;
             return new UsbAffinityRecommendationReport(
                 recommendation.Status.ToString(),
