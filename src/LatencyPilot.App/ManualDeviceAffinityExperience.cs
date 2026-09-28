@@ -222,6 +222,7 @@ public sealed partial class MainWindow
                         ? "Xhci"
                         : "Device";
                 pendingByTarget.TryGetValue(device.InstanceId, out var pendingRecovery);
+                var pendingMask = TryGetPendingAffinityMask(pendingRecovery);
                 return new ManualAffinityDeviceRow(
                     device,
                     classified.ContainsKey(device.InstanceId) ? kind : null,
@@ -231,7 +232,8 @@ public sealed partial class MainWindow
                     device.InterruptConfiguration.AssignmentSetOverrideMask,
                     device.InterruptConfiguration.DevicePolicy == 4 &&
                     device.InterruptConfiguration.AssignmentSetOverrideMask is not null,
-                    pendingRecovery);
+                    pendingRecovery,
+                    pendingMask);
             })
             .OrderByDescending(static row => row.TargetKind is not null)
             .ThenByDescending(static row => row.HasPendingRecovery)
@@ -241,6 +243,38 @@ public sealed partial class MainWindow
             .ToArray();
 
         return new ManualAffinitySnapshot(rows, cpuOptions, journalInspectionError);
+    }
+
+    private static ulong? TryGetPendingAffinityMask(MutationJournalEntry? entry)
+    {
+        if (entry is null ||
+            entry.State != MutationJournalState.ApplyRebootPending ||
+            !string.Equals(
+                entry.Kind,
+                DeviceInterruptMutationContract.DeviceAffinityKind,
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        try
+        {
+            return DeviceInterruptMutationJournalCodec
+                .DeserializeCandidate(entry.CandidateStateJson)
+                .AffinityMask;
+        }
+        catch (Exception exception) when (exception is
+            InvalidDataException or
+            JsonException or
+            FormatException or
+            OverflowException)
+        {
+            Logger.Warning(
+                exception,
+                "Could not decode pending manual affinity mask for {TargetId}.",
+                entry.TargetId);
+            return null;
+        }
     }
 
     private static (IReadOnlyDictionary<string, MutationJournalEntry> Entries, string? Error)
@@ -822,6 +856,26 @@ public sealed partial class MainWindow
         metrics.Children.Add(assignmentTile);
         panel.Children.Add(metrics);
 
+        if (row.PendingRecovery?.State == MutationJournalState.ApplyRebootPending &&
+            row.PendingMask is { } pendingMask)
+        {
+            panel.Children.Add(new Border
+            {
+                Padding = new Thickness(10d, 8d, 10d, 8d),
+                CornerRadius = new CornerRadius(8d),
+                Background = ThemeBrush("SurfaceAltBrush"),
+                BorderBrush = ThemeBrush("AccentBrush"),
+                BorderThickness = new Thickness(1d),
+                Child = new TextBlock
+                {
+                    Text = $"Pending verification · {FormatMask(pendingMask)} · mask 0x{pendingMask:X}. This is the journal-owned selection waiting to be resumed; Apply & verify continues it, while Restore original cancels it.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Style = AppStyle("CaptionTextStyle"),
+                    Foreground = ThemeBrush("AccentBrush"),
+                },
+            });
+        }
+
         if (row.Device.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available)
         {
             var warningContent = new Grid { ColumnSpacing = 8d };
@@ -845,9 +899,11 @@ public sealed partial class MainWindow
             });
             warningText.Children.Add(new TextBlock
             {
-                Text = row.TargetKind is "Gpu" or "Xhci"
-                    ? "Apply & verify re-reads allocation from the elevated helper and keeps nothing unless active allocation and live ISR placement are both proven."
-                    : "The current allocation is not readable. Manual policy editing is still available, matching Windows IntPolicy behavior; LatencyPilot will verify the stored policy and device restart, but will label active placement as unverified until Windows exposes interrupt allocation.",
+                Text = row.TargetKind == "Xhci"
+                    ? "Apply & verify re-reads allocation from the elevated helper and keeps nothing unless active allocation and controller-attributed ISR placement are both proven."
+                    : row.TargetKind == "Gpu"
+                        ? "The GPU allocation is not readable. Manual policy can still be retained after the stored mask and restart are verified, but LatencyPilot will label active placement as unverified instead of claiming runtime proof."
+                        : "The current allocation is not readable. Manual policy editing is still available, matching Windows IntPolicy behavior; LatencyPilot will verify the stored policy and device restart, but will label active placement as unverified until Windows exposes interrupt allocation.",
                 TextWrapping = TextWrapping.Wrap,
                 Style = AppStyle("CaptionTextStyle"),
                 Foreground = ThemeBrush("MutedTextBrush"),
@@ -873,7 +929,8 @@ public sealed partial class MainWindow
                 row.Device.InstanceId,
                 out var draftMask)
                     ? draftMask
-                    : row.StoredMask.GetValueOrDefault();
+                    : row.PendingMask ??
+                        row.StoredMask.GetValueOrDefault();
             if (initialMask != 0)
             {
                 foreach (var option in snapshot.CpuOptions)
@@ -1217,11 +1274,10 @@ public sealed partial class MainWindow
                     host,
                     dialogStatusText,
                     row,
-                    choice is ManualAffinityActionChoice.RestoreOnlyDevice or ManualAffinityActionChoice.RestartDeviceOnly
-                        ? (row.HasPendingRecovery ? "Restore" : "Apply")
+                    choice == ManualAffinityActionChoice.RestoreOnlyDevice
+                        ? "Restore"
                         : "Apply",
-                    choice == ManualAffinityActionChoice.RestoreOnlyDevice ||
-                        (choice == ManualAffinityActionChoice.RestartDeviceOnly && row.HasPendingRecovery)
+                    choice == ManualAffinityActionChoice.RestoreOnlyDevice
                         ? null
                         : mask,
                     choice == ManualAffinityActionChoice.RestartDeviceOnly);
@@ -1258,9 +1314,11 @@ public sealed partial class MainWindow
 
         panel.Children.Add(new TextBlock
         {
-            Text = row.TargetKind is "Gpu" or "Xhci"
-                ? "A change is kept only when Windows allocation and live ISR execution both stay inside the requested mask; otherwise LatencyPilot restores the previous state."
-                : "For generic devices, LatencyPilot always verifies the stored Windows affinity policy and restart. When translated interrupt allocation is readable it must also stay inside the requested mask; otherwise the result is retained as policy-only and clearly marked as active-placement unverified.",
+            Text = row.TargetKind == "Xhci"
+                ? "xHCI is kept only when Windows allocation and live controller-attributed ISR execution stay inside the requested mask."
+                : row.TargetKind == "Gpu"
+                    ? "GPU manual policy is retained when the stored mask/restart are verified. Full runtime-verified status additionally requires readable translated allocation plus requested-mask-only GPU ISR evidence."
+                    : "For generic devices, LatencyPilot verifies the stored Windows affinity policy and restart. When translated interrupt allocation is readable it must also stay inside the requested mask; otherwise the result is retained as policy-only and clearly marked as active-placement unverified.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
             Foreground = ThemeBrush("MutedTextBrush"),
@@ -1487,14 +1545,22 @@ public sealed partial class MainWindow
         ulong? affinityMask)
     {
         var pendingRecovery = row.PendingRecovery;
-        var isPendingRecovery = pendingRecovery is not null;
-        var restoreOnly = action == "Restore" || isPendingRecovery;
+        var isPendingApply =
+            action == "Apply" &&
+            pendingRecovery?.State == MutationJournalState.ApplyRebootPending;
+        var isOtherPendingRecovery =
+            pendingRecovery is not null &&
+            !isPendingApply;
+        var restoreOnly = action == "Restore" || isOtherPendingRecovery;
+
         var dialog = new ContentDialog
         {
             XamlRoot = host.XamlRoot,
-            Title = restoreOnly
-                ? $"Recover {row.Device.DisplayName}?"
-                : $"Save affinity for {row.Device.DisplayName}?",
+            Title = isPendingApply
+                ? $"Resume {row.Device.DisplayName}?"
+                : restoreOnly
+                    ? $"Recover {row.Device.DisplayName}?"
+                    : $"Save affinity for {row.Device.DisplayName}?",
             Content = new StackPanel
             {
                 Spacing = 8d,
@@ -1502,53 +1568,69 @@ public sealed partial class MainWindow
                 {
                     new TextBlock
                     {
-                        Text = restoreOnly
-                            ? isPendingRecovery
-                                ? $"This device has a journal-owned {pendingRecovery!.State} recovery. Only this device will be restored to its exact captured original policy. No other device will be changed."
-                                : "Only this device will be restored to its exact LatencyPilot-owned original policy. A non-owned policy will not be overwritten."
-                            : $"Save {FormatMask(affinityMask ?? 0)} as the Windows interrupt-affinity policy for this device. LatencyPilot will not reboot Windows automatically.",
+                        Text = isPendingApply
+                            ? $"Resume the journal-owned pending affinity {FormatMask(row.PendingMask ?? affinityMask ?? 0)} and verify it. Restore original remains a separate cancellation choice."
+                            : restoreOnly
+                                ? pendingRecovery is not null
+                                    ? $"This device has a journal-owned {pendingRecovery.State} recovery. Only this device will be restored to its exact captured original policy."
+                                    : "Only this device will be restored to its exact LatencyPilot-owned original policy. A non-owned policy will not be overwritten."
+                                : $"Save {FormatMask(affinityMask ?? 0)} as the Windows interrupt-affinity policy for this device.",
                         TextWrapping = TextWrapping.Wrap,
                         Style = AppStyle("BodyTextStyle"),
                     },
                     new TextBlock
                     {
-                        Text = restoreOnly
-                            ? "If Windows requires a reboot, the dialog will report it and you can reboot manually."
-                            : row.TargetKind == "Gpu"
-                                ? "The GPU policy is stored in the journal first. Reboot Windows yourself, then reopen this panel to verify or restore it."
-                                : "Windows may restart the device in place; if it requires a system reboot, LatencyPilot will stop and report that requirement.",
+                        Text = isPendingApply
+                            ? "The selected mask is reconstructed from the durable journal, so the same CPU selection remains visible after restart even when current allocation cannot be read."
+                            : restoreOnly
+                                ? "If Windows requires another reboot, the dialog will report it and you can reboot manually."
+                                : row.TargetKind == "Gpu"
+                                    ? "You can save for a full reboot, or explicitly choose the optional device-only restart path."
+                                    : "Windows may restart the device in place; if it requires a system reboot, LatencyPilot will stop and report that requirement.",
                         TextWrapping = TextWrapping.Wrap,
                         Style = AppStyle("CaptionTextStyle"),
                         Foreground = ThemeBrush("MutedTextBrush"),
                     },
                     new TextBlock
                     {
-                        Text = "The optional device-only path restarts only this display adapter/driver. The screen may flicker, the WinUI surface may disappear briefly, and Windows can still require a full reboot if the driver does not accept an in-place restart.",
+                        Text = "The optional device-only path restarts only this display adapter/driver. The screen may flicker, and Windows can still require a full reboot if the driver does not accept an in-place restart.",
                         TextWrapping = TextWrapping.Wrap,
                         Style = AppStyle("CaptionTextStyle"),
                         Foreground = ThemeBrush("MutedTextBrush"),
-                        Visibility = row.TargetKind == "Gpu"
+                        Visibility = row.TargetKind == "Gpu" && !isPendingApply
                             ? Visibility.Visible
                             : Visibility.Collapsed,
                     },
                 },
             },
-            PrimaryButtonText = restoreOnly
-                ? "Restore only this device"
-                : "Save policy; I will reboot manually",
-            SecondaryButtonText = row.TargetKind == "Gpu"
-                ? restoreOnly
-                    ? "Restore and restart only this GPU driver/device"
-                    : "Restart only this GPU driver/device"
-                : null,
+            PrimaryButtonText = isPendingApply
+                ? "Resume & verify"
+                : restoreOnly
+                    ? "Restore only this device"
+                    : "Save policy; I will reboot manually",
+            SecondaryButtonText = isPendingApply
+                ? "Restore original"
+                : row.TargetKind == "Gpu"
+                    ? restoreOnly
+                        ? "Restore and restart only this GPU driver/device"
+                        : "Restart only this GPU driver/device"
+                    : null,
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
         };
 
         var result = await dialog.ShowAsync();
-        if (result == ContentDialogResult.Secondary && row.TargetKind == "Gpu")
+        if (result == ContentDialogResult.Secondary)
         {
-            return ManualAffinityActionChoice.RestartDeviceOnly;
+            if (isPendingApply)
+            {
+                return ManualAffinityActionChoice.RestoreOnlyDevice;
+            }
+
+            if (row.TargetKind == "Gpu")
+            {
+                return ManualAffinityActionChoice.RestartDeviceOnly;
+            }
         }
 
         if (result != ContentDialogResult.Primary)
@@ -1845,7 +1927,8 @@ public sealed partial class MainWindow
         string AllocatedAffinity,
         ulong? StoredMask,
         bool HasExplicitOverride,
-        MutationJournalEntry? PendingRecovery)
+        MutationJournalEntry? PendingRecovery,
+        ulong? PendingMask)
     {
         public bool HasPendingRecovery => PendingRecovery is not null;
     }
