@@ -1426,7 +1426,7 @@ public sealed partial class MainWindow
             ? row.TargetKind switch
             {
                 "Xhci" => $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep moving the USB mouse/using USB input during the ~10 s ETW verification; Windows may briefly restart the controller…",
-                "Gpu" => $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep representative graphics activity running during the ~10 s ETW verification; Windows may briefly restart the device…",
+                "Gpu" => $"Storing {FormatMask(requestedMask)} for {row.Device.DisplayName}. Reboot Windows after this step, then reopen the panel and apply the same mask again to complete allocation + ETW verification.",
                 _ => $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. Windows will restart the device when possible and verify the stored affinity policy; active allocation is also verified when Windows exposes it.",
             }
             : $"Restoring journal-owned original state for {row.Device.DisplayName}…";
