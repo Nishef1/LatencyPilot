@@ -94,7 +94,7 @@ public sealed partial class MainWindow
                 {
                     1 => "Short paired screening of the selected CPUs. Original is always restored; this cannot close Gate A.",
                     2 => "Five 10-second Original measurements retain every sample. No GPU restart, affinity write or candidate Keep. This checks measurement variability before a search.",
-                    _ => "Physical-core screening, bounded SMT refinement and three independent finalist pairs. Keep requires repeatable improvement and final ISR placement proof.",
+                    _ => "Every eligible logical CPU receives a real paired screen. Only shortlist/finalist rechecks are adaptive. Keep requires repeatable improvement and final ISR placement proof.",
                 };
                 error.Text = string.Empty;
             }
