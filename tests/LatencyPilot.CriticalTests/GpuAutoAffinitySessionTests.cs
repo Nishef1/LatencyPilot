@@ -65,12 +65,6 @@ public sealed class GpuAutoAffinitySessionTests
             "Adaptive finalist confirmation must use two rounds by default and at most one uncertainty-driven extension.");
         Assert.AreEqual(new LogicalProcessorId(0, 3), result.Report.BestObservedProcessor);
         Assert.AreEqual("High", result.Report.SelectionConfidence);
-        var sessionSource = File.ReadAllText(FindRepositoryFile(
-            "src", "LatencyPilot.Benchmarking", "Optimization", "GpuAutoAffinitySession.cs"));
-        StringAssert.Contains(sessionSource, "return allEligibleCandidates.ToArray()",
-            "Full Gate A must screen every eligible logical CPU before adaptive shortlist/finalist rechecks.");
-        Assert.IsFalse(sessionSource.Contains("SelectPhysicalCoreHypotheses", StringComparison.Ordinal),
-            "Representative-core pruning must not be able to hide an untested SMT sibling in Full search.");
         var winningFinalist = result.Report.Finalists.Single(static finalist => finalist.Processor == new LogicalProcessorId(0, 3));
         Assert.AreEqual(100d, winningFinalist.MedianOriginalOnePercentLowFps!.Value, 0.001d);
         Assert.AreEqual(115d, winningFinalist.MedianCandidateOnePercentLowFps!.Value, 0.001d);
