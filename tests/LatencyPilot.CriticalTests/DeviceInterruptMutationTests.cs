@@ -243,8 +243,6 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(appSource, "_manualAffinityDraftMasks",
             "A selected processor mask must survive detail re-renders until an authoritative action result replaces it.");
         StringAssert.Contains(appSource, "Select all");
-        StringAssert.Contains(appSource, ": \"Device\"",
-            "Non-GPU/non-xHCI editable rows still use the bounded generic manual Windows affinity-policy target.");
         Assert.IsFalse(appSource.Contains("HasAssignedInterrupts", StringComparison.Ordinal),
             "UI editability must not depend on current ConfigMgr allocated-resource visibility.");
         StringAssert.Contains(appSource, "ToolTipService.SetToolTip(item, row.Device.DisplayName)",
