@@ -89,6 +89,17 @@ internal sealed class DeviceInterruptMutationTransaction
                 return new(preWriteAbort, null, false);
             }
             ApplyCandidate(original, candidate);
+            if (original.TargetKind == DeviceInterruptTargetKind.DisplayAdapter)
+            {
+                var pending = journal.Transition(
+                    applying.ExperimentId,
+                    applying.Revision,
+                    MutationJournalState.Applying,
+                    MutationJournalState.ApplyRebootPending,
+                    "Display-adapter interrupt-affinity policy is stored. Reboot is required before active placement can be verified.");
+                return new(pending, null, false);
+            }
+
             var restart = DeviceConfigurationRestartCoordinator.RestartAfterConfigurationChange(original.DeviceInstanceId);
             if (restart.SystemRestartRequired)
             {
@@ -235,6 +246,18 @@ internal sealed class DeviceInterruptMutationTransaction
             {
                 Restore(original, candidate.Operation);
             }
+
+            if (original.TargetKind == DeviceInterruptTargetKind.DisplayAdapter)
+            {
+                var pending = journal.Transition(
+                    reverting.ExperimentId,
+                    reverting.Revision,
+                    MutationJournalState.Reverting,
+                    MutationJournalState.RollbackRebootPending,
+                    "Original display-adapter interrupt-affinity policy is stored. Reboot is required before rollback activation can be verified.");
+                return new(pending, null, true);
+            }
+
             var restart = DeviceConfigurationRestartCoordinator.RestartAfterConfigurationChange(original.DeviceInstanceId);
             if (restart.SystemRestartRequired)
             {
