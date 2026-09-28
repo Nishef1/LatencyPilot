@@ -313,11 +313,29 @@ internal static class ManualDeviceAffinityRunner
 
         if (prepared.NoWriteRequired)
         {
+            var allocationObservable = CanObserveAllocatedAffinity(
+                options.DeviceInstanceId,
+                out var allocationStatus);
             var assignmentVerified = VerifyAllocatedAffinity(
                 options.DeviceInstanceId,
                 candidate.AffinityMask,
                 out var masks,
                 out var assignmentReason);
+
+            if (!allocationObservable)
+            {
+                return CreateReport(
+                    options,
+                    "AlreadyStoredPolicy",
+                    succeeded: true,
+                    TryGetPresentDevice(options.DeviceInstanceId),
+                    experimentId: null,
+                    restartRequired: false,
+                    verification: $"Stored policy matches the requested mask. Active translated allocation is unavailable ({allocationStatus}), so runtime GPU placement is not claimed.",
+                    message: "The requested GPU affinity policy is already stored. Windows is not exposing translated interrupt allocation for this adapter, so LatencyPilot keeps this as a manual policy state rather than claiming runtime-verified placement.",
+                    allocatedMasks: masks);
+            }
+
             var runtime = assignmentVerified
                 ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
                 : new ManualRuntimePlacementVerification(
@@ -334,7 +352,7 @@ internal static class ManualDeviceAffinityRunner
                 verification: $"{assignmentReason} {runtime.Reason}",
                 message: verified
                     ? "The requested GPU affinity is already active; translated allocation and clean GPU ISR placement both match the requested mask."
-                    : "The requested GPU affinity is already stored, but active translated allocation plus GPU ISR placement were not both proven. No new write was attempted.",
+                    : "The requested GPU affinity is already stored, but readable runtime evidence did not fully prove the requested placement. No new write was attempted.",
                 allocatedMasks: masks);
         }
 
@@ -394,11 +412,32 @@ internal static class ManualDeviceAffinityRunner
         GpuInterruptAffinityCandidate candidate,
         Guid experimentId)
     {
+        var allocationObservable = CanObserveAllocatedAffinity(
+            options.DeviceInstanceId,
+            out var allocationStatus);
         var assignmentVerified = VerifyAllocatedAffinity(
             options.DeviceInstanceId,
             candidate.AffinityMask,
             out var masks,
             out var assignmentReason);
+
+        if (!allocationObservable)
+        {
+            var keptPolicy = transaction.KeepStoredPolicyVerified(
+                experimentId,
+                storedPolicyVerified: true);
+            return CreateReport(
+                options,
+                "AppliedPolicyKept",
+                succeeded: keptPolicy.State == MutationJournalState.Kept,
+                TryGetPresentDevice(options.DeviceInstanceId),
+                experimentId,
+                restartRequired: false,
+                verification: $"Stored policy and activation/restart path were verified. Active translated allocation is unavailable ({allocationStatus}); no active ISR-placement claim is made.",
+                message: "GPU affinity policy was retained as an explicit manual choice because the requested mask is stored, but Windows is not exposing translated interrupt allocation for this adapter. LatencyPilot does not claim runtime-verified placement.",
+                allocatedMasks: masks);
+        }
+
         var runtime = assignmentVerified
             ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
             : new ManualRuntimePlacementVerification(
@@ -421,8 +460,8 @@ internal static class ManualDeviceAffinityRunner
                     restartRequired: true,
                     verification: verification,
                     message: options.RestartDeviceOnly
-                        ? "GPU affinity verification failed. The exact original policy is stored again, but Windows requires a full system reboot to verify rollback activation after the device-only restart request."
-                        : "GPU affinity verification failed. The exact original policy is stored again without live-restarting the display adapter; reboot is required to verify rollback activation.",
+                        ? "Readable GPU placement evidence contradicted or failed the requested mask. The exact original policy is stored again, but Windows requires a full system reboot to verify rollback activation."
+                        : "Readable GPU placement evidence contradicted or failed the requested mask. The exact original policy is stored again; reboot is required to verify rollback activation.",
                     allocatedMasks: masks);
             }
 
@@ -434,7 +473,7 @@ internal static class ManualDeviceAffinityRunner
                 experimentId,
                 restartRequired: false,
                 verification: verification,
-                message: "GPU affinity did not pass translated-allocation plus target-only ISR verification; the exact original state was restored.",
+                message: "Readable translated-allocation/runtime GPU evidence did not pass the requested mask; the exact original state was restored.",
                 allocatedMasks: masks);
         }
 
