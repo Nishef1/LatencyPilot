@@ -159,21 +159,19 @@ Structural evidence failures still fail closed immediately: invalid identity, no
 
 ## 8. Full-search candidate strategy
 
-### Stage A — physical-core representatives
+### Stage A — exhaustive logical-CPU first pass
 
-Screen one eligible logical representative per eligible physical core with a 10-second local pair.
+Screen **every eligible logical CPU** with one 10-second local Original-before → Candidate → Original-after pair. Full search does not infer the quality of an untested SMT sibling from a physical-core representative.
 
-### Stage B — uncertainty-aware sibling refinement
+This exhaustive first pass is the minimum evidence needed to call the result a machine-wide best-observed logical CPU. It deliberately spends measurement time here so later pruning cannot hide an untested sibling.
 
-A one-pair point estimate is not trusted as a hard cut. Keep at most four physical-core hypotheses whose observed effect plus bounded uncertainty can still overlap the leader, then screen their eligible siblings.
+### Stage B — adaptive shortlist and recheck
 
-### Stage C — adaptive shortlist and recheck
-
-Across all valid logical-CPU screens, retain the observed top four whenever four structurally valid CPUs exist. When fewer than four exist, retain all of them. After that guaranteed recheck set, admit at most one additional CPU whose median paired 1%-low effect plus bounded uncertainty remains within one percentage point of the current leader, for a hard maximum of five.
+Across all valid logical-CPU screens, retain the observed top four whenever four structurally valid CPUs exist. When fewer than four exist, retain all of them. After that guaranteed recheck set, admit at most one additional CPU whose first-pass paired 1%-low effect plus bounded uncertainty remains within one percentage point of the current leader, for a hard maximum of five.
 
 Bounded uncertainty is the maximum of one percentage point, effect MAD when repeated short evidence exists, and median local-control movement capped at that pair's drift budget.
 
-Every shortlisted CPU receives one additional 10-second local pair. Clear losers do not.
+Every shortlisted CPU receives one additional 10-second local pair. Only **repeat** work is adaptive; no eligible logical CPU is pruned before first-pass evidence exists.
 
 Then rank shortlisted CPUs by the median of their short-screen evidence and advance only the top two logical CPUs.
 
@@ -315,6 +313,18 @@ Hosted CI can verify software contracts and compilation. It cannot prove:
 - LocalSystem/package/signing behavior.
 
 Physical Gate A therefore remains a separate requirement on one exact clean green `main` revision.
+
+## 17. Non-GPU subsystem measurement boundaries
+
+These are scope rules for future work, not an expansion of the current `gpu-affinity-benchmark-v6` method:
+
+- **xHCI:** automatic decisions remain bound to the exact primary-input controller and require controller-specific runtime placement verification.
+- **Network/RSS:** no GPU-style single-CPU ranking is defined. RSS deliberately distributes receive work across processors and MSI-X may associate messages with RSS queues. Any future network experiment must first capture physical-NIC identity, RSS capabilities/profile/queue count, RSS processor set and per-CPU network interrupt/DPC evidence. Public-Internet speed tests are not decision-grade benchmark authority; use kernel/local evidence and a controlled local peer when available.
+- **Storage:** diagnostic evidence only. No storage affinity/MSI/queue benchmark or mutation is part of LatencyPilot's planned optimization methods.
+- **Audio/WDF:** diagnostic until an exact device/controller attribution and subsystem-specific verifier exist. A high framework/module count alone is not a mutation target.
+- **Cross-subsystem allocation:** sequential exclusion/guardrails only. Do not introduce a composite score or generic optimizer to anticipate future subsystems.
+
+A future NIC mutation requires a separate ADR and measurement contract; this document does not authorize it.
 
 ## 17. Interpretation rules
 

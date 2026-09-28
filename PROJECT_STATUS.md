@@ -44,6 +44,17 @@ NIC/RSS mutation, audio affinity, BIOS/HAGS/MSI/power changes and a generic cros
 
 The v1 decisions are deliberately sequential: GPU benchmark evidence owns only the GPU decision; after the GPU reaches a verified terminal state, one fresh quiet ETW headroom capture selects the primary-input xHCI CPU. There is no joint GPU/xHCI weighted score and no second per-CPU USB benchmark.
 
+### 2026-09-28 scope reconciliation
+
+Research and source review found four scope contradictions and resolves them without widening v1:
+
+- an earlier expansion idea would have made physical NIC/RSS the third automatic v1 stage, but Windows RSS is a separate multi-CPU receive-steering mechanism and MSI-X can align interrupts with RSS queues. **Decision:** keep NIC/RSS outside v1; after v1 closure, start with read-only physical-NIC/RSS evidence and require a dedicated ADR/method before any mutation;
+- the development manual picker currently allows generic storage-device affinity edits, while the owner direction and current Windows storage architecture argue against LatencyPilot tuning storage. **Decision:** storage is diagnostics-only; narrowing storage/PCI-bridge rows to inspection-only is an open cleanup item;
+- a generic WDF stack-attribution/optimizer layer was considered to explain every remaining hotspot. **Decision:** do not build it preemptively; use existing module evidence and exact xHCI routing first, then add deeper attribution only for an unresolved material hotspot;
+- a generic cross-subsystem reservation/weighted allocator was considered for GPU/xHCI/NIC/audio. **Decision:** retain the current sequential model and simple physical-core exclusion. No new allocator infrastructure is justified.
+
+This reconciliation is a planning/scope change only. Current automatic source remains GPU → primary-input xHCI, and public mutation remains unarmed.
+
 ## Implemented source
 
 ### Measurement/recovery foundations
@@ -104,7 +115,7 @@ The Devices page now exposes a development-only manual affinity surface without 
 
 - the development UI keeps the familiar Interrupt-Affinity Policy Configuration Tool information model, but now opens as an independent modern WinUI tool window with an adaptive device master/detail layout, supported-target-first filtering, theme-matched title chrome, concise advanced identity details, Fluent device/action icons, physical-core-grouped multi-CPU selection, and Current policy / Specified mask / Current assignment evidence;
 - current stored interrupt policy / `AssignmentSetOverride` and translated allocated interrupt-resource masks are shown separately for latency-sensitive present devices;
-- every present device row in the development affinity tool can expose the documented Windows group-0 interrupt-affinity policy through the same bounded journal/restart/rollback substrate; current ConfigMgr allocation visibility no longer gates whether the user can set the policy;
+- every present device row in the current development affinity tool can expose the documented Windows group-0 interrupt-affinity policy through the same bounded journal/restart/rollback substrate; current ConfigMgr allocation visibility no longer gates whether the user can set the policy. **Known scope mismatch:** storage-class and PCI bridge/root-complex rows are still generically writable in this development surface, but the reconciled product direction makes them inspection-only; cleanup is open;
 - GPU and USBXHCI retain stronger subsystem-specific runtime ISR verification capability. Generic devices—and manual GPU when ConfigMgr cannot expose translated allocation—may retain an explicit policy-only result after stored policy + activation/restart are verified; policy-only states make no active-placement or device-specific ISR claim. When readable GPU/xHCI runtime evidence exists, contradictory allocation/ISR evidence remains rollback-authoritative;
 - recovery compatibility is retained only so an HDAudio MSI experiment journaled by the superseded development build can still Restore its exact original state; no new HDAudio MSI Apply/Keep is exposed;
 - manual Apply accepts a non-empty group-0 KAFFINITY set and uses an elevated one-shot helper: exact snapshot → journal → store policy → activation/restart handling → re-read stored policy → verify translated allocation when observable → full verified Keep, policy-only Keep when active allocation is unavailable, or exact rollback on contradictory readable evidence. Pending ApplyRebootPending candidates resume the same journal-owned mask instead of being converted into Restore;
@@ -213,11 +224,13 @@ Graphics-hook warnings such as `nvspcap64.dll` remain explicit interference cont
 
 ## Immediate execution ladder
 
-1. **Completed now:** the latest-commit audit found and corrected two verification defects. GPU direct-driver ISR attribution no longer rejects a second display adapter merely for existing; it is accepted only when the target driver service is unique, while shared-service attribution and multi-adapter `dxgkrnl` fallback remain fail-closed. The development HDAudio MSI Apply/Keep path was removed because it incorrectly interpreted `IRQ_DES_64.IRQD_Flags` as `CM_RESOURCE_INTERRUPT_MESSAGE`; HDAudio stays read-only and recovery-only Restore compatibility is preserved for any already journaled state.
-2. **Evidence:** the source review was reconciled against the Windows ConfigMgr/WDM resource contracts and the existing critical tests were updated without increasing the permanent-test count. The older green workflow **#1648** belongs to superseded revision `bbe6abc925014ec7f4825bebc8d2c947357fc94e` and is not reused as exact-head evidence; hosted **Tests for this revision are pending**.
-3. **Still open:** exact-head Tests; one clean physical v6 Full run proving stored mask → translated allocation → direct-driver ISR placement; repeat/recovery/render inspection; integrated automatic xHCI apply/runtime verification. Public product mutation remains unarmed.
-4. **Next stage:** get exact-head hosted Tests green, then run GPU Gate A on owner hardware and inspect the mutation audit plus active resource masks before interpreting latency placement.
-5. **After that:** repeat the full GPU search for reproducibility, close Stop-safely/recovery/render gates, then continue the narrow GPU→xHCI product arming chain.
+1. **Completed source work:** GPU Gate A v6 now gives every eligible logical CPU a paired first-pass screen, keeps best-observed rank separate from retained CPU, and can try the highest-ranked guardrail-safe finalist for final placement verification.
+2. **Hosted evidence before this documentation reconciliation:** Tests **#1703** passed on source revision `06a96b416befc1e3f32971da3c5487742b73e363`. Any later documentation/source revision used for physical closure still requires its own exact-head green run.
+3. **Scope decision completed:** v1 stays GPU → exact primary-input xHCI. NIC/RSS becomes a post-v1 read-only-first candidate; storage remains diagnostics-only; audio remains diagnostic/conditional; no generic WDF optimizer or cross-subsystem allocator is added.
+4. **Still open for v1:** one clean physical v6 Full GPU Gate A run, whole-search repeatability, Stop/recovery/render inspection, integrated automatic xHCI apply/runtime verification, combined reboot/recovery and final product arming.
+5. **Small cleanup after the physical v1 path is stable:** narrow the development manual affinity picker so storage-class and PCI bridge/root-complex rows are inspection-only. Do not couple that cleanup to a new optimizer.
+6. **Only after v1 closure:** prototype physical-NIC/RSS **read-only** evidence using existing Windows/ETW/CIM surfaces. Mutation is not authorized until a separate ADR/methodology and physical evidence make a bounded RSS-aware experiment worthwhile.
+
 
 ## Completion rule
 

@@ -30,7 +30,7 @@ preflight / quiet check
 
 A mutation feature is incomplete unless it snapshots exact original state, journals ownership, applies one allowlisted change, verifies stored/runtime state, and can restore the exact baseline after cancellation/failure.
 
-NIC/RSS mutation, audio affinity, BIOS/HAGS/MSI/power-plan changes and generic cross-subsystem/Pareto auto-tuning are outside the v1 automatic path.
+NIC/RSS mutation, audio affinity, BIOS/HAGS/MSI/power-plan changes and generic cross-subsystem/Pareto auto-tuning are outside the v1 automatic path. Storage is diagnostics-only by product policy: no automatic storage affinity/MSI/queue mutation is planned. Post-v1 network work, if justified, begins as read-only physical-NIC/RSS evidence and must model RSS/MSI-X separately from device interrupt-affinity policy rather than reuse the GPU single-CPU search.
 
 ## 2. Supported target
 
@@ -354,13 +354,25 @@ The GPU and xHCI choices are sequential, not a generic Pareto optimizer.
 
 ### Development manual device-affinity surface
 
-The non-elevated App may inspect stored interrupt policy and translated allocated interrupt resources for present PnP devices. A development-only one-shot elevated helper permits IntPolicy-style manual CPU selection for any present device row. It writes only the documented Windows `DevicePolicy=IrqPolicySpecifiedProcessors` plus `AssignmentSetOverride` KAFFINITY values, reuses the durable mutation journal, target restart/reboot handling and exact rollback substrate, and does not expose an arbitrary registry writer.
+The non-elevated App may inspect stored interrupt policy and translated allocated interrupt resources for present PnP devices. The current development-only one-shot elevated helper permits IntPolicy-style manual CPU selection broadly across present device rows. It writes only the documented Windows `DevicePolicy=IrqPolicySpecifiedProcessors` plus `AssignmentSetOverride` KAFFINITY values, reuses the durable mutation journal, target restart/reboot handling and exact rollback substrate, and does not expose an arbitrary registry writer. This broad development exposure is not the target product boundary: storage-class devices and PCI bridge/root-complex devices are scheduled to become inspection-only, and no product optimizer may depend on their current generic editability.
 
 For every manual change, the stored candidate must survive activation/restart handling and a second hardware-key read before the journal may retain it. When Windows exposes translated interrupt resources, they are authoritative: readable allocation outside the requested mask is rollback-authoritative. If ConfigMgr cannot expose translated allocation, a generic device or manual GPU may retain the explicit policy as **policy-only** after stored-policy/restart verification; the UI/report must state that active ISR placement is unverified. A fully runtime-verified GPU result additionally requires a clean ETW capture with **direct display-driver** target-only ISR execution; shared-service attribution and multi-adapter `dxgkrnl` fallback remain fail-closed. Reboot-pending manual GPU candidates are reconstructed from the durable journal and resume the same target/mask; pending Apply must never be silently converted into Restore. xHCI remains stricter: it uses a controller-specific `USBXHCI` verifier and fails closed when attribution is ambiguous.
 
-HDAudio **MSI enablement** remains disabled. The helper may recognize `AudioMsi` only to restore exact journal-owned MSI state from the superseded development lab; it cannot start or Keep a new HDAudio MSI experiment. This recovery compatibility exists so removing the invalid verifier does not strand an owned mutation. Manual audio/network/storage/HID affinity edits are policy edits only unless Windows exposes translated allocation. For NICs, RSS/MSI-X steering is a separate NDIS mechanism and is never conflated with this device policy.
+HDAudio **MSI enablement** remains disabled. The helper may recognize `AudioMsi` only to restore exact journal-owned MSI state from the superseded development lab; it cannot start or Keep a new HDAudio MSI experiment. This recovery compatibility exists so removing the invalid verifier does not strand an owned mutation. Current manual audio/network/HID affinity edits are policy edits only unless Windows exposes translated allocation. Current generic storage editability is transitional debt and is not part of the target architecture. For NICs, RSS/MSI-X steering is a separate NDIS mechanism and is never conflated with this device policy.
 
 This developer surface is separate from public product IPC and does not expand the automatic v1 optimizer beyond GPU + primary-input xHCI. `MutationAvailable=false` remains required until the physical/product arming gates close.
+
+## 12. Post-v1 subsystem expansion boundary
+
+Future scope is intentionally asymmetric rather than a generic device optimizer:
+
+- **Network/NIC:** first candidate after v1, but read-only first. Resolve the real physical NIC, RSS capabilities/profile/queue count, current RSS processor set, per-CPU network interrupt/DPC evidence and MSI/MSI-X context. A future experiment may change a small bounded RSS-aware configuration only after a dedicated ADR/methodology; it must not treat the NIC as a GPU-style single-CPU winner.
+- **Storage:** inventory/evidence only. No LatencyPilot affinity, MSI/MSI-X or queue mutation for NVMe/SATA/Storport. Windows storage stacks already use multi-queue/message and dynamic redirection mechanisms that a generic single-mask optimizer would fight rather than understand.
+- **Audio:** diagnostic by default. USB audio is first attributed through its owning USB/xHCI controller. PCIe/HDAudio mutation requires a future device-specific verifier and physical evidence; it is not implied by high `Wdf01000`/audio DPC observations.
+- **WDF/other devices:** do not add a generic stack-attribution optimizer preemptively. Existing ETW module attribution and exact xHCI routing are the first tools; deeper stack attribution is justified only by a remaining material unexplained hotspot.
+- **Allocation:** continue simple sequential exclusion of already-selected physical cores. No generic reservation service, weighted score or Pareto allocator is introduced for hypothetical future subsystems.
+
+Network evidence must prefer local/kernel measurements over public-Internet variability. Existing offloads, RSS and interrupt moderation are workload-dependent controls and are not blindly disabled.
 
 ## 12. Reboot/resume model
 
