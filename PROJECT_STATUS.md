@@ -227,9 +227,10 @@ Graphics-hook warnings such as `nvspcap64.dll` remain explicit interference cont
 1. **Completed source work:** GPU Gate A v6 now gives every eligible logical CPU a paired first-pass screen, keeps best-observed rank separate from retained CPU, and can try the highest-ranked guardrail-safe finalist for final placement verification.
 2. **Hosted evidence before this documentation reconciliation:** Tests **#1703** passed on source revision `06a96b416befc1e3f32971da3c5487742b73e363`. Any later documentation/source revision used for physical closure still requires its own exact-head green run.
 3. **Scope decision completed:** v1 stays GPU → exact primary-input xHCI. NIC/RSS becomes a post-v1 read-only-first candidate; storage remains diagnostics-only; audio remains diagnostic/conditional; no generic WDF optimizer or cross-subsystem allocator is added.
-4. **Still open for v1:** one clean physical v6 Full GPU Gate A run, whole-search repeatability, Stop/recovery/render inspection, integrated automatic xHCI apply/runtime verification, combined reboot/recovery and final product arming.
-5. **Completed cleanup:** storage-class and Windows System-class infrastructure rows are inspection-only in the manual tool and elevated helper; recovery of older journal-owned state remains supported.
-6. **Only after v1 closure:** prototype physical-NIC/RSS **read-only** evidence using existing Windows/ETW/CIM surfaces. Mutation is not authorized until a separate ADR/methodology and physical evidence make a bounded RSS-aware experiment worthwhile.
+4. **Source hardening completed:** storage/System-class new mutations are blocked in both UI and elevated helper; actual PnP target kind now owns GPU/xHCI/generic verification routing; xHCI runtime verification supports single-controller attribution and allocation-disjoint same-service multi-controller attribution while keeping overlap/unknown peers fail-closed.
+5. **Still open for v1:** one clean physical v6 Full GPU Gate A run, whole-search repeatability, Stop/recovery/render inspection, integration of the verified xHCI path into the normal automatic orchestration, combined reboot/recovery and final product arming.
+6. **Completed cleanup:** storage-class and Windows System-class infrastructure rows are inspection-only in the manual tool and elevated helper; recovery of older journal-owned state remains supported.
+7. **Only after v1 closure:** prototype physical-NIC/RSS **read-only** evidence using existing Windows/ETW/CIM surfaces. Mutation is not authorized until a separate ADR/methodology and physical evidence make a bounded RSS-aware experiment worthwhile.
 
 
 ## Completion rule

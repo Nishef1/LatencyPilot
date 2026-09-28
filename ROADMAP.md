@@ -258,8 +258,9 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] bounded reversible xHCI/controller-affinity mutation source;
 - [x] exact stored-state snapshot and durable journal integration;
 - [x] restart-required/reboot-pending state plus exact rollback/recovery source;
-- [x] fail-closed controller-specific ETW runtime-placement verifier primitive for an unambiguous single present `USBXHCI` controller; a shared module stream across multiple present controllers is not accepted as controller-specific proof;
-- [ ] integrate controller-specific ETW runtime verification into the automatic product flow and retain fail-closed behavior when shared-module attribution is ambiguous;
+- [x] fail-closed controller-specific ETW runtime-placement verifier primitive for either one present `USBXHCI` service instance or multiple same-service controllers whose translated allocations are all readable and disjoint from the requested mask; unknown/overlapping peer allocation remains ambiguous;
+- [x] candidate-aware xHCI runtime verification is integrated into the elevated manual validation path, including exact rollback on failed verification;
+- [ ] integrate the same verified xHCI path into the normal automatic product orchestration after the physical GPU/mutation gates close;
 - [ ] Raw Input timing sanity check after apply;
 - [ ] integrated rollback of USB/xHCI while preserving a proven GPU winner when USB verification fails;
 - [ ] representative high-polling hardware physical evidence.

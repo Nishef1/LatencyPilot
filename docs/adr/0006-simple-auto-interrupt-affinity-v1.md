@@ -88,7 +88,7 @@ verify exact Original → one in-place GPU restart with Original unchanged → r
 → 3–5 scored Original observations for robust median/MAD variability
 → direct Original-before → Candidate → Original-after local pairs
 → one retry for high local drift while structurally valid evidence remains rankable
-→ physical-core representatives with bounded uncertainty-aware refinement
+→ exhaustive paired first-pass screen of every eligible logical CPU
 → observed top four logical CPUs rechecked, plus at most one uncertainty-overlapping fifth challenger
 → top two finalists
 → two shuffled 15 s local pairs per finalist
@@ -150,7 +150,7 @@ The automatic v1 path is intentionally sequential rather than a generic multi-su
 3. Resolve the primary Raw Input route through USB topology to the exact interrupt-owning xHCI controller.
 4. Exclude the whole physical core containing a kept GPU target when choosing the xHCI target.
 5. Choose xHCI placement from measured interrupt duration/tail evidence, with counts as context rather than cost by themselves.
-6. Apply xHCI affinity only after the shared mutation/recovery substrate is physically proven and the integrated controller-specific verification path exists. Runtime attribution must be unambiguous; a shared `USBXHCI.sys` module stream is insufficient when multiple present controllers cannot be distinguished.
+6. Apply xHCI affinity only after the shared mutation/recovery substrate is physically proven and the integrated controller-specific verification path exists. Runtime attribution must be unambiguous. A single present `USBXHCI` service instance is directly usable; when multiple controllers share `USBXHCI.sys`, attribution may proceed only if translated allocation for every same-service peer is readable and disjoint from the requested mask. Unknown or overlapping peer allocation remains fail-closed.
 7. If xHCI verification fails, restore the xHCI state while preserving a separately proven GPU state when that ownership can be demonstrated safely; otherwise fail closed to the broader baseline.
 
 The selected target is the interrupt-owning controller, not blindly the leaf mouse device.
@@ -177,7 +177,7 @@ Stored registry policy proves configuration intent only. ConfigMgr resource data
 
 GPU Keep requires three distinct proofs under ADR 0011: the requested stored policy, translated allocated interrupt resources confined to the requested processor mask, and clean **direct display-driver** target-only ISR placement. A shared `dxgkrnl` WDDM ISR stream may remain diagnostic context but is not device-specific enough to authorize Keep.
 
-The integrated xHCI path must independently establish controller-specific runtime placement before that subsystem can be called verified.
+The integrated xHCI path must independently establish controller-specific runtime placement before that subsystem can be called verified. Shared-driver attribution is accepted only when translated allocation proves that no same-service peer can execute an interrupt on the requested mask; otherwise the shared module stream remains ambiguous.
 
 ## Before/after evidence
 
