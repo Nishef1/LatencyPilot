@@ -153,9 +153,9 @@ Candidate bars remain based on persisted paired 1%-low effect and UI code does n
 
 ### USB/xHCI recommendation
 
-After a verified GPU Keep, current source can stop the GPU benchmark, capture quiet ETW headroom, resolve primary Raw Input routes to exact xHCI controllers, exclude the GPU winner's physical core, rank remaining CPUs by interrupt duration/tail evidence, and persist the recommendation.
+After a verified GPU Keep, current source can stop the GPU benchmark, capture quiet ETW headroom, carry an explicit primary Raw Input mouse identity across the elevation boundary, resolve it to one exact xHCI controller, exclude the GPU winner's physical core, rank remaining CPUs by interrupt duration/tail evidence, and persist/render the recommendation. On multi-controller systems the planner now excludes CPUs that overlap readable same-service peer-controller allocation and returns NotReady when peer allocation is unreadable, so it does not recommend a candidate the runtime verifier cannot attribute safely.
 
-The xHCI recommendation remains read-only/product-gated until the shared mutation/recovery substrate closes physical GPU Gate A. A fail-closed controller-specific ETW runtime-placement verifier now exists for unambiguous single-`USBXHCI`-controller systems, but the automatic product apply/verify flow and multi-controller attribution remain open.
+The xHCI recommendation remains read-only/product-gated until the shared mutation/recovery substrate closes physical GPU Gate A. The controller-specific runtime-placement verifier supports one present `USBXHCI` service instance and same-service multi-controller systems when translated allocations are readable and disjoint from the requested mask; unknown or overlapping peers remain fail-closed. The remaining open item is automatic product Apply/Keep orchestration plus physical evidence, not attribution-source logic.
 
 ## Verification state
 
