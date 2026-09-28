@@ -223,6 +223,10 @@ public sealed partial class MainWindow
                         : "Device";
                 pendingByTarget.TryGetValue(device.InstanceId, out var pendingRecovery);
                 var pendingMask = TryGetPendingAffinityMask(pendingRecovery);
+                var canStartNewPolicyMutation =
+                    ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation(
+                        device,
+                        out var inspectionOnlyReason);
                 return new ManualAffinityDeviceRow(
                     device,
                     classified.ContainsKey(device.InstanceId) ? kind : null,
@@ -233,9 +237,11 @@ public sealed partial class MainWindow
                     device.InterruptConfiguration.DevicePolicy == 4 &&
                     device.InterruptConfiguration.AssignmentSetOverrideMask is not null,
                     pendingRecovery,
-                    pendingMask);
+                    pendingMask,
+                    canStartNewPolicyMutation,
+                    inspectionOnlyReason);
             })
-            .OrderByDescending(static row => row.TargetKind is not null)
+            .OrderByDescending(static row => row.CanStartNewPolicyMutation)
             .ThenByDescending(static row => row.HasPendingRecovery)
             .ThenByDescending(static row => row.HasExplicitOverride)
             .ThenBy(static row => row.Kind?.ToString(), StringComparer.OrdinalIgnoreCase)
@@ -377,7 +383,7 @@ public sealed partial class MainWindow
             return;
         }
 
-        var supportedCount = snapshot.Rows.Count;
+        var supportedCount = snapshot.Rows.Count(static row => row.CanStartNewPolicyMutation);
         var detailHost = new StackPanel
         {
             Spacing = 0d,
@@ -421,7 +427,7 @@ public sealed partial class MainWindow
         });
         devicesHeading.Children.Add(new TextBlock
         {
-            Text = $"{snapshot.Rows.Count.ToString(CultureInfo.InvariantCulture)} present devices · manual affinity policy available",
+            Text = $"{supportedCount.ToString(CultureInfo.InvariantCulture)} editable · {snapshot.Rows.Count.ToString(CultureInfo.InvariantCulture)} present devices",
             Style = AppStyle("CaptionTextStyle"),
             Foreground = ThemeBrush("MutedTextBrush"),
         });
@@ -577,7 +583,7 @@ public sealed partial class MainWindow
         searchBox.TextChanged += (_, _) => PopulateDevices(searchBox.Text, null);
 
         var initialId = selectedDeviceInstanceId
-            ?? snapshot.Rows.FirstOrDefault(static row => row.TargetKind is not null)?.Device.InstanceId
+            ?? snapshot.Rows.FirstOrDefault(static row => row.CanStartNewPolicyMutation || row.HasPendingRecovery)?.Device.InstanceId
             ?? snapshot.Rows[0].Device.InstanceId;
         PopulateDevices(string.Empty, initialId);
     }
@@ -613,29 +619,34 @@ public sealed partial class MainWindow
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
 
-        if (row.TargetKind is not null)
-        {
-            var badge = BuildManualAffinityPill(
-                row.TargetKind switch
+        var badge = BuildManualAffinityPill(
+            row.CanStartNewPolicyMutation
+                ? row.TargetKind switch
                 {
                     "Gpu" => "GPU",
                     "Xhci" => "xHCI",
                     _ => "Policy",
-                },
-                "SemanticGoodBrush",
-                "PremiumOverviewQuietBrush");
-            badge.VerticalAlignment = VerticalAlignment.Center;
-            ToolTipService.SetToolTip(
-                badge,
-                row.TargetKind switch
+                }
+                : row.HasPendingRecovery
+                    ? "Recovery"
+                    : "Read-only",
+            row.CanStartNewPolicyMutation ? "SemanticGoodBrush" : "MutedTextBrush",
+            "PremiumOverviewQuietBrush");
+        badge.VerticalAlignment = VerticalAlignment.Center;
+        ToolTipService.SetToolTip(
+            badge,
+            row.CanStartNewPolicyMutation
+                ? row.TargetKind switch
                 {
                     "Gpu" => "GPU interrupt affinity · Supported with runtime ISR verification",
                     "Xhci" => "USB xHCI interrupt affinity · Supported with runtime ISR verification",
                     _ => "Windows device interrupt-affinity policy · Active placement is verified when Windows exposes allocated interrupt resources",
-                });
-            Grid.SetColumn(badge, 2);
-            grid.Children.Add(badge);
-        }
+                }
+                : row.HasPendingRecovery
+                    ? "New affinity changes are blocked for this device class; a previously journaled LatencyPilot change can still be restored."
+                    : row.InspectionOnlyReason ?? "Inspection only.");
+        Grid.SetColumn(badge, 2);
+        grid.Children.Add(badge);
 
         return grid;
     }
@@ -757,16 +768,18 @@ public sealed partial class MainWindow
             Spacing = 6d,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var capabilityLabel =
-            row.TargetKind == "Gpu" &&
-            row.HasExplicitOverride &&
-            row.Device.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available
-                ? "Policy set · runtime unverified"
-                : row.TargetKind is "Gpu" or "Xhci"
-                    ? "Verification capable"
-                    : "Manual policy";
-        var capabilityBrush =
-            capabilityLabel == "Policy set · runtime unverified"
+        var capabilityLabel = !row.CanStartNewPolicyMutation
+            ? row.HasPendingRecovery ? "Inspection only · recovery" : "Inspection only"
+            : row.TargetKind == "Gpu" &&
+                row.HasExplicitOverride &&
+                row.Device.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available
+                    ? "Policy set · runtime unverified"
+                    : row.TargetKind is "Gpu" or "Xhci"
+                        ? "Verification capable"
+                        : "Manual policy";
+        var capabilityBrush = !row.CanStartNewPolicyMutation
+            ? "MutedTextBrush"
+            : capabilityLabel == "Policy set · runtime unverified"
                 ? "SemanticAttentionBrush"
                 : row.TargetKind is "Gpu" or "Xhci"
                     ? "SemanticGoodBrush"
@@ -822,9 +835,11 @@ public sealed partial class MainWindow
         title.Children.Add(titleRow);
         title.Children.Add(new TextBlock
         {
-            Text = row.TargetKind is null
-                ? "This device is available for inspection only."
-                : "Choose the logical processors that may service this device interrupt.",
+            Text = row.CanStartNewPolicyMutation
+                ? "Choose the logical processors that may service this device interrupt."
+                : row.HasPendingRecovery
+                    ? "This device class is inspection-only for new changes. Restore remains available for its existing journal-owned LatencyPilot change."
+                    : row.InspectionOnlyReason ?? "This device is available for inspection only.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
         });
@@ -913,11 +928,13 @@ public sealed partial class MainWindow
             });
             warningText.Children.Add(new TextBlock
             {
-                Text = row.TargetKind == "Xhci"
-                    ? "Apply & verify re-reads allocation from the elevated helper and keeps nothing unless active allocation and controller-attributed ISR placement are both proven."
-                    : row.TargetKind == "Gpu"
-                        ? "The GPU allocation is not readable. Manual policy can still be retained after the stored mask and restart are verified, but LatencyPilot will label active placement as unverified instead of claiming runtime proof."
-                        : "The current allocation is not readable. Manual policy editing is still available, matching Windows IntPolicy behavior; LatencyPilot will verify the stored policy and device restart, but will label active placement as unverified until Windows exposes interrupt allocation.",
+                Text = !row.CanStartNewPolicyMutation
+                    ? "The current allocation is not readable. This device class is inspection-only, so LatencyPilot will not start a new affinity mutation from this row."
+                    : row.TargetKind == "Xhci"
+                        ? "Apply & verify re-reads allocation from the elevated helper and keeps nothing unless active allocation and controller-attributed ISR placement are both proven."
+                        : row.TargetKind == "Gpu"
+                            ? "The GPU allocation is not readable. Manual policy can still be retained after the stored mask and restart are verified, but LatencyPilot will label active placement as unverified instead of claiming runtime proof."
+                            : "The current allocation is not readable. Manual policy editing is still available, matching Windows IntPolicy behavior; LatencyPilot will verify the stored policy and device restart, but will label active placement as unverified until Windows exposes interrupt allocation.",
                 TextWrapping = TextWrapping.Wrap,
                 Style = AppStyle("CaptionTextStyle"),
                 Foreground = ThemeBrush("MutedTextBrush"),
@@ -936,7 +953,7 @@ public sealed partial class MainWindow
             });
         }
 
-        if (row.TargetKind is not null)
+        if (row.CanStartNewPolicyMutation)
         {
             var selectedProcessors = new HashSet<byte>();
             var initialMask = _manualAffinityDraftMasks.TryGetValue(
@@ -1312,27 +1329,61 @@ public sealed partial class MainWindow
         }
         else
         {
+            var inspectionPanel = new StackPanel { Spacing = 8d };
+            inspectionPanel.Children.Add(new TextBlock
+            {
+                Text = row.InspectionOnlyReason ?? "No new mutation control is exposed for this device.",
+                TextWrapping = TextWrapping.Wrap,
+                Style = AppStyle("CaptionTextStyle"),
+                Foreground = ThemeBrush("MutedTextBrush"),
+            });
+
+            if (row.HasPendingRecovery)
+            {
+                var recoveryButton = new Button
+                {
+                    Style = AppStyle("SecondaryButtonStyle"),
+                    Content = "Restore journal-owned original",
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                };
+                recoveryButton.Click += async (_, _) =>
+                {
+                    var choice = await ConfirmManualAffinityActionAsync(host, row, "Restore", null);
+                    if (choice == ManualAffinityActionChoice.Cancel)
+                    {
+                        return;
+                    }
+
+                    recoveryButton.IsEnabled = false;
+                    await RunManualAffinityActionAsync(
+                        host,
+                        dialogStatusText,
+                        row,
+                        "Restore",
+                        null,
+                        restartDeviceOnly: false);
+                };
+                inspectionPanel.Children.Add(recoveryButton);
+            }
+
             panel.Children.Add(new Border
             {
                 Padding = new Thickness(10d, 8d, 10d, 8d),
                 CornerRadius = new CornerRadius(8d),
                 Background = ThemeBrush("SurfaceAltBrush"),
-                Child = new TextBlock
-                {
-                    Text = "No mutation control is exposed for this device.",
-                    Style = AppStyle("CaptionTextStyle"),
-                    Foreground = ThemeBrush("MutedTextBrush"),
-                },
+                Child = inspectionPanel,
             });
         }
 
         panel.Children.Add(new TextBlock
         {
-            Text = row.TargetKind == "Xhci"
-                ? "xHCI is kept only when Windows allocation and live controller-attributed ISR execution stay inside the requested mask."
-                : row.TargetKind == "Gpu"
-                    ? "GPU manual policy is retained when the stored mask/restart are verified. Full runtime-verified status additionally requires readable translated allocation plus requested-mask-only GPU ISR evidence."
-                    : "For generic devices, LatencyPilot verifies the stored Windows affinity policy and restart. When translated interrupt allocation is readable it must also stay inside the requested mask; otherwise the result is retained as policy-only and clearly marked as active-placement unverified.",
+            Text = !row.CanStartNewPolicyMutation
+                ? "Inspection-only rows never start a new affinity mutation. Existing journal-owned state can still be restored so recovery is not stranded."
+                : row.TargetKind == "Xhci"
+                    ? "xHCI is kept only when Windows allocation and live controller-attributed ISR execution stay inside the requested mask."
+                    : row.TargetKind == "Gpu"
+                        ? "GPU manual policy is retained when the stored mask/restart are verified. Full runtime-verified status additionally requires readable translated allocation plus requested-mask-only GPU ISR evidence."
+                        : "For generic devices, LatencyPilot verifies the stored Windows affinity policy and restart. When translated interrupt allocation is readable it must also stay inside the requested mask; otherwise the result is retained as policy-only and clearly marked as active-placement unverified.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
             Foreground = ThemeBrush("MutedTextBrush"),
@@ -1942,7 +1993,9 @@ public sealed partial class MainWindow
         ulong? StoredMask,
         bool HasExplicitOverride,
         MutationJournalEntry? PendingRecovery,
-        ulong? PendingMask)
+        ulong? PendingMask,
+        bool CanStartNewPolicyMutation,
+        string? InspectionOnlyReason)
     {
         public bool HasPendingRecovery => PendingRecovery is not null;
     }

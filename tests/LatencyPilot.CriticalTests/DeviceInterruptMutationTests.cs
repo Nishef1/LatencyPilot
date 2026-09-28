@@ -1,4 +1,5 @@
 #pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
+using LatencyPilot.Core.Devices;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Service;
@@ -36,6 +37,34 @@ public sealed class DeviceInterruptMutationTests
         Assert.ThrowsExactly<NotSupportedException>(() =>
             DeviceInterruptConfigurationStore.EnsureMsiApplicable(audioOriginal),
             "New HDAudio MSI mutation must stay disabled until active message-signaled delivery has an authoritative verifier.");
+
+        var storageDevice = CreatePresentDevice(
+            new Guid("4D36E967-E325-11CE-BFC1-08002BE10318"),
+            "Test disk");
+        Assert.IsFalse(
+            ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation(
+                storageDevice,
+                out var storageReason));
+        StringAssert.Contains(storageReason!, "diagnostics-only");
+
+        var systemDevice = CreatePresentDevice(
+            new Guid("4D36E97D-E325-11CE-BFC1-08002BE10318"),
+            "Test PCI bridge");
+        Assert.IsFalse(
+            ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation(
+                systemDevice,
+                out var systemReason));
+        StringAssert.Contains(systemReason!, "inspection-only");
+
+        var networkDevice = CreatePresentDevice(
+            new Guid("4D36E972-E325-11CE-BFC1-08002BE10318"),
+            "Test NIC");
+        Assert.IsTrue(
+            ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation(
+                networkDevice,
+                out var networkReason));
+        Assert.IsNull(networkReason);
+
 
         var candidate = DeviceInterruptMutationCandidate.EnableMsi();
         var candidateRoundTrip = DeviceInterruptMutationJournalCodec.DeserializeCandidate(
@@ -118,6 +147,8 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Xhci");
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Device");
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.AudioMsi");
+        StringAssert.Contains(manualRunnerSource, "ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation",
+            "The elevated helper must enforce inspection-only device classes even if its CLI is invoked directly.");
         Assert.IsFalse(manualRunnerSource.Contains("VerifyAndKeepAudioMsi", StringComparison.Ordinal),
             "The superseded HDAudio MSI Apply/Keep path must not return.");
         StringAssert.Contains(manualRunnerSource, "latencypilot-manual-device-affinity-v2");
@@ -166,8 +197,12 @@ public sealed class DeviceInterruptMutationTests
             root, "src", "LatencyPilot.App", "LatencyPilot.App.csproj"));
         StringAssert.Contains(appProjectSource, "Microsoft.Data.Sqlite",
             "The self-contained App must carry the SQLite runtime used by its project-referenced mutation journal inspector.");
-        StringAssert.Contains(appSource, "if (row.TargetKind is not null)",
-            "The shared processor-mask control path must remain explicit in the affinity workspace.");
+        StringAssert.Contains(appSource, "if (row.CanStartNewPolicyMutation)",
+            "The processor-mask controls must be gated by the shared device-class mutation policy, not by UI classification alone.");
+        StringAssert.Contains(appSource, "ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation",
+            "The App and elevated helper must share one device-class mutation boundary.");
+        StringAssert.Contains(appSource, "Restore journal-owned original",
+            "Inspection-only rows must preserve recovery for previously journaled LatencyPilot state.");
         StringAssert.Contains(appSource, "_gateAValidationRunning",
             "Manual mutation must not run concurrently with GPU Gate A.");
         StringAssert.Contains(appSource, "HashSet<byte>",
@@ -184,7 +219,7 @@ public sealed class DeviceInterruptMutationTests
             "A selected processor mask must survive detail re-renders until an authoritative action result replaces it.");
         StringAssert.Contains(appSource, "Select all");
         StringAssert.Contains(appSource, ": \"Device\"",
-            "Every non-GPU/non-xHCI device row must receive the generic manual Windows affinity-policy target.");
+            "Non-GPU/non-xHCI editable rows still use the bounded generic manual Windows affinity-policy target.");
         Assert.IsFalse(appSource.Contains("HasAssignedInterrupts", StringComparison.Ordinal),
             "UI editability must not depend on current ConfigMgr allocated-resource visibility.");
         StringAssert.Contains(appSource, "ToolTipService.SetToolTip(item, row.Device.DisplayName)",
@@ -231,6 +266,18 @@ public sealed class DeviceInterruptMutationTests
         Assert.IsFalse(appSource.Contains("AudioMsi", StringComparison.Ordinal),
             "HDAudio MSI must not be exposed as an editable development UI target.");
     }
+
+    private static PnPDeviceSnapshot CreatePresentDevice(Guid classGuid, string displayName) =>
+        new(
+            $"ROOT\\LATENCYPILOT_TEST\\{classGuid:N}",
+            classGuid,
+            displayName,
+            "LatencyPilot",
+            "ROOT",
+            "test",
+            new DriverMetadataSnapshot(null, null, null),
+            InterruptConfigurationSnapshot.Available(null, null, null, null),
+            InterruptResourceSnapshot.Available([]));
 
     private static string FindRepositoryRoot()
     {

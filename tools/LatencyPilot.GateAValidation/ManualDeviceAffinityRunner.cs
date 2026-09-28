@@ -186,6 +186,18 @@ internal static class ManualDeviceAffinityRunner
                 "New HDAudio MSI experiments are disabled because the current ConfigMgr IRQ descriptor does not authoritatively prove active message-signaled delivery. AudioMsi is retained only for Restore of journal-owned prior state.");
         }
 
+        var presentDevice = TryGetPresentDevice(options.DeviceInstanceId)
+            ?? throw new InvalidOperationException(
+                $"Manual affinity target '{options.DeviceInstanceId}' is not a present Plug and Play device.");
+        if (!ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation(
+                presentDevice,
+                out var inspectionOnlyReason))
+        {
+            throw new NotSupportedException(
+                inspectionOnlyReason ??
+                "This device class is inspection-only and cannot start a new manual affinity mutation.");
+        }
+
         if (options.AffinityMask is not { } affinityMask)
         {
             throw new ArgumentException("--mask or --processor is required for manual affinity apply.");
