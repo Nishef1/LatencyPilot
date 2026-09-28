@@ -81,6 +81,7 @@ try {
 
     Write-Host 'Updating the protected LocalSystem observation Service (UAC may prompt)...' -ForegroundColor Yellow
     $serviceInstallStartedAt = [DateTimeOffset]::UtcNow.AddSeconds(-1)
+    $serviceUpdateDeferredForRecovery = $false
     $serviceInstallResultPath = Join-Path (
         [System.IO.Path]::GetTempPath()) "latencypilot-service-install-$([Guid]::NewGuid().ToString('N')).json"
     try {
@@ -100,11 +101,29 @@ try {
         }
 
         if ($installer.ExitCode -ne 0) {
-            if (-not [string]::IsNullOrWhiteSpace($installDetail)) {
+            $replacementBlockedForRecovery =
+                -not [string]::IsNullOrWhiteSpace($installDetail) -and
+                $installDetail.StartsWith(
+                    'Service replacement is blocked until all managed changes are restored and the mutation journal is healthy.',
+                    [System.StringComparison]::Ordinal)
+
+            if ($replacementBlockedForRecovery) {
+                $existingService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+                if ($null -ne $existingService -and
+                    $existingService.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Running) {
+                    $serviceUpdateDeferredForRecovery = $true
+                    Write-Warning 'Protected Service update was deferred because LatencyPilot owns an unresolved journaled change. The existing running recovery host is preserved so the App can resume or restore that experiment.'
+                }
+                else {
+                    throw "Protected Service replacement is blocked by recovery work and no existing Running recovery host is available. $installDetail"
+                }
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($installDetail)) {
                 throw "Protected Service installation failed: $installDetail"
             }
-
-            throw "Protected Service installation failed with exit code $($installer.ExitCode). The elevated installer returned no diagnostic result."
+            else {
+                throw "Protected Service installation failed with exit code $($installer.ExitCode). The elevated installer returned no diagnostic result."
+            }
         }
     }
     finally {
@@ -113,27 +132,34 @@ try {
 
     $service = Get-Service -Name $serviceName -ErrorAction Stop
     if ($service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running) {
-        throw "Protected Service installation returned successfully, but $serviceName is $($service.Status), not Running."
+        throw "Protected Service is $($service.Status), not Running."
     }
-    Write-Host "Protected Service state: Running ($serviceName)" -ForegroundColor Green
 
-    try {
-        $readiness = Wait-LatencyPilotServiceStartupReadiness `
-            -LogDirectory $serviceLogDirectory `
-            -NotBeforeUtc $serviceInstallStartedAt `
-            -Timeout ([TimeSpan]::FromSeconds(8))
-
-        if ($readiness.UnresolvedCount -eq 0) {
-            Write-Host 'Mutation journal startup inspection: READY (0 unresolved experiments; mutation remains unavailable).' -ForegroundColor Green
-        }
-        else {
-            Write-Warning "Mutation journal startup inspection completed with $($readiness.UnresolvedCount) unresolved experiment(s). Observation can continue, but mutation must remain blocked until recovery is explicit."
-        }
-        Write-Host "Service readiness evidence: $($readiness.LogPath)" -ForegroundColor DarkGray
+    if ($serviceUpdateDeferredForRecovery) {
+        Write-Host "Protected Service state: Running ($serviceName; update deferred for journal recovery)" -ForegroundColor Yellow
+        Write-Warning 'Mutation remains fail-closed until the pending experiment is resumed or restored.'
     }
-    catch {
-        Write-Warning "The Service is running, but current mutation-journal startup readiness could not be proven from structured logs: $($_.Exception.Message)"
-        Write-Warning 'The App will still open for read-only diagnosis; do not treat this run as mutation-arming evidence.'
+    else {
+        Write-Host "Protected Service state: Running ($serviceName)" -ForegroundColor Green
+
+        try {
+            $readiness = Wait-LatencyPilotServiceStartupReadiness `
+                -LogDirectory $serviceLogDirectory `
+                -NotBeforeUtc $serviceInstallStartedAt `
+                -Timeout ([TimeSpan]::FromSeconds(8))
+
+            if ($readiness.UnresolvedCount -eq 0) {
+                Write-Host 'Mutation journal startup inspection: READY (0 unresolved experiments; mutation remains unavailable).' -ForegroundColor Green
+            }
+            else {
+                Write-Warning "Mutation journal startup inspection completed with $($readiness.UnresolvedCount) unresolved experiment(s). Observation can continue, but mutation must remain blocked until recovery is explicit."
+            }
+            Write-Host "Service readiness evidence: $($readiness.LogPath)" -ForegroundColor DarkGray
+        }
+        catch {
+            Write-Warning "The Service is running, but current mutation-journal startup readiness could not be proven from structured logs: $($_.Exception.Message)"
+            Write-Warning 'The App will still open for read-only diagnosis; do not treat this run as mutation-arming evidence.'
+        }
     }
 
     Write-Host 'Starting non-elevated LatencyPilot App...'
