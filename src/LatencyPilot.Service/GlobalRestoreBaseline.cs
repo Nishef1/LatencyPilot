@@ -73,7 +73,12 @@ internal sealed class GlobalRestoreBaselineExecutor
         return RestorePlan(GlobalRestoreBaselinePlanner.Create(journal.GetRetainedChangesNewestFirst()));
     }
 
-    internal GlobalRestoreBaselineResult RestoreTarget(string targetId)
+    internal GlobalRestoreBaselineResult RestoreTarget(string targetId) =>
+        RestoreTarget(targetId, restartDisplayAdapter: false);
+
+    internal GlobalRestoreBaselineResult RestoreTarget(
+        string targetId,
+        bool restartDisplayAdapter)
     {
         using var operationLock = MutationOperationLock.Acquire();
         ArgumentException.ThrowIfNullOrWhiteSpace(targetId);
@@ -82,7 +87,7 @@ internal sealed class GlobalRestoreBaselineExecutor
         var retained = journal.GetRetainedChangesNewestFirst()
             .Where(entry => string.Equals(entry.TargetId, targetId, StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        return RestorePlan(GlobalRestoreBaselinePlanner.Create(retained));
+        return RestorePlan(GlobalRestoreBaselinePlanner.Create(retained), restartDisplayAdapter);
     }
 
     private void EnsureNoUnresolvedMutations()
@@ -93,7 +98,9 @@ internal sealed class GlobalRestoreBaselineExecutor
                 "Restore original settings is blocked while any mutation experiment is unresolved. Recover or resume it first.");
     }
 
-    private GlobalRestoreBaselineResult RestorePlan(GlobalRestoreBaselinePlan plan)
+    private GlobalRestoreBaselineResult RestorePlan(
+        GlobalRestoreBaselinePlan plan,
+        bool restartDisplayAdapter = false)
     {
         var restored = new List<Guid>(plan.Actions.Count);
         foreach (var action in plan.Actions)
@@ -107,7 +114,7 @@ internal sealed class GlobalRestoreBaselineExecutor
                 case GlobalRestoreBaselineMutationKind.MsiEnable:
                 case GlobalRestoreBaselineMutationKind.XhciInterruptAffinity:
                 case GlobalRestoreBaselineMutationKind.DeviceInterruptAffinity:
-                    RestoreDeviceInterrupt(action);
+                    RestoreDeviceInterrupt(action, restartDisplayAdapter);
                     break;
                 default:
                     throw new NotSupportedException($"Restore action kind {action.Kind} is not supported.");
@@ -137,9 +144,11 @@ internal sealed class GlobalRestoreBaselineExecutor
             throw new InvalidOperationException(rollback.JournalEntry.FailureReason ?? $"GPU experiment {current.ExperimentId:D} did not reach Reverted.");
     }
 
-    private void RestoreDeviceInterrupt(GlobalRestoreBaselineAction action)
+    private void RestoreDeviceInterrupt(
+        GlobalRestoreBaselineAction action,
+        bool restartDisplayAdapter)
     {
-        var rollback = deviceTransaction.Rollback(action.ExperimentId);
+        var rollback = deviceTransaction.Rollback(action.ExperimentId, restartDisplayAdapter);
         if (rollback.Entry.State == MutationJournalState.RollbackRebootPending)
             throw new InvalidOperationException($"Experiment {action.ExperimentId:D} restored stored policy but requires reboot verification before Restore original settings can continue.");
         if (rollback.Entry.State != MutationJournalState.Reverted || !rollback.OriginalStateRestored)

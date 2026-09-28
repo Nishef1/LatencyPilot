@@ -1188,7 +1188,13 @@ public sealed partial class MainWindow
 
                 restoreButton.IsEnabled = false;
                 applyButton.IsEnabled = false;
-                await RunManualAffinityActionAsync(host, dialogStatusText, row, "Restore", null);
+                await RunManualAffinityActionAsync(
+                    host,
+                    dialogStatusText,
+                    row,
+                    "Restore",
+                    null,
+                    choice == ManualAffinityActionChoice.RestartDeviceOnly);
             };
 
             applyButton.Click += async (_, _) =>
@@ -1211,8 +1217,14 @@ public sealed partial class MainWindow
                     host,
                     dialogStatusText,
                     row,
-                    choice == ManualAffinityActionChoice.RestoreOnlyDevice ? "Restore" : "Apply",
-                    choice == ManualAffinityActionChoice.RestoreOnlyDevice ? null : mask);
+                    choice is ManualAffinityActionChoice.RestoreOnlyDevice or ManualAffinityActionChoice.RestartDeviceOnly
+                        ? (row.HasPendingRecovery ? "Restore" : "Apply")
+                        : "Apply",
+                    choice == ManualAffinityActionChoice.RestoreOnlyDevice ||
+                        (choice == ManualAffinityActionChoice.RestartDeviceOnly && row.HasPendingRecovery)
+                        ? null
+                        : mask,
+                    choice == ManualAffinityActionChoice.RestartDeviceOnly);
             };
 
             var actions = new Grid { ColumnSpacing = 8d };
@@ -1509,16 +1521,36 @@ public sealed partial class MainWindow
                         Style = AppStyle("CaptionTextStyle"),
                         Foreground = ThemeBrush("MutedTextBrush"),
                     },
+                    new TextBlock
+                    {
+                        Text = "The optional device-only path restarts only this display adapter/driver. The screen may flicker, the WinUI surface may disappear briefly, and Windows can still require a full reboot if the driver does not accept an in-place restart.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Style = AppStyle("CaptionTextStyle"),
+                        Foreground = ThemeBrush("MutedTextBrush"),
+                        Visibility = row.TargetKind == "Gpu"
+                            ? Visibility.Visible
+                            : Visibility.Collapsed,
+                    },
                 },
             },
             PrimaryButtonText = restoreOnly
                 ? "Restore only this device"
                 : "Save policy; I will reboot manually",
+            SecondaryButtonText = row.TargetKind == "Gpu"
+                ? restoreOnly
+                    ? "Restore and restart only this GPU driver/device"
+                    : "Restart only this GPU driver/device"
+                : null,
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
         };
 
         var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Secondary && row.TargetKind == "Gpu")
+        {
+            return ManualAffinityActionChoice.RestartDeviceOnly;
+        }
+
         if (result != ContentDialogResult.Primary)
         {
             return ManualAffinityActionChoice.Cancel;
@@ -1534,7 +1566,8 @@ public sealed partial class MainWindow
         TextBlock dialogStatusText,
         ManualAffinityDeviceRow row,
         string action,
-        ulong? affinityMask)
+        ulong? affinityMask,
+        bool restartDeviceOnly)
     {
         if (_manualDeviceAffinityBusy || string.IsNullOrWhiteSpace(row.TargetKind))
         {
@@ -1556,10 +1589,13 @@ public sealed partial class MainWindow
             ? row.TargetKind switch
             {
                 "Xhci" => $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep moving the USB mouse/using USB input during the ~10 s ETW verification; Windows may briefly restart the controller…",
+                "Gpu" when restartDeviceOnly => $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. LatencyPilot will restart only this GPU driver/device; the screen may flicker, and Windows may still require a full reboot.",
                 "Gpu" => $"Storing {FormatMask(requestedMask)} for {row.Device.DisplayName}. Reboot Windows after this step, then reopen the panel and apply the same mask again to complete allocation + ETW verification.",
                 _ => $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. Windows will restart the device when possible and verify the stored affinity policy; active allocation is also verified when Windows exposes it.",
             }
-            : $"Restoring journal-owned original state for {row.Device.DisplayName}…";
+            : restartDeviceOnly
+                ? $"Restoring journal-owned original state for {row.Device.DisplayName} by restarting only this GPU driver/device…"
+                : $"Restoring journal-owned original state for {row.Device.DisplayName}…";
 
         SetManualAffinityStatus(
             dialogStatusText,
@@ -1572,14 +1608,17 @@ public sealed partial class MainWindow
                 action,
                 row.TargetKind,
                 row.Device.InstanceId,
-                affinityMask);
+                affinityMask,
+                restartDeviceOnly);
             var status = report.Status is "RebootRequired" or "AppliedPolicyKept" or "AlreadyStoredPolicy"
                 ? "SemanticAttentionBrush"
                 : report.Status is "AppliedAndKept" or "AlreadyConfigured" or "Restored" or "NoLatencyPilotChange"
                     ? "SemanticGoodBrush"
                     : "TextBrush";
             var message = report.Status == "RebootRequired"
-                ? action == "Restore"
+                ? restartDeviceOnly
+                    ? $"{row.Device.DisplayName}: Windows could not complete the device-only restart safely. A full system reboot is required to finish this journaled {action.ToLowerInvariant()} operation."
+                    : action == "Restore"
                     ? $"{row.Device.DisplayName}: Windows requires a reboot to finish restoring the journal-owned original state. Reboot, reopen this panel, and choose Restore again."
                     : $"{row.Device.DisplayName}: Windows requires a reboot. Reboot, reopen this panel, and select the same processor mask again to resume the journaled experiment."
                 : $"{row.Device.DisplayName}: {report.Message}";
@@ -1634,7 +1673,8 @@ public sealed partial class MainWindow
         string action,
         string targetKind,
         string deviceInstanceId,
-        ulong? affinityMask)
+        ulong? affinityMask,
+        bool restartDeviceOnly)
     {
         if (string.IsNullOrWhiteSpace(_gateARepositoryRoot))
         {
@@ -1687,6 +1727,10 @@ public sealed partial class MainWindow
         {
             startInfo.ArgumentList.Add("--mask");
             startInfo.ArgumentList.Add($"0x{mask:X}");
+        }
+        if (restartDeviceOnly)
+        {
+            startInfo.ArgumentList.Add("--restart-device-only");
         }
 
         using var process = Process.Start(startInfo)
@@ -1790,6 +1834,7 @@ public sealed partial class MainWindow
         Cancel = 0,
         ConfirmRequestedAction = 1,
         RestoreOnlyDevice = 2,
+        RestartDeviceOnly = 3,
     }
 
     private sealed record ManualAffinityDeviceRow(

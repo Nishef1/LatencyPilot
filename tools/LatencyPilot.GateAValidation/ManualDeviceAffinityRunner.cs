@@ -119,8 +119,10 @@ internal static class ManualDeviceAffinityRunner
             var transaction = new DeviceInterruptMutationTransaction(journal);
             var pending = targetPending[0];
             var rollback = pending.State == MutationJournalState.RollbackRebootPending
-                ? transaction.ResumeAfterReboot(pending.ExperimentId)
-                : transaction.Rollback(pending.ExperimentId);
+                ? options.RestartDeviceOnly
+                    ? transaction.ResumeAfterDeviceRestart(pending.ExperimentId)
+                    : transaction.ResumeAfterReboot(pending.ExperimentId)
+                : transaction.Rollback(pending.ExperimentId, options.RestartDeviceOnly);
             resumedExperiment = pending.ExperimentId;
 
             if (rollback.Entry.State == MutationJournalState.RollbackRebootPending)
@@ -145,7 +147,8 @@ internal static class ManualDeviceAffinityRunner
             }
         }
 
-        var result = new GlobalRestoreBaselineExecutor(journal).RestoreTarget(options.DeviceInstanceId);
+        var result = new GlobalRestoreBaselineExecutor(journal)
+            .RestoreTarget(options.DeviceInstanceId, options.RestartDeviceOnly);
         var device = TryGetPresentDevice(options.DeviceInstanceId);
         var restoredCount = result.RestoredCount + (resumedExperiment is null ? 0 : 1);
         var status = restoredCount == 0 ? "NoLatencyPilotChange" : "Restored";
@@ -164,7 +167,9 @@ internal static class ManualDeviceAffinityRunner
             restartRequired: false,
             verification: restoredCount == 0
                 ? "No owned retained change."
-                : "Exact journal-owned original state restored and any reboot-pending rollback was verified.",
+                : options.RestartDeviceOnly
+                    ? "Exact journal-owned original state restored and the GPU device/driver restart was verified in place."
+                    : "Exact journal-owned original state restored and any reboot-pending rollback was verified.",
             message);
     }
 
@@ -263,7 +268,30 @@ internal static class ManualDeviceAffinityRunner
                     $"The pending GPU-affinity experiment targets mask 0x{pendingCandidate.AffinityMask:X}; select that same mask after reboot to resume it, or restore the pending experiment first.");
             }
 
-            var resumed = transaction.ResumeAfterReboot(pending[0].ExperimentId);
+            var resumed = options.RestartDeviceOnly
+                ? transaction.ResumeAfterDeviceRestart(pending[0].ExperimentId)
+                : transaction.ResumeAfterReboot(pending[0].ExperimentId);
+            if (options.RestartDeviceOnly &&
+                resumed.Entry.State == MutationJournalState.Applied &&
+                resumed.Restart is not { RestartedInPlace: true })
+            {
+                throw new InvalidOperationException(
+                    "The GPU candidate reached Applied without a verified RestartedInPlace result; no active placement claim is allowed.");
+            }
+            if (resumed.Entry.State == MutationJournalState.ApplyRebootPending)
+            {
+                return CreateReport(
+                    options,
+                    "RebootRequired",
+                    succeeded: false,
+                    TryGetPresentDevice(options.DeviceInstanceId),
+                    pending[0].ExperimentId,
+                    restartRequired: true,
+                    verification: resumed.Entry.FailureReason,
+                    message: options.RestartDeviceOnly
+                        ? "Windows did not accept an in-place GPU device/driver restart for this candidate. The policy remains journaled safely; a full system reboot is required before verification can continue."
+                        : "The stored GPU candidate is still awaiting reboot activation/verification.");
+            }
             if (resumed.Entry.State != MutationJournalState.Applied)
             {
                 throw new InvalidOperationException(
@@ -317,7 +345,14 @@ internal static class ManualDeviceAffinityRunner
 
         try
         {
-            var applied = transaction.Apply(entry.ExperimentId);
+            var applied = transaction.Apply(entry.ExperimentId, options.RestartDeviceOnly);
+            if (options.RestartDeviceOnly &&
+                applied.Entry.State == MutationJournalState.Applied &&
+                applied.Restart is not { RestartedInPlace: true })
+            {
+                throw new InvalidOperationException(
+                    "The GPU candidate reached Applied without a verified RestartedInPlace result; no active placement claim is allowed.");
+            }
             if (applied.Entry.State == MutationJournalState.ApplyRebootPending)
             {
                 return CreateReport(
@@ -328,7 +363,9 @@ internal static class ManualDeviceAffinityRunner
                     entry.ExperimentId,
                     restartRequired: true,
                     verification: applied.Entry.FailureReason,
-                    message: "The GPU affinity policy is stored safely. LatencyPilot did not restart the active display adapter because that can invalidate the WinUI graphics device. Reboot Windows, reopen this panel, select the same mask, and choose Apply & verify to finish allocation + ETW verification.");
+                    message: options.RestartDeviceOnly
+                        ? "Windows reported that restarting only the GPU device/driver is insufficient. The policy is stored safely and a full system reboot is required before allocation + ETW verification can finish."
+                        : "The GPU affinity policy is stored safely. LatencyPilot did not restart the active display adapter because that can invalidate the WinUI graphics device. Reboot Windows, reopen this panel, select the same mask, and choose Apply & verify to finish allocation + ETW verification.");
             }
 
             if (applied.Entry.State != MutationJournalState.Applied)
@@ -346,7 +383,7 @@ internal static class ManualDeviceAffinityRunner
         }
         catch
         {
-            TryRollbackDevice(transaction, journal, entry.ExperimentId);
+            TryRollbackDevice(transaction, journal, entry.ExperimentId, options.RestartDeviceOnly);
             throw;
         }
     }
@@ -372,7 +409,7 @@ internal static class ManualDeviceAffinityRunner
 
         if (!verified)
         {
-            var rollback = transaction.Rollback(experimentId);
+            var rollback = transaction.Rollback(experimentId, options.RestartDeviceOnly);
             if (rollback.Entry.State == MutationJournalState.RollbackRebootPending)
             {
                 return CreateReport(
@@ -383,7 +420,9 @@ internal static class ManualDeviceAffinityRunner
                     experimentId,
                     restartRequired: true,
                     verification: verification,
-                    message: "GPU affinity verification failed. The exact original policy is stored again without live-restarting the display adapter; reboot is required to verify rollback activation.",
+                    message: options.RestartDeviceOnly
+                        ? "GPU affinity verification failed. The exact original policy is stored again, but Windows requires a full system reboot to verify rollback activation after the device-only restart request."
+                        : "GPU affinity verification failed. The exact original policy is stored again without live-restarting the display adapter; reboot is required to verify rollback activation.",
                     allocatedMasks: masks);
             }
 
@@ -410,7 +449,9 @@ internal static class ManualDeviceAffinityRunner
             experimentId,
             restartRequired: false,
             verification: verification,
-            message: "GPU affinity was resumed after reboot, verified by Windows translated allocation plus clean requested-mask-only GPU ISR placement, and retained as an explicit manual choice.",
+            message: options.RestartDeviceOnly
+                ? "GPU affinity was applied after an in-place GPU device/driver restart, verified by Windows translated allocation plus clean requested-mask-only GPU ISR placement, and retained as an explicit manual choice."
+                : "GPU affinity was resumed after reboot, verified by Windows translated allocation plus clean requested-mask-only GPU ISR placement, and retained as an explicit manual choice.",
             allocatedMasks: masks);
     }
 
@@ -975,14 +1016,15 @@ internal static class ManualDeviceAffinityRunner
     private static void TryRollbackDevice(
         DeviceInterruptMutationTransaction transaction,
         MutationJournal journal,
-        Guid experimentId)
+        Guid experimentId,
+        bool restartDisplayAdapter = false)
     {
         try
         {
             var entry = journal.TryGet(experimentId);
             if (entry is not null && !entry.IsTerminal)
             {
-                _ = transaction.Rollback(experimentId);
+                _ = transaction.Rollback(experimentId, restartDisplayAdapter);
             }
         }
         catch
@@ -1061,13 +1103,15 @@ internal static class ManualDeviceAffinityRunner
         string DeviceInstanceId,
         byte? ProcessorNumber,
         ulong? AffinityMask,
-        string OutputPath)
+        string OutputPath,
+        bool RestartDeviceOnly)
     {
         internal static ManualAffinityOptions Parse(string[] args)
         {
             ArgumentNullException.ThrowIfNull(args);
             var values = new Dictionary<string, string>(StringComparer.Ordinal);
             var confirmation = false;
+            var restartDeviceOnly = false;
 
             for (var index = 0; index < args.Length; index++)
             {
@@ -1079,6 +1123,11 @@ internal static class ManualDeviceAffinityRunner
                 if (string.Equals(token, ConfirmationFlag, StringComparison.Ordinal))
                 {
                     confirmation = true;
+                    continue;
+                }
+                if (string.Equals(token, "--restart-device-only", StringComparison.Ordinal))
+                {
+                    restartDeviceOnly = true;
                     continue;
                 }
                 if (token is not ("--action" or "--target-kind" or "--device" or "--processor" or "--mask" or "--output"))
@@ -1163,6 +1212,11 @@ internal static class ManualDeviceAffinityRunner
                 throw new ArgumentException("AudioMsi does not accept a processor mask.");
             }
 
+            if (restartDeviceOnly && targetKind != ManualAffinityTargetKind.Gpu)
+            {
+                throw new ArgumentException("--restart-device-only is currently supported only for GPU affinity.");
+            }
+
             if (affinityMask is { } mask)
             {
                 processor = GpuInterruptAffinityCandidate.GetPrimaryProcessorNumber(mask);
@@ -1174,7 +1228,8 @@ internal static class ManualDeviceAffinityRunner
                 Required("--device"),
                 processor,
                 affinityMask,
-                Path.GetFullPath(Required("--output")));
+                Path.GetFullPath(Required("--output")),
+                restartDeviceOnly);
         }
     }
 }

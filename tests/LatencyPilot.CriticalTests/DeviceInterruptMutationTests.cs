@@ -84,6 +84,12 @@ public sealed class DeviceInterruptMutationTests
             "Display-adapter Apply must remain resumable after reboot.");
         StringAssert.Contains(txSource, "MutationJournalState.RollbackRebootPending",
             "Display-adapter Restore must avoid a live GPU restart and remain resumable after reboot.");
+        StringAssert.Contains(txSource, "restartDisplayAdapter",
+            "The bounded device transaction must make display-adapter restart an explicit opt-in rather than an implicit side effect.");
+        StringAssert.Contains(txSource, "DeviceConfigurationRestartCoordinator.RestartAfterConfigurationChange",
+            "The optional GPU driver restart must use the documented SetupAPI device-property-change path.");
+        StringAssert.Contains(txSource, "RestartedInPlace",
+            "An optional GPU driver restart must be verified as an in-place healthy device restart before continuing.");
         StringAssert.Contains(txSource, "measurementVerified");
         StringAssert.Contains(txSource, "DeviceAffinityKind");
         StringAssert.Contains(txSource, "PrepareDeviceAffinity",
@@ -130,6 +136,10 @@ public sealed class DeviceInterruptMutationTests
             "A reboot-pending xHCI experiment must not be resumed under a newly selected processor mask.");
         StringAssert.Contains(manualRunnerSource, "--mask",
             "Manual affinity must accept an explicit KAFFINITY mask for multi-select.");
+        StringAssert.Contains(manualRunnerSource, "--restart-device-only",
+            "Manual GPU affinity must expose an explicit device-only restart choice separate from a full system reboot.");
+        StringAssert.Contains(manualRunnerSource, "RestartedInPlace",
+            "Manual GPU affinity must verify the device-only restart result before claiming the candidate is active.");
         StringAssert.Contains(manualRunnerSource, "(resource.AffinityMask & ~targetMask) == 0",
             "Allocated interrupt resources must remain inside the requested processor mask.");
         StringAssert.Contains(manualRunnerSource, "VerificationFailedRolledBack",
@@ -191,6 +201,10 @@ public sealed class DeviceInterruptMutationTests
             "Recovery confirmation must make the target-scoped restore choice explicit.");
         StringAssert.Contains(appSource, "Save policy; I will reboot manually",
             "GPU policy confirmation must state that LatencyPilot will not reboot Windows automatically.");
+        StringAssert.Contains(appSource, "Restart only this GPU driver/device",
+            "GPU confirmation must expose the device-only restart choice separately from a full system reboot.");
+        StringAssert.Contains(appSource, "restart-device-only",
+            "The UI must pass the explicit device-only restart choice to the elevated helper.");
         var recoveryAssessment = File.ReadAllText(Path.Combine(
             root, "src", "LatencyPilot.Service", "MutationRecoveryAssessment.cs"));
         StringAssert.Contains(recoveryAssessment, "DeviceInterruptRecoveryInspector.Inspect",

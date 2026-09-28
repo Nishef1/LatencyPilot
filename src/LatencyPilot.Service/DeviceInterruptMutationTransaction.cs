@@ -65,7 +65,9 @@ internal sealed class DeviceInterruptMutationTransaction
         return new(false, entry, original);
     }
 
-    internal DeviceInterruptMutationStepResult Apply(Guid experimentId)
+    internal DeviceInterruptMutationStepResult Apply(
+        Guid experimentId,
+        bool restartDisplayAdapter = false)
     {
         using var guard = MutationOperationLock.Acquire();
         var prepared = GetEntry(experimentId, MutationJournalState.Prepared);
@@ -89,7 +91,7 @@ internal sealed class DeviceInterruptMutationTransaction
                 return new(preWriteAbort, null, false);
             }
             ApplyCandidate(original, candidate);
-            if (original.TargetKind == DeviceInterruptTargetKind.DisplayAdapter)
+            if (original.TargetKind == DeviceInterruptTargetKind.DisplayAdapter && !restartDisplayAdapter)
             {
                 var pending = journal.Transition(
                     applying.ExperimentId,
@@ -200,7 +202,55 @@ internal sealed class DeviceInterruptMutationTransaction
         throw new InvalidOperationException($"Experiment is not awaiting reboot verification: {entry.State}.");
     }
 
-    internal DeviceInterruptMutationStepResult Rollback(Guid experimentId)
+    internal DeviceInterruptMutationStepResult ResumeAfterDeviceRestart(Guid experimentId)
+    {
+        using var guard = MutationOperationLock.Acquire();
+        var entry = GetEntry(experimentId);
+        var original = DeviceInterruptMutationJournalCodec.DeserializeOriginal(entry.OriginalStateJson);
+        var candidate = DeviceInterruptMutationJournalCodec.DeserializeCandidate(entry.CandidateStateJson);
+        if (entry.State is not (MutationJournalState.ApplyRebootPending or MutationJournalState.RollbackRebootPending))
+        {
+            throw new InvalidOperationException($"Experiment is not awaiting activation restart: {entry.State}.");
+        }
+
+        var restart = DeviceConfigurationRestartCoordinator.RestartAfterConfigurationChange(original.DeviceInstanceId);
+        if (restart.SystemRestartRequired)
+        {
+            return new(entry, restart, false);
+        }
+
+        if (!restart.RestartedInPlace)
+        {
+            var recovery = journal.Transition(
+                entry.ExperimentId,
+                entry.Revision,
+                entry.State,
+                MutationJournalState.RecoveryRequired,
+                "Windows did not complete a healthy in-place device restart; no active interrupt-affinity claim is made.");
+            return new(recovery, restart, false);
+        }
+
+        if (entry.State == MutationJournalState.ApplyRebootPending)
+        {
+            var next = CandidateStored(original.DeviceInstanceId, candidate)
+                ? journal.Transition(entry.ExperimentId, entry.Revision, entry.State, MutationJournalState.Applied)
+                : journal.Transition(entry.ExperimentId, entry.Revision, entry.State, MutationJournalState.RecoveryRequired, "Candidate is not stored after the in-place device restart.");
+            return new(next, restart, false);
+        }
+
+        var restored = DeviceInterruptConfigurationStore.MatchesOriginal(
+            DeviceInterruptConfigurationStore.Capture(original.DeviceInstanceId),
+            original,
+            candidate.Operation);
+        var restoredEntry = restored
+            ? journal.Transition(entry.ExperimentId, entry.Revision, entry.State, MutationJournalState.Reverted)
+            : journal.Transition(entry.ExperimentId, entry.Revision, entry.State, MutationJournalState.RecoveryRequired, "Original state is not restored after the in-place device restart.");
+        return new(restoredEntry, restart, restored);
+    }
+
+    internal DeviceInterruptMutationStepResult Rollback(
+        Guid experimentId,
+        bool restartDisplayAdapter = false)
     {
         using var guard = MutationOperationLock.Acquire();
         var entry = GetEntry(experimentId);
@@ -247,7 +297,7 @@ internal sealed class DeviceInterruptMutationTransaction
                 Restore(original, candidate.Operation);
             }
 
-            if (original.TargetKind == DeviceInterruptTargetKind.DisplayAdapter)
+            if (original.TargetKind == DeviceInterruptTargetKind.DisplayAdapter && !restartDisplayAdapter)
             {
                 var pending = journal.Transition(
                     reverting.ExperimentId,
