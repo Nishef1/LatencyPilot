@@ -83,8 +83,8 @@ Current source implements ADR 0011:
 15. Finalists receive two deterministically shuffled 15 s local pairs; one third 15 s round is added only while their lead remains inside measured uncertainty.
 16. Every structurally valid finalist is ranked by median paired 1%-low effect.
 17. MAD, Original variability, lead over runner-up, pair consistency and practical-tie state produce `High`/`Medium`/`Low` **ranking confidence**; confidence never gates rank or Keep.
-18. `RecommendedForKeep` is separate: positive median benefit, positive-pair consistency and bounded AVG/frame-p99/interrupt-tail guardrails.
-19. Final Keep requires exact stored state, non-empty translated GPU interrupt resources confined to the requested mask, and clean **direct display-driver** target-only GPU ISR placement. Shared `dxgkrnl` fallback remains diagnostic only. Otherwise exact Original is restored while the best-observed CPU remains in the report.
+18. `RecommendedForKeep` is separate: positive median benefit, positive-pair consistency and bounded AVG/frame-p99/interrupt-tail guardrails. Rank 1 remains best-observed, while final Keep tries guardrail-safe finalists in rank order so a safe runner-up is not discarded merely because rank 1 failed a guardrail.
+19. Final Keep requires exact stored state, non-empty translated GPU interrupt resources confined to the requested mask, and clean **direct display-driver** target-only GPU ISR placement. A failed final-placement attempt restores exact Original before the next guardrail-safe finalist may be tried; if none passes, Original remains active while the best-observed CPU remains in the report.
 
 The v6 method keeps the existing v3 report schema and persists raw trials/pairs, finalist medians, effect MAD, positive-pair count, noise guide, raw median Original/Candidate FPS/ms, `BestObservedProcessor`, `SelectionConfidence`, structured finalist guardrail reasons, provenance and terminal state. Historical v5 and earlier evidence is never reinterpreted as v6.
 
