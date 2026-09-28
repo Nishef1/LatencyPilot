@@ -117,6 +117,7 @@ public sealed record GateAResultViewModel(
     public string OriginalEvidenceDetail { get; init; } = string.Empty;
     public string TerminalStateLabel { get; init; } = string.Empty;
     public bool TerminalStateVerified { get; init; }
+    public UsbAffinityRecommendationReport? UsbRecommendation { get; init; }
 }
 
 public static class GateAResultPresentation
@@ -257,6 +258,7 @@ public static class GateAResultPresentation
             OriginalEvidenceDetail = originalEvidenceDetail,
             TerminalStateLabel = terminalStateLabel,
             TerminalStateVerified = terminalStateVerified,
+            UsbRecommendation = report.UsbRecommendation,
         };
     }
 

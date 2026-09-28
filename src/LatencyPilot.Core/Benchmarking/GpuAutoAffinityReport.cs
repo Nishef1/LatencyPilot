@@ -304,8 +304,7 @@ public sealed record GpuAutoAffinityReport(
             !trial.Phase.EndsWith("-warmup", StringComparison.Ordinal) &&
             (string.Equals(trial.Phase, "screening-original", StringComparison.Ordinal) ||
              string.Equals(trial.Phase, "diagnostic-original", StringComparison.Ordinal) ||
-             string.Equals(trial.Phase, "screening-representative", StringComparison.Ordinal) ||
-             string.Equals(trial.Phase, "screening-sibling", StringComparison.Ordinal)))
+             string.Equals(trial.Phase, "screening-logical", StringComparison.Ordinal)))
         .Select(static trial => trial.RequestedDurationMilliseconds)
         .FirstOrDefault();
 

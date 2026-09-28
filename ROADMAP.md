@@ -247,7 +247,8 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] bind recommendation to the exact interrupt-owning xHCI controller;
 - [x] persist route/controller/CPU and transparent reason in Gate A evidence;
 - [ ] representative physical input/xHCI evidence;
-- [ ] normal-user rendering in the integrated workflow.
+- [x] development Gate A result renders the persisted primary-input/xHCI recommendation and reason without recomputing it;
+- [ ] normal-user rendering in the integrated product workflow after physical arming gates.
 
 ---
 

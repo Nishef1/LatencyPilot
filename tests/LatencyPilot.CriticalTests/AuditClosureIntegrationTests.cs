@@ -116,6 +116,9 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(harness, "restore-original-settings");
 
         var gateAUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "GateAValidationExperience.cs"));
+        var gateAResultUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "GateAResultExperience.cs"));
+        StringAssert.Contains(gateAResultUi, "BuildGateAUsbRecommendation",
+            "The persisted post-GPU xHCI recommendation must be visible in the development result surface.");
         StringAssert.Contains(gateAUi, "Run development validation");
         StringAssert.Contains(gateAUi, "--allow-dirty-development-source");
         StringAssert.Contains(gateAUi, "GateAClosureEligible");
@@ -137,6 +140,9 @@ public sealed class AuditClosureIntegrationTests
             "Post-GPU xHCI recommendation must consume the explicit primary input identity.");
 
         var reportContract = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Core", "Benchmarking", "GpuAutoAffinityReport.cs"));
+        StringAssert.Contains(reportContract, "screening-logical");
+        Assert.IsFalse(reportContract.Contains("screening-representative", StringComparison.Ordinal));
+        Assert.IsFalse(reportContract.Contains("screening-sibling", StringComparison.Ordinal));
         StringAssert.Contains(reportContract, "GateAClosureEligible");
         StringAssert.Contains(reportContract, "SourceState");
 
@@ -299,6 +305,16 @@ public sealed class AuditClosureIntegrationTests
             GateAClosureEligible = true,
             SourceState = "evidence-ready",
             Finalists = [finalist],
+            UsbRecommendation = new UsbAffinityRecommendationReport(
+                "Ready",
+                "PCI\\VEN_TEST&DEV_XHCI",
+                cpu6,
+                ["HID\\VID_PRIMARY"],
+                42d,
+                8d,
+                12,
+                4,
+                "Primary input is routed to the exact xHCI controller; CPU 6 has the best eligible quiet-headroom evidence."),
         };
         var keepPresentation = GateAResultPresentation.Create(
             keepReport,
@@ -310,6 +326,10 @@ public sealed class AuditClosureIntegrationTests
             "Source/evidence eligibility must not be presented as if the whole physical Gate A were already closed.");
         Assert.AreEqual(cpu7, keepPresentation.ComparedProcessor);
         Assert.IsTrue(keepPresentation.BundleAvailable);
+        Assert.IsNotNull(keepPresentation.UsbRecommendation);
+        Assert.AreEqual(cpu6, keepPresentation.UsbRecommendation.Processor,
+            "Presentation must carry the persisted post-GPU xHCI recommendation rather than recomputing it.");
+        Assert.AreEqual("PCI\\VEN_TEST&DEV_XHCI", keepPresentation.UsbRecommendation.ControllerInstanceId);
         Assert.AreEqual(4, keepPresentation.Metrics.Count);
         var keptLow1 = keepPresentation.Metrics.Single(metric => metric.Key == "low1");
         Assert.AreEqual(0.12d, keptLow1.ImprovementFraction,

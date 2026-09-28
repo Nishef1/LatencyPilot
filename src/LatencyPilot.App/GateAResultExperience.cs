@@ -33,6 +33,10 @@ public sealed partial class MainWindow
         AutomationProperties.SetHelpText(root, result.Summary);
 
         root.Children.Add(BuildGateAResultHero(result));
+        if (result.UsbRecommendation is { } usbRecommendation)
+        {
+            root.Children.Add(BuildGateAUsbRecommendation(usbRecommendation));
+        }
         var metricGrid = BuildGateAMetricGrid(result);
         root.Children.Add(metricGrid);
         var chartsGrid = BuildGateAChartsGrid(result);
@@ -133,6 +137,73 @@ public sealed partial class MainWindow
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = DashboardThemeResources.Brush(card, "SemanticAttentionBrush"),
                 },
+            });
+        }
+
+        card.Child = stack;
+        CardElevation.Apply(card);
+        return card;
+    }
+
+    private static Border BuildGateAUsbRecommendation(
+        UsbAffinityRecommendationReport recommendation)
+    {
+        var ready =
+            string.Equals(recommendation.Status, "Ready", StringComparison.OrdinalIgnoreCase) &&
+            recommendation.Processor is not null &&
+            !string.IsNullOrWhiteSpace(recommendation.ControllerInstanceId);
+
+        var card = StyledBorder("ChartCardStyle");
+        var stack = new StackPanel { Spacing = 8d };
+        var header = new Grid { ColumnSpacing = 10d };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(new TextBlock
+        {
+            Text = "PRIMARY INPUT · xHCI RECOMMENDATION",
+            Style = AppStyle("HeroEyebrowTextStyle"),
+        });
+        var badge = BuildStatusBadge(
+            card,
+            ready ? "Ready for physical validation" : "Not ready",
+            ready ? "SemanticGoodBrush" : "SemanticAttentionBrush",
+            ready ? "SemanticGoodSoftBrush" : "SemanticAttentionSoftBrush");
+        Grid.SetColumn(badge, 1);
+        header.Children.Add(badge);
+        stack.Children.Add(header);
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = ready
+                ? $"CPU {recommendation.Processor!.Value.Number} · {recommendation.ControllerInstanceId}"
+                : "No xHCI CPU recommendation was authorized for this run.",
+            Style = AppStyle("SubsectionTitleTextStyle"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = recommendation.Reason,
+            Style = AppStyle("MutedBodyTextStyle"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        if (recommendation.InputDeviceInstanceIds.Count > 0)
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = $"Primary Raw Input identity: {string.Join(", ", recommendation.InputDeviceInstanceIds)}",
+                Style = AppStyle("CaptionTextStyle"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        if (ready)
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = $"Quiet-headroom evidence · DPC {recommendation.DpcCount?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "—"} · ISR {recommendation.IsrCount?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "—"} · total {recommendation.TotalInterruptDurationMicroseconds?.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) ?? "—"} µs · p99 {recommendation.InterruptTailP99Microseconds?.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) ?? "—"} µs. Recommendation only; xHCI Apply/Keep still requires controller-specific runtime verification.",
+                Style = AppStyle("CaptionTextStyle"),
+                TextWrapping = TextWrapping.Wrap,
             });
         }
 
