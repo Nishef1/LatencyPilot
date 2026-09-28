@@ -757,9 +757,23 @@ public sealed partial class MainWindow
             Spacing = 6d,
             VerticalAlignment = VerticalAlignment.Center,
         };
+        var capabilityLabel =
+            row.TargetKind == "Gpu" &&
+            row.HasExplicitOverride &&
+            row.Device.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available
+                ? "Policy set · runtime unverified"
+                : row.TargetKind is "Gpu" or "Xhci"
+                    ? "Verification capable"
+                    : "Manual policy";
+        var capabilityBrush =
+            capabilityLabel == "Policy set · runtime unverified"
+                ? "SemanticAttentionBrush"
+                : row.TargetKind is "Gpu" or "Xhci"
+                    ? "SemanticGoodBrush"
+                    : "AccentBrush";
         headerActions.Children.Add(BuildManualAffinityPill(
-            row.TargetKind is "Gpu" or "Xhci" ? "Runtime verified path" : "Manual policy",
-            row.TargetKind is "Gpu" or "Xhci" ? "SemanticGoodBrush" : "AccentBrush",
+            capabilityLabel,
+            capabilityBrush,
             "PremiumOverviewQuietBrush"));
         headerActions.Children.Add(advancedButton);
         Grid.SetColumn(headerActions, 2);
