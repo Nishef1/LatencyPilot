@@ -42,10 +42,11 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.AreEqual(GpuAutoAffinitySearchScope.Full, result.Report.SearchScope);
         Assert.IsTrue(result.Report.FullTopologyCoverage);
         Assert.IsFalse(result.Report.PracticalTie);
-        Assert.IsTrue(result.Report.Pairs.Any(static pair => pair.Stage == "screening-representative"));
-        Assert.IsTrue(result.Report.Pairs.Any(static pair => pair.Stage == "screening-sibling"));
+        Assert.IsTrue(result.Report.Pairs.Any(static pair => pair.Stage == "screening-logical"));
+        Assert.IsFalse(result.Report.Pairs.Any(static pair => pair.Stage == "screening-sibling"),
+            "Full search must not rely on adaptive SMT-sibling admission before every eligible logical CPU has been screened.");
         Assert.IsTrue(result.Report.Pairs.Any(static pair => pair.Stage == "screening-shortlist"),
-            "Full v4 must recheck the uncertainty-aware shortlist before the top-two cut.");
+            "Full search must recheck the uncertainty-aware shortlist before the top-two cut.");
         Assert.IsTrue(result.Report.Pairs.Any(static pair => pair.Stage == "screening-finalists"),
             "Only the bounded top two should receive adaptive finalist confirmation.");
         Assert.IsTrue(result.Report.Pairs.All(static pair =>
@@ -53,20 +54,23 @@ public sealed class GpuAutoAffinitySessionTests
         var validated = result.Report.ValidatedProcessors
             .Select(static processor => processor.Number)
             .ToArray();
-        CollectionAssert.Contains(validated, (byte)0,
-            "Every physical core must contribute its representative before adaptive pruning.");
-        CollectionAssert.Contains(validated, (byte)2,
-            "Every physical core must contribute its representative before adaptive pruning.");
-        CollectionAssert.Contains(validated, (byte)3,
-            "The promising core's SMT sibling must be refined before the shortlist.");
-        Assert.AreEqual(3, validated.Length,
-            "The clearly weaker physical core's sibling should be pruned instead of adding an unnecessary measurement.");
+        CollectionAssert.AreEquivalent(
+            new byte[] { 0, 1, 2, 3 },
+            validated,
+            "Full search must give every eligible logical CPU at least one structurally valid paired screen before adaptive rechecks.");
+        Assert.AreEqual(4, validated.Length);
         Assert.AreEqual(2, result.Report.Finalists.Count);
         Assert.IsTrue(result.Report.Finalists.All(static finalist =>
             finalist.PairNumbers.Count is >= 2 and <= 3),
             "Adaptive finalist confirmation must use two rounds by default and at most one uncertainty-driven extension.");
         Assert.AreEqual(new LogicalProcessorId(0, 3), result.Report.BestObservedProcessor);
         Assert.AreEqual("High", result.Report.SelectionConfidence);
+        var sessionSource = File.ReadAllText(FindRepositoryFile(
+            "src", "LatencyPilot.Benchmarking", "Optimization", "GpuAutoAffinitySession.cs"));
+        StringAssert.Contains(sessionSource, "return allEligibleCandidates.ToArray()",
+            "Full Gate A must screen every eligible logical CPU before adaptive shortlist/finalist rechecks.");
+        Assert.IsFalse(sessionSource.Contains("SelectPhysicalCoreHypotheses", StringComparison.Ordinal),
+            "Representative-core pruning must not be able to hide an untested SMT sibling in Full search.");
         var winningFinalist = result.Report.Finalists.Single(static finalist => finalist.Processor == new LogicalProcessorId(0, 3));
         Assert.AreEqual(100d, winningFinalist.MedianOriginalOnePercentLowFps!.Value, 0.001d);
         Assert.AreEqual(115d, winningFinalist.MedianCandidateOnePercentLowFps!.Value, 0.001d);
