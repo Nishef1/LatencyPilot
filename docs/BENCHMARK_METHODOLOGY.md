@@ -314,7 +314,7 @@ Hosted CI can verify software contracts and compilation. It cannot prove:
 
 Physical Gate A therefore remains a separate requirement on one exact clean green `main` revision.
 
-## 17. Non-GPU subsystem measurement boundaries
+## 16.1 Non-GPU subsystem measurement boundaries
 
 These are scope rules for future work, not an expansion of the current `gpu-affinity-benchmark-v6` method:
 

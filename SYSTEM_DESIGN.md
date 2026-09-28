@@ -362,7 +362,7 @@ HDAudio **MSI enablement** remains disabled. The helper may recognize `AudioMsi`
 
 This developer surface is separate from public product IPC and does not expand the automatic v1 optimizer beyond GPU + primary-input xHCI. `MutationAvailable=false` remains required until the physical/product arming gates close.
 
-## 12. Post-v1 subsystem expansion boundary
+## 11.1 Post-v1 subsystem expansion boundary
 
 Future scope is intentionally asymmetric rather than a generic device optimizer:
 
