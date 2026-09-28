@@ -10,6 +10,7 @@ public enum DeviceInterruptTargetKind
     DisplayAdapter = 0,
     XhciController = 1,
     HighDefinitionAudioController = 2,
+    GenericDevice = 3,
 }
 
 public sealed record DeviceInterruptConfigurationSnapshot(
@@ -81,18 +82,31 @@ public static class DeviceInterruptConfigurationStore
     {
         if (original.TargetKind != DeviceInterruptTargetKind.XhciController)
             throw new NotSupportedException("xHCI affinity mutation requires a USBXHCI controller target.");
+        ApplyDeviceAffinity(original, candidate, "LatencyPilot xHCI interrupt affinity");
+    }
+
+    public static void ApplyDeviceAffinity(DeviceInterruptConfigurationSnapshot original, DeviceInterruptAffinityCandidate candidate) =>
+        ApplyDeviceAffinity(original, candidate, "LatencyPilot manual device interrupt affinity");
+
+    private static void ApplyDeviceAffinity(
+        DeviceInterruptConfigurationSnapshot original,
+        DeviceInterruptAffinityCandidate candidate,
+        string transactionName)
+    {
         ValidateCandidate(candidate);
-        var current = Capture(original.DeviceInstanceId); EnsureSameDriverAndCollateral(current, original);
-        using var tx = TransactionalRegistry.Begin("LatencyPilot xHCI interrupt affinity");
+        var current = Capture(original.DeviceInstanceId);
+        EnsureSameDriverAndCollateral(current, original);
+        using var tx = TransactionalRegistry.Begin(transactionName);
         using (var key = tx.CreateOrOpenKey(RegistryHive.LocalMachine, HardwareSubPath(original.DeviceInstanceId, AffinitySubKey)))
         {
             key.SetValue(DevicePolicyValue, unchecked((int)IrqPolicySpecifiedProcessors), RegistryValueKind.DWord);
-            var mask = new byte[8]; BinaryPrimitives.WriteUInt64LittleEndian(mask, candidate.AffinityMask);
+            var mask = new byte[8];
+            BinaryPrimitives.WriteUInt64LittleEndian(mask, candidate.AffinityMask);
             key.SetValue(AssignmentSetOverrideValue, mask, RegistryValueKind.Binary);
         }
         tx.Commit();
-        if (!IsXhciAffinityStored(Capture(original.DeviceInstanceId), candidate))
-            throw new InvalidOperationException("xHCI affinity candidate could not be verified from stored state.");
+        if (!IsDeviceAffinityStored(Capture(original.DeviceInstanceId), candidate))
+            throw new InvalidOperationException("Interrupt-affinity candidate could not be verified from stored state.");
     }
 
     public static void RestoreMsi(DeviceInterruptConfigurationSnapshot original)
@@ -133,12 +147,19 @@ public static class DeviceInterruptConfigurationStore
 
     public static void RestoreXhciAffinity(DeviceInterruptConfigurationSnapshot original)
     {
+        if (original.TargetKind != DeviceInterruptTargetKind.XhciController)
+            throw new NotSupportedException("xHCI affinity restore requires a USBXHCI controller target.");
+        RestoreDeviceAffinity(original);
+    }
+
+    public static void RestoreDeviceAffinity(DeviceInterruptConfigurationSnapshot original)
+    {
         var before = Capture(original.DeviceInstanceId);
         if (!string.Equals(before.DriverVersion, original.DriverVersion, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("xHCI affinity restore refused because driver identity changed after the captured original state.");
+            throw new InvalidOperationException("Interrupt-affinity restore refused because driver identity changed after the captured original state.");
         }
-        using var tx = TransactionalRegistry.Begin("LatencyPilot xHCI affinity exact restore");
+        using var tx = TransactionalRegistry.Begin("LatencyPilot device affinity exact restore");
         if (original.AffinityPolicyKeyExisted)
         {
             using var key = tx.CreateOrOpenKey(RegistryHive.LocalMachine, HardwareSubPath(original.DeviceInstanceId, AffinitySubKey));
@@ -159,9 +180,12 @@ public static class DeviceInterruptConfigurationStore
         }
         tx.Commit();
         var current = Capture(original.DeviceInstanceId);
-        if (!ValuesEqual(current.DevicePolicy, original.DevicePolicy) || !ValuesEqual(current.AssignmentSetOverride, original.AssignmentSetOverride) ||
+        if (!ValuesEqual(current.DevicePolicy, original.DevicePolicy) ||
+            !ValuesEqual(current.AssignmentSetOverride, original.AssignmentSetOverride) ||
             current.AffinityPolicyKeyExisted != original.AffinityPolicyKeyExisted)
-            throw new InvalidOperationException("Exact xHCI affinity original state was not restored.");
+        {
+            throw new InvalidOperationException("Exact interrupt-affinity original state was not restored.");
+        }
     }
 
     private static void TryDeleteEmptyInterruptManagementParent(TransactionalRegistry tx, string deviceInstanceId)
@@ -184,7 +208,11 @@ public static class DeviceInterruptConfigurationStore
         }
     }
 
-    public static bool IsXhciAffinityStored(DeviceInterruptConfigurationSnapshot snapshot, DeviceInterruptAffinityCandidate candidate)
+    public static bool IsXhciAffinityStored(DeviceInterruptConfigurationSnapshot snapshot, DeviceInterruptAffinityCandidate candidate) =>
+        snapshot.TargetKind == DeviceInterruptTargetKind.XhciController &&
+        IsDeviceAffinityStored(snapshot, candidate);
+
+    public static bool IsDeviceAffinityStored(DeviceInterruptConfigurationSnapshot snapshot, DeviceInterruptAffinityCandidate candidate)
     {
         ValidateCandidate(candidate);
         return TryDword(snapshot.DevicePolicy, out var policy) && policy == IrqPolicySpecifiedProcessors &&
@@ -204,7 +232,7 @@ public static class DeviceInterruptConfigurationStore
 
         return candidate.Operation == DeviceInterruptMutationOperation.EnableMsi
             ? IsMsiEnabled(current)
-            : IsXhciAffinityStored(current, candidate.ToAffinityCandidate());
+            : IsDeviceAffinityStored(current, candidate.ToAffinityCandidate());
     }
 
     public static bool MatchesOriginal(DeviceInterruptConfigurationSnapshot current, DeviceInterruptConfigurationSnapshot original, DeviceInterruptMutationOperation operation)
@@ -257,8 +285,7 @@ public static class DeviceInterruptConfigurationStore
             return DeviceInterruptTargetKind.HighDefinitionAudioController;
         }
 
-        throw new NotSupportedException(
-            "Only the present display adapter, USBXHCI controller, or PCI High Definition Audio controller is supported by this bounded mutation store.");
+        return DeviceInterruptTargetKind.GenericDevice;
     }
 
     private static string HardwareSubPath(string id, string child) => $"SYSTEM\\CurrentControlSet\\Enum\\{id}\\{child}";
@@ -292,7 +319,7 @@ public static class DeviceInterruptConfigurationStore
             c.ProcessorNumber != GpuInterruptAffinityCandidate.GetPrimaryProcessorNumber(c.AffinityMask))
         {
             throw new ArgumentException(
-                "xHCI affinity candidate must be a non-empty canonical group-0 KAFFINITY set.",
+                "Interrupt-affinity candidate must be a non-empty canonical group-0 KAFFINITY set.",
                 nameof(c));
         }
     }

@@ -57,6 +57,8 @@ public sealed class RestoreBaselineTests
             var restoreSource = File.ReadAllText(Path.Combine(
                 root, "src", "LatencyPilot.Service", "GlobalRestoreBaseline.cs"));
             StringAssert.Contains(restoreSource, "RestoreTarget(string targetId)");
+            StringAssert.Contains(restoreSource, "DeviceInterruptMutationContract.DeviceAffinityKind",
+                "Global restore must recognize retained generic manual device-affinity changes.");
             StringAssert.Contains(restoreSource, "string.Equals(entry.TargetId, targetId",
                 "Per-device restore must select only retained changes owned by the requested target.");
         }

@@ -7,6 +7,7 @@ internal enum GlobalRestoreBaselineMutationKind
     GpuInterruptAffinity = 1,
     MsiEnable = 2,
     XhciInterruptAffinity = 3,
+    DeviceInterruptAffinity = 4,
 }
 
 internal sealed record GlobalRestoreBaselineAction(
@@ -43,6 +44,7 @@ internal static class GlobalRestoreBaselinePlanner
                 GpuInterruptAffinityMutationContract.Kind => GlobalRestoreBaselineMutationKind.GpuInterruptAffinity,
                 DeviceInterruptMutationContract.MsiKind => GlobalRestoreBaselineMutationKind.MsiEnable,
                 DeviceInterruptMutationContract.XhciAffinityKind => GlobalRestoreBaselineMutationKind.XhciInterruptAffinity,
+                DeviceInterruptMutationContract.DeviceAffinityKind => GlobalRestoreBaselineMutationKind.DeviceInterruptAffinity,
                 _ => throw new NotSupportedException($"Restore original settings does not know mutation kind '{entry.Kind}'. No changes were attempted."),
             };
             actions.Add(new GlobalRestoreBaselineAction(entry.ExperimentId, kind, entry.TargetId, entry.Revision));
@@ -104,6 +106,7 @@ internal sealed class GlobalRestoreBaselineExecutor
                     break;
                 case GlobalRestoreBaselineMutationKind.MsiEnable:
                 case GlobalRestoreBaselineMutationKind.XhciInterruptAffinity:
+                case GlobalRestoreBaselineMutationKind.DeviceInterruptAffinity:
                     RestoreDeviceInterrupt(action);
                     break;
                 default:

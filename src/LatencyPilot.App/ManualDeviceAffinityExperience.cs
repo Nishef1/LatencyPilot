@@ -76,7 +76,7 @@ public sealed partial class MainWindow
             {
                 Spacing = 12d,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                MaxWidth = 880d,
+                MaxWidth = 1040d,
             };
             RenderManualAffinityWorkspace(host, snapshot, windowStatusText);
             OpenManualAffinityWindow(host);
@@ -140,7 +140,7 @@ public sealed partial class MainWindow
         var workArea = DisplayArea
             .GetFromWindowId(window.AppWindow.Id, DisplayAreaFallback.Primary)
             .WorkArea;
-        var width = Math.Min(1040, workArea.Width);
+        var width = Math.Min(1180, workArea.Width);
         var height = Math.Min(860, workArea.Height);
         window.AppWindow.MoveAndResize(new RectInt32(
             workArea.X + (workArea.Width - width) / 2,
@@ -219,7 +219,9 @@ public sealed partial class MainWindow
                     ? "Gpu"
                     : string.Equals(device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase)
                         ? "Xhci"
-                        : null;
+                        : device.InterruptResources.HasAssignedInterrupts
+                            ? "Device"
+                            : null;
                 return new ManualAffinityDeviceRow(
                     device,
                     classified.ContainsKey(device.InstanceId) ? kind : null,
@@ -262,7 +264,7 @@ public sealed partial class MainWindow
         });
         titleText.Children.Add(new TextBlock
         {
-            Text = "Inspect interrupt evidence and make bounded GPU or USB xHCI affinity changes.",
+            Text = "Inspect interrupt evidence and make bounded manual device-affinity changes.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
         });
@@ -380,7 +382,7 @@ public sealed partial class MainWindow
             RowSpacing = 14d,
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(292d) });
+        workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(356d) });
         workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
         workspaceGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         workspaceGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -403,10 +405,10 @@ public sealed partial class MainWindow
 
         void ApplyWorkspaceLayout(double width)
         {
-            compactLayout = width > 0d && width < 760d;
+            compactLayout = width > 0d && width < 860d;
             workspaceGrid.ColumnDefinitions[0].Width = compactLayout
                 ? new GridLength(1d, GridUnitType.Star)
-                : new GridLength(292d);
+                : new GridLength(356d);
             workspaceGrid.ColumnDefinitions[1].Width = compactLayout
                 ? new GridLength(0d)
                 : new GridLength(1d, GridUnitType.Star);
@@ -472,6 +474,7 @@ public sealed partial class MainWindow
                 AutomationProperties.SetName(
                     item,
                     $"{row.Device.DisplayName}, {(row.TargetKind is null ? "read only" : "editable")}");
+                ToolTipService.SetToolTip(item, row.Device.DisplayName);
                 deviceList.Items.Add(item);
                 if (string.Equals(
                     row.Device.InstanceId,
@@ -526,13 +529,15 @@ public sealed partial class MainWindow
         grid.Children.Add(icon);
 
         var text = new StackPanel { Spacing = 1d, VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(new TextBlock
+        var deviceNameText = new TextBlock
         {
             Text = row.Device.DisplayName,
             MaxLines = 1,
             TextTrimming = TextTrimming.CharacterEllipsis,
             Style = AppStyle("BodyTextStyle"),
-        });
+        };
+        ToolTipService.SetToolTip(deviceNameText, row.Device.DisplayName);
+        text.Children.Add(deviceNameText);
         text.Children.Add(new TextBlock
         {
             Text = FormatManualAffinityDeviceType(row.Kind, row.Device.ServiceName),
@@ -547,15 +552,23 @@ public sealed partial class MainWindow
         if (row.TargetKind is not null)
         {
             var badge = BuildManualAffinityPill(
-                row.TargetKind == "Gpu" ? "GPU" : "xHCI",
+                row.TargetKind switch
+                {
+                    "Gpu" => "GPU",
+                    "Xhci" => "xHCI",
+                    _ => "IRQ",
+                },
                 "SemanticGoodBrush",
                 "PremiumOverviewQuietBrush");
             badge.VerticalAlignment = VerticalAlignment.Center;
             ToolTipService.SetToolTip(
                 badge,
-                row.TargetKind == "Gpu"
-                    ? "GPU interrupt affinity · Supported"
-                    : "USB xHCI interrupt affinity · Supported");
+                row.TargetKind switch
+                {
+                    "Gpu" => "GPU interrupt affinity · Supported with runtime ISR verification",
+                    "Xhci" => "USB xHCI interrupt affinity · Supported with runtime ISR verification",
+                    _ => "Device interrupt affinity · Supported with translated-allocation verification",
+                });
             Grid.SetColumn(badge, 2);
             grid.Children.Add(badge);
         }
@@ -784,7 +797,9 @@ public sealed partial class MainWindow
             });
             warningText.Children.Add(new TextBlock
             {
-                Text = "Apply & verify re-reads allocation from the elevated helper and keeps nothing unless active allocation and live ISR placement are both proven.",
+                Text = row.TargetKind is "Gpu" or "Xhci"
+                    ? "Apply & verify re-reads allocation from the elevated helper and keeps nothing unless active allocation and live ISR placement are both proven."
+                    : "Apply & verify re-reads allocation from the elevated helper and keeps nothing unless Windows translated interrupt allocation is proven inside the requested mask.",
                 TextWrapping = TextWrapping.Wrap,
                 Style = AppStyle("CaptionTextStyle"),
                 Foreground = ThemeBrush("MutedTextBrush"),
@@ -1110,7 +1125,11 @@ public sealed partial class MainWindow
 
         panel.Children.Add(new TextBlock
         {
-            Text = "A change is kept only when Windows allocation and live ISR execution both stay inside the requested mask; otherwise LatencyPilot restores the previous state.",
+            Text = row.TargetKind is "Gpu" or "Xhci"
+                ? "A change is kept only when Windows allocation and live ISR execution both stay inside the requested mask; otherwise LatencyPilot restores the previous state."
+                : row.TargetKind is not null
+                    ? "For generic device IRQ affinity, LatencyPilot keeps the change only when Windows translated interrupt allocation stays inside the requested mask. No device-specific ISR attribution claim is made."
+                    : "No affinity mutation is exposed because this row does not own an allocated interrupt resource.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
             Foreground = ThemeBrush("MutedTextBrush"),

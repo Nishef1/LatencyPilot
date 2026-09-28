@@ -28,6 +28,8 @@ Measure → Experiment → Verify → Compare → Keep or Revert
 
 Do not turn LatencyPilot into a registry tweak collection, debloater, service-disabling script, opaque FPS booster, timer/HPET/PPM folklore tool, security-disabling utility, overclocking tool, or benchmark that claims physical click-to-photon latency without physical instrumentation. In v1 do not add automatic NIC/RSS, audio/storage affinity, MSI-mode forcing, mouse/keyboard queue-size tuning, polling-rate changes, PCI bridge affinity or a joint weighted/Pareto subsystem optimizer. Recovery-only compatibility may remain when it is required to restore exact journal-owned state from a superseded development build, but it must not expose a new unsupported mutation path.
 
+The development-only manual affinity lab may expose the documented Windows interrupt-affinity policy for a present devnode only when that concrete node owns allocated interrupt resources. Generic manual affinity must use the same exact snapshot/journal/restart/rollback contract and must verify translated allocation before Keep. Only GPU and xHCI may claim subsystem-specific runtime ISR placement unless another target gains an authoritative verifier. This manual utility does not expand the automatic v1 optimizer scope.
+
 ## 3. Frozen current stack
 
 Unless an ADR explicitly changes it:

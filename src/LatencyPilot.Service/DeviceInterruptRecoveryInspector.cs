@@ -28,7 +28,7 @@ internal static class DeviceInterruptRecoveryInspector
         if (!DeviceInterruptMutationContract.IsSupportedKind(entry.Kind))
         {
             return Manual(entry, MutationStoredStateRelation.Unknown, false,
-                $"Mutation kind '{entry.Kind}' is not a bounded MSI/xHCI transaction.");
+                $"Mutation kind '{entry.Kind}' is not a bounded device-interrupt transaction.");
         }
 
         try

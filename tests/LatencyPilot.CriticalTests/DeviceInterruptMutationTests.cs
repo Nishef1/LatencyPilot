@@ -53,6 +53,16 @@ public sealed class DeviceInterruptMutationTests
         Assert.AreEqual(multiMask, multiRoundTrip.AffinityMask);
         Assert.AreEqual((byte)2, multiRoundTrip.ProcessorNumber);
 
+        var genericCandidate = DeviceInterruptMutationCandidate.DeviceAffinity(
+            new DeviceInterruptAffinityCandidate(
+                0,
+                GpuInterruptAffinityCandidate.GetPrimaryProcessorNumber(multiMask),
+                multiMask));
+        var genericRoundTrip = DeviceInterruptMutationJournalCodec.DeserializeCandidate(
+            DeviceInterruptMutationJournalCodec.SerializeCandidate(genericCandidate));
+        Assert.AreEqual(DeviceInterruptMutationOperation.DeviceAffinity, genericRoundTrip.Operation);
+        Assert.AreEqual(multiMask, genericRoundTrip.ToAffinityCandidate().AffinityMask);
+
         var root = FindRepositoryRoot();
         var storeSource = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Platform.Windows", "Devices", "DeviceInterruptConfigurationStore.cs"));
         StringAssert.Contains(storeSource, "MSISupported");
@@ -69,11 +79,15 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(txSource, "RollbackRebootPending");
         StringAssert.Contains(txSource, "ResumeAfterReboot");
         StringAssert.Contains(txSource, "measurementVerified");
+        StringAssert.Contains(txSource, "DeviceAffinityKind");
+        StringAssert.Contains(txSource, "PrepareDeviceAffinity",
+            "Generic manual affinity must use the same durable mutation transaction rather than bypassing journal/recovery.");
 
         var manualRunnerSource = File.ReadAllText(Path.Combine(
             root, "tools", "LatencyPilot.GateAValidation", "ManualDeviceAffinityRunner.cs"));
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Gpu");
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Xhci");
+        StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Device");
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.AudioMsi");
         Assert.IsFalse(manualRunnerSource.Contains("VerifyAndKeepAudioMsi", StringComparison.Ordinal),
             "The superseded HDAudio MSI Apply/Keep path must not return.");
@@ -93,6 +107,8 @@ public sealed class DeviceInterruptMutationTests
             "Allocated interrupt resources must remain inside the requested processor mask.");
         StringAssert.Contains(manualRunnerSource, "VerificationFailedRolledBack",
             "Manual affinity must fail closed and restore exact original state when active allocation is not verified.");
+        StringAssert.Contains(manualRunnerSource, "No subsystem-specific ISR attribution claim is made",
+            "Generic device affinity must not imply GPU/xHCI-style ISR attribution when only translated allocation is verified.");
         StringAssert.Contains(manualRunnerSource, "does not claim ownership",
             "A pre-existing matching policy must not be claimed as LatencyPilot-owned.");
         Assert.IsFalse(
@@ -109,7 +125,13 @@ public sealed class DeviceInterruptMutationTests
             "Manual affinity UI must support independent multi-selection of processor buttons.");
         StringAssert.Contains(appSource, "Select all");
         StringAssert.Contains(appSource, "Show all",
-            "The manual affinity inspector should prioritize supported targets while keeping inspection-only devices discoverable.");
+            "The manual affinity inspector should prioritize interrupt-owning targets while keeping inspection-only devices discoverable.");
+        StringAssert.Contains(appSource, "device.InterruptResources.HasAssignedInterrupts",
+            "Generic manual CPU controls must be exposed only for a concrete device node that actually owns allocated interrupt resources.");
+        StringAssert.Contains(appSource, "ToolTipService.SetToolTip(item, row.Device.DisplayName)",
+            "Truncated device rows must expose the complete device name on hover.");
+        StringAssert.Contains(appSource, "new GridLength(356d)",
+            "The desktop master column must remain wide enough for useful device identification.");
         StringAssert.Contains(appSource, "GroupBy(static option => option.PhysicalCoreIndex)",
             "Logical CPU choices must preserve physical-core/SMT grouping in the manual selector.");
         StringAssert.Contains(appSource, "AppWindowTitleBar.IsCustomizationSupported()",

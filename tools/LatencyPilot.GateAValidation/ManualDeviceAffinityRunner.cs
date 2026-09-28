@@ -204,8 +204,16 @@ internal static class ManualDeviceAffinityRunner
                     validatedGpuCandidate.ProcessorNumber,
                     validatedGpuCandidate.AffinityMask),
                 out experimentId),
+            ManualAffinityTargetKind.Device => ApplyDevice(
+                journal,
+                options,
+                new DeviceInterruptAffinityCandidate(
+                    validatedGpuCandidate.ProcessorGroup,
+                    validatedGpuCandidate.ProcessorNumber,
+                    validatedGpuCandidate.AffinityMask),
+                out experimentId),
             _ => throw new NotSupportedException(
-                "Manual interrupt mutation is supported only for GPU and USBXHCI affinity. AudioMsi is Restore-only recovery compatibility."),
+                "Manual interrupt mutation requires an interrupt-owning device node. AudioMsi remains Restore-only recovery compatibility."),
         };
     }
 
@@ -306,6 +314,174 @@ internal static class ManualDeviceAffinityRunner
             TryRollbackGpu(transaction, journal, prepared.ExperimentId);
             throw;
         }
+    }
+
+    private static ManualDeviceAffinityReport ApplyDevice(
+        MutationJournal journal,
+        ManualAffinityOptions options,
+        DeviceInterruptAffinityCandidate candidate,
+        out Guid? experimentId)
+    {
+        experimentId = null;
+        var transaction = new DeviceInterruptMutationTransaction(journal);
+        var pending = journal.GetUnresolved()
+            .Where(entry =>
+                string.Equals(entry.TargetId, options.DeviceInstanceId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(entry.Kind, DeviceInterruptMutationContract.DeviceAffinityKind, StringComparison.Ordinal))
+            .ToArray();
+
+        if (pending.Length > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one unresolved device-affinity mutation owns this device; recover them before another manual change.");
+        }
+
+        if (pending.Length == 1)
+        {
+            EnsureOnlyTargetPending(journal, pending[0].ExperimentId);
+            experimentId = pending[0].ExperimentId;
+            if (pending[0].State != MutationJournalState.ApplyRebootPending)
+            {
+                throw new InvalidOperationException(
+                    $"The existing device-affinity experiment is {pending[0].State}; recover or restore it before applying another manual affinity.");
+            }
+
+            var pendingCandidate = DeviceInterruptMutationJournalCodec
+                .DeserializeCandidate(pending[0].CandidateStateJson)
+                .ToAffinityCandidate();
+            if (pendingCandidate.ProcessorGroup != candidate.ProcessorGroup ||
+                pendingCandidate.ProcessorNumber != candidate.ProcessorNumber ||
+                pendingCandidate.AffinityMask != candidate.AffinityMask)
+            {
+                throw new InvalidOperationException(
+                    $"The pending device-affinity experiment targets mask 0x{pendingCandidate.AffinityMask:X}; select that same processor mask to resume it, or restore/recover the pending experiment first.");
+            }
+
+            var resumed = transaction.ResumeAfterReboot(pending[0].ExperimentId);
+            if (resumed.Entry.State == MutationJournalState.Applied)
+            {
+                return VerifyAndKeepDevice(transaction, options, candidate, pending[0].ExperimentId);
+            }
+
+            if (resumed.Entry.State == MutationJournalState.ApplyRebootPending)
+            {
+                return CreateReport(
+                    options,
+                    "RebootRequired",
+                    succeeded: false,
+                    TryGetPresentDevice(options.DeviceInstanceId),
+                    pending[0].ExperimentId,
+                    restartRequired: true,
+                    verification: resumed.Entry.FailureReason,
+                    message: "The stored device-affinity candidate is still awaiting reboot activation/verification.");
+            }
+
+            throw new InvalidOperationException(
+                resumed.Entry.FailureReason ??
+                $"Device-affinity reboot resume stopped in {resumed.Entry.State}; recover the journal before another manual change.");
+        }
+
+        EnsureNoUnresolvedMutation(journal);
+        var prepared = transaction.PrepareDeviceAffinity(options.DeviceInstanceId, candidate);
+        if (prepared.NoWriteRequired)
+        {
+            var verified = VerifyAllocatedAffinity(
+                options.DeviceInstanceId,
+                candidate.AffinityMask,
+                out var masks,
+                out var assignmentReason);
+            return CreateReport(
+                options,
+                verified ? "AlreadyConfigured" : "AlreadyStoredUnverified",
+                succeeded: verified,
+                TryGetPresentDevice(options.DeviceInstanceId),
+                experimentId: null,
+                restartRequired: false,
+                verification: assignmentReason,
+                message: verified
+                    ? "The requested device affinity was already stored and Windows translated allocation is inside the requested processor mask. No LatencyPilot write was required."
+                    : "The requested device affinity is already stored, but active translated interrupt allocation could not be proven inside the requested mask. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
+                allocatedMasks: masks);
+        }
+
+        var entry = prepared.Entry
+            ?? throw new InvalidOperationException("Device-affinity prepare returned neither a no-op nor a journal entry.");
+        experimentId = entry.ExperimentId;
+        try
+        {
+            var applied = transaction.Apply(entry.ExperimentId);
+            if (applied.Entry.State == MutationJournalState.ApplyRebootPending)
+            {
+                return CreateReport(
+                    options,
+                    "RebootRequired",
+                    succeeded: false,
+                    TryGetPresentDevice(options.DeviceInstanceId),
+                    entry.ExperimentId,
+                    restartRequired: true,
+                    verification: applied.Entry.FailureReason,
+                    message: "Windows stored the device-affinity candidate but requires a reboot before active allocation can be verified. Reboot, reopen the manual affinity panel, and apply the same target again to resume this experiment.");
+            }
+
+            if (applied.Entry.State != MutationJournalState.Applied)
+            {
+                throw new InvalidOperationException(
+                    applied.Entry.FailureReason ??
+                    $"Device-affinity apply stopped in {applied.Entry.State}.");
+            }
+
+            return VerifyAndKeepDevice(transaction, options, candidate, entry.ExperimentId);
+        }
+        catch
+        {
+            TryRollbackDevice(transaction, journal, entry.ExperimentId);
+            throw;
+        }
+    }
+
+    private static ManualDeviceAffinityReport VerifyAndKeepDevice(
+        DeviceInterruptMutationTransaction transaction,
+        ManualAffinityOptions options,
+        DeviceInterruptAffinityCandidate candidate,
+        Guid experimentId)
+    {
+        var verified = VerifyAllocatedAffinity(
+            options.DeviceInstanceId,
+            candidate.AffinityMask,
+            out var masks,
+            out var assignmentReason);
+        if (!verified)
+        {
+            var rollback = transaction.Rollback(experimentId);
+            var restored = rollback.Entry.State == MutationJournalState.Reverted && rollback.OriginalStateRestored;
+            var rollbackNeedsReboot = rollback.Entry.State == MutationJournalState.RollbackRebootPending;
+            return CreateReport(
+                options,
+                rollbackNeedsReboot ? "RebootRequired" : "VerificationFailedRolledBack",
+                succeeded: false,
+                TryGetPresentDevice(options.DeviceInstanceId),
+                experimentId,
+                restartRequired: rollbackNeedsReboot,
+                verification: assignmentReason,
+                message: restored && !rollbackNeedsReboot
+                    ? "Device affinity did not pass translated-allocation verification; exact original state was restored."
+                    : rollbackNeedsReboot
+                        ? "Device-affinity verification failed. The exact original policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again."
+                        : "Device-affinity verification failed and rollback still requires recovery attention.",
+                allocatedMasks: masks);
+        }
+
+        var kept = transaction.KeepVerified(experimentId, measurementVerified: true);
+        return CreateReport(
+            options,
+            "AppliedAndKept",
+            succeeded: kept.State == MutationJournalState.Kept,
+            TryGetPresentDevice(options.DeviceInstanceId),
+            experimentId,
+            restartRequired: false,
+            verification: assignmentReason,
+            message: "Device affinity was journaled, applied, restarted, verified against Windows translated interrupt allocation, and retained as an explicit manual choice. No subsystem-specific ISR attribution claim is made for this generic device.",
+            allocatedMasks: masks);
     }
 
     private static ManualDeviceAffinityReport ApplyXhci(
@@ -818,7 +994,7 @@ internal static class ManualDeviceAffinityRunner
             if (!Enum.TryParse<ManualAffinityTargetKind>(Required("--target-kind"), ignoreCase: true, out var targetKind) ||
                 !Enum.IsDefined(targetKind))
             {
-                throw new ArgumentException("--target-kind must be Gpu, Xhci, or AudioMsi.");
+                throw new ArgumentException("--target-kind must be Gpu, Xhci, Device, or AudioMsi.");
             }
 
             byte? processor = null;
@@ -862,7 +1038,7 @@ internal static class ManualDeviceAffinityRunner
                 targetKind != ManualAffinityTargetKind.AudioMsi &&
                 affinityMask is null)
             {
-                throw new ArgumentException("--mask or --processor is required for manual GPU/xHCI affinity Apply.");
+                throw new ArgumentException("--mask or --processor is required for manual interrupt-affinity Apply.");
             }
 
             if (targetKind == ManualAffinityTargetKind.AudioMsi && affinityMask is not null)
@@ -897,6 +1073,7 @@ internal enum ManualAffinityTargetKind
     Gpu = 0,
     Xhci = 1,
     AudioMsi = 2,
+    Device = 3,
 }
 
 internal sealed record ManualRuntimePlacementVerification(bool Verified, string Reason);

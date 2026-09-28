@@ -7,10 +7,12 @@ internal static class DeviceInterruptMutationContract
 {
     internal const string MsiKind = "device-msi-enable";
     internal const string XhciAffinityKind = "xhci-interrupt-affinity";
+    internal const string DeviceAffinityKind = "device-interrupt-affinity";
 
     internal static bool IsSupportedKind(string kind) =>
         string.Equals(kind, MsiKind, StringComparison.Ordinal) ||
-        string.Equals(kind, XhciAffinityKind, StringComparison.Ordinal);
+        string.Equals(kind, XhciAffinityKind, StringComparison.Ordinal) ||
+        string.Equals(kind, DeviceAffinityKind, StringComparison.Ordinal);
 }
 
 internal sealed record DeviceInterruptPrepareResult(bool NoWriteRequired, MutationJournalEntry? Entry, DeviceInterruptConfigurationSnapshot Original);
@@ -40,6 +42,26 @@ internal sealed class DeviceInterruptMutationTransaction
         if (DeviceInterruptConfigurationStore.IsXhciAffinityStored(original, candidate)) return new(true, null, original);
         var c = DeviceInterruptMutationCandidate.XhciAffinity(candidate);
         var entry = journal.CreatePrepared(Guid.NewGuid(), DeviceInterruptMutationContract.XhciAffinityKind, original.DeviceInstanceId,
+            DeviceInterruptMutationJournalCodec.SerializeOriginal(original), DeviceInterruptMutationJournalCodec.SerializeCandidate(c));
+        return new(false, entry, original);
+    }
+
+    internal DeviceInterruptPrepareResult PrepareDeviceAffinity(string deviceInstanceId, DeviceInterruptAffinityCandidate candidate)
+    {
+        using var guard = MutationOperationLock.Acquire();
+        var device = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(candidateDevice =>
+            string.Equals(candidateDevice.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Manual interrupt-affinity target is not present.");
+        if (!device.InterruptResources.HasAssignedInterrupts)
+        {
+            throw new NotSupportedException(
+                "Manual CPU affinity requires a present device node with allocated interrupt resources.");
+        }
+
+        var original = DeviceInterruptConfigurationStore.Capture(deviceInstanceId);
+        if (DeviceInterruptConfigurationStore.IsDeviceAffinityStored(original, candidate)) return new(true, null, original);
+        var c = DeviceInterruptMutationCandidate.DeviceAffinity(candidate);
+        var entry = journal.CreatePrepared(Guid.NewGuid(), DeviceInterruptMutationContract.DeviceAffinityKind, original.DeviceInstanceId,
             DeviceInterruptMutationJournalCodec.SerializeOriginal(original), DeviceInterruptMutationJournalCodec.SerializeCandidate(c));
         return new(false, entry, original);
     }
@@ -234,15 +256,45 @@ internal sealed class DeviceInterruptMutationTransaction
     {
         var entry = journal.TryGet(id)
             ?? throw new InvalidOperationException($"Mutation journal entry {id:D} was not found.");
-        if (entry.Kind is not (DeviceInterruptMutationContract.MsiKind or DeviceInterruptMutationContract.XhciAffinityKind)) throw new InvalidOperationException("Journal entry is not a bounded device interrupt mutation.");
+        if (!DeviceInterruptMutationContract.IsSupportedKind(entry.Kind)) throw new InvalidOperationException("Journal entry is not a bounded device interrupt mutation.");
         if (allowed.Length > 0 && !allowed.Contains(entry.State)) throw new InvalidOperationException($"Expected {string.Join('/', allowed)}, found {entry.State}.");
         return entry;
     }
     private static void ApplyCandidate(DeviceInterruptConfigurationSnapshot original, DeviceInterruptMutationCandidate c)
-    { if (c.Operation == DeviceInterruptMutationOperation.EnableMsi) DeviceInterruptConfigurationStore.ApplyMsi(original); else DeviceInterruptConfigurationStore.ApplyXhciAffinity(original, c.ToAffinityCandidate()); }
+    {
+        switch (c.Operation)
+        {
+            case DeviceInterruptMutationOperation.EnableMsi:
+                DeviceInterruptConfigurationStore.ApplyMsi(original);
+                break;
+            case DeviceInterruptMutationOperation.XhciAffinity:
+                DeviceInterruptConfigurationStore.ApplyXhciAffinity(original, c.ToAffinityCandidate());
+                break;
+            case DeviceInterruptMutationOperation.DeviceAffinity:
+                DeviceInterruptConfigurationStore.ApplyDeviceAffinity(original, c.ToAffinityCandidate());
+                break;
+            default:
+                throw new NotSupportedException($"Unsupported device-interrupt mutation operation {c.Operation}.");
+        }
+    }
+
     private static bool CandidateStored(string id, DeviceInterruptMutationCandidate c)
-    { var current = DeviceInterruptConfigurationStore.Capture(id); return c.Operation == DeviceInterruptMutationOperation.EnableMsi ? DeviceInterruptConfigurationStore.IsMsiEnabled(current) : DeviceInterruptConfigurationStore.IsXhciAffinityStored(current, c.ToAffinityCandidate()); }
+    {
+        var current = DeviceInterruptConfigurationStore.Capture(id);
+        return c.Operation == DeviceInterruptMutationOperation.EnableMsi
+            ? DeviceInterruptConfigurationStore.IsMsiEnabled(current)
+            : DeviceInterruptConfigurationStore.IsDeviceAffinityStored(current, c.ToAffinityCandidate());
+    }
+
     private static void Restore(DeviceInterruptConfigurationSnapshot original, DeviceInterruptMutationOperation operation)
-    { if (operation == DeviceInterruptMutationOperation.EnableMsi) DeviceInterruptConfigurationStore.RestoreMsi(original); else DeviceInterruptConfigurationStore.RestoreXhciAffinity(original); }
+    {
+        if (operation == DeviceInterruptMutationOperation.EnableMsi)
+        {
+            DeviceInterruptConfigurationStore.RestoreMsi(original);
+            return;
+        }
+
+        DeviceInterruptConfigurationStore.RestoreDeviceAffinity(original);
+    }
     private static string Bound(Exception ex) { var value = $"{ex.GetType().Name}: {ex.Message}"; return value.Length <= 1024 ? value : value[..1024]; }
 }

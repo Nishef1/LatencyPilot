@@ -46,7 +46,7 @@ Product/safety authority remains ADR 0006. GPU measurement/search/ranking author
 
 NIC/RSS mutation, audio/storage affinity, BIOS changes, HAGS changes, MSI-mode forcing, power-plan/timer/HPET/processor-performance changes, mouse/keyboard `DataQueueSize` tuning, automatic polling-rate changes, PCI bridge/root-complex affinity, generic debloating and a generic cross-subsystem/Pareto optimizer.
 
-A development-only manual interrupt lab may inspect all latency-sensitive categories read-only. Manual writes remain limited to the journaled GPU and USBXHCI affinity targets and may use a non-empty group-0 KAFFINITY processor set. HDAudio MSI is not an editable target; recovery-only parsing may remain solely to restore exact journal-owned state created by a superseded development build. None of these development actions widen the automatic v1 scope or public privileged API. The automatic GPU search continues to evaluate one logical-CPU candidate at a time.
+A development-only manual interrupt lab may inspect all latency-sensitive categories. Any present devnode with actual allocated interrupt resources may receive a journaled manual group-0 KAFFINITY override; rows without direct interrupt ownership remain inspection-only. GPU and USBXHCI require their subsystem-specific runtime ISR verification, while other manual targets require verified Windows translated allocation and make no device-specific ISR-attribution claim. HDAudio MSI is not an editable target; recovery-only parsing may remain solely to restore exact journal-owned MSI state created by a superseded development build. None of these development actions widen the automatic v1 scope or public privileged API. The automatic GPU search continues to evaluate one logical-CPU candidate at a time.
 
 ---
 
