@@ -199,7 +199,7 @@ A difference of at most one percentage point remains a practical tie. A practica
 
 Selection confidence is explanatory metadata derived from already-collected evidence: lead over runner-up, effect MAD, Original robust variability, positive-pair consistency and practical-tie state. It is not a Keep gate and no hidden weighted score is used.
 
-Keep is evaluated separately. A positive median primary effect and bounded performance guardrails are required before the final runtime-placement check. Stored registry intent is not enough: translated Windows interrupt resources must remain inside the requested mask before scored candidate evidence is accepted, and final Keep requires direct display-driver target-only ISR proof. Shared `dxgkrnl` fallback is diagnostic only.
+Keep is evaluated separately. Rank 1 remains the **best observed CPU**, but the retained CPU is the highest-ranked finalist that passes the measured Keep guardrails and then passes final runtime-placement verification. If rank 1 fails a guardrail, the next guardrail-safe finalist may be verified instead; the report preserves rank 1 separately from the actually kept CPU. If a guardrail-safe finalist fails final runtime placement, exact Original is restored before another guardrail-safe finalist may be attempted. Stored registry intent is not enough: translated Windows interrupt resources must remain inside the requested mask before scored candidate evidence is accepted, and final Keep requires direct display-driver target-only ISR proof. Shared `dxgkrnl` fallback is diagnostic only.
 
 0.1% low remains diagnostic tail context.
 
