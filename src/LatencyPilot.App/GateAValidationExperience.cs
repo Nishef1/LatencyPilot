@@ -231,7 +231,6 @@ public sealed partial class MainWindow
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             MinWidth = 420d,
-            SelectedIndex = 0,
         };
         foreach (var route in candidates)
         {
@@ -241,6 +240,7 @@ public sealed partial class MainWindow
                 Tag = route.RawInputDevice.PnPInstanceId!,
             });
         }
+        picker.SelectedIndex = 0;
 
         var dialog = new ContentDialog
         {
