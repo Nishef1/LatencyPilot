@@ -89,11 +89,13 @@ try {
         $installer = Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
 
         $installDetail = $null
+        $installStatus = $null
         if (Test-Path -LiteralPath $serviceInstallResultPath -PathType Leaf) {
             try {
                 $installResult = Get-Content -LiteralPath $serviceInstallResultPath -Raw -ErrorAction Stop |
                     ConvertFrom-Json -ErrorAction Stop
                 $installDetail = [string]$installResult.message
+                $installStatus = [string]$installResult.status
             }
             catch {
                 $installDetail = Get-Content -LiteralPath $serviceInstallResultPath -Raw -ErrorAction SilentlyContinue
@@ -124,6 +126,10 @@ try {
             else {
                 throw "Protected Service installation failed with exit code $($installer.ExitCode). The elevated installer returned no diagnostic result."
             }
+        }
+        elseif ([string]::Equals($installStatus, 'Deferred', [System.StringComparison]::Ordinal)) {
+            $serviceUpdateDeferredForRecovery = $true
+            Write-Warning "Protected Service replacement was deferred because LatencyPilot started the existing recovery host. $installDetail"
         }
     }
     finally {

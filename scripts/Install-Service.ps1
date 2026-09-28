@@ -139,13 +139,53 @@ function Assert-RecoverySafeForReplacement {
     }
 }
 
+function Start-RecoveryHostForDeferredReplacement {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Service
+    )
+
+    Start-Service -Name $serviceName
+    $Service.WaitForStatus('Running', [TimeSpan]::FromSeconds(15))
+    if ($Service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running) {
+        throw "The existing protected recovery host is $($Service.Status), not Running."
+    }
+}
+
 # Portable/manual upgrades copy a new Service over the protected recovery host.
 # Prove the old recovery state is clean before stopping or replacing it. Inno
 # Setup performs the equivalent pre-copy check when source and destination are
 # already the managed installation directory.
 if (-not $isManagedSource -and -not $isFreshInstall -and
     ((Test-Path -LiteralPath $managedServiceDirectory -PathType Container) -or $null -ne $existing)) {
-    Assert-RecoverySafeForReplacement
+    try {
+        Assert-RecoverySafeForReplacement
+    }
+    catch {
+        $blockedMessage = $_.Exception.Message
+        $isUnresolvedExperimentBlock =
+            $blockedMessage.StartsWith(
+                'Service replacement is blocked until all managed changes are restored and the mutation journal is healthy.',
+                [System.StringComparison]::Ordinal) -and
+            $blockedMessage.IndexOf('Uninstall blocked: Experiment ', [System.StringComparison]::Ordinal) -ge 0
+
+        if ($null -ne $existing -and
+            $existing.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Stopped -and
+            $isUnresolvedExperimentBlock) {
+            Start-RecoveryHostForDeferredReplacement -Service $existing
+            $deferredMessage = 'Protected Service replacement was deferred because an unresolved journaled experiment requires recovery. The existing recovery host is running; resume or restore the experiment before retrying replacement.'
+            Write-Warning $deferredMessage
+            try {
+                Write-InstallResult -Status 'Deferred' -Message $deferredMessage
+            }
+            catch {
+                Write-Warning "The recovery host started, but the deferred diagnostic result could not be persisted: $($_.Exception.Message)"
+            }
+            exit 0
+        }
+
+        throw
+    }
 }
 
 if ($null -ne $existing -and $existing.Status -ne 'Stopped') {

@@ -93,6 +93,19 @@ public sealed class DeviceInterruptMutationTests
         Assert.IsFalse(txSource.Contains("Manual CPU affinity requires a present device node with allocated interrupt resources.", StringComparison.Ordinal),
             "Current ConfigMgr allocation visibility must not gate IntPolicy-style manual policy editing.");
 
+        var launcherSource = File.ReadAllText(Path.Combine(root, "run.ps1"));
+        StringAssert.Contains(launcherSource, "$installStatus = [string]$installResult.status",
+            "The non-elevated launcher must distinguish a deferred recovery-host start from a completed protected-service replacement.");
+        StringAssert.Contains(launcherSource, "'Deferred'",
+            "A deferred recovery-host start must remain visible to the non-elevated launcher.");
+        var installSource = File.ReadAllText(Path.Combine(root, "scripts", "Install-Service.ps1"));
+        StringAssert.Contains(installSource, "Start-RecoveryHostForDeferredReplacement",
+            "The elevated installer must start the existing protected recovery host when replacement is blocked by an unresolved experiment.");
+        StringAssert.Contains(installSource, ".IndexOf('Uninstall blocked: Experiment ', [System.StringComparison]::Ordinal) -ge 0",
+            "The elevated installer must use a Windows PowerShell-compatible ordinal predicate when classifying the checker result.");
+        StringAssert.Contains(installSource, "Write-InstallResult -Status 'Deferred'",
+            "The elevated installer must report a deferred recovery-host start without claiming that replacement succeeded.");
+
         var manualRunnerSource = File.ReadAllText(Path.Combine(
             root, "tools", "LatencyPilot.GateAValidation", "ManualDeviceAffinityRunner.cs"));
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.Gpu");
