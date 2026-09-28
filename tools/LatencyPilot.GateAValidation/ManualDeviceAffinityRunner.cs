@@ -964,31 +964,32 @@ internal static class ManualDeviceAffinityRunner
                 ManualRuntimePlacementCaptureDuration,
                 ObservationProtocol.MaximumCaptureEvents));
         XhciInterruptIsrAttribution attribution;
+        XhciInterruptRuntimePlacementEvidence placement;
         try
         {
             attribution = XhciInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
                 capture,
                 deviceInstanceId,
-                DeviceInventoryReader.CapturePresentDevices().Devices);
+                DeviceInventoryReader.CapturePresentDevices().Devices,
+                candidate);
+            placement = XhciInterruptRuntimePlacementVerifier.Analyze(
+                attribution,
+                candidate);
         }
         catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException)
         {
             return new(false, $"xHCI runtime attribution is unavailable: {exception.Message}");
         }
 
-        var inMaskCount = attribution.Events.Count(
-            item => ProcessorIsInMask(candidate.AffinityMask, item.ProcessorNumber));
-        var offMaskCount = attribution.Events.Count - inMaskCount;
         var confirmed =
             capture.IsValid &&
-            attribution.Events.Count > 0 &&
-            offMaskCount == 0;
+            placement.ConfirmsRequestedPlacement;
 
         return new(
             confirmed,
             confirmed
-                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {attribution.Events.Count} controller-attributed USBXHCI ISR event(s), all inside {FormatProcessorMask(candidate.AffinityMask)}."
-                : $"xHCI runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={attribution.Events.Count}, inMaskIsr={inMaskCount}, offMaskIsr={offMaskCount}, requestedMask=0x{candidate.AffinityMask:X}.");
+                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {placement.MatchingResolvedIsrEventCount} controller-attributed USBXHCI ISR event(s), all on {FormatProcessorMask(candidate.AffinityMask)} via {attribution.AttributionMode} attribution."
+                : $"xHCI runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={placement.MatchingResolvedIsrEventCount}, targetIsr={placement.TargetProcessorIsrEventCount}, offTargetIsr={placement.OffTargetIsrEventCount}, unresolvedIsr={placement.UnresolvedIsrEventCount}, mode={attribution.AttributionMode}, requestedMask=0x{candidate.AffinityMask:X}.");
     }
 
     private static bool CanObserveAllocatedAffinity(
