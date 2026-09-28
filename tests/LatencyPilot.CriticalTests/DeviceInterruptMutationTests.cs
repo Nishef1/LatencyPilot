@@ -78,6 +78,12 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(txSource, "ApplyRebootPending");
         StringAssert.Contains(txSource, "RollbackRebootPending");
         StringAssert.Contains(txSource, "ResumeAfterReboot");
+        StringAssert.Contains(txSource, "original.TargetKind == DeviceInterruptTargetKind.DisplayAdapter",
+            "Manual display-adapter affinity must use reboot-pending activation instead of live-restarting the GPU that may be rendering the WinUI app.");
+        StringAssert.Contains(txSource, "MutationJournalState.ApplyRebootPending",
+            "Display-adapter Apply must remain resumable after reboot.");
+        StringAssert.Contains(txSource, "MutationJournalState.RollbackRebootPending",
+            "Display-adapter Restore must avoid a live GPU restart and remain resumable after reboot.");
         StringAssert.Contains(txSource, "measurementVerified");
         StringAssert.Contains(txSource, "DeviceAffinityKind");
         StringAssert.Contains(txSource, "PrepareDeviceAffinity",
@@ -99,6 +105,10 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(manualRunnerSource, "VerifyAllocatedAffinity");
         StringAssert.Contains(manualRunnerSource, "GpuInterruptRuntimePlacementVerifier",
             "Manual GPU Keep must require runtime ETW placement evidence, not only stored or allocated state.");
+        Assert.IsFalse(manualRunnerSource.Contains("GpuInterruptAffinityMutationTransaction(journal)", StringComparison.Ordinal),
+            "The WinUI-launched manual GPU path must not use the live-restart GPU benchmark transaction.");
+        StringAssert.Contains(manualRunnerSource, "select that same mask after reboot to resume it",
+            "Manual GPU affinity must expose a journal-owned reboot/resume flow.");
         StringAssert.Contains(manualRunnerSource, "XhciInterruptRuntimePlacementVerifier",
             "Manual xHCI Keep must require controller-attributed runtime ETW placement evidence.");
         StringAssert.Contains(manualRunnerSource, "ApplyRebootPending");
@@ -133,6 +143,10 @@ public sealed class DeviceInterruptMutationTests
             "Manual affinity UI must support independent multi-selection of processor buttons.");
         StringAssert.Contains(appSource, "cpuButton.Checked +=",
             "CPU selection must follow the ToggleButton checked-state event rather than infer state from a generic click.");
+        Assert.IsFalse(appSource.Contains("button.Background = selected", StringComparison.Ordinal),
+            "CPU selection must not re-style every ToggleButton from inside a Checked/Unchecked event; let WinUI own the visual state.");
+        StringAssert.Contains(appSource, "Reboot Windows after this step",
+            "GPU Apply guidance must match the reboot-safe manual activation path.");
         StringAssert.Contains(appSource, "cpuButton.Unchecked +=",
             "CPU deselection must follow the ToggleButton unchecked-state event.");
         StringAssert.Contains(appSource, "_manualAffinityDraftMasks",
