@@ -248,20 +248,20 @@ public sealed partial class MainWindow
     private static ulong? TryGetPendingAffinityMask(MutationJournalEntry? entry)
     {
         if (entry is null ||
-            entry.State != MutationJournalState.ApplyRebootPending ||
-            !string.Equals(
-                entry.Kind,
-                DeviceInterruptMutationContract.DeviceAffinityKind,
-                StringComparison.Ordinal))
+            entry.State != MutationJournalState.ApplyRebootPending)
         {
             return null;
         }
 
         try
         {
-            return DeviceInterruptMutationJournalCodec
-                .DeserializeCandidate(entry.CandidateStateJson)
-                .AffinityMask;
+            var candidate = DeviceInterruptMutationJournalCodec
+                .DeserializeCandidate(entry.CandidateStateJson);
+            return candidate.Operation is
+                DeviceInterruptMutationOperation.DeviceAffinity or
+                DeviceInterruptMutationOperation.XhciAffinity
+                    ? candidate.AffinityMask
+                    : null;
         }
         catch (Exception exception) when (exception is
             InvalidDataException or
