@@ -178,6 +178,7 @@ internal static class GpuAutoAffinityGateARunner
                 usbRecommendation = CaptureUsbRecommendation(
                     topology,
                     result.Finalist.Processor,
+                    options.PrimaryInputDeviceInstanceId,
                     sessionCancellation.Token);
                 Console.WriteLine(
                     $"usb-recommendation={usbRecommendation.Status};" +
@@ -385,8 +386,23 @@ internal static class GpuAutoAffinityGateARunner
     private static UsbAffinityRecommendationReport CaptureUsbRecommendation(
         ProcessorTopologySnapshot topology,
         LogicalProcessorId gpuWinner,
+        string? primaryInputDeviceInstanceId,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(primaryInputDeviceInstanceId))
+        {
+            return new UsbAffinityRecommendationReport(
+                UsbAffinityRecommendationStatus.NotReady.ToString(),
+                null,
+                null,
+                [],
+                null,
+                null,
+                null,
+                null,
+                "No explicit primary Raw Input mouse identity was supplied. LatencyPilot will not guess which mouse owns the xHCI route.");
+        }
+
         try
         {
             var capture = KernelLatencyCapture.Capture(
@@ -397,7 +413,8 @@ internal static class GpuAutoAffinityGateARunner
                 topology,
                 capture,
                 routes,
-                gpuWinner);
+                gpuWinner,
+                primaryInputDeviceInstanceId);
             var evidence = recommendation.CpuEvidence;
             return new UsbAffinityRecommendationReport(
                 recommendation.Status.ToString(),
@@ -751,6 +768,7 @@ internal static class GpuAutoAffinityGateARunner
         string BenchmarkPipeName,
         string BenchmarkToken,
         bool AllowDirtyDevelopmentSource,
+        string? PrimaryInputDeviceInstanceId,
         GpuAutoAffinitySearchScope SearchScope,
         IReadOnlyList<LogicalProcessorId> RequestedProcessors)
     {
@@ -791,7 +809,7 @@ internal static class GpuAutoAffinityGateARunner
                 }
 
                 if (token is not ("--repo-root" or "--expected-commit" or "--output" or
-                    "--progress" or "--cancel" or "--session-id" or "--benchmark-pipe" or "--benchmark-token" or "--candidate-cpus"))
+                    "--progress" or "--cancel" or "--session-id" or "--benchmark-pipe" or "--benchmark-token" or "--candidate-cpus" or "--primary-input"))
                 {
                     throw new ArgumentException($"Unknown GPU auto-affinity Gate A option '{token}'.");
                 }
@@ -870,6 +888,9 @@ internal static class GpuAutoAffinityGateARunner
                 Required("--benchmark-pipe"),
                 benchmarkToken,
                 allowDirtyDevelopmentSource,
+                values.TryGetValue("--primary-input", out var primaryInput)
+                    ? primaryInput.Trim()
+                    : null,
                 diagnoseOriginal ? GpuAutoAffinitySearchScope.OriginalDiagnostics : custom ? GpuAutoAffinitySearchScope.Custom : GpuAutoAffinitySearchScope.Full,
                 requested.ToArray());
         }

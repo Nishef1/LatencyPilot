@@ -6,7 +6,9 @@ using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
+using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
+using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -175,6 +177,114 @@ public sealed partial class MainWindow
         }
     }
 
+    private async Task<string?> ResolveGateAPrimaryInputIdentityAsync()
+    {
+        UserInputRouteInventory inventory;
+        try
+        {
+            inventory = await Task.Run(InputDeviceRouteReader.Capture);
+        }
+        catch (Exception exception) when (exception is
+            Win32Exception or
+            InvalidDataException or
+            IOException or
+            UnauthorizedAccessException)
+        {
+            Logger.Warning(exception, "Primary Raw Input mouse identity could not be captured before Gate A.");
+            SetGateAValidationStatus(
+                $"GPU Gate A can continue, but xHCI recommendation will be unavailable because input routing could not be read: {exception.Message}");
+            return null;
+        }
+
+        var candidates = inventory.Routes
+            .Where(static route =>
+                route.RawInputDevice.Kind == RawInputDeviceKind.Mouse &&
+                route.RawInputDevice.ResolutionStatus == RawInputRouteResolutionStatus.Available &&
+                !string.IsNullOrWhiteSpace(route.RawInputDevice.PnPInstanceId) &&
+                route.IsUsbBacked &&
+                route.UsbPortRoute?.IsAvailable == true)
+            .GroupBy(
+                static route => route.RawInputDevice.PnPInstanceId!,
+                StringComparer.OrdinalIgnoreCase)
+            .Select(static group => group.First())
+            .OrderBy(
+                static route => route.PnPDisplayName ?? route.RawInputDevice.PnPInstanceId,
+                StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            SetGateAValidationStatus(
+                "No mouse with one exact Raw Input → USB port → xHCI route is currently available. GPU Gate A can continue, but xHCI recommendation will remain NotReady.");
+            return null;
+        }
+
+        if (candidates.Length == 1)
+        {
+            var only = candidates[0];
+            SetGateAValidationStatus(
+                $"Primary input route: {only.PnPDisplayName ?? only.RawInputDevice.PnPInstanceId}. The unique exact USB mouse identity will be carried into post-GPU xHCI selection.");
+            return only.RawInputDevice.PnPInstanceId;
+        }
+
+        var picker = new ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            MinWidth = 420d,
+            SelectedIndex = 0,
+        };
+        foreach (var route in candidates)
+        {
+            picker.Items.Add(new ComboBoxItem
+            {
+                Content = route.PnPDisplayName ?? route.RawInputDevice.PnPInstanceId!,
+                Tag = route.RawInputDevice.PnPInstanceId!,
+            });
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = RootGrid.XamlRoot,
+            Title = "Select primary mouse",
+            Content = new StackPanel
+            {
+                Spacing = 10d,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "Multiple mice have exact USB/xHCI routes. Choose the mouse you actively use so LatencyPilot can bind the post-GPU xHCI recommendation to the correct controller instead of guessing.",
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    picker,
+                    new TextBlock
+                    {
+                        Text = "This choice identifies the input route only. It does not weaken GPU Gate A, and xHCI mutation remains separately verified and product-gated.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Style = AppStyle("CaptionTextStyle"),
+                        Foreground = ThemeBrush("MutedTextBrush"),
+                    },
+                },
+            },
+            PrimaryButtonText = "Use selected mouse",
+            CloseButtonText = "GPU only",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary ||
+            picker.SelectedItem is not ComboBoxItem selected ||
+            selected.Tag is not string selectedInstanceId ||
+            string.IsNullOrWhiteSpace(selectedInstanceId))
+        {
+            SetGateAValidationStatus(
+                "No primary mouse was selected. GPU Gate A will continue; post-GPU xHCI recommendation will remain NotReady rather than guessing a device.");
+            return null;
+        }
+
+        return selectedInstanceId;
+    }
+
     private void ApplyGateAStateBadgeBrushes(string foregroundResourceKey, string backgroundResourceKey)
     {
         if (_gateAValidationStateText is null || _gateAValidationStateBadge is null)
@@ -236,6 +346,7 @@ public sealed partial class MainWindow
             // launching the subject; the elevated helper repeats this check.
             _ = GpuAutoAffinityProgressPlan.Create(
                 topology, [], ProcessorCpuSetReader.Capture(), _gateASearchScope, _gateASelectedProcessors);
+            var primaryInputDeviceInstanceId = await ResolveGateAPrimaryInputIdentityAsync();
             var sessionId = Guid.NewGuid();
             var benchmarkToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
             var benchmarkPipe = $"LatencyPilot.GpuBenchmark.{sessionId:N}";
@@ -349,6 +460,11 @@ public sealed partial class MainWindow
             if (sourceAssessment.State == GpuOptimizationSourceState.DevelopmentOnly)
             {
                 helperArguments.Add("--allow-dirty-development-source");
+            }
+            if (!string.IsNullOrWhiteSpace(primaryInputDeviceInstanceId))
+            {
+                helperArguments.Add("--primary-input");
+                helperArguments.Add(primaryInputDeviceInstanceId);
             }
             if (_gateASearchScope == GpuAutoAffinitySearchScope.Custom)
             {

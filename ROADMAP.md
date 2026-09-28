@@ -234,7 +234,7 @@ Public mutation IPC remains unarmed until this physical gate passes.
 
 **State: READ-ONLY AUTOMATIC RECOMMENDATION SOURCE IMPLEMENTED; PHYSICAL EVIDENCE PENDING**
 
-- [x] Raw Input identity;
+- [x] Raw Input identity, with explicit primary-mouse handoff into the post-GPU Gate A recommendation; multiple exact mouse routes require an explicit user choice rather than heuristic substitution;
 - [x] PnP ancestry;
 - [x] USB hub/port correlation;
 - [x] exact xHCI controller identity;

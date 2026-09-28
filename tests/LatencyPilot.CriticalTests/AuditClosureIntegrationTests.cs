@@ -119,12 +119,22 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(gateAUi, "Run development validation");
         StringAssert.Contains(gateAUi, "--allow-dirty-development-source");
         StringAssert.Contains(gateAUi, "GateAClosureEligible");
+        StringAssert.Contains(gateAUi, "InputDeviceRouteReader.Capture",
+            "Gate A must carry an explicit Raw Input mouse identity into post-GPU xHCI routing rather than leaving the real recommendation permanently NotReady.");
+        StringAssert.Contains(gateAUi, "--primary-input",
+            "The selected primary Raw Input identity must cross the elevation boundary explicitly.");
+        StringAssert.Contains(gateAUi, "Select primary mouse",
+            "Multiple exact mouse routes must require an explicit user choice rather than a first-device heuristic.");
         Assert.IsFalse(gateAUi.Contains("ReadCleanSourceRevisionAsync", StringComparison.Ordinal));
 
         var gateARunner = File.ReadAllText(Path.Combine(root, "tools", "LatencyPilot.GateAValidation", "GpuAutoAffinityGateARunner.cs"));
         StringAssert.Contains(gateARunner, "AllowDirtyDevelopmentSource");
         StringAssert.Contains(gateARunner, "GateAClosureEligible");
         StringAssert.Contains(gateARunner, "DevelopmentOnly");
+        StringAssert.Contains(gateARunner, "PrimaryInputDeviceInstanceId",
+            "The elevated runner must preserve the explicit primary input identity through GPU completion.");
+        StringAssert.Contains(gateARunner, "primaryInputDeviceInstanceId",
+            "Post-GPU xHCI recommendation must consume the explicit primary input identity.");
 
         var reportContract = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Core", "Benchmarking", "GpuAutoAffinityReport.cs"));
         StringAssert.Contains(reportContract, "GateAClosureEligible");
