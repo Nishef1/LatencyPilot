@@ -82,6 +82,10 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(txSource, "DeviceAffinityKind");
         StringAssert.Contains(txSource, "PrepareDeviceAffinity",
             "Generic manual affinity must use the same durable mutation transaction rather than bypassing journal/recovery.");
+        StringAssert.Contains(txSource, "KeepStoredPolicyVerified",
+            "Policy-only manual retention must remain semantically distinct from GPU/xHCI runtime measurement verification.");
+        Assert.IsFalse(txSource.Contains("Manual CPU affinity requires a present device node with allocated interrupt resources.", StringComparison.Ordinal),
+            "Current ConfigMgr allocation visibility must not gate IntPolicy-style manual policy editing.");
 
         var manualRunnerSource = File.ReadAllText(Path.Combine(
             root, "tools", "LatencyPilot.GateAValidation", "ManualDeviceAffinityRunner.cs"));
@@ -106,9 +110,13 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(manualRunnerSource, "(resource.AffinityMask & ~targetMask) == 0",
             "Allocated interrupt resources must remain inside the requested processor mask.");
         StringAssert.Contains(manualRunnerSource, "VerificationFailedRolledBack",
-            "Manual affinity must fail closed and restore exact original state when active allocation is not verified.");
+            "Readable contradictory allocation must fail closed and restore exact original state.");
+        StringAssert.Contains(manualRunnerSource, "AppliedPolicyKept",
+            "When allocation is unavailable, generic manual policy must be retained only under an explicit policy-only status.");
+        StringAssert.Contains(manualRunnerSource, "AlreadyStoredPolicy",
+            "A pre-existing generic policy with unavailable allocation must remain distinguishable from fully active-verified placement.");
         StringAssert.Contains(manualRunnerSource, "No subsystem-specific ISR attribution claim is made",
-            "Generic device affinity must not imply GPU/xHCI-style ISR attribution when only translated allocation is verified.");
+            "Generic device affinity must not imply GPU/xHCI-style ISR attribution.");
         StringAssert.Contains(manualRunnerSource, "does not claim ownership",
             "A pre-existing matching policy must not be claimed as LatencyPilot-owned.");
         Assert.IsFalse(
@@ -118,20 +126,22 @@ public sealed class DeviceInterruptMutationTests
         var appSource = File.ReadAllText(Path.Combine(
             root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
         StringAssert.Contains(appSource, "if (row.TargetKind is not null)",
-            "Unsupported latency-sensitive devices must remain inspectable without entering the mutation-control path.");
+            "The shared processor-mask control path must remain explicit in the affinity workspace.");
         StringAssert.Contains(appSource, "_gateAValidationRunning",
             "Manual mutation must not run concurrently with GPU Gate A.");
         StringAssert.Contains(appSource, "HashSet<byte>",
             "Manual affinity UI must support independent multi-selection of processor buttons.");
         StringAssert.Contains(appSource, "Select all");
-        StringAssert.Contains(appSource, "Show all",
-            "The manual affinity inspector should prioritize interrupt-owning targets while keeping inspection-only devices discoverable.");
-        StringAssert.Contains(appSource, "device.InterruptResources.HasAssignedInterrupts",
-            "Generic manual CPU controls must be exposed only for a concrete device node that actually owns allocated interrupt resources.");
+        StringAssert.Contains(appSource, ": "Device"",
+            "Every non-GPU/non-xHCI device row must receive the generic manual Windows affinity-policy target.");
+        Assert.IsFalse(appSource.Contains("device.InterruptResources.HasAssignedInterrupts\n                            ? "Device"", StringComparison.Ordinal),
+            "UI editability must not depend on current ConfigMgr allocated-resource visibility.");
         StringAssert.Contains(appSource, "ToolTipService.SetToolTip(item, row.Device.DisplayName)",
             "Truncated device rows must expose the complete device name on hover.");
-        StringAssert.Contains(appSource, "new GridLength(356d)",
+        StringAssert.Contains(appSource, "new GridLength(400d)",
             "The desktop master column must remain wide enough for useful device identification.");
+        StringAssert.Contains(appSource, "Receive Side Scaling (RSS) is a separate NIC/NDIS processor policy",
+            "NIC users must be told that device interrupt affinity and RSS processor steering are separate mechanisms.");
         StringAssert.Contains(appSource, "GroupBy(static option => option.PhysicalCoreIndex)",
             "Logical CPU choices must preserve physical-core/SMT grouping in the manual selector.");
         StringAssert.Contains(appSource, "AppWindowTitleBar.IsCustomizationSupported()",

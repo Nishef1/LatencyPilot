@@ -89,7 +89,7 @@ internal static class ManualDeviceAffinityRunner
 
         return report.Status switch
         {
-            "AppliedAndKept" or "AlreadyConfigured" or "Restored" or "NoLatencyPilotChange"
+            "AppliedAndKept" or "AppliedPolicyKept" or "AlreadyConfigured" or "AlreadyStoredPolicy" or "Restored" or "NoLatencyPilotChange"
                 when report.Succeeded => 0,
             "RebootRequired" => 3,
             _ => 1,
@@ -385,22 +385,33 @@ internal static class ManualDeviceAffinityRunner
         var prepared = transaction.PrepareDeviceAffinity(options.DeviceInstanceId, candidate);
         if (prepared.NoWriteRequired)
         {
+            var allocationObservable = CanObserveAllocatedAffinity(
+                options.DeviceInstanceId,
+                out var allocationStatus);
             var verified = VerifyAllocatedAffinity(
                 options.DeviceInstanceId,
                 candidate.AffinityMask,
                 out var masks,
                 out var assignmentReason);
+            var status = verified
+                ? "AlreadyConfigured"
+                : allocationObservable
+                    ? "AlreadyStoredUnverified"
+                    : "AlreadyStoredPolicy";
+            var succeeded = verified || !allocationObservable;
             return CreateReport(
                 options,
-                verified ? "AlreadyConfigured" : "AlreadyStoredUnverified",
-                succeeded: verified,
+                status,
+                succeeded,
                 TryGetPresentDevice(options.DeviceInstanceId),
                 experimentId: null,
                 restartRequired: false,
                 verification: assignmentReason,
                 message: verified
                     ? "The requested device affinity was already stored and Windows translated allocation is inside the requested processor mask. No LatencyPilot write was required."
-                    : "The requested device affinity is already stored, but active translated interrupt allocation could not be proven inside the requested mask. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
+                    : allocationObservable
+                        ? "The requested device affinity is already stored, but readable active interrupt allocation escapes the requested mask. No write was attempted and LatencyPilot does not claim ownership of this existing policy."
+                        : $"The requested Windows interrupt-affinity policy is already stored. Active placement is not currently observable ({allocationStatus}), so this is a policy-only result rather than proof of ISR placement.",
                 allocatedMasks: masks);
         }
 
@@ -445,12 +456,21 @@ internal static class ManualDeviceAffinityRunner
         DeviceInterruptAffinityCandidate candidate,
         Guid experimentId)
     {
+        var allocationObservable = CanObserveAllocatedAffinity(
+            options.DeviceInstanceId,
+            out var allocationStatus);
         var verified = VerifyAllocatedAffinity(
             options.DeviceInstanceId,
             candidate.AffinityMask,
             out var masks,
             out var assignmentReason);
-        if (!verified)
+
+        // If Windows exposes translated interrupt allocation, treat it as
+        // authoritative and fail closed when it escapes the requested mask.
+        // If ConfigMgr cannot expose allocation, retain the explicit manual
+        // policy after stored-state + restart verification, but do not claim
+        // active ISR placement.
+        if (allocationObservable && !verified)
         {
             var rollback = transaction.Rollback(experimentId);
             var restored = rollback.Entry.State == MutationJournalState.Reverted && rollback.OriginalStateRestored;
@@ -464,23 +484,30 @@ internal static class ManualDeviceAffinityRunner
                 restartRequired: rollbackNeedsReboot,
                 verification: assignmentReason,
                 message: restored && !rollbackNeedsReboot
-                    ? "Device affinity did not pass translated-allocation verification; exact original state was restored."
+                    ? "Readable Windows interrupt allocation escaped the requested processor mask; the exact original state was restored."
                     : rollbackNeedsReboot
-                        ? "Device-affinity verification failed. The exact original policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again."
+                        ? "Device-affinity allocation verification failed. The exact original policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again."
                         : "Device-affinity verification failed and rollback still requires recovery attention.",
                 allocatedMasks: masks);
         }
 
-        var kept = transaction.KeepVerified(experimentId, measurementVerified: true);
+        var kept = transaction.KeepStoredPolicyVerified(
+            experimentId,
+            storedPolicyVerified: true);
+        var policyOnly = !allocationObservable;
         return CreateReport(
             options,
-            "AppliedAndKept",
+            policyOnly ? "AppliedPolicyKept" : "AppliedAndKept",
             succeeded: kept.State == MutationJournalState.Kept,
             TryGetPresentDevice(options.DeviceInstanceId),
             experimentId,
             restartRequired: false,
-            verification: assignmentReason,
-            message: "Device affinity was journaled, applied, restarted, verified against Windows translated interrupt allocation, and retained as an explicit manual choice. No subsystem-specific ISR attribution claim is made for this generic device.",
+            verification: policyOnly
+                ? $"Stored policy and device restart were verified. Active interrupt allocation is not observable ({allocationStatus}); no ISR-placement claim is made."
+                : assignmentReason,
+            message: policyOnly
+                ? "The Windows interrupt-affinity policy was journaled, applied, restarted, re-read from the device hardware key, and retained. Active placement is currently unverified because Windows did not expose translated interrupt allocation for this device."
+                : "Device affinity was journaled, applied, restarted, verified against Windows translated interrupt allocation, and retained as an explicit manual choice. No subsystem-specific ISR attribution claim is made for this generic device.",
             allocatedMasks: masks);
     }
 
@@ -757,6 +784,17 @@ internal static class ManualDeviceAffinityRunner
             confirmed
                 ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {attribution.Events.Count} controller-attributed USBXHCI ISR event(s), all inside {FormatProcessorMask(candidate.AffinityMask)}."
                 : $"xHCI runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={attribution.Events.Count}, inMaskIsr={inMaskCount}, offMaskIsr={offMaskCount}, requestedMask=0x{candidate.AffinityMask:X}.");
+    }
+
+    private static bool CanObserveAllocatedAffinity(
+        string deviceInstanceId,
+        out InterruptResourceReadStatus status)
+    {
+        var device = TryGetPresentDevice(deviceInstanceId)
+            ?? throw new InvalidOperationException("The manual affinity target is no longer a present PnP device.");
+        status = device.InterruptResources.ReadStatus;
+        return status == InterruptResourceReadStatus.Available &&
+            device.InterruptResources.Resources.Count > 0;
     }
 
     private static bool VerifyAllocatedAffinity(

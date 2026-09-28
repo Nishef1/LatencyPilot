@@ -76,7 +76,7 @@ public sealed partial class MainWindow
             {
                 Spacing = 12d,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                MaxWidth = 1040d,
+                MaxWidth = 1140d,
             };
             RenderManualAffinityWorkspace(host, snapshot, windowStatusText);
             OpenManualAffinityWindow(host);
@@ -140,7 +140,7 @@ public sealed partial class MainWindow
         var workArea = DisplayArea
             .GetFromWindowId(window.AppWindow.Id, DisplayAreaFallback.Primary)
             .WorkArea;
-        var width = Math.Min(1180, workArea.Width);
+        var width = Math.Min(1280, workArea.Width);
         var height = Math.Min(860, workArea.Height);
         window.AppWindow.MoveAndResize(new RectInt32(
             workArea.X + (workArea.Width - width) / 2,
@@ -208,10 +208,6 @@ public sealed partial class MainWindow
             .ToArray();
 
         var rows = inventory.Devices
-            .Where(device =>
-                classified.ContainsKey(device.InstanceId) ||
-                device.InterruptConfiguration.HasAnyConfiguration ||
-                device.InterruptResources.HasAssignedInterrupts)
             .Select(device =>
             {
                 classified.TryGetValue(device.InstanceId, out var kind);
@@ -219,9 +215,7 @@ public sealed partial class MainWindow
                     ? "Gpu"
                     : string.Equals(device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase)
                         ? "Xhci"
-                        : device.InterruptResources.HasAssignedInterrupts
-                            ? "Device"
-                            : null;
+                        : "Device";
                 return new ManualAffinityDeviceRow(
                     device,
                     classified.ContainsKey(device.InstanceId) ? kind : null,
@@ -264,7 +258,7 @@ public sealed partial class MainWindow
         });
         titleText.Children.Add(new TextBlock
         {
-            Text = "Inspect interrupt evidence and make bounded manual device-affinity changes.",
+            Text = "Set the documented Windows interrupt-affinity policy for any present device, with stronger runtime verification where LatencyPilot has an authoritative verifier.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
         });
@@ -297,7 +291,7 @@ public sealed partial class MainWindow
             return;
         }
 
-        var supportedCount = snapshot.Rows.Count(static row => row.TargetKind is not null);
+        var supportedCount = snapshot.Rows.Count;
         var detailHost = new StackPanel
         {
             Spacing = 0d,
@@ -314,16 +308,6 @@ public sealed partial class MainWindow
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
         };
         AutomationProperties.SetName(deviceList, "Devices with interrupt affinity evidence");
-
-        var showAllCheckBox = new CheckBox
-        {
-            Content = "Show all",
-            IsChecked = supportedCount == 0,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        AutomationProperties.SetName(
-            showAllCheckBox,
-            "Show inspection-only devices in addition to supported interrupt-affinity targets");
 
         var searchBox = new TextBox
         {
@@ -351,7 +335,7 @@ public sealed partial class MainWindow
         });
         devicesHeading.Children.Add(new TextBlock
         {
-            Text = $"{supportedCount.ToString(CultureInfo.InvariantCulture)} supported · {snapshot.Rows.Count.ToString(CultureInfo.InvariantCulture)} with interrupt evidence",
+            Text = $"{snapshot.Rows.Count.ToString(CultureInfo.InvariantCulture)} present devices · manual affinity policy available",
             Style = AppStyle("CaptionTextStyle"),
             Foreground = ThemeBrush("MutedTextBrush"),
         });
@@ -361,7 +345,6 @@ public sealed partial class MainWindow
         var devicesContent = new StackPanel { Spacing = 10d };
         devicesContent.Children.Add(devicesTitleRow);
         devicesContent.Children.Add(searchBox);
-        devicesContent.Children.Add(showAllCheckBox);
         devicesContent.Children.Add(new Border
         {
             Height = 1d,
@@ -382,7 +365,7 @@ public sealed partial class MainWindow
             RowSpacing = 14d,
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(356d) });
+        workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(400d) });
         workspaceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
         workspaceGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         workspaceGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -405,10 +388,10 @@ public sealed partial class MainWindow
 
         void ApplyWorkspaceLayout(double width)
         {
-            compactLayout = width > 0d && width < 860d;
+            compactLayout = width > 0d && width < 940d;
             workspaceGrid.ColumnDefinitions[0].Width = compactLayout
                 ? new GridLength(1d, GridUnitType.Star)
-                : new GridLength(356d);
+                : new GridLength(400d);
             workspaceGrid.ColumnDefinitions[1].Width = compactLayout
                 ? new GridLength(0d)
                 : new GridLength(1d, GridUnitType.Star);
@@ -449,14 +432,13 @@ public sealed partial class MainWindow
             }
 
             deviceList.Items.Clear();
-            var showAll = showAllCheckBox.IsChecked == true;
             var filtered = snapshot.Rows
                 .Where(row =>
-                    (showAll || row.TargetKind is not null) &&
-                    (normalized.Length == 0 ||
-                     row.Device.DisplayName.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
-                     (row.Device.ServiceName?.Contains(normalized, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                     (row.Kind?.ToString().Contains(normalized, StringComparison.OrdinalIgnoreCase) ?? false)))
+                    normalized.Length == 0 ||
+                    row.Device.DisplayName.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+                    row.Device.InstanceId.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+                    (row.Device.ServiceName?.Contains(normalized, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (row.Kind?.ToString().Contains(normalized, StringComparison.OrdinalIgnoreCase) ?? false))
                 .ToArray();
             visibleDeviceCount = filtered.Length;
             RefreshDeviceListHeight();
@@ -493,9 +475,7 @@ public sealed partial class MainWindow
                     Style = AppStyle("SubtleCardStyle"),
                     Child = new TextBlock
                     {
-                        Text = showAll
-                            ? "No devices match this search."
-                            : "No supported targets match this search. Enable Show all to inspect read-only devices.",
+                        Text = "No devices match this search.",
                         TextWrapping = TextWrapping.Wrap,
                         Style = AppStyle("MutedBodyTextStyle"),
                     },
@@ -509,8 +489,6 @@ public sealed partial class MainWindow
 
         deviceList.SelectionChanged += (_, _) => RenderSelectedDevice();
         searchBox.TextChanged += (_, _) => PopulateDevices(searchBox.Text, null);
-        showAllCheckBox.Checked += (_, _) => PopulateDevices(searchBox.Text, null);
-        showAllCheckBox.Unchecked += (_, _) => PopulateDevices(searchBox.Text, null);
 
         var initialId = selectedDeviceInstanceId
             ?? snapshot.Rows.FirstOrDefault(static row => row.TargetKind is not null)?.Device.InstanceId
@@ -556,7 +534,7 @@ public sealed partial class MainWindow
                 {
                     "Gpu" => "GPU",
                     "Xhci" => "xHCI",
-                    _ => "IRQ",
+                    _ => "Policy",
                 },
                 "SemanticGoodBrush",
                 "PremiumOverviewQuietBrush");
@@ -567,7 +545,7 @@ public sealed partial class MainWindow
                 {
                     "Gpu" => "GPU interrupt affinity · Supported with runtime ISR verification",
                     "Xhci" => "USB xHCI interrupt affinity · Supported with runtime ISR verification",
-                    _ => "Device interrupt affinity · Supported with translated-allocation verification",
+                    _ => "Windows device interrupt-affinity policy · Active placement is verified when Windows exposes allocated interrupt resources",
                 });
             Grid.SetColumn(badge, 2);
             grid.Children.Add(badge);
@@ -694,9 +672,9 @@ public sealed partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center,
         };
         headerActions.Children.Add(BuildManualAffinityPill(
-            row.TargetKind is null ? "Inspection only" : "Supported",
-            row.TargetKind is null ? "MutedTextBrush" : "SemanticGoodBrush",
-            row.TargetKind is null ? "SurfaceAltBrush" : "PremiumOverviewQuietBrush"));
+            row.TargetKind is "Gpu" or "Xhci" ? "Runtime verified path" : "Manual policy",
+            row.TargetKind is "Gpu" or "Xhci" ? "SemanticGoodBrush" : "AccentBrush",
+            "PremiumOverviewQuietBrush"));
         headerActions.Children.Add(advancedButton);
         Grid.SetColumn(headerActions, 2);
         header.Children.Add(headerActions);
@@ -752,6 +730,25 @@ public sealed partial class MainWindow
         });
         panel.Children.Add(title);
 
+        if (row.Kind == LatencySensitiveDeviceKind.NetworkAdapter)
+        {
+            panel.Children.Add(new Border
+            {
+                Padding = new Thickness(10d, 8d, 10d, 8d),
+                CornerRadius = new CornerRadius(8d),
+                Background = ThemeBrush("SurfaceAltBrush"),
+                BorderBrush = ThemeBrush("BorderBrush"),
+                BorderThickness = new Thickness(1d),
+                Child = new TextBlock
+                {
+                    Text = "Network note · This control sets the Windows device interrupt-affinity policy. Receive Side Scaling (RSS) is a separate NIC/NDIS processor policy and can still distribute receive processing across its RSS CPU set.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Style = AppStyle("CaptionTextStyle"),
+                    Foreground = ThemeBrush("MutedTextBrush"),
+                },
+            });
+        }
+
         var metrics = new Grid { ColumnSpacing = 8d };
         for (var index = 0; index < 3; index++)
         {
@@ -773,8 +770,7 @@ public sealed partial class MainWindow
         metrics.Children.Add(assignmentTile);
         panel.Children.Add(metrics);
 
-        if (row.TargetKind is not null &&
-            row.Device.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available)
+        if (row.Device.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available)
         {
             var warningContent = new Grid { ColumnSpacing = 8d };
             warningContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -799,7 +795,7 @@ public sealed partial class MainWindow
             {
                 Text = row.TargetKind is "Gpu" or "Xhci"
                     ? "Apply & verify re-reads allocation from the elevated helper and keeps nothing unless active allocation and live ISR placement are both proven."
-                    : "Apply & verify re-reads allocation from the elevated helper and keeps nothing unless Windows translated interrupt allocation is proven inside the requested mask.",
+                    : "The current allocation is not readable. Manual policy editing is still available, matching Windows IntPolicy behavior; LatencyPilot will verify the stored policy and device restart, but will label active placement as unverified until Windows exposes interrupt allocation.",
                 TextWrapping = TextWrapping.Wrap,
                 Style = AppStyle("CaptionTextStyle"),
                 Foreground = ThemeBrush("MutedTextBrush"),
@@ -1127,9 +1123,7 @@ public sealed partial class MainWindow
         {
             Text = row.TargetKind is "Gpu" or "Xhci"
                 ? "A change is kept only when Windows allocation and live ISR execution both stay inside the requested mask; otherwise LatencyPilot restores the previous state."
-                : row.TargetKind is not null
-                    ? "For generic device IRQ affinity, LatencyPilot keeps the change only when Windows translated interrupt allocation stays inside the requested mask. No device-specific ISR attribution claim is made."
-                    : "No affinity mutation is exposed because this row does not own an allocated interrupt resource.",
+                : "For generic devices, LatencyPilot always verifies the stored Windows affinity policy and restart. When translated interrupt allocation is readable it must also stay inside the requested mask; otherwise the result is retained as policy-only and clearly marked as active-placement unverified.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
             Foreground = ThemeBrush("MutedTextBrush"),
@@ -1373,9 +1367,12 @@ public sealed partial class MainWindow
         _manualDeviceAffinityBusy = true;
         ManualDeviceAffinityButton.IsEnabled = false;
         var actionStatus = action == "Apply" && affinityMask is { } requestedMask
-            ? row.TargetKind == "Xhci"
-                ? $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep moving the USB mouse/using USB input during the ~10 s ETW verification; Windows may briefly restart the controller…"
-                : $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep representative graphics activity running during the ~10 s ETW verification; Windows may briefly restart the device…"
+            ? row.TargetKind switch
+            {
+                "Xhci" => $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep moving the USB mouse/using USB input during the ~10 s ETW verification; Windows may briefly restart the controller…",
+                "Gpu" => $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. After UAC, keep representative graphics activity running during the ~10 s ETW verification; Windows may briefly restart the device…",
+                _ => $"Applying {FormatMask(requestedMask)} to {row.Device.DisplayName}. Windows will restart the device when possible and verify the stored affinity policy; active allocation is also verified when Windows exposes it.",
+            }
             : $"Restoring journal-owned original state for {row.Device.DisplayName}…";
 
         SetManualAffinityStatus(
@@ -1390,7 +1387,7 @@ public sealed partial class MainWindow
                 row.TargetKind,
                 row.Device.InstanceId,
                 affinityMask);
-            var status = report.Status == "RebootRequired"
+            var status = report.Status is "RebootRequired" or "AppliedPolicyKept" or "AlreadyStoredPolicy"
                 ? "SemanticAttentionBrush"
                 : report.Status is "AppliedAndKept" or "AlreadyConfigured" or "Restored" or "NoLatencyPilotChange"
                     ? "SemanticGoodBrush"

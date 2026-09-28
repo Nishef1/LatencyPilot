@@ -49,20 +49,19 @@ internal sealed class DeviceInterruptMutationTransaction
     internal DeviceInterruptPrepareResult PrepareDeviceAffinity(string deviceInstanceId, DeviceInterruptAffinityCandidate candidate)
     {
         using var guard = MutationOperationLock.Acquire();
-        var device = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(candidateDevice =>
+        _ = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(candidateDevice =>
             string.Equals(candidateDevice.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException("Manual interrupt-affinity target is not present.");
-        if (!device.InterruptResources.HasAssignedInterrupts)
-        {
-            throw new NotSupportedException(
-                "Manual CPU affinity requires a present device node with allocated interrupt resources.");
-        }
 
+        // IntPolicy-style manual editing must not depend on ConfigMgr being able
+        // to expose the device's current translated interrupt allocation. The
+        // documented policy is device-scoped; active-placement confidence is
+        // evaluated separately by the manual verifier after restart.
         var original = DeviceInterruptConfigurationStore.Capture(deviceInstanceId);
         if (DeviceInterruptConfigurationStore.IsDeviceAffinityStored(original, candidate)) return new(true, null, original);
-        var c = DeviceInterruptMutationCandidate.DeviceAffinity(candidate);
+        var candidateState = DeviceInterruptMutationCandidate.DeviceAffinity(candidate);
         var entry = journal.CreatePrepared(Guid.NewGuid(), DeviceInterruptMutationContract.DeviceAffinityKind, original.DeviceInstanceId,
-            DeviceInterruptMutationJournalCodec.SerializeOriginal(original), DeviceInterruptMutationJournalCodec.SerializeCandidate(c));
+            DeviceInterruptMutationJournalCodec.SerializeOriginal(original), DeviceInterruptMutationJournalCodec.SerializeCandidate(candidateState));
         return new(false, entry, original);
     }
 
@@ -116,17 +115,44 @@ internal sealed class DeviceInterruptMutationTransaction
 
     internal MutationJournalEntry KeepVerified(Guid experimentId, bool measurementVerified)
     {
+        if (!measurementVerified)
+        {
+            throw new InvalidOperationException(
+                "Candidate cannot be kept without an explicit verified measurement stage.");
+        }
+
+        return KeepCandidateAfterVerification(
+            experimentId,
+            "measurement/runtime verification");
+    }
+
+    internal MutationJournalEntry KeepStoredPolicyVerified(Guid experimentId, bool storedPolicyVerified)
+    {
+        if (!storedPolicyVerified)
+        {
+            throw new InvalidOperationException(
+                "Manual device policy cannot be kept unless the stored candidate and restart were verified.");
+        }
+
+        return KeepCandidateAfterVerification(
+            experimentId,
+            "stored-policy verification");
+    }
+
+    private MutationJournalEntry KeepCandidateAfterVerification(
+        Guid experimentId,
+        string verificationStage)
+    {
         using var guard = MutationOperationLock.Acquire();
-        if (!measurementVerified) throw new InvalidOperationException("Candidate cannot be kept without an explicit verified measurement stage.");
         var applied = GetEntry(experimentId, MutationJournalState.Applied);
         var original = DeviceInterruptMutationJournalCodec.DeserializeOriginal(applied.OriginalStateJson);
         var candidate = DeviceInterruptMutationJournalCodec.DeserializeCandidate(applied.CandidateStateJson);
         // Re-read actual machine state before Kept so the journal never closes
-        // a kept experiment whose candidate is no longer active.
+        // a retained experiment whose stored candidate has disappeared.
         if (!CandidateStored(original.DeviceInstanceId, candidate))
         {
             throw new InvalidOperationException(
-                "Candidate cannot be kept because the actual interrupt configuration no longer matches the journaled candidate.");
+                $"Candidate cannot be kept after {verificationStage} because the actual interrupt configuration no longer matches the journaled candidate.");
         }
         var measuring = journal.Transition(applied.ExperimentId, applied.Revision, MutationJournalState.Applied, MutationJournalState.Measuring);
         var decision = journal.Transition(measuring.ExperimentId, measuring.Revision, MutationJournalState.Measuring, MutationJournalState.AwaitingDecision);
@@ -134,7 +160,7 @@ internal sealed class DeviceInterruptMutationTransaction
         if (!DeviceInterruptConfigurationStore.MatchesCandidate(reVerified, original, candidate))
         {
             throw new InvalidOperationException(
-                "Candidate cannot be kept because the interrupt configuration changed between measurement and the keep decision.");
+                $"Candidate cannot be kept because the interrupt configuration changed after {verificationStage}.");
         }
         return journal.Transition(decision.ExperimentId, decision.Revision, MutationJournalState.AwaitingDecision, MutationJournalState.Kept);
     }
