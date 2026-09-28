@@ -63,8 +63,13 @@ public sealed class GpuAutoAffinityProgressPlan
         {
             throw new ArgumentException("Only custom scope accepts candidate processors.", nameof(requestedProcessors));
         }
-        var cores = candidates.GroupBy(static candidate => candidate.PhysicalCoreIndex).ToArray();
-        var siblingBudget = cores.Select(static core => core.Count() - 1).OrderDescending().Take(GpuAutoAffinitySession.MaximumPhysicalCoreHypotheses).Sum();
-        return new GpuAutoAffinityProgressPlan(candidates.Count, cores.Length + siblingBudget, scope);
+        if (scope == GpuAutoAffinitySearchScope.OriginalDiagnostics)
+        {
+            return new GpuAutoAffinityProgressPlan(0, 0, scope);
+        }
+
+        // Full search now guarantees one paired screen for every eligible
+        // logical CPU; only the later shortlist/finalist repetitions are adaptive.
+        return new GpuAutoAffinityProgressPlan(candidates.Count, candidates.Count, scope);
     }
 }
