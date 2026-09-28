@@ -24,8 +24,10 @@ public sealed record XhciInterruptRuntimePlacementEvidence(
     string DeviceInstanceId,
     string DriverServiceName,
     byte TargetProcessorNumber,
+    ulong RequestedAffinityMask,
     int MatchingResolvedIsrEventCount,
     int TargetProcessorIsrEventCount,
+    int InRequestedMaskIsrEventCount,
     int OffTargetIsrEventCount,
     int UnresolvedIsrEventCount,
     IReadOnlyList<XhciObservedInterruptCount> ObservedProcessors)
@@ -34,7 +36,7 @@ public sealed record XhciInterruptRuntimePlacementEvidence(
 
     public bool ConfirmsRequestedPlacement =>
         HasRuntimeEvidence &&
-        TargetProcessorIsrEventCount == MatchingResolvedIsrEventCount &&
+        InRequestedMaskIsrEventCount == MatchingResolvedIsrEventCount &&
         OffTargetIsrEventCount == 0;
 }
 
@@ -221,14 +223,19 @@ public static class XhciInterruptRuntimePlacementVerifier
             .ToArray();
         var targetCount = attribution.Events.Count(
             item => item.ProcessorNumber == candidate.ProcessorNumber);
+        var inRequestedMaskCount = attribution.Events.Count(item =>
+            item.ProcessorNumber is >= 0 and < 64 &&
+            (candidate.AffinityMask & (1UL << item.ProcessorNumber)) != 0);
 
         return new XhciInterruptRuntimePlacementEvidence(
             attribution.DeviceInstanceId,
             attribution.DriverServiceName,
             candidate.ProcessorNumber,
+            candidate.AffinityMask,
             attribution.Events.Count,
             targetCount,
-            attribution.Events.Count - targetCount,
+            inRequestedMaskCount,
+            attribution.Events.Count - inRequestedMaskCount,
             attribution.UnresolvedIsrEventCount,
             observedProcessors);
     }

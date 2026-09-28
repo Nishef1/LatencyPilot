@@ -129,6 +129,23 @@ public sealed class UsbOptimizationTests
         Assert.IsTrue(sharedDriverPlacement.ConfirmsRequestedPlacement,
             "When every same-service peer has readable translated allocation disjoint from the requested CPU, USBXHCI ISR execution on the requested CPU is uniquely attributable to the target controller.");
 
+        var multiMaskAttribution = new XhciInterruptIsrAttribution(
+            targetWithAllocation.InstanceId,
+            "USBXHCI",
+            [
+                new KernelLatencyEvent(KernelLatencyEventKind.Isr, 2, 1, 8, 0x1001, 44, 0, "C:\\Windows\\System32\\drivers\\USBXHCI.SYS"),
+                new KernelLatencyEvent(KernelLatencyEventKind.Isr, 3, 2, 7, 0x1002, 44, 0, "C:\\Windows\\System32\\drivers\\USBXHCI.SYS"),
+            ],
+            0,
+            XhciInterruptIsrAttributionMode.SingleServiceInstance);
+        var multiMaskPlacement = XhciInterruptRuntimePlacementVerifier.Analyze(
+            multiMaskAttribution,
+            new DeviceInterruptAffinityCandidate(0, 2, (1UL << 2) | (1UL << 3)));
+        Assert.IsTrue(multiMaskPlacement.ConfirmsRequestedPlacement,
+            "Manual multi-CPU KAFFINITY must accept ISR execution on any selected processor, not only the primary/lowest bit.");
+        Assert.AreEqual(2, multiMaskPlacement.InRequestedMaskIsrEventCount);
+        Assert.AreEqual(0, multiMaskPlacement.OffTargetIsrEventCount);
+
         var peerWithOverlappingAllocation = peerWithDisjointAllocation with
         {
             InterruptResources = InterruptResourceSnapshot.Available(

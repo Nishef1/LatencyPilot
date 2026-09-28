@@ -989,7 +989,7 @@ internal static class ManualDeviceAffinityRunner
             confirmed,
             confirmed
                 ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {placement.MatchingResolvedIsrEventCount} controller-attributed USBXHCI ISR event(s), all on {FormatProcessorMask(candidate.AffinityMask)} via {attribution.AttributionMode} attribution."
-                : $"xHCI runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={placement.MatchingResolvedIsrEventCount}, targetIsr={placement.TargetProcessorIsrEventCount}, offTargetIsr={placement.OffTargetIsrEventCount}, unresolvedIsr={placement.UnresolvedIsrEventCount}, mode={attribution.AttributionMode}, requestedMask=0x{candidate.AffinityMask:X}.");
+                : $"xHCI runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={placement.MatchingResolvedIsrEventCount}, inRequestedMaskIsr={placement.InRequestedMaskIsrEventCount}, primaryCpuIsr={placement.TargetProcessorIsrEventCount}, offTargetIsr={placement.OffTargetIsrEventCount}, unresolvedIsr={placement.UnresolvedIsrEventCount}, mode={attribution.AttributionMode}, requestedMask=0x{candidate.AffinityMask:X}.");
     }
 
     private static bool CanObserveAllocatedAffinity(
