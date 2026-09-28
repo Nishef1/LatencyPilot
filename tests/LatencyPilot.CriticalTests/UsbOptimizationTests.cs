@@ -98,6 +98,52 @@ public sealed class UsbOptimizationTests
             UsbOptimizationReadiness.Evaluate(route, timing, driverWide).Status,
             "A shared USBXHCI module is driver-wide evidence, not controller-specific ownership.");
 
+        var targetWithAllocation = controller with
+        {
+            InterruptResources = InterruptResourceSnapshot.Available(
+            [
+                new AllocatedInterruptResourceSnapshot(44, 0, 1UL << 2, 0),
+            ]),
+        };
+        var peerWithDisjointAllocation = sharedController with
+        {
+            InterruptResources = InterruptResourceSnapshot.Available(
+            [
+                new AllocatedInterruptResourceSnapshot(45, 0, 1UL << 4, 0),
+            ]),
+        };
+        var sharedDriverCapture = capture with
+        {
+            Events =
+            [
+                new KernelLatencyEvent(KernelLatencyEventKind.Isr, 2, 1, 8, 0x1001, 44, 0, "C:\\Windows\\System32\\drivers\\USBXHCI.SYS"),
+                new KernelLatencyEvent(KernelLatencyEventKind.Isr, 4, 2, 7, 0x1002, 45, 0, "C:\\Windows\\System32\\drivers\\USBXHCI.SYS"),
+            ],
+        };
+        var xhciCandidate = new DeviceInterruptAffinityCandidate(0, 2, 1UL << 2);
+        var sharedDriverPlacement = XhciInterruptRuntimePlacementVerifier.Analyze(
+            sharedDriverCapture,
+            targetWithAllocation.InstanceId,
+            [targetWithAllocation, peerWithDisjointAllocation],
+            xhciCandidate);
+        Assert.IsTrue(sharedDriverPlacement.ConfirmsRequestedPlacement,
+            "When every same-service peer has readable translated allocation disjoint from the requested CPU, USBXHCI ISR execution on the requested CPU is uniquely attributable to the target controller.");
+
+        var peerWithOverlappingAllocation = peerWithDisjointAllocation with
+        {
+            InterruptResources = InterruptResourceSnapshot.Available(
+            [
+                new AllocatedInterruptResourceSnapshot(45, 0, 1UL << 2, 0),
+            ]),
+        };
+        Assert.ThrowsExactly<NotSupportedException>(() =>
+            XhciInterruptRuntimePlacementVerifier.Analyze(
+                sharedDriverCapture,
+                targetWithAllocation.InstanceId,
+                [targetWithAllocation, peerWithOverlappingAllocation],
+                xhciCandidate),
+            "Shared-driver attribution must stay fail-closed when another xHCI controller can service interrupts on the requested CPU.");
+
         var composite = UsbPortRouteCorrelator.ResolveFromCandidates(
             [
                 new UsbDriverKeyCandidate("HID\\VID_TEST", null, "HID child has no usable port driver key"),

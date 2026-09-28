@@ -3,11 +3,18 @@ using LatencyPilot.Core.Observation;
 
 namespace LatencyPilot.Platform.Windows.Devices;
 
+public enum XhciInterruptIsrAttributionMode
+{
+    SingleServiceInstance = 0,
+    DisjointAllocatedAffinity = 1,
+}
+
 public sealed record XhciInterruptIsrAttribution(
     string DeviceInstanceId,
     string DriverServiceName,
     IReadOnlyList<KernelLatencyEvent> Events,
-    int UnresolvedIsrEventCount);
+    int UnresolvedIsrEventCount,
+    XhciInterruptIsrAttributionMode AttributionMode);
 
 public sealed record XhciObservedInterruptCount(
     int ProcessorNumber,
@@ -38,16 +45,35 @@ public static class XhciInterruptRuntimePlacementVerifier
         string deviceInstanceId,
         DeviceInterruptAffinityCandidate candidate) =>
         Analyze(
+            capture,
+            deviceInstanceId,
+            DeviceInventoryReader.CapturePresentDevices().Devices,
+            candidate);
+
+    public static XhciInterruptRuntimePlacementEvidence Analyze(
+        KernelLatencyCaptureResult capture,
+        string deviceInstanceId,
+        IReadOnlyList<PnPDeviceSnapshot> devices,
+        DeviceInterruptAffinityCandidate candidate) =>
+        Analyze(
             ResolveIsrAttribution(
                 capture,
                 deviceInstanceId,
-                DeviceInventoryReader.CapturePresentDevices().Devices),
+                devices,
+                candidate),
             candidate);
 
     public static XhciInterruptIsrAttribution ResolveIsrAttribution(
         KernelLatencyCaptureResult capture,
         string deviceInstanceId,
-        IReadOnlyList<PnPDeviceSnapshot> devices)
+        IReadOnlyList<PnPDeviceSnapshot> devices) =>
+        ResolveIsrAttribution(capture, deviceInstanceId, devices, candidate: null);
+
+    public static XhciInterruptIsrAttribution ResolveIsrAttribution(
+        KernelLatencyCaptureResult capture,
+        string deviceInstanceId,
+        IReadOnlyList<PnPDeviceSnapshot> devices,
+        DeviceInterruptAffinityCandidate? candidate)
     {
         ArgumentNullException.ThrowIfNull(capture);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
@@ -80,24 +106,100 @@ public static class XhciInterruptRuntimePlacementVerifier
                     serviceName,
                     StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        if (matchingControllers.Length != 1)
-        {
-            throw new NotSupportedException(
-                $"Controller-specific {serviceName} ISR attribution requires exactly one present controller using that driver service; found {matchingControllers.Length}. Shared driver-module ISR events cannot be assigned safely to one controller.");
-        }
 
-        var matching = capture.Events
+        var matchingModuleIsr = capture.Events
             .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
             .Where(item => ModuleMatchesService(item.ModulePath, serviceName))
+            .ToArray();
+
+        if (matchingControllers.Length == 1)
+        {
+            return new XhciInterruptIsrAttribution(
+                deviceInstanceId,
+                serviceName,
+                Array.AsReadOnly(matchingModuleIsr),
+                capture.Events.Count(static item =>
+                    item.Kind == KernelLatencyEventKind.Isr && item.ModulePath is null),
+                XhciInterruptIsrAttributionMode.SingleServiceInstance);
+        }
+
+        if (candidate is null)
+        {
+            throw new NotSupportedException(
+                $"Controller-specific {serviceName} ISR attribution found {matchingControllers.Length} present controllers using the same driver service. A requested processor mask is required to prove allocation-disjoint ownership.");
+        }
+
+        ValidateDisjointAllocationAttribution(target, matchingControllers, candidate);
+
+        var candidateMask = candidate.AffinityMask;
+        var targetOnly = matchingModuleIsr
+            .Where(item =>
+                item.ProcessorNumber is >= 0 and < 64 &&
+                (candidateMask & (1UL << item.ProcessorNumber)) != 0)
             .ToArray();
 
         return new XhciInterruptIsrAttribution(
             deviceInstanceId,
             serviceName,
-            Array.AsReadOnly(matching),
+            Array.AsReadOnly(targetOnly),
             capture.Events.Count(static item =>
-                item.Kind == KernelLatencyEventKind.Isr && item.ModulePath is null));
+                item.Kind == KernelLatencyEventKind.Isr && item.ModulePath is null),
+            XhciInterruptIsrAttributionMode.DisjointAllocatedAffinity);
     }
+
+    private static void ValidateDisjointAllocationAttribution(
+        PnPDeviceSnapshot target,
+        IReadOnlyList<PnPDeviceSnapshot> matchingControllers,
+        DeviceInterruptAffinityCandidate candidate)
+    {
+        if (candidate.ProcessorGroup != 0 ||
+            candidate.AffinityMask == 0)
+        {
+            throw new NotSupportedException(
+                "Allocation-disjoint xHCI attribution v1 requires a non-empty group-0 affinity mask.");
+        }
+
+        if (!HasKnownAllocationInsideMask(target, candidate.AffinityMask))
+        {
+            throw new NotSupportedException(
+                "The target xHCI controller does not expose translated interrupt allocation confined to the requested processor mask.");
+        }
+
+        foreach (var peer in matchingControllers)
+        {
+            if (string.Equals(peer.InstanceId, target.InstanceId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (peer.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available ||
+                peer.InterruptResources.Resources.Count == 0)
+            {
+                throw new NotSupportedException(
+                    $"Shared-driver xHCI attribution is ambiguous because peer controller '{peer.InstanceId}' has no readable translated interrupt allocation.");
+            }
+
+            foreach (var resource in peer.InterruptResources.Resources)
+            {
+                if (resource.ProcessorGroup != candidate.ProcessorGroup ||
+                    (resource.AffinityMask & candidate.AffinityMask) != 0)
+                {
+                    throw new NotSupportedException(
+                        $"Shared-driver xHCI attribution is ambiguous because peer controller '{peer.InstanceId}' can service interrupts on the requested processor mask.");
+                }
+            }
+        }
+    }
+
+    private static bool HasKnownAllocationInsideMask(
+        PnPDeviceSnapshot target,
+        ulong requestedMask) =>
+        target.InterruptResources.ReadStatus == InterruptResourceReadStatus.Available &&
+        target.InterruptResources.Resources.Count > 0 &&
+        target.InterruptResources.Resources.All(resource =>
+            resource.ProcessorGroup == 0 &&
+            resource.AffinityMask != 0 &&
+            (resource.AffinityMask & ~requestedMask) == 0);
 
     public static XhciInterruptRuntimePlacementEvidence Analyze(
         XhciInterruptIsrAttribution attribution,
