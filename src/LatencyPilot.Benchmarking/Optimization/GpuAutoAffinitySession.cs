@@ -478,8 +478,8 @@ public sealed class GpuAutoAffinitySession
                     fullTopologyCoverage: fullLogicalCoverage, practicalTie: false);
             }
 
-            var selected = rankedFinalists[0];
-            var bestEffect = selected.Report.MedianOnePercentLowEffect!.Value;
+            var bestObserved = rankedFinalists[0];
+            var bestEffect = bestObserved.Report.MedianOnePercentLowEffect!.Value;
             var practicalTie = rankedFinalists
                 .Skip(1)
                 .Any(decision =>
@@ -489,15 +489,18 @@ public sealed class GpuAutoAffinitySession
             reasons.Add(practicalTie
                 ? string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    $"CPU {selected.Candidate.Processor.Number} is the best observed finalist inside a practical tie. Median paired 1%-low effect {selected.Report.MedianOnePercentLowEffect:P2}; confidence is reduced rather than deleting the winner.")
+                    $"CPU {bestObserved.Candidate.Processor.Number} is the best observed finalist inside a practical tie. Median paired 1%-low effect {bestObserved.Report.MedianOnePercentLowEffect:P2}; confidence is reduced rather than deleting rank 1.")
                 : string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    $"CPU {selected.Candidate.Processor.Number} is the best observed finalist. Median paired 1%-low effect {selected.Report.MedianOnePercentLowEffect:P2}."));
+                    $"CPU {bestObserved.Candidate.Processor.Number} is the best observed finalist. Median paired 1%-low effect {bestObserved.Report.MedianOnePercentLowEffect:P2}."));
 
-            if (!selected.RecommendedForKeep)
+            var keepableFinalists = rankedFinalists
+                .Where(static decision => decision.RecommendedForKeep)
+                .ToArray();
+            if (keepableFinalists.Length == 0)
             {
                 reasons.Add(
-                    $"CPU {selected.Candidate.Processor.Number} remains the best observed CPU but was not kept. {selected.Report.Reason} The exact Original state is retained.");
+                    $"CPU {bestObserved.Candidate.Processor.Number} remains the best observed CPU, but no finalist passed the measured Keep guardrails. The exact Original state is retained.");
                 var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
                 return CreateResult(
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
@@ -506,22 +509,45 @@ public sealed class GpuAutoAffinitySession
                     fullTopologyCoverage: fullLogicalCoverage, practicalTie);
             }
 
-            return await VerifyAndKeepFinalistAsync(
-                request,
-                startedAtUtc,
-                decisionBaseline,
-                selected.Candidate,
-                reference,
-                () => ++nextRunNumber,
-                candidateReports,
-                trialReports,
-                pairReports,
-                finalistReports,
-                reasons,
-                screenedProcessors,
-                fullLogicalCoverage,
-                practicalTie,
-                cancellationToken).ConfigureAwait(false);
+            foreach (var keepable in keepableFinalists)
+            {
+                if (keepable.Candidate.Processor != bestObserved.Candidate.Processor)
+                {
+                    reasons.Add(
+                        $"CPU {bestObserved.Candidate.Processor.Number} remains rank 1 by paired 1%-low effect but is not Keep-eligible. Trying the highest-ranked guardrail-safe finalist, CPU {keepable.Candidate.Processor.Number}, for final runtime placement verification.");
+                }
+
+                var kept = await TryVerifyAndKeepFinalistAsync(
+                    request,
+                    startedAtUtc,
+                    decisionBaseline,
+                    keepable.Candidate,
+                    reference,
+                    () => ++nextRunNumber,
+                    candidateReports,
+                    trialReports,
+                    pairReports,
+                    finalistReports,
+                    reasons,
+                    screenedProcessors,
+                    fullLogicalCoverage,
+                    practicalTie,
+                    cancellationToken).ConfigureAwait(false);
+                if (kept is not null)
+                {
+                    return kept;
+                }
+            }
+
+            reasons.Add(
+                "No guardrail-safe finalist passed final direct-driver runtime placement verification. The exact Original state is retained.");
+            var finalOriginalVerified = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
+            return CreateResult(
+                request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
+                finalOriginalVerified, finalOriginalVerified,
+                candidateReports, trialReports, pairReports, finalistReports,
+                reasons, decisionBaseline, screenedProcessors,
+                fullTopologyCoverage: fullLogicalCoverage, practicalTie);
         }
         catch (SessionAbortException abort)
         {
@@ -1358,7 +1384,7 @@ public sealed class GpuAutoAffinitySession
             .Where(static value => double.IsFinite(value) && value > 0d)
             .ToArray();
 
-    private async Task<GpuAutoAffinitySessionResult> VerifyAndKeepFinalistAsync(
+    private async Task<GpuAutoAffinitySessionResult?> TryVerifyAndKeepFinalistAsync(
         GpuAutoAffinitySessionRequest request,
         DateTimeOffset startedAtUtc,
         GpuAutoAffinityDecisionBaselineReport decisionBaseline,
@@ -1412,11 +1438,14 @@ public sealed class GpuAutoAffinitySession
                 activeExperiment = null;
                 var restored = await backend.VerifyOriginalStateAsync(CancellationToken.None).ConfigureAwait(false);
                 reasons.Add(
-                    "The paired GPU winner was not kept because final kernel ETW could not prove direct display-driver ISR placement exclusively on the selected CPU.");
-                return CreateResult(
-                    request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
-                    restored, restored, candidateReports, trialReports, pairReports, finalistReports,
-                    reasons, decisionBaseline, screenedProcessors, fullTopologyCoverage, practicalTie);
+                    $"CPU {finalist.Processor.Number} passed benchmark Keep guardrails but was not kept because final kernel ETW could not prove direct display-driver ISR placement exclusively on that CPU.");
+                if (!restored)
+                {
+                    throw new InvalidOperationException(
+                        $"Final placement verification for CPU {finalist.Processor.Number} failed and exact Original state was not verified after rollback.");
+                }
+
+                return null;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
