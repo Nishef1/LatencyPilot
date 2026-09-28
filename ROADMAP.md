@@ -239,7 +239,7 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] USB hub/port correlation;
 - [x] exact xHCI controller identity;
 - [x] Raw Input host timing metrics;
-- [x] xHCI DPC/ISR attribution/readiness source;
+- [x] candidate-aware xHCI ISR runtime-placement verifier with fail-closed shared-controller disambiguation;
 - [x] post-GPU quiet ETW headroom capture after verified GPU Keep;
 - [x] keep GPU and xHCI decisions sequential: no second per-CPU USB tournament and no joint weighted/Pareto score;
 - [x] exclude the whole physical core containing the GPU winner, including SMT sibling;

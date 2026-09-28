@@ -4,7 +4,6 @@ using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.Observation;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.Devices;
-using LatencyPilot.Service;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LatencyPilot.CriticalTests;
@@ -13,7 +12,7 @@ namespace LatencyPilot.CriticalTests;
 public sealed class UsbOptimizationTests
 {
     [AuditCase]
-    public void XhciReadinessRequiresPrimaryIdentityCompositeRouteQualityAndUnambiguousAttribution()
+    public void XhciSelectionAndRuntimeVerificationRequireExactRouteAndUnambiguousPlacement()
     {
         var controller = new PnPDeviceSnapshot(
             "PCI\\VEN_TEST&DEV_XHCI", Guid.NewGuid(), "Test xHCI Controller", "Test Vendor", "PCI", "USBXHCI",
@@ -38,11 +37,6 @@ public sealed class UsbOptimizationTests
                 new KernelLatencyEvent(KernelLatencyEventKind.Isr, 2, 2, 8, 0x1001, 44, 0, "C:\\Windows\\System32\\drivers\\usbxhci.sys"),
                 new KernelLatencyEvent(KernelLatencyEventKind.Dpc, 4, 3, 12, 0x2000, null, null, "C:\\Windows\\System32\\drivers\\ndis.sys"),
             ], 0, 0, 0, false);
-        var attribution = UsbInterruptAttribution.Analyze(capture, controller, [controller]);
-        Assert.IsTrue(attribution.ControllerOwnershipUnambiguous);
-        Assert.AreEqual(1, attribution.MatchingDpcEventCount);
-        Assert.AreEqual(1, attribution.MatchingIsrEventCount);
-
         var topology = new ProcessorTopologySnapshot(
             [new ProcessorPackageSnapshot(0,
                 [new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 1), new LogicalProcessorId(0, 2),
@@ -87,16 +81,7 @@ public sealed class UsbOptimizationTests
             UsbAffinityRecommendationPlanner.Create(
                 topology, shortCapture, inventory, new LogicalProcessorId(0, 0), raw.PnPInstanceId!).Status);
 
-        var ticks = Enumerable.Range(0, 101).Select(index => index * 1_000_000L).ToArray();
-        var timing = InputTimingAnalyzer.Analyze(new InputReportTimestampSeries(raw.PnPInstanceId!, 1_000_000_000L, ticks));
-        Assert.AreEqual(UsbOptimizationReadinessStatus.Ready,
-            UsbOptimizationReadiness.Evaluate(route, timing, attribution).Status);
         var sharedController = controller with { InstanceId = otherControllerId, DisplayName = "Other xHCI" };
-        var driverWide = UsbInterruptAttribution.Analyze(capture, controller, [controller, sharedController]);
-        Assert.IsFalse(driverWide.ControllerOwnershipUnambiguous);
-        Assert.AreEqual(UsbOptimizationReadinessStatus.Inconclusive,
-            UsbOptimizationReadiness.Evaluate(route, timing, driverWide).Status,
-            "A shared USBXHCI module is driver-wide evidence, not controller-specific ownership.");
 
         var targetWithAllocation = controller with
         {
@@ -170,14 +155,5 @@ public sealed class UsbOptimizationTests
         Assert.AreEqual("USB\\VID_TEST", composite.MatchedDeviceInstanceId);
         Assert.AreEqual(3u, composite.Evidence.Port?.ConnectionIndex);
 
-        var ambiguousRoute = route with
-        {
-            UsbPortRoute = new UsbPortRouteEvidence(UsbPortRouteResolutionStatus.Ambiguous, null, "duplicate driver-key"),
-        };
-        Assert.AreEqual(UsbOptimizationReadinessStatus.NotReady,
-            UsbOptimizationReadiness.Evaluate(ambiguousRoute, timing, attribution).Status);
-        var wrongController = attribution with { ControllerInstanceId = "PCI\\VEN_OTHER&DEV_XHCI" };
-        Assert.AreEqual(UsbOptimizationReadinessStatus.NotReady,
-            UsbOptimizationReadiness.Evaluate(route, timing, wrongController).Status);
     }
 }
