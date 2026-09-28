@@ -1340,7 +1340,11 @@ public sealed partial class MainWindow
                 Foreground = ThemeBrush("MutedTextBrush"),
             });
 
-            if (row.HasPendingRecovery)
+            var recoveryMayBeNeeded =
+                row.HasPendingRecovery ||
+                row.HasExplicitOverride ||
+                row.Device.InterruptConfiguration.ReadStatus != InterruptConfigurationReadStatus.Available;
+            if (recoveryMayBeNeeded)
             {
                 var recoveryButton = new Button
                 {
