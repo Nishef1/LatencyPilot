@@ -132,9 +132,9 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(appSource, "HashSet<byte>",
             "Manual affinity UI must support independent multi-selection of processor buttons.");
         StringAssert.Contains(appSource, "Select all");
-        StringAssert.Contains(appSource, ": "Device"",
+        StringAssert.Contains(appSource, ": \"Device\"",
             "Every non-GPU/non-xHCI device row must receive the generic manual Windows affinity-policy target.");
-        Assert.IsFalse(appSource.Contains("device.InterruptResources.HasAssignedInterrupts\n                            ? "Device"", StringComparison.Ordinal),
+        Assert.IsFalse(appSource.Contains("HasAssignedInterrupts", StringComparison.Ordinal),
             "UI editability must not depend on current ConfigMgr allocated-resource visibility.");
         StringAssert.Contains(appSource, "ToolTipService.SetToolTip(item, row.Device.DisplayName)",
             "Truncated device rows must expose the complete device name on hover.");
