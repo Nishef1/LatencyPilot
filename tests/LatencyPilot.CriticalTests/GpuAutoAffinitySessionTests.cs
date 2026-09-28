@@ -155,6 +155,17 @@ public sealed class GpuAutoAffinitySessionTests
         Assert.IsFalse(fallbackOnlyFinal.Events.Any(static item => item.StartsWith("keep:", StringComparison.Ordinal)),
             "Shared WDDM/dxgkrnl fallback must never authorize final GPU Keep.");
 
+        var unsafeRankOne = new ScriptedBackend(bestCandidateInterruptRegression: true);
+        var safeRunnerUp = await new GpuAutoAffinitySession(unsafeRankOne)
+            .RunAsync(request with { SessionId = Guid.NewGuid() });
+        Assert.AreEqual(GpuOptimizationRecommendation.KeepCandidate, safeRunnerUp.Recommendation);
+        Assert.AreEqual(new LogicalProcessorId(0, 3), safeRunnerUp.Report.BestObservedProcessor,
+            "Rank 1 must remain the benchmark-authoritative best-observed CPU even when a Keep guardrail rejects it.");
+        Assert.AreEqual(new LogicalProcessorId(0, 2), safeRunnerUp.Report.FinalProcessor,
+            "The highest-ranked finalist that passes Keep guardrails should receive final runtime verification and be retained.");
+        Assert.IsFalse(unsafeRankOne.Events.Contains("keep:0:3"));
+        Assert.IsTrue(unsafeRankOne.Events.Contains("keep:0:2"));
+
         var invalidKeep = new ScriptedBackend(failKeep: true);
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             new GpuAutoAffinitySession(invalidKeep).RunAsync(request with { SessionId = Guid.NewGuid() }));
@@ -259,6 +270,7 @@ public sealed class GpuAutoAffinitySessionTests
         private readonly bool persistentlyNoisyOriginal;
         private readonly bool unstablePairControls;
         private readonly bool finalFallbackAttribution;
+        private readonly bool bestCandidateInterruptRegression;
         private int captureSequence;
         private int originalQualificationIndex;
         private int unstableControlIndex;
@@ -271,7 +283,8 @@ public sealed class GpuAutoAffinitySessionTests
             bool recoverableOriginalOutlier = false,
             bool persistentlyNoisyOriginal = false,
             bool unstablePairControls = false,
-            bool finalFallbackAttribution = false)
+            bool finalFallbackAttribution = false,
+            bool bestCandidateInterruptRegression = false)
         {
             this.finalEtwUnavailable = finalEtwUnavailable;
             this.failKeep = failKeep;
@@ -280,6 +293,7 @@ public sealed class GpuAutoAffinitySessionTests
             this.persistentlyNoisyOriginal = persistentlyNoisyOriginal;
             this.unstablePairControls = unstablePairControls;
             this.finalFallbackAttribution = finalFallbackAttribution;
+            this.bestCandidateInterruptRegression = bestCandidateInterruptRegression;
         }
 
         internal List<string> Events { get; } = [];
@@ -489,6 +503,11 @@ public sealed class GpuAutoAffinitySessionTests
                 [],
                 FramePeriodMilliseconds: framePeriods);
 
+            var candidateIsrDuration =
+                bestCandidateInterruptRegression &&
+                request.Candidate?.Processor.Number == 3
+                    ? 20d
+                    : 5d;
             return new GpuAutoAffinityTrialObservation(
                 evidence,
                 GpuBenchmarkContaminationContext.Clean,
@@ -496,7 +515,7 @@ public sealed class GpuAutoAffinitySessionTests
                 true,
                 placement,
                 Enumerable.Repeat(20d, 120).ToArray(),
-                Enumerable.Repeat(5d, 120).ToArray(),
+                Enumerable.Repeat(candidateIsrDuration, 120).ToArray(),
                 interruptEvidence);
         }
     }
