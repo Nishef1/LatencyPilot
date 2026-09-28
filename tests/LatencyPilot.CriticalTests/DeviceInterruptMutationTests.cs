@@ -123,7 +123,11 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(manualRunnerSource, "latencypilot-manual-device-affinity-v2");
         StringAssert.Contains(manualRunnerSource, "VerifyAllocatedAffinity");
         StringAssert.Contains(manualRunnerSource, "GpuInterruptRuntimePlacementVerifier",
-            "Manual GPU Keep must require runtime ETW placement evidence, not only stored or allocated state.");
+            "A fully runtime-verified manual GPU result must still require ETW placement evidence.");
+        StringAssert.Contains(manualRunnerSource, "CanObserveAllocatedAffinity",
+            "Manual GPU policy retention must distinguish unavailable allocation from readable contradictory evidence.");
+        StringAssert.Contains(manualRunnerSource, "KeepStoredPolicyVerified",
+            "When GPU allocation is unavailable, the explicit manual policy may be retained only through the policy-only journal keep path.");
         Assert.IsFalse(manualRunnerSource.Contains("GpuInterruptAffinityMutationTransaction(journal)", StringComparison.Ordinal),
             "The WinUI-launched manual GPU path must not use the live-restart GPU benchmark transaction.");
         StringAssert.Contains(manualRunnerSource, "select that same mask after reboot to resume it",
@@ -199,6 +203,14 @@ public sealed class DeviceInterruptMutationTests
             "Manual affinity UI must inspect the durable journal so pending recovery cannot be hidden by a default registry policy.");
         StringAssert.Contains(appSource, "HasPendingRecovery",
             "A device with a journal-owned pending recovery must expose an explicit recovery affordance.");
+        StringAssert.Contains(appSource, "TryGetPendingAffinityMask",
+            "A reboot-pending manual candidate must reconstruct its processor mask from the durable journal.");
+        StringAssert.Contains(appSource, "row.PendingMask ??",
+            "The journal-owned pending mask must win over missing current-allocation visibility when rebuilding CPU selection.");
+        StringAssert.Contains(appSource, "Resume & verify",
+            "ApplyRebootPending must resume verification instead of silently converting Apply into Restore.");
+        StringAssert.Contains(appSource, "isOtherPendingRecovery",
+            "Only non-Apply pending recovery should force the recovery-only confirmation path.");
         StringAssert.Contains(appSource, "ContentDialog",
             "Manual affinity changes must require an explicit Windows-style confirmation before saving or restoring policy.");
         StringAssert.Contains(appSource, "Restore only this device",
