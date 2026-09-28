@@ -14,8 +14,8 @@ preflight / quiet check
 → baseline DPC/ISR evidence
 → robust Original variability estimate
 → paired GPU affinity screening
-→ physical-core representatives + promising SMT siblings
-→ bounded finalist confirmation
+→ exhaustive paired first-pass screen of every eligible logical CPU
+→ bounded adaptive recheck + finalist confirmation
 → final runtime GPU ISR-placement verification
 → measure remaining per-CPU interrupt headroom
 → resolve primary input to exact xHCI controller
@@ -130,13 +130,11 @@ capture exact Original/default GPU affinity
 → if robust median/MAD variability is high, extend to at most 5 observations
 → noise lowers confidence; it does not block candidate search
 → capture fresh 10 s Original control O0
-→ Stage A: screen one eligible logical processor per physical core
-→ each candidate uses Original-before → Candidate → Original-after local controls
+→ Stage A: screen every eligible logical processor with a real Original-before → Candidate → Original-after local pair
 → local effect uses geometric mean of adjacent Original controls
 → one retry for high local drift
 → a still-noisy but structurally valid retry remains rankable
-→ Stage B: retain up to 4 plausible physical-core hypotheses under bounded uncertainty
-→ Stage C: retain the observed top 4 logical CPUs when available + at most one uncertainty-overlapping fifth challenger
+→ Stage B: retain the observed top 4 logical CPUs when available + at most one uncertainty-overlapping fifth challenger for one additional pair
 → give every shortlisted CPU one additional 10 s local pair
 → advance the top two by median short-screen effect
 → give both finalists 2 shuffled 15 s local pairs
@@ -160,9 +158,8 @@ Source checklist:
 - [x] direct `Original before → Candidate → Original after` pair evidence;
 - [x] geometric-mean local reference and signed paired effects;
 - [x] one bounded high-drift retry without a noise-only candidate/search abort;
-- [x] Stage-A physical-core representative selection;
-- [x] bounded uncertainty-aware Stage-B refinement across at most four physical-core hypotheses;
-- [x] Stage-C shortlist rechecks the observed top four whenever available and admits at most one uncertainty-overlapping fifth challenger;
+- [x] exhaustive Stage-A first-pass paired screening of every eligible logical CPU;
+- [x] bounded uncertainty-aware recheck of the observed top four whenever available plus at most one uncertainty-overlapping fifth challenger;
 - [x] top-two finalist confirmation uses two shuffled 15 s pairs, with one third round only when uncertainty remains;
 - [x] median paired ranking + effect MAD + positive-pair consistency;
 - [x] `BestObservedProcessor` persisted independently from terminal Keep/Restore state;
@@ -185,8 +182,8 @@ Source checklist:
 Gate A closes only when one exact clean green revision proves on supported hardware:
 
 1. structurally valid Original evidence continues through real-world variability and records robust noise instead of failing only for variance;
-2. every eligible physical core receives a Stage-A representative screen;
-3. Stage-B uncertainty-aware core refinement plus the top-four recheck (and optional fifth uncertainty challenger) preserve plausible noisy near-leaders without sending every CPU to finalist confirmation;
+2. every eligible logical CPU receives a real first-pass paired screen;
+3. only repeat work is adaptive: the top-four recheck (plus optional fifth uncertainty challenger) preserves plausible noisy near-leaders without sending every CPU to finalist confirmation;
 4. every ranked candidate has reconstructable adjacent Original controls and pair math;
 5. high-drift retry evidence stays visible and does not erase an otherwise valid candidate;
 6. the top two finalists receive two shuffled 15 s pairs, with one additional 15 s round only when their lead remains inside measured uncertainty;
