@@ -128,7 +128,7 @@ Hardware-independent interpretation/orchestration:
 - `gpu-affinity-benchmark-v6` evidence interpretation/readiness;
 - 3–5 Original observations with median/MAD variability;
 - direct local pair orchestration and drift retry;
-- Stage-A representatives plus bounded uncertainty-aware Stage-B refinement;
+- exhaustive paired first-pass screening of every eligible logical CPU;
 - adaptive top-four recheck plus at most one uncertainty-overlapping fifth logical CPU;
 - top-two 15 s finalist confirmation with a third round only when uncertainty remains;
 - persisted median paired effects, MAD/noise context, raw before/after values and rank;
@@ -253,7 +253,7 @@ verify exact Original
 → 3 × 10 s Original observations
 → extend to 4/5 only when robust median/MAD variability is high
 → fresh 10 s O0
-→ Stage A: one eligible representative per physical core
+→ Stage A: one real paired screen for every eligible logical CPU
 → scored blocks with external observers first complete a bounded unscored 2–4 s observer settle + 500 ms quiet tail
 → local pair per candidate:
      OriginalBefore
@@ -265,8 +265,7 @@ verify exact Original
      10 s OriginalAfter
 → pair effect from geometric mean of adjacent Original controls
 → one retry for high drift; structurally valid retry remains rankable
-→ Stage B: keep up to 4 plausible physical-core hypotheses under bounded uncertainty
-→ Stage C: keep the observed top 4 when available + at most one uncertainty-overlapping fifth challenger
+→ Stage B: keep the observed top 4 when available + at most one uncertainty-overlapping fifth challenger
 → one additional 10 s local pair for every shortlisted CPU
 → top 2 by median short-screen effect
 → 2 shuffled 15 s pairs per finalist
