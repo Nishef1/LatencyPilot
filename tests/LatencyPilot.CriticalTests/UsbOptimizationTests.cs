@@ -105,6 +105,63 @@ public sealed class UsbOptimizationTests
                 new KernelLatencyEvent(KernelLatencyEventKind.Isr, 4, 2, 7, 0x1002, 45, 0, "C:\\Windows\\System32\\drivers\\USBXHCI.SYS"),
             ],
         };
+        var routedInventory = new DeviceInventorySnapshot(
+            [targetWithAllocation, peerWithDisjointAllocation],
+            DateTimeOffset.UnixEpoch);
+        var peerAwareRecommendation = UsbAffinityRecommendationPlanner.Create(
+            topology,
+            capture,
+            inventory,
+            new LogicalProcessorId(0, 0),
+            raw.PnPInstanceId!,
+            routedInventory);
+        Assert.IsTrue(peerAwareRecommendation.IsReady);
+        Assert.AreNotEqual(new LogicalProcessorId(0, 4), peerAwareRecommendation.Processor,
+            "The planner must not recommend a CPU already present in same-service peer xHCI translated allocation.");
+
+        var allPeerAllocated = peerWithDisjointAllocation with
+        {
+            InterruptResources = InterruptResourceSnapshot.Available(
+            [
+                new AllocatedInterruptResourceSnapshot(
+                    45,
+                    0,
+                    (1UL << 2) | (1UL << 3) | (1UL << 4) | (1UL << 5),
+                    0),
+            ]),
+        };
+        var blockedRecommendation = UsbAffinityRecommendationPlanner.Create(
+            topology,
+            capture,
+            inventory,
+            new LogicalProcessorId(0, 0),
+            raw.PnPInstanceId!,
+            new DeviceInventorySnapshot(
+                [targetWithAllocation, allPeerAllocated],
+                DateTimeOffset.UnixEpoch));
+        Assert.AreEqual(
+            UsbAffinityRecommendationStatus.NotReady,
+            blockedRecommendation.Status,
+            "Automatic xHCI selection must fail closed when every eligible CPU overlaps a same-service peer controller allocation.");
+
+        var unknownPeer = peerWithDisjointAllocation with
+        {
+            InterruptResources = InterruptResourceSnapshot.ReadFailed(),
+        };
+        var unknownPeerRecommendation = UsbAffinityRecommendationPlanner.Create(
+            topology,
+            capture,
+            inventory,
+            new LogicalProcessorId(0, 0),
+            raw.PnPInstanceId!,
+            new DeviceInventorySnapshot(
+                [targetWithAllocation, unknownPeer],
+                DateTimeOffset.UnixEpoch));
+        Assert.AreEqual(
+            UsbAffinityRecommendationStatus.NotReady,
+            unknownPeerRecommendation.Status,
+            "Automatic xHCI selection must not promise controller-specific verification when peer allocation is unreadable.");
+
         var xhciCandidate = new DeviceInterruptAffinityCandidate(0, 2, 1UL << 2);
         var sharedDriverPlacement = XhciInterruptRuntimePlacementVerifier.Analyze(
             sharedDriverCapture,
