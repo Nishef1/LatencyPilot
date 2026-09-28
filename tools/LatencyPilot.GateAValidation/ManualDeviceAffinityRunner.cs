@@ -224,10 +224,66 @@ internal static class ManualDeviceAffinityRunner
         out Guid? experimentId)
     {
         experimentId = null;
+        var transaction = new DeviceInterruptMutationTransaction(journal);
+        var deviceCandidate = new DeviceInterruptAffinityCandidate(
+            candidate.ProcessorGroup,
+            candidate.ProcessorNumber,
+            candidate.AffinityMask);
+
+        var pending = journal.GetUnresolved()
+            .Where(entry =>
+                string.Equals(entry.TargetId, options.DeviceInstanceId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(entry.Kind, DeviceInterruptMutationContract.DeviceAffinityKind, StringComparison.Ordinal))
+            .ToArray();
+
+        if (pending.Length > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one unresolved manual GPU-affinity mutation owns this display adapter; recover them before another change.");
+        }
+
+        if (pending.Length == 1)
+        {
+            EnsureOnlyTargetPending(journal, pending[0].ExperimentId);
+            experimentId = pending[0].ExperimentId;
+            if (pending[0].State != MutationJournalState.ApplyRebootPending)
+            {
+                throw new InvalidOperationException(
+                    $"The existing manual GPU-affinity experiment is {pending[0].State}; recover or restore it before applying another mask.");
+            }
+
+            var pendingCandidate = DeviceInterruptMutationJournalCodec
+                .DeserializeCandidate(pending[0].CandidateStateJson)
+                .ToAffinityCandidate();
+            if (pendingCandidate.ProcessorGroup != deviceCandidate.ProcessorGroup ||
+                pendingCandidate.ProcessorNumber != deviceCandidate.ProcessorNumber ||
+                pendingCandidate.AffinityMask != deviceCandidate.AffinityMask)
+            {
+                throw new InvalidOperationException(
+                    $"The pending GPU-affinity experiment targets mask 0x{pendingCandidate.AffinityMask:X}; select that same mask after reboot to resume it, or restore the pending experiment first.");
+            }
+
+            var resumed = transaction.ResumeAfterReboot(pending[0].ExperimentId);
+            if (resumed.Entry.State != MutationJournalState.Applied)
+            {
+                throw new InvalidOperationException(
+                    resumed.Entry.FailureReason ??
+                    $"Manual GPU-affinity reboot resume stopped in {resumed.Entry.State}.");
+            }
+
+            return VerifyAndKeepGpuDeviceAffinity(
+                transaction,
+                options,
+                candidate,
+                pending[0].ExperimentId);
+        }
+
         EnsureNoUnresolvedMutation(journal);
-        var original = GpuInterruptAffinityPolicyStore.Capture(options.DeviceInstanceId);
-        var device = TryGetPresentDevice(options.DeviceInstanceId);
-        if (GpuInterruptAffinityStateComparer.MatchesCandidate(original, candidate))
+        var prepared = transaction.PrepareDeviceAffinity(
+            options.DeviceInstanceId,
+            deviceCandidate);
+
+        if (prepared.NoWriteRequired)
         {
             var assignmentVerified = VerifyAllocatedAffinity(
                 options.DeviceInstanceId,
@@ -238,82 +294,124 @@ internal static class ManualDeviceAffinityRunner
                 ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
                 : new ManualRuntimePlacementVerification(
                     false,
-                    "Runtime ETW verification was skipped because the translated interrupt assignment escaped the requested processor mask.");
+                    "Runtime ETW verification was skipped because translated interrupt allocation did not prove the requested processor mask.");
             var verified = assignmentVerified && runtime.Verified;
             return CreateReport(
                 options,
                 verified ? "AlreadyConfigured" : "AlreadyStoredUnverified",
                 succeeded: verified,
-                device,
+                TryGetPresentDevice(options.DeviceInstanceId),
                 experimentId: null,
                 restartRequired: false,
                 verification: $"{assignmentReason} {runtime.Reason}",
                 message: verified
-                    ? "The requested GPU affinity was already stored; Windows kept allocation inside the requested processor mask and clean ETW observed GPU ISR execution only inside that mask. No write was attempted."
-                    : "The requested GPU affinity is already stored, but LatencyPilot could not prove both translated assignment and requested-mask-only runtime GPU ISR placement. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
+                    ? "The requested GPU affinity is already active; translated allocation and clean GPU ISR placement both match the requested mask."
+                    : "The requested GPU affinity is already stored, but active translated allocation plus GPU ISR placement were not both proven. No new write was attempted.",
                 allocatedMasks: masks);
         }
 
-        var transaction = new GpuInterruptAffinityMutationTransaction(journal);
-        var prepared = transaction.Prepare(options.DeviceInstanceId, candidate, original);
-        experimentId = prepared.ExperimentId;
+        var entry = prepared.Entry
+            ?? throw new InvalidOperationException(
+                "Manual GPU-affinity prepare returned neither a no-op nor a journal entry.");
+        experimentId = entry.ExperimentId;
+
         try
         {
-            var applied = transaction.ApplyAndActivate(prepared.ExperimentId);
-            if (applied.JournalEntry.State != MutationJournalState.Applied)
+            var applied = transaction.Apply(entry.ExperimentId);
+            if (applied.Entry.State == MutationJournalState.ApplyRebootPending)
             {
-                throw new InvalidOperationException(
-                    applied.JournalEntry.FailureReason ??
-                    $"GPU affinity apply stopped in {applied.JournalEntry.State}.");
-            }
-
-            var backend = new GpuAffinityMutationBackend(journal);
-            backend.BeginMeasurement(prepared.ExperimentId);
-            var assignmentVerified = VerifyAllocatedAffinity(
-                options.DeviceInstanceId,
-                candidate.AffinityMask,
-                out var masks,
-                out var assignmentReason);
-            var runtime = assignmentVerified
-                ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
-                : new ManualRuntimePlacementVerification(
-                    false,
-                    "Runtime ETW verification was skipped because the translated interrupt assignment escaped the requested processor mask.");
-            var verified = assignmentVerified && runtime.Verified;
-            var verification = $"{assignmentReason} {runtime.Reason}";
-            if (!verified)
-            {
-                backend.Rollback(prepared.ExperimentId);
                 return CreateReport(
                     options,
-                    "VerificationFailedRolledBack",
+                    "RebootRequired",
                     succeeded: false,
-                    device,
-                    prepared.ExperimentId,
-                    restartRequired: false,
-                    verification: verification,
-                    message: "GPU affinity was applied, but translated assignment and target-only runtime ISR placement were not both proven; exact original state was restored.",
-                    allocatedMasks: masks);
+                    TryGetPresentDevice(options.DeviceInstanceId),
+                    entry.ExperimentId,
+                    restartRequired: true,
+                    verification: applied.Entry.FailureReason,
+                    message: "The GPU affinity policy is stored safely. LatencyPilot did not restart the active display adapter because that can invalidate the WinUI graphics device. Reboot Windows, reopen this panel, select the same mask, and choose Apply & verify to finish allocation + ETW verification.");
             }
 
-            backend.AwaitDecision(prepared.ExperimentId);
-            backend.KeepCandidate(prepared.ExperimentId);
-            return CreateReport(
+            if (applied.Entry.State != MutationJournalState.Applied)
+            {
+                throw new InvalidOperationException(
+                    applied.Entry.FailureReason ??
+                    $"Manual GPU-affinity apply stopped in {applied.Entry.State}.");
+            }
+
+            return VerifyAndKeepGpuDeviceAffinity(
+                transaction,
                 options,
-                "AppliedAndKept",
-                succeeded: true,
-                device,
-                prepared.ExperimentId,
-                restartRequired: false,
-                verification: verification,
-                message: "GPU affinity was journaled, applied, restarted, verified by Windows translated assignment plus clean requested-mask-only ETW ISR placement, and retained as an explicit manual choice.",
-                allocatedMasks: masks);
+                candidate,
+                entry.ExperimentId);
         }
         catch
         {
-            TryRollbackGpu(transaction, journal, prepared.ExperimentId);
+            TryRollbackDevice(transaction, journal, entry.ExperimentId);
             throw;
         }
+    }
+
+    private static ManualDeviceAffinityReport VerifyAndKeepGpuDeviceAffinity(
+        DeviceInterruptMutationTransaction transaction,
+        ManualAffinityOptions options,
+        GpuInterruptAffinityCandidate candidate,
+        Guid experimentId)
+    {
+        var assignmentVerified = VerifyAllocatedAffinity(
+            options.DeviceInstanceId,
+            candidate.AffinityMask,
+            out var masks,
+            out var assignmentReason);
+        var runtime = assignmentVerified
+            ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
+            : new ManualRuntimePlacementVerification(
+                false,
+                "Runtime ETW verification was skipped because translated interrupt allocation did not prove the requested processor mask.");
+        var verified = assignmentVerified && runtime.Verified;
+        var verification = $"{assignmentReason} {runtime.Reason}";
+
+        if (!verified)
+        {
+            var rollback = transaction.Rollback(experimentId);
+            if (rollback.Entry.State == MutationJournalState.RollbackRebootPending)
+            {
+                return CreateReport(
+                    options,
+                    "RebootRequired",
+                    succeeded: false,
+                    TryGetPresentDevice(options.DeviceInstanceId),
+                    experimentId,
+                    restartRequired: true,
+                    verification: verification,
+                    message: "GPU affinity verification failed. The exact original policy is stored again without live-restarting the display adapter; reboot is required to verify rollback activation.",
+                    allocatedMasks: masks);
+            }
+
+            return CreateReport(
+                options,
+                "VerificationFailedRolledBack",
+                succeeded: false,
+                TryGetPresentDevice(options.DeviceInstanceId),
+                experimentId,
+                restartRequired: false,
+                verification: verification,
+                message: "GPU affinity did not pass translated-allocation plus target-only ISR verification; the exact original state was restored.",
+                allocatedMasks: masks);
+        }
+
+        var kept = transaction.KeepVerified(
+            experimentId,
+            measurementVerified: true);
+        return CreateReport(
+            options,
+            "AppliedAndKept",
+            succeeded: kept.State == MutationJournalState.Kept,
+            TryGetPresentDevice(options.DeviceInstanceId),
+            experimentId,
+            restartRequired: false,
+            verification: verification,
+            message: "GPU affinity was resumed after reboot, verified by Windows translated allocation plus clean requested-mask-only GPU ISR placement, and retained as an explicit manual choice.",
+            allocatedMasks: masks);
     }
 
     private static ManualDeviceAffinityReport ApplyDevice(
@@ -871,25 +969,6 @@ internal static class ManualDeviceAffinityRunner
         {
             throw new InvalidOperationException(
                 "Another unresolved mutation experiment exists; manual xHCI resume is blocked until recovery is complete.");
-        }
-    }
-
-    private static void TryRollbackGpu(
-        GpuInterruptAffinityMutationTransaction transaction,
-        MutationJournal journal,
-        Guid experimentId)
-    {
-        try
-        {
-            var entry = journal.TryGet(experimentId);
-            if (entry is not null && !entry.IsTerminal)
-            {
-                _ = transaction.RollbackAndActivate(experimentId);
-            }
-        }
-        catch
-        {
-            // The durable unresolved journal remains the recovery authority.
         }
     }
 
