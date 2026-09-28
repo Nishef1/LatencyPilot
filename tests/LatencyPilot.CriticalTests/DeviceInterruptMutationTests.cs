@@ -181,6 +181,22 @@ public sealed class DeviceInterruptMutationTests
             "The independent tool window must keep its title chrome aligned with the application theme when Windows supports customization.");
         StringAssert.Contains(appSource, "restoreMayBeNeeded",
             "Restore must be hidden from the proven-default case without blocking recovery when current policy inspection is unavailable.");
+        StringAssert.Contains(appSource, "MutationJournalReadOnlyInspector.GetUnresolved",
+            "Manual affinity UI must inspect the durable journal so pending recovery cannot be hidden by a default registry policy.");
+        StringAssert.Contains(appSource, "HasPendingRecovery",
+            "A device with a journal-owned pending recovery must expose an explicit recovery affordance.");
+        StringAssert.Contains(appSource, "ContentDialog",
+            "Manual affinity changes must require an explicit Windows-style confirmation before saving or restoring policy.");
+        StringAssert.Contains(appSource, "Restore only this device",
+            "Recovery confirmation must make the target-scoped restore choice explicit.");
+        StringAssert.Contains(appSource, "Save policy; I will reboot manually",
+            "GPU policy confirmation must state that LatencyPilot will not reboot Windows automatically.");
+        var recoveryAssessment = File.ReadAllText(Path.Combine(
+            root, "src", "LatencyPilot.Service", "MutationRecoveryAssessment.cs"));
+        StringAssert.Contains(recoveryAssessment, "DeviceInterruptRecoveryInspector.Inspect",
+            "Startup recovery assessment must classify manual device-interrupt journal entries with their bounded inspector.");
+        StringAssert.Contains(recoveryAssessment, "Manual device-interrupt recovery is owned by the elevated manual-affinity helper",
+            "Startup recovery must preserve the manual helper boundary instead of reporting the journal kind as unsupported.");
         StringAssert.Contains(appSource, "--mask");
         Assert.IsFalse(appSource.Contains("AudioMsi", StringComparison.Ordinal),
             "HDAudio MSI must not be exposed as an editable development UI target.");

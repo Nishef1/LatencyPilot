@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Text.Json;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
+using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
 using LatencyPilot.Platform.Windows.System;
 using Microsoft.UI.Text;
@@ -197,6 +198,7 @@ public sealed partial class MainWindow
     {
         var inventory = DeviceInventoryReader.CapturePresentDevices();
         var topology = ProcessorTopologyReader.Capture();
+        var (pendingByTarget, journalInspectionError) = ReadPendingManualAffinityEntries();
         var classified = LatencySensitiveDeviceSelector.Select(inventory).Devices
             .ToDictionary(
                 static evidence => evidence.Device.InstanceId,
@@ -219,6 +221,7 @@ public sealed partial class MainWindow
                     : string.Equals(device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase)
                         ? "Xhci"
                         : "Device";
+                pendingByTarget.TryGetValue(device.InstanceId, out var pendingRecovery);
                 return new ManualAffinityDeviceRow(
                     device,
                     classified.ContainsKey(device.InstanceId) ? kind : null,
@@ -227,15 +230,42 @@ public sealed partial class MainWindow
                     FormatAllocatedAffinity(device.InterruptResources),
                     device.InterruptConfiguration.AssignmentSetOverrideMask,
                     device.InterruptConfiguration.DevicePolicy == 4 &&
-                    device.InterruptConfiguration.AssignmentSetOverrideMask is not null);
+                    device.InterruptConfiguration.AssignmentSetOverrideMask is not null,
+                    pendingRecovery);
             })
             .OrderByDescending(static row => row.TargetKind is not null)
+            .ThenByDescending(static row => row.HasPendingRecovery)
             .ThenByDescending(static row => row.HasExplicitOverride)
             .ThenBy(static row => row.Kind?.ToString(), StringComparer.OrdinalIgnoreCase)
             .ThenBy(static row => row.Device.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return new ManualAffinitySnapshot(rows, cpuOptions);
+        return new ManualAffinitySnapshot(rows, cpuOptions, journalInspectionError);
+    }
+
+    private static (IReadOnlyDictionary<string, MutationJournalEntry> Entries, string? Error)
+        ReadPendingManualAffinityEntries()
+    {
+        try
+        {
+            var unresolved = MutationJournalReadOnlyInspector.GetUnresolved(
+                MutationJournal.GetDefaultDatabasePath());
+            var entries = unresolved
+                .GroupBy(static entry => entry.TargetId, StringComparer.OrdinalIgnoreCase)
+                .Where(static group => group.Count() == 1)
+                .ToDictionary(
+                    static group => group.Key,
+                    static group => group.Single(),
+                    StringComparer.OrdinalIgnoreCase);
+            return (entries, null);
+        }
+        catch (Exception exception)
+        {
+            Logger.Warning(exception, "Manual affinity UI could not inspect the mutation journal read-only.");
+            return (
+                new Dictionary<string, MutationJournalEntry>(StringComparer.OrdinalIgnoreCase),
+                $"Recovery journal unavailable: {exception.Message}");
+        }
     }
 
     private void RenderManualAffinityWorkspace(
@@ -278,6 +308,25 @@ public sealed partial class MainWindow
         host.Children.Add(titleGrid);
 
         host.Children.Add(BuildManualAffinityStatusBanner(dialogStatusText));
+
+        if (snapshot.JournalInspectionError is { } journalInspectionError)
+        {
+            host.Children.Add(new Border
+            {
+                Padding = new Thickness(10d),
+                CornerRadius = new CornerRadius(8d),
+                Background = ThemeBrush("SurfaceAltBrush"),
+                BorderBrush = ThemeBrush("BorderBrush"),
+                BorderThickness = new Thickness(1d),
+                Child = new TextBlock
+                {
+                    Text = $"{journalInspectionError} No recovery action is enabled until the journal can be read safely.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Style = AppStyle("CaptionTextStyle"),
+                    Foreground = ThemeBrush("SemanticAttentionBrush"),
+                },
+            });
+        }
 
         if (snapshot.Rows.Count == 0)
         {
@@ -1093,6 +1142,7 @@ public sealed partial class MainWindow
             panel.Children.Add(coreGrid);
 
             var restoreMayBeNeeded =
+                row.HasPendingRecovery ||
                 row.HasExplicitOverride ||
                 row.Device.InterruptConfiguration.ReadStatus != InterruptConfigurationReadStatus.Available;
             var restoreButton = new Button
@@ -1121,13 +1171,21 @@ public sealed partial class MainWindow
                 $"Restore journal-owned original affinity for {row.Device.DisplayName}");
             ToolTipService.SetToolTip(
                 restoreButton,
-                row.HasExplicitOverride
+                row.HasPendingRecovery
+                    ? $"A journal-owned {row.PendingRecovery!.State} recovery is pending. Restore only this device to resolve it before another mask can be saved."
+                    : row.HasExplicitOverride
                     ? "Restores only an original state previously journaled by LatencyPilot; a non-owned explicit policy remains untouched."
                     : row.Device.InterruptConfiguration.ReadStatus != InterruptConfigurationReadStatus.Available
                         ? "Current policy could not be fully inspected. Restore remains available so journal-owned recovery is never blocked."
                         : "No explicit affinity override is active for this device.");
             restoreButton.Click += async (_, _) =>
             {
+                var choice = await ConfirmManualAffinityActionAsync(host, row, "Restore", null);
+                if (choice == ManualAffinityActionChoice.Cancel)
+                {
+                    return;
+                }
+
                 restoreButton.IsEnabled = false;
                 applyButton.IsEnabled = false;
                 await RunManualAffinityActionAsync(host, dialogStatusText, row, "Restore", null);
@@ -1141,9 +1199,20 @@ public sealed partial class MainWindow
                     return;
                 }
 
+                var choice = await ConfirmManualAffinityActionAsync(host, row, "Apply", mask);
+                if (choice == ManualAffinityActionChoice.Cancel)
+                {
+                    return;
+                }
+
                 restoreButton.IsEnabled = false;
                 applyButton.IsEnabled = false;
-                await RunManualAffinityActionAsync(host, dialogStatusText, row, "Apply", mask);
+                await RunManualAffinityActionAsync(
+                    host,
+                    dialogStatusText,
+                    row,
+                    choice == ManualAffinityActionChoice.RestoreOnlyDevice ? "Restore" : "Apply",
+                    choice == ManualAffinityActionChoice.RestoreOnlyDevice ? null : mask);
             };
 
             var actions = new Grid { ColumnSpacing = 8d };
@@ -1399,6 +1468,67 @@ public sealed partial class MainWindow
         return $"{FormatMask(affinity)} · 0x{affinity:X}";
     }
 
+    private async Task<ManualAffinityActionChoice> ConfirmManualAffinityActionAsync(
+        StackPanel host,
+        ManualAffinityDeviceRow row,
+        string action,
+        ulong? affinityMask)
+    {
+        var pendingRecovery = row.PendingRecovery;
+        var isPendingRecovery = pendingRecovery is not null;
+        var restoreOnly = action == "Restore" || isPendingRecovery;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = host.XamlRoot,
+            Title = restoreOnly
+                ? $"Recover {row.Device.DisplayName}?"
+                : $"Save affinity for {row.Device.DisplayName}?",
+            Content = new StackPanel
+            {
+                Spacing = 8d,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = restoreOnly
+                            ? isPendingRecovery
+                                ? $"This device has a journal-owned {pendingRecovery!.State} recovery. Only this device will be restored to its exact captured original policy. No other device will be changed."
+                                : "Only this device will be restored to its exact LatencyPilot-owned original policy. A non-owned policy will not be overwritten."
+                            : $"Save {FormatMask(affinityMask ?? 0)} as the Windows interrupt-affinity policy for this device. LatencyPilot will not reboot Windows automatically.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Style = AppStyle("BodyTextStyle"),
+                    },
+                    new TextBlock
+                    {
+                        Text = restoreOnly
+                            ? "If Windows requires a reboot, the dialog will report it and you can reboot manually."
+                            : row.TargetKind == "Gpu"
+                                ? "The GPU policy is stored in the journal first. Reboot Windows yourself, then reopen this panel to verify or restore it."
+                                : "Windows may restart the device in place; if it requires a system reboot, LatencyPilot will stop and report that requirement.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Style = AppStyle("CaptionTextStyle"),
+                        Foreground = ThemeBrush("MutedTextBrush"),
+                    },
+                },
+            },
+            PrimaryButtonText = restoreOnly
+                ? "Restore only this device"
+                : "Save policy; I will reboot manually",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary)
+        {
+            return ManualAffinityActionChoice.Cancel;
+        }
+
+        return restoreOnly && action != "Restore"
+            ? ManualAffinityActionChoice.RestoreOnlyDevice
+            : ManualAffinityActionChoice.ConfirmRequestedAction;
+    }
+
     private async Task RunManualAffinityActionAsync(
         StackPanel host,
         TextBlock dialogStatusText,
@@ -1652,7 +1782,15 @@ public sealed partial class MainWindow
 
     private sealed record ManualAffinitySnapshot(
         IReadOnlyList<ManualAffinityDeviceRow> Rows,
-        IReadOnlyList<ManualAffinityCpuOption> CpuOptions);
+        IReadOnlyList<ManualAffinityCpuOption> CpuOptions,
+        string? JournalInspectionError);
+
+    private enum ManualAffinityActionChoice
+    {
+        Cancel = 0,
+        ConfirmRequestedAction = 1,
+        RestoreOnlyDevice = 2,
+    }
 
     private sealed record ManualAffinityDeviceRow(
         PnPDeviceSnapshot Device,
@@ -1661,7 +1799,11 @@ public sealed partial class MainWindow
         string StoredAffinity,
         string AllocatedAffinity,
         ulong? StoredMask,
-        bool HasExplicitOverride);
+        bool HasExplicitOverride,
+        MutationJournalEntry? PendingRecovery)
+    {
+        public bool HasPendingRecovery => PendingRecovery is not null;
+    }
 
     private sealed record ManualAffinityCpuOption(
         LogicalProcessorId Processor,

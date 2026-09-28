@@ -30,6 +30,11 @@ internal static class MutationRecoveryAssessment
     {
         ArgumentNullException.ThrowIfNull(entry);
 
+        if (DeviceInterruptMutationContract.IsSupportedKind(entry.Kind))
+        {
+            return InspectDeviceInterrupt(entry);
+        }
+
         if (!string.Equals(entry.Kind, GpuInterruptAffinityMutationContract.Kind, StringComparison.Ordinal))
         {
             const string reason = "mutation kind is not supported by recovery assessment";
@@ -101,6 +106,27 @@ internal static class MutationRecoveryAssessment
                 null,
                 reason);
         }
+    }
+
+    private static MutationRecoveryInspection InspectDeviceInterrupt(MutationJournalEntry entry)
+    {
+        var deviceInspection = DeviceInterruptRecoveryInspector.Inspect(entry);
+        var plan = deviceInspection.Action == DeviceInterruptRecoveryAction.None
+            ? new MutationRecoveryPlan(MutationRecoveryAction.None, deviceInspection.Reason)
+            : new MutationRecoveryPlan(
+                MutationRecoveryAction.ManualInterventionRequired,
+                $"Manual device-interrupt recovery is owned by the elevated manual-affinity helper. {deviceInspection.Reason}");
+
+        return new MutationRecoveryInspection(
+            entry,
+            deviceInspection.StoredStateRelation != MutationStoredStateRelation.Unknown,
+            deviceInspection.TargetEnvironmentStable,
+            deviceInspection.StoredStateRelation,
+            plan,
+            null,
+            deviceInspection.Action == DeviceInterruptRecoveryAction.ManualInterventionRequired
+                ? plan.Reason
+                : null);
     }
 
     private static bool IsRecoverableActualStateFailure(Exception exception) =>
