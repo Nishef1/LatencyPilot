@@ -94,7 +94,6 @@ public sealed class GpuAutoAffinitySession
     private const int MinimumInterruptTailSamples = 20;
     private const int MinimumInterruptTailRuns = 2;
     private const int MaximumPairAttempts = 2;
-    internal const int MaximumPhysicalCoreHypotheses = 4;
     internal const int MinimumAdaptiveShortlistCandidates = 4;
     internal const int MaximumAdaptiveShortlistCandidates = 5;
     internal const int MaximumFinalists = 2;
@@ -267,7 +266,7 @@ public sealed class GpuAutoAffinitySession
                 screenedProcessors.Add(candidate.Processor);
                 var outcome = await MeasureScreeningPairAsync(
                     candidate,
-                    "screening-representative",
+                    "screening-logical",
                     originalBefore,
                     driftBudget,
                     request.ScreeningDuration,
@@ -306,60 +305,8 @@ public sealed class GpuAutoAffinitySession
                     fullTopologyCoverage: false, practicalTie: false);
             }
 
-            var stageAComplete = candidates
-                .Select(static candidate => candidate.PhysicalCoreIndex)
-                .Distinct()
-                .Count() == allEligibleCandidates
-                    .Select(static candidate => candidate.PhysicalCoreIndex)
-                    .Distinct()
-                    .Count();
-
-            var selectedPhysicalCores = SelectPhysicalCoreHypotheses(screeningMeasurements);
-            var tested = screenedProcessors.ToHashSet();
-            var siblingCandidates = allEligibleCandidates
-                .Where(candidate => selectedPhysicalCores.Contains(candidate.PhysicalCoreIndex))
-                .Where(candidate => !tested.Contains(candidate.Processor))
-                .ToArray();
-            ShuffleDeterministically(siblingCandidates, unchecked(request.ShuffleSeed ^ 0x4F1BBCDC));
-
-            foreach (var candidate in siblingCandidates)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (originalBefore is null)
-                {
-                    originalBefore = await CaptureOriginalControlAsync(
-                        "screening-sibling-recovery-original-control",
-                        request.ScreeningDuration,
-                        reference,
-                        () => ++nextRunNumber,
-                        trialReports,
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                screenedProcessors.Add(candidate.Processor);
-                var outcome = await MeasureScreeningPairAsync(
-                    candidate,
-                    "screening-sibling",
-                    originalBefore,
-                    driftBudget,
-                    request.ScreeningDuration,
-                    reference,
-                    () => ++nextRunNumber,
-                    () => ++nextPairNumber,
-                    trialReports,
-                    pairReports,
-                    cancellationToken).ConfigureAwait(false);
-                originalBefore = outcome.NextOriginal;
-
-                if (outcome.ValidMeasurement is { } valid)
-                {
-                    screeningMeasurements.Add(valid);
-                }
-
-                var candidateReport = ToScreeningCandidateReport(candidate, outcome.FinalReport, outcome.ValidMeasurement);
-                candidateReports.Add(candidateReport);
-                await PublishCandidateReportAsync(candidateReport).ConfigureAwait(false);
-            }
+            var fullLogicalCoverage = allEligibleCandidates.All(candidate =>
+                screenedProcessors.Contains(candidate.Processor));
 
             ApplyPairDecisionRanks(candidateReports, screeningMeasurements);
             var shortlistCandidates = SelectAdaptiveShortlist(screeningMeasurements);
@@ -371,7 +318,7 @@ public sealed class GpuAutoAffinitySession
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
                     restored, restored, candidateReports, trialReports, pairReports, finalistReports,
                     reasons, decisionBaseline, screenedProcessors,
-                    fullTopologyCoverage: stageAComplete, practicalTie: false);
+                    fullTopologyCoverage: fullLogicalCoverage, practicalTie: false);
             }
 
             reasons.Add(
@@ -429,7 +376,7 @@ public sealed class GpuAutoAffinitySession
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
                     restored, restored, candidateReports, trialReports, pairReports, finalistReports,
                     reasons, decisionBaseline, screenedProcessors,
-                    fullTopologyCoverage: stageAComplete, practicalTie: false);
+                    fullTopologyCoverage: fullLogicalCoverage, practicalTie: false);
             }
 
             reasons.Add(
@@ -528,7 +475,7 @@ public sealed class GpuAutoAffinitySession
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
                     restored, restored, candidateReports, trialReports, pairReports, finalistReports,
                     reasons, decisionBaseline, screenedProcessors,
-                    fullTopologyCoverage: stageAComplete, practicalTie: false);
+                    fullTopologyCoverage: fullLogicalCoverage, practicalTie: false);
             }
 
             var selected = rankedFinalists[0];
@@ -556,7 +503,7 @@ public sealed class GpuAutoAffinitySession
                     request, startedAtUtc, GpuOptimizationRecommendation.RestoreOriginal, null,
                     restored, restored, candidateReports, trialReports, pairReports, finalistReports,
                     reasons, decisionBaseline, screenedProcessors,
-                    fullTopologyCoverage: stageAComplete, practicalTie);
+                    fullTopologyCoverage: fullLogicalCoverage, practicalTie);
             }
 
             return await VerifyAndKeepFinalistAsync(
@@ -572,7 +519,7 @@ public sealed class GpuAutoAffinitySession
                 finalistReports,
                 reasons,
                 screenedProcessors,
-                stageAComplete,
+                fullLogicalCoverage,
                 practicalTie,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -643,6 +590,11 @@ public sealed class GpuAutoAffinitySession
         GpuAffinityCandidate[] allEligibleCandidates,
         LogicalProcessorId[] requestedProcessors)
     {
+        if (request.SearchScope == GpuAutoAffinitySearchScope.OriginalDiagnostics)
+        {
+            return [];
+        }
+
         if (request.SearchScope == GpuAutoAffinitySearchScope.Custom)
         {
             var requested = requestedProcessors.ToHashSet();
@@ -661,10 +613,10 @@ public sealed class GpuAutoAffinitySession
             return selected;
         }
 
-        return allEligibleCandidates
-            .GroupBy(static candidate => candidate.PhysicalCoreIndex)
-            .Select(static group => group.First())
-            .ToArray();
+        // Full search means full logical-CPU coverage. Adaptive work begins only
+        // after every eligible logical processor has one structurally valid
+        // local Original -> Candidate -> Original comparison.
+        return allEligibleCandidates.ToArray();
     }
 
     private async Task<PairOutcome> MeasureScreeningPairAsync(
@@ -960,14 +912,6 @@ public sealed class GpuAutoAffinitySession
 
         return stats;
     }
-
-    private static HashSet<int> SelectPhysicalCoreHypotheses(List<PairMeasurement> measurements) =>
-        SelectPlausibleScreeningAggregates(
-                measurements,
-                MaximumPhysicalCoreHypotheses,
-                minimumGuaranteedCount: 1)
-            .Select(static aggregate => aggregate.Candidate.PhysicalCoreIndex)
-            .ToHashSet();
 
     private static GpuAffinityCandidate[] SelectAdaptiveShortlist(List<PairMeasurement> measurements) =>
         SelectPlausibleScreeningAggregates(
