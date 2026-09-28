@@ -101,8 +101,8 @@ public sealed class DeviceInterruptMutationTests
 
         var appSource = File.ReadAllText(Path.Combine(
             root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
-        StringAssert.Contains(appSource, "Read only",
-            "Unsupported latency-sensitive devices must remain inspectable without exposing mutation.");
+        StringAssert.Contains(appSource, "if (row.TargetKind is not null)",
+            "Unsupported latency-sensitive devices must remain inspectable without entering the mutation-control path.");
         StringAssert.Contains(appSource, "_gateAValidationRunning",
             "Manual mutation must not run concurrently with GPU Gate A.");
         StringAssert.Contains(appSource, "HashSet<byte>",
