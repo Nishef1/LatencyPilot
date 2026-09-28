@@ -131,6 +131,12 @@ public sealed class DeviceInterruptMutationTests
             "Manual mutation must not run concurrently with GPU Gate A.");
         StringAssert.Contains(appSource, "HashSet<byte>",
             "Manual affinity UI must support independent multi-selection of processor buttons.");
+        StringAssert.Contains(appSource, "cpuButton.Checked +=",
+            "CPU selection must follow the ToggleButton checked-state event rather than infer state from a generic click.");
+        StringAssert.Contains(appSource, "cpuButton.Unchecked +=",
+            "CPU deselection must follow the ToggleButton unchecked-state event.");
+        StringAssert.Contains(appSource, "_manualAffinityDraftMasks",
+            "A selected processor mask must survive detail re-renders until an authoritative action result replaces it.");
         StringAssert.Contains(appSource, "Select all");
         StringAssert.Contains(appSource, ": \"Device\"",
             "Every non-GPU/non-xHCI device row must receive the generic manual Windows affinity-policy target.");

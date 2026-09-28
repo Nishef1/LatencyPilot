@@ -24,6 +24,8 @@ public sealed partial class MainWindow
     private bool _manualDeviceAffinityBusy;
     private bool _manualDeviceAffinityDialogOpening;
     private Window? _manualDeviceAffinityWindow;
+    private readonly Dictionary<string, ulong> _manualAffinityDraftMasks =
+        new(StringComparer.OrdinalIgnoreCase);
 
     internal void InitializeManualDeviceAffinityExperience()
     {
@@ -156,6 +158,7 @@ public sealed partial class MainWindow
             if (ReferenceEquals(_manualDeviceAffinityWindow, window))
             {
                 _manualDeviceAffinityWindow = null;
+                _manualAffinityDraftMasks.Clear();
             }
         };
 
@@ -817,11 +820,16 @@ public sealed partial class MainWindow
         if (row.TargetKind is not null)
         {
             var selectedProcessors = new HashSet<byte>();
-            if (row.StoredMask is { } storedMask)
+            var initialMask = _manualAffinityDraftMasks.TryGetValue(
+                row.Device.InstanceId,
+                out var draftMask)
+                    ? draftMask
+                    : row.StoredMask.GetValueOrDefault();
+            if (initialMask != 0)
             {
                 foreach (var option in snapshot.CpuOptions)
                 {
-                    if ((storedMask & (1UL << option.Processor.Number)) != 0)
+                    if ((initialMask & (1UL << option.Processor.Number)) != 0)
                     {
                         selectedProcessors.Add(option.Processor.Number);
                     }
@@ -916,27 +924,39 @@ public sealed partial class MainWindow
                 return mask;
             }
 
+            var synchronizingCpuSelection = false;
+
             void RefreshSelection()
             {
                 var mask = BuildSelectedMask();
-                foreach (var button in cpuButtons)
-                {
-                    if (button.Tag is not ManualAffinityCpuOption option)
-                    {
-                        continue;
-                    }
+                _manualAffinityDraftMasks[row.Device.InstanceId] = mask;
 
-                    var selected = selectedProcessors.Contains(option.Processor.Number);
-                    button.IsChecked = selected;
-                    button.Background = selected
-                        ? ThemeBrush("AccentBrush")
-                        : ThemeBrush("SurfaceStrongBrush");
-                    button.Foreground = selected
-                        ? ThemeBrush("OnAccentBrush")
-                        : ThemeBrush("TextBrush");
-                    button.BorderBrush = selected
-                        ? ThemeBrush("AccentBrush")
-                        : ThemeBrush("BorderBrush");
+                synchronizingCpuSelection = true;
+                try
+                {
+                    foreach (var button in cpuButtons)
+                    {
+                        if (button.Tag is not ManualAffinityCpuOption option)
+                        {
+                            continue;
+                        }
+
+                        var selected = selectedProcessors.Contains(option.Processor.Number);
+                        button.IsChecked = selected;
+                        button.Background = selected
+                            ? ThemeBrush("AccentBrush")
+                            : ThemeBrush("SurfaceStrongBrush");
+                        button.Foreground = selected
+                            ? ThemeBrush("OnAccentBrush")
+                            : ThemeBrush("TextBrush");
+                        button.BorderBrush = selected
+                            ? ThemeBrush("AccentBrush")
+                            : ThemeBrush("BorderBrush");
+                    }
+                }
+                finally
+                {
+                    synchronizingCpuSelection = false;
                 }
 
                 applyButton.IsEnabled = mask != 0 && !_manualDeviceAffinityBusy;
@@ -987,16 +1007,24 @@ public sealed partial class MainWindow
                     ToolTipService.SetToolTip(
                         cpuButton,
                         $"Logical processor {option.Processor.Number.ToString(CultureInfo.InvariantCulture)} · physical core {option.PhysicalCoreIndex.ToString(CultureInfo.InvariantCulture)}");
-                    cpuButton.Click += (_, _) =>
+                    cpuButton.Checked += (_, _) =>
                     {
-                        if (cpuButton.IsChecked == true)
+                        if (synchronizingCpuSelection)
                         {
-                            selectedProcessors.Add(option.Processor.Number);
+                            return;
                         }
-                        else
+
+                        selectedProcessors.Add(option.Processor.Number);
+                        RefreshSelection();
+                    };
+                    cpuButton.Unchecked += (_, _) =>
+                    {
+                        if (synchronizingCpuSelection)
                         {
-                            selectedProcessors.Remove(option.Processor.Number);
+                            return;
                         }
+
+                        selectedProcessors.Remove(option.Processor.Number);
                         RefreshSelection();
                     };
                     Grid.SetColumn(cpuButton, siblingIndex);
@@ -1402,6 +1430,7 @@ public sealed partial class MainWindow
                 message,
                 status);
 
+            _manualAffinityDraftMasks.Remove(row.Device.InstanceId);
             var refreshed = await Task.Run(CaptureManualAffinitySnapshot);
             RenderManualAffinityWorkspace(
                 host,
