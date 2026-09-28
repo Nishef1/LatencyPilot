@@ -331,7 +331,7 @@ public sealed partial class MainWindow
         });
         titleText.Children.Add(new TextBlock
         {
-            Text = "Set the documented Windows interrupt-affinity policy for any present device, with stronger runtime verification where LatencyPilot has an authoritative verifier.",
+            Text = "Inspect interrupt-affinity evidence for present devices and edit the documented Windows policy only for supported device classes.",
             TextWrapping = TextWrapping.Wrap,
             Style = AppStyle("CaptionTextStyle"),
         });
@@ -897,7 +897,9 @@ public sealed partial class MainWindow
                 BorderThickness = new Thickness(1d),
                 Child = new TextBlock
                 {
-                    Text = $"Pending verification · {FormatMask(pendingMask)} · mask 0x{pendingMask:X}. This is the journal-owned selection waiting to be resumed; Apply & verify continues it, while Restore original cancels it.",
+                    Text = row.CanStartNewPolicyMutation
+                        ? $"Pending verification · {FormatMask(pendingMask)} · mask 0x{pendingMask:X}. This is the journal-owned selection waiting to be resumed; Apply & verify continues it, while Restore original cancels it."
+                        : $"Pending recovery · {FormatMask(pendingMask)} · mask 0x{pendingMask:X}. New mutations are now blocked for this device class; Restore journal-owned original is the supported recovery path.",
                     TextWrapping = TextWrapping.Wrap,
                     Style = AppStyle("CaptionTextStyle"),
                     Foreground = ThemeBrush("AccentBrush"),
