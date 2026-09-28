@@ -234,11 +234,14 @@ public sealed partial class MainWindow
         };
         foreach (var route in candidates)
         {
-            picker.Items.Add(new ComboBoxItem
+            var instanceId = route.RawInputDevice.PnPInstanceId!;
+            var item = new ComboBoxItem
             {
-                Content = route.PnPDisplayName ?? route.RawInputDevice.PnPInstanceId!,
-                Tag = route.RawInputDevice.PnPInstanceId!,
-            });
+                Content = $"{route.PnPDisplayName ?? "Mouse"} · {instanceId}",
+                Tag = instanceId,
+            };
+            ToolTipService.SetToolTip(item, instanceId);
+            picker.Items.Add(item);
         }
         picker.SelectedIndex = 0;
 
