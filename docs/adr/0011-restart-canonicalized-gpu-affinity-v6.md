@@ -39,8 +39,8 @@ v6 does **not** change:
 - exhaustive first-pass paired coverage of every eligible logical CPU, uncertainty-aware top-four-plus-optional-fifth recheck, and bounded top-two finalist confirmation;
 - median paired 1%-low ranking authority;
 - High/Medium/Low ranking confidence;
-- separate AVG/frame-p99/interrupt-tail Keep guardrails;
-- mandatory final target-only ISR placement proof before Keep;
+- separate AVG/frame-p99/interrupt-tail Keep guardrails, with rank 1 preserved as best-observed even when a lower-ranked guardrail-safe finalist becomes the retained CPU;
+- mandatory final target-only ISR placement proof before Keep; guardrail-safe finalists may be attempted in rank order, with exact Original restored between failed final-placement attempts;
 - exact rollback/recovery ownership;
 - the report schema `latencypilot-gpu-auto-affinity-report-v3` or evidence envelope `latencypilot-gpu-benchmark-v1`.
 
