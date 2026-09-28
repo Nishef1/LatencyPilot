@@ -85,8 +85,26 @@ public static class DeviceInterruptConfigurationStore
         ApplyDeviceAffinity(original, candidate, "LatencyPilot xHCI interrupt affinity");
     }
 
-    public static void ApplyDeviceAffinity(DeviceInterruptConfigurationSnapshot original, DeviceInterruptAffinityCandidate candidate) =>
+    public static void ApplyDeviceAffinity(
+        DeviceInterruptConfigurationSnapshot original,
+        DeviceInterruptAffinityCandidate candidate)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        var presentDevice = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(device =>
+            string.Equals(device.InstanceId, original.DeviceInstanceId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException(
+                "Manual interrupt-affinity target is not a present Plug and Play device.");
+        if (!ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation(
+                presentDevice,
+                out var inspectionOnlyReason))
+        {
+            throw new NotSupportedException(
+                inspectionOnlyReason ??
+                "This device class is inspection-only and cannot start a new manual affinity mutation.");
+        }
+
         ApplyDeviceAffinity(original, candidate, "LatencyPilot manual device interrupt affinity");
+    }
 
     private static void ApplyDeviceAffinity(
         DeviceInterruptConfigurationSnapshot original,

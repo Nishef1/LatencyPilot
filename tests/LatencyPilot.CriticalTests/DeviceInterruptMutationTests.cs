@@ -119,6 +119,8 @@ public sealed class DeviceInterruptMutationTests
             "IRQ_DES_64 flags must never be reinterpreted as CM_PARTIAL_RESOURCE_DESCRIPTOR message-signaled flags.");
         Assert.IsFalse(storeSource.Contains("SetValue(MessageNumberLimitValue", StringComparison.Ordinal),
             "LatencyPilot must never tune MessageNumberLimit as part of bounded MSI enablement.");
+        StringAssert.Contains(storeSource, "ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation",
+            "The lowest public generic affinity write boundary must enforce inspection-only storage/System classes; exact Restore remains separate.");
         var txSource = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Service", "DeviceInterruptMutationTransaction.cs"));
         StringAssert.Contains(txSource, "MutationOperationLock.Acquire()");
         StringAssert.Contains(txSource, "ApplyRebootPending");
