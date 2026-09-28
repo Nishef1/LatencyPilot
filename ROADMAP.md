@@ -142,8 +142,8 @@ capture exact Original/default GPU affinity
 → rank every structurally valid finalist by median paired 1%-low effect
 → median/MAD + lead + pair consistency produce High/Medium/Low confidence
 → practical tie lowers confidence but does not erase rank 1
-→ separate Keep guardrails decide whether the best observed CPU should remain active
-→ final clean target-only ETW ISR-placement proof is mandatory for Keep
+→ separate Keep guardrails identify guardrail-safe finalists without changing best-observed rank
+→ try guardrail-safe finalists in rank order; final clean target-only ETW ISR-placement proof is mandatory for Keep
 → otherwise exact RestoreOriginal while preserving best-observed result
 ```
 
@@ -165,7 +165,8 @@ Source checklist:
 - [x] `BestObservedProcessor` persisted independently from terminal Keep/Restore state;
 - [x] `SelectionConfidence` persisted as explanatory metadata, never a rank gate;
 - [x] practical ties remain explicit while rank 1 remains the best observed estimate;
-- [x] separate bounded AVG/frame-p99/interrupt-tail Keep guardrails;
+- [x] separate bounded AVG/frame-p99/interrupt-tail Keep guardrails, with best-observed rank kept distinct from the actually retained CPU;
+- [x] guardrail-safe finalists are attempted in rank order, with exact Original restored between failed final-placement attempts;
 - [x] final Keep requires clean attributable target-only GPU ISR placement;
 - [x] exact rollback between candidates and on failure/cancellation;
 - [x] result UX exposes actual Original → Candidate FPS/ms, absolute gain and paired percentage effect;
