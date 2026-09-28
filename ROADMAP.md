@@ -245,6 +245,7 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] exclude the whole physical core containing the GPU winner, including SMT sibling;
 - [x] rank CPU headroom by total DPC+ISR duration, then p99 interrupt tail, then event-count context;
 - [x] bind recommendation to the exact interrupt-owning xHCI controller;
+- [x] on shared-service multi-xHCI systems, exclude CPUs that overlap readable peer-controller translated allocation and fail closed when peer allocation is unavailable;
 - [x] persist route/controller/CPU and transparent reason in Gate A evidence;
 - [ ] representative physical input/xHCI evidence;
 - [x] development Gate A result renders the persisted primary-input/xHCI recommendation and reason without recomputing it;
