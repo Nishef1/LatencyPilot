@@ -136,7 +136,7 @@ Hardware-independent interpretation/orchestration:
 - final Keep/Restore orchestration;
 - input/xHCI timing/headroom interpretation.
 
-There is no hidden weighted score. Short evidence is aggregated with median effect plus bounded uncertainty only to decide who deserves another measurement; finalists still rank by median paired 1%-low effect. Noise changes confidence, not rankability. Keep is a separate guardrail and runtime-placement decision owned by ADR 0011.
+There is no hidden weighted score. Short evidence is aggregated with median effect plus bounded uncertainty only to decide who deserves another measurement; finalists still rank by median paired 1%-low effect. Noise changes confidence, not rankability. Keep is a separate guardrail and runtime-placement decision owned by ADR 0011: best-observed rank and retained CPU are distinct, and final verification walks guardrail-safe finalists in rank order rather than abandoning a safe runner-up because rank 1 failed a Keep guardrail.
 
 ### `LatencyPilot.Protocol`
 
