@@ -2,7 +2,7 @@
 
 This is the live execution ledger for `ROADMAP.md`. Current source/runtime evidence owns actual state; plans and historical chat do not.
 
-Last updated: 2026-09-25
+Last updated: 2026-09-28
 
 ## Overall
 
@@ -107,10 +107,10 @@ The Devices page now exposes a development-only manual affinity surface without 
 - every present device row in the development affinity tool can expose the documented Windows group-0 interrupt-affinity policy through the same bounded journal/restart/rollback substrate; current ConfigMgr allocation visibility no longer gates whether the user can set the policy;
 - GPU and USBXHCI retain stronger subsystem-specific runtime ISR verification. Generic devices verify stored policy + restart and, when translated allocation is readable, require it to stay inside the requested mask. When allocation is unavailable, the retained result is explicitly policy-only and makes no active-placement or device-specific ISR claim;
 - recovery compatibility is retained only so an HDAudio MSI experiment journaled by the superseded development build can still Restore its exact original state; no new HDAudio MSI Apply/Keep is exposed;
-- manual Apply accepts a non-empty group-0 KAFFINITY set and uses an elevated one-shot helper: exact snapshot → journal → apply/restart → re-read stored policy → verify translated allocation when observable → Keep or exact rollback on contradictory readable evidence; GPU/xHCI still require clean subsystem-specific ETW ISR proof before Keep;
+- manual Apply accepts a non-empty group-0 KAFFINITY set and uses an elevated one-shot helper: exact snapshot → journal → store policy → activation/restart handling → re-read stored policy → verify translated allocation when observable → Keep or exact rollback on contradictory readable evidence; xHCI may restart in place, while manual display-adapter changes deliberately enter reboot-pending instead of live-restarting the GPU used by the WinUI process; GPU/xHCI still require clean subsystem-specific ETW ISR proof before Keep;
 - GPU manual verification requires **direct display-driver** ISR attribution; shared `dxgkrnl` fallback is shown only as diagnostic context. xHCI uses a controller-specific `USBXHCI` ISR verifier and deliberately fails closed when more than one present controller shares that driver service because the shared module stream is ambiguous;
 - the helper keeps `AudioMsi` parsing only for Restore/recovery compatibility; `IRQ_DES_64.IRQD_Flags` is not treated as proof of message-signaled delivery;
-- reboot-pending xHCI and generic device-affinity experiments resume only through the same journal-owned target/candidate;
+- reboot-pending xHCI, generic device-affinity and manual GPU experiments resume only through the same journal-owned target/candidate; a manual GPU candidate is not Keep-eligible until the post-reboot allocation + direct-driver ISR verification completes;
 - Restore is per-device and only unwinds retained changes actually owned by the LatencyPilot mutation journal; an external pre-existing override is never claimed or overwritten as LatencyPilot-owned;
 - the App blocks manual mutation while GPU Gate A is running.
 
