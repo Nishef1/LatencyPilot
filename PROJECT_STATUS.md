@@ -27,7 +27,7 @@ preflight / quiet-context capture
 → deep ETW baseline
 → robust Original variability estimate
 → paired GPU screening: Original before → Candidate → Original after
-→ physical-core representatives → uncertainty-aware core/sibling refinement
+→ exhaustive paired first-pass screen of every eligible logical CPU
 → top-four 10 s recheck shortlist + at most one uncertainty-overlapping fifth challenger → top 2
 → two shuffled 15 s pairs per finalist; third pair only if uncertainty remains
 → best-observed CPU + confidence
@@ -74,9 +74,9 @@ Current source implements ADR 0011:
 6. Local screening pairs `O0 → C1 → O1 → C2 → O2 ...` with exact rollback between candidates.
 7. Pair effect uses the geometric mean of adjacent Original controls; raw values remain untouched.
 8. High local drift gets one fresh retry. A still-noisy but structurally valid retry remains rankable; there is no consecutive-noise early stop.
-9. Stage A screens one representative logical CPU per eligible physical core.
-10. Stage B retains at most four physical-core hypotheses whose bounded uncertainty can still overlap the leader.
-11. Stage C rechecks the observed top four logical CPUs whenever available and admits at most one additional uncertainty-overlapping fifth challenger.
+9. Stage A gives every eligible logical CPU one real local paired screen; Full search no longer infers an untested SMT sibling from a physical-core representative.
+10. Stage B rechecks the observed top four logical CPUs whenever available and admits at most one additional uncertainty-overlapping fifth challenger.
+11. Only repeat work after the exhaustive first pass is adaptive; no eligible logical CPU is pruned before receiving decision-grade first-pass evidence.
 12. Scored observer-active trials use a bounded unscored 2–4 s startup settle with a 500 ms quiet tail; warm-ups without external observers skip that cost.
 13. Frozen CPU workers use exact physical-core affinity masks persisted in workload identity and verified against captured topology.
 14. Only the top two CPUs advance to finalist confirmation.
@@ -178,7 +178,7 @@ Current v6 physical validation must prove on one exact clean green revision:
 1. the pre-score Original canonicalization restart completes in place under the unchanged captured policy, exact Original + driver identity re-verify, and the renderer is recreated before any scored evidence;
 2. the initial 3–5 Original estimate and subsequent rollback Original controls no longer show a one-time pre-restart/post-restart regime discontinuity of the kind exposed by the v5 owner run;
 3. noisy but structurally valid Original observations continue into candidate testing and reduce confidence instead of causing a noise-only stop;
-4. Stage-A coverage, uncertainty-aware core refinement and the top-four-plus-optional-fifth recheck shortlist match persisted evidence;
+4. every eligible logical CPU has persisted first-pass paired evidence, and the top-four-plus-optional-fifth adaptive recheck shortlist matches persisted evidence;
 5. scored observer-active trials reach the bounded quiet pre-score boundary and warm-ups do not pay observer-settle overhead;
 6. persisted worker affinity masks exactly match physical-core topology and stay frozen across Original/Candidate controls;
 7. pair math and raw controls reconstruct from persisted evidence;
