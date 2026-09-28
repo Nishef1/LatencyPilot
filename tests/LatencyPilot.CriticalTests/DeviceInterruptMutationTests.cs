@@ -64,6 +64,23 @@ public sealed class DeviceInterruptMutationTests
                 networkDevice,
                 out var networkReason));
         Assert.IsNull(networkReason);
+        Assert.AreEqual(
+            ManualDeviceAffinityPolicyTargetKind.Device,
+            ManualDeviceAffinityPolicyEligibility.ClassifyTarget(networkDevice));
+
+        var gpuDevice = CreatePresentDevice(
+            new Guid("4D36E968-E325-11CE-BFC1-08002BE10318"),
+            "Test GPU");
+        Assert.AreEqual(
+            ManualDeviceAffinityPolicyTargetKind.Gpu,
+            ManualDeviceAffinityPolicyEligibility.ClassifyTarget(gpuDevice));
+
+        var xhciDevice = CreatePresentDevice(
+            Guid.NewGuid(),
+            "Test xHCI") with { ServiceName = "USBXHCI" };
+        Assert.AreEqual(
+            ManualDeviceAffinityPolicyTargetKind.Xhci,
+            ManualDeviceAffinityPolicyEligibility.ClassifyTarget(xhciDevice));
 
 
         var candidate = DeviceInterruptMutationCandidate.EnableMsi();
@@ -123,6 +140,8 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(txSource, "DeviceAffinityKind");
         StringAssert.Contains(txSource, "PrepareDeviceAffinity",
             "Generic manual affinity must use the same durable mutation transaction rather than bypassing journal/recovery.");
+        StringAssert.Contains(txSource, "ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation",
+            "The transaction itself must reject storage/System-class generic mutation even if a future caller bypasses the current UI/helper.");
         StringAssert.Contains(txSource, "KeepStoredPolicyVerified",
             "Policy-only manual retention must remain semantically distinct from GPU/xHCI runtime measurement verification.");
         Assert.IsFalse(txSource.Contains("Manual CPU affinity requires a present device node with allocated interrupt resources.", StringComparison.Ordinal),
@@ -149,6 +168,10 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(manualRunnerSource, "ManualAffinityTargetKind.AudioMsi");
         StringAssert.Contains(manualRunnerSource, "ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation",
             "The elevated helper must enforce inspection-only device classes even if its CLI is invoked directly.");
+        StringAssert.Contains(manualRunnerSource, "ManualDeviceAffinityPolicyEligibility.ClassifyTarget",
+            "The elevated helper must derive the required verification path from the actual PnP device instead of trusting --target-kind.");
+        StringAssert.Contains(manualRunnerSource, "stronger device-specific verification path cannot be bypassed",
+            "GPU/xHCI targets must not be downgraded to the generic policy-only path by a forged helper argument.");
         Assert.IsFalse(manualRunnerSource.Contains("VerifyAndKeepAudioMsi", StringComparison.Ordinal),
             "The superseded HDAudio MSI Apply/Keep path must not return.");
         StringAssert.Contains(manualRunnerSource, "latencypilot-manual-device-affinity-v2");
@@ -201,6 +224,8 @@ public sealed class DeviceInterruptMutationTests
             "The processor-mask controls must be gated by the shared device-class mutation policy, not by UI classification alone.");
         StringAssert.Contains(appSource, "ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation",
             "The App and elevated helper must share one device-class mutation boundary.");
+        StringAssert.Contains(appSource, "ManualDeviceAffinityPolicyEligibility.ClassifyTarget",
+            "The App must use the same actual-device target classification as the elevated helper.");
         StringAssert.Contains(appSource, "Restore journal-owned original",
             "Inspection-only rows must preserve recovery for previously journaled LatencyPilot state.");
         StringAssert.Contains(appSource, "_gateAValidationRunning",

@@ -20,8 +20,6 @@ namespace LatencyPilot.App;
 
 public sealed partial class MainWindow
 {
-    private static readonly Guid ManualAffinityDisplayClass =
-        new("4D36E968-E325-11CE-BFC1-08002BE10318");
     private bool _manualDeviceAffinityBusy;
     private bool _manualDeviceAffinityDialogOpening;
     private Window? _manualDeviceAffinityWindow;
@@ -216,11 +214,12 @@ public sealed partial class MainWindow
             .Select(device =>
             {
                 classified.TryGetValue(device.InstanceId, out var kind);
-                var targetKind = device.ClassGuid == ManualAffinityDisplayClass
-                    ? "Gpu"
-                    : string.Equals(device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase)
-                        ? "Xhci"
-                        : "Device";
+                var targetKind = ManualDeviceAffinityPolicyEligibility.ClassifyTarget(device) switch
+                {
+                    ManualDeviceAffinityPolicyTargetKind.Gpu => "Gpu",
+                    ManualDeviceAffinityPolicyTargetKind.Xhci => "Xhci",
+                    _ => "Device",
+                };
                 pendingByTarget.TryGetValue(device.InstanceId, out var pendingRecovery);
                 var pendingMask = TryGetPendingAffinityMask(pendingRecovery);
                 var canStartNewPolicyMutation =

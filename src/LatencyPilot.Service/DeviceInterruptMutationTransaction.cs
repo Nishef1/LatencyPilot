@@ -49,9 +49,17 @@ internal sealed class DeviceInterruptMutationTransaction
     internal DeviceInterruptPrepareResult PrepareDeviceAffinity(string deviceInstanceId, DeviceInterruptAffinityCandidate candidate)
     {
         using var guard = MutationOperationLock.Acquire();
-        _ = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(candidateDevice =>
+        var presentDevice = DeviceInventoryReader.CapturePresentDevices().Devices.FirstOrDefault(candidateDevice =>
             string.Equals(candidateDevice.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException("Manual interrupt-affinity target is not present.");
+        if (!ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation(
+                presentDevice,
+                out var inspectionOnlyReason))
+        {
+            throw new NotSupportedException(
+                inspectionOnlyReason ??
+                "This device class is inspection-only and cannot start a new manual affinity mutation.");
+        }
 
         // IntPolicy-style manual editing must not depend on ConfigMgr being able
         // to expose the device's current translated interrupt allocation. The

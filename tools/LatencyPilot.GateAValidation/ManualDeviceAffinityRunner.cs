@@ -198,6 +198,21 @@ internal static class ManualDeviceAffinityRunner
                 "This device class is inspection-only and cannot start a new manual affinity mutation.");
         }
 
+        var requiredTargetKind = ManualDeviceAffinityPolicyEligibility.ClassifyTarget(presentDevice);
+        var requestedTargetKind = options.TargetKind switch
+        {
+            ManualAffinityTargetKind.Gpu => ManualDeviceAffinityPolicyTargetKind.Gpu,
+            ManualAffinityTargetKind.Xhci => ManualDeviceAffinityPolicyTargetKind.Xhci,
+            ManualAffinityTargetKind.Device => ManualDeviceAffinityPolicyTargetKind.Device,
+            _ => throw new NotSupportedException(
+                "AudioMsi remains Restore-only recovery compatibility."),
+        };
+        if (requestedTargetKind != requiredTargetKind)
+        {
+            throw new InvalidOperationException(
+                $"Manual affinity target kind mismatch: the present device requires {requiredTargetKind}, but the request claimed {requestedTargetKind}. The stronger device-specific verification path cannot be bypassed.");
+        }
+
         if (options.AffinityMask is not { } affinityMask)
         {
             throw new ArgumentException("--mask or --processor is required for manual affinity apply.");

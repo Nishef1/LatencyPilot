@@ -2,8 +2,17 @@ using LatencyPilot.Core.Devices;
 
 namespace LatencyPilot.Platform.Windows.Devices;
 
+public enum ManualDeviceAffinityPolicyTargetKind
+{
+    Device = 0,
+    Gpu = 1,
+    Xhci = 2,
+}
+
 public static class ManualDeviceAffinityPolicyEligibility
 {
+    private static readonly Guid DisplayClass =
+        new("4D36E968-E325-11CE-BFC1-08002BE10318");
     private static readonly Guid SystemClass =
         new("4D36E97D-E325-11CE-BFC1-08002BE10318");
 
@@ -22,6 +31,23 @@ public static class ManualDeviceAffinityPolicyEligibility
         new("CE5939AE-EBDE-11D0-B181-0000F8753EC4"), // MediumChanger
         new("533C5B84-EC70-11D2-9505-00C04F79DEAF"), // VolumeSnapshot
     ];
+
+    public static ManualDeviceAffinityPolicyTargetKind ClassifyTarget(PnPDeviceSnapshot device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        if (device.ClassGuid == DisplayClass)
+        {
+            return ManualDeviceAffinityPolicyTargetKind.Gpu;
+        }
+
+        if (string.Equals(device.ServiceName, "USBXHCI", StringComparison.OrdinalIgnoreCase))
+        {
+            return ManualDeviceAffinityPolicyTargetKind.Xhci;
+        }
+
+        return ManualDeviceAffinityPolicyTargetKind.Device;
+    }
 
     public static bool CanStartNewPolicyMutation(
         PnPDeviceSnapshot device,
