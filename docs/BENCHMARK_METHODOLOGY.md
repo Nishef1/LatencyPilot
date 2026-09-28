@@ -31,7 +31,7 @@ This remains the authoritative steady/manual RealWorld contract. It is intention
 
 The product question is:
 
-> Which structurally valid logical CPU is the best observed GPU interrupt-affinity option under the controlled workload, how large is the measured gain, and how uncertain is that ranking?
+> Which structurally valid logical CPU is the best observed GPU interrupt-affinity option under the controlled workload after every eligible logical CPU has received a paired screen, how large is the measured gain, and how uncertain is that ranking?
 
 A separate question asks whether that CPU is safe/useful enough to Keep.
 
