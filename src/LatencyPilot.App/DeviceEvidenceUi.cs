@@ -388,7 +388,9 @@ public sealed partial class MainWindow
         var runtimeLabel = runtimeVerified
             ? "runtime evidence captured"
             : attribution?.HasTargetEvidence == true
-                ? "runtime evidence invalidated"
+                ? continuity is { IsStable: false }
+                    ? "runtime evidence invalidated"
+                    : "runtime continuity unproven"
                 : runtimeIdle
                     ? "runtime sample idle"
                     : attribution is not null
@@ -438,9 +440,15 @@ public sealed partial class MainWindow
                 ? "Enabled"
                 : adapter.MsiXSupported == true
                     ? "Supported · not reported enabled"
-                    : adapter.MsiSupported == true
-                        ? "MSI supported"
-                        : "Unavailable"));
+                    : adapter.MsiXSupported == false
+                        ? "Not supported"
+                        : adapter.MsiSupported == true
+                            ? "MSI supported · MSI-X state not reported"
+                            : adapter.MsiSupported == false
+                                ? "MSI not supported · MSI-X state not reported"
+                                : adapter.HardwareInfoAvailable
+                                    ? "Hardware-info provider available · MSI/MSI-X fields not reported"
+                                    : "Unavailable"));
 
         if (attribution is not null)
         {
