@@ -329,7 +329,7 @@ public static class XhciInterruptRuntimePlacementVerifier
         return target;
     }
 
-    private static IReadOnlyList<string> GetMatchingControllerIds(
+    private static string[] GetMatchingControllerIds(
         string deviceInstanceId,
         IReadOnlyList<PnPDeviceSnapshot> devices)
     {
@@ -348,7 +348,7 @@ public static class XhciInterruptRuntimePlacementVerifier
 
     private static bool TryGetUniqueTargetVectors(
         PnPDeviceSnapshot target,
-        IReadOnlyList<PnPDeviceSnapshot> peers,
+        PnPDeviceSnapshot[] peers,
         IReadOnlyDictionary<string, DeviceInterruptVectorSnapshot> vectorSnapshots,
         out IReadOnlyList<int> targetVectors,
         out string reason)

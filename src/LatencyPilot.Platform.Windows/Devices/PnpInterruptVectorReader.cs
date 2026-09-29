@@ -88,7 +88,7 @@ public static class PnpInterruptVectorReader
 
                     var vector = Convert.ToUInt32(
                         resource["Vector"],
-                        System.Globalization.CultureInfo.InvariantCulture);
+                        global::System.Globalization.CultureInfo.InvariantCulture);
                     if (vector is > 0 and <= byte.MaxValue)
                     {
                         vectors.Add(checked((int)vector));
@@ -113,7 +113,7 @@ public static class PnpInterruptVectorReader
             ManagementException or
             COMException or
             UnauthorizedAccessException or
-            System.Security.SecurityException)
+            global::System.Security.SecurityException)
         {
             return new(
                 deviceInstanceId,
