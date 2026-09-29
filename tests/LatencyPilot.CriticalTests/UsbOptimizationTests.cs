@@ -366,11 +366,11 @@ public sealed class UsbOptimizationTests
         Assert.AreEqual("USB\\VID_TEST", composite.MatchedDeviceInstanceId);
         Assert.AreEqual(3u, composite.Evidence.Port?.ConnectionIndex);
 
-        var irqDescriptor = new byte[AllocatedIrqDescriptorParser.Descriptor64Size];
+        Assert.AreEqual(24, AllocatedIrqDescriptorParser.Descriptor64Size);
+        Assert.AreEqual(12u, AllocatedIrqDescriptorParser.IrqTypeRange);
+        var irqDescriptor = new byte[24];
         BinaryPrimitives.WriteUInt32LittleEndian(irqDescriptor.AsSpan(0, 4), 0);
-        BinaryPrimitives.WriteUInt32LittleEndian(
-            irqDescriptor.AsSpan(4, 4),
-            AllocatedIrqDescriptorParser.IrqTypeRange);
+        BinaryPrimitives.WriteUInt32LittleEndian(irqDescriptor.AsSpan(4, 4), 12u);
         BinaryPrimitives.WriteUInt16LittleEndian(irqDescriptor.AsSpan(8, 2), 0);
         BinaryPrimitives.WriteUInt16LittleEndian(irqDescriptor.AsSpan(10, 2), 0);
         BinaryPrimitives.WriteUInt32LittleEndian(irqDescriptor.AsSpan(12, 4), 44);
