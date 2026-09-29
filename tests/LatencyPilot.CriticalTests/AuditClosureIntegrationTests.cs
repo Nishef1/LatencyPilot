@@ -167,6 +167,18 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(usbXhciUi, "Reserved CPUs",
             "USB/xHCI result UX must show CPU reservations discovered from current device policy state.");
 
+        StringAssert.Contains(usbXhciUi, "Technical details",
+            "USB readiness should keep PCI/WMI diagnostics accessible without overwhelming the primary decision surface.");
+        StringAssert.Contains(usbXhciUi, "Median DPC + ISR");
+        StringAssert.Contains(usbXhciUi, "Target allocation + controller ETW");
+        StringAssert.Contains(usbXhciUi, "allocation verified",
+            "USB apply-result UX must distinguish allocation-authoritative verification from stronger controller-specific runtime verification.");
+        Assert.IsFalse(
+            usbXhciUi.Contains("then require controller-attributed ISR verification", StringComparison.Ordinal),
+            "Apply confirmation must not claim controller-specific ETW is mandatory when TargetAllocation is the supported fallback authority.");
+        StringAssert.Contains(mainWindowXaml, "HARDWARE PATHS &#x2022; MEASURE BEFORE CHANGE",
+            "Devices must not label the entire page read-only while verified subsystem mutation actions are present.");
+
         StringAssert.Contains(usbXhciUi, "FormatMutationKind",
             "USB diagnostics must identify the unresolved mutation kind/state/target when Apply is gated by another target.");
 

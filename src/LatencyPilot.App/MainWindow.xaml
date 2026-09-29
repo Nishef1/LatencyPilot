@@ -731,10 +731,10 @@
                                     </TransitionCollection>
                                 </StackPanel.ChildrenTransitions>
                                 <StackPanel Spacing="6">
-                                    <TextBlock Text="HARDWARE PATHS &#x2022; READ-ONLY" Style="{StaticResource HeroEyebrowTextStyle}" />
+                                    <TextBlock Text="HARDWARE PATHS &#x2022; MEASURE BEFORE CHANGE" Style="{StaticResource HeroEyebrowTextStyle}" />
                                     <TextBlock Text="Devices" Style="{StaticResource HeroTitleTextStyle}" />
                                     <Border Style="{StaticResource HeroAccentBarStyle}" />
-                                    <TextBlock Text="Hardware paths behind interrupt activity."
+                                    <TextBlock Text="Inspect each subsystem independently; apply changes only when its own evidence and rollback checks are ready."
                                                Style="{StaticResource MutedBodyTextStyle}" />
                                 </StackPanel>
 
@@ -789,7 +789,7 @@
                                                 <TextBlock Text="USB / xHCI" Style="{StaticResource SubsectionTitleTextStyle}" />
                                             </StackPanel>
                                             <TextBlock x:Name="UsbEvidenceText" Text="—" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                            <TextBlock Text="Separate v1 target &#x00B7; exact controller, route, interrupt state" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Text="Independent benchmark &#x00B7; exact controller, route, interrupt state" Style="{StaticResource CaptionTextStyle}" />
                                             <Button x:Name="UsbSubsystemButton"
                                                     Click="UsbSubsystemButton_Click"
                                                     Style="{StaticResource SecondaryButtonStyle}"

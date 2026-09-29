@@ -330,13 +330,14 @@ public sealed partial class MainWindow
             : readyToApply
                 ? "Benchmark ready · apply ready"
                 : "Benchmark ready · apply gated";
+
         UsbEvidenceText.Text = benchmarkReady
             ? readyToApply
                 ? $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply ready."
                 : $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply gated."
-            : $"USB/xHCI benchmark not ready · {report.Reason}";
+            : "USB/xHCI benchmark not ready.";
 
-        var content = new StackPanel { Spacing = 8d };
+        var content = new StackPanel { Spacing = 10d };
         content.Children.Add(new TextBlock
         {
             Text = headline,
@@ -344,50 +345,67 @@ public sealed partial class MainWindow
             Foreground = ThemeBrush(
                 readyToApply
                     ? "SemanticGoodBrush"
-                    : string.Equals(report.Status, "NotReady", StringComparison.Ordinal)
-                        ? "SemanticFailureBrush"
-                        : "SemanticAttentionBrush"),
+                    : benchmarkReady
+                        ? "SemanticAttentionBrush"
+                        : "SemanticFailureBrush"),
         });
-        content.Children.Add(CreateMutedText(report.Reason));
 
         if (hasCandidate)
         {
+            var candidateSummary = report.WinningPhysicalCoreIndex is { } coreIndex
+                ? $"CPU {report.Processor!.Value.Number} · physical core {coreIndex}"
+                : $"CPU {report.Processor!.Value.Number}";
+            content.Children.Add(CreateEvidenceLine("Recommended", candidateSummary));
             content.Children.Add(CreateEvidenceLine(
-                "Controller",
-                report.ControllerInstanceId!));
+                "Selection stability",
+                report.StabilityWindowCount > 0
+                    ? $"{report.WinningCoreVotes}/{report.StabilityWindowCount} windows"
+                    : "—"));
             content.Children.Add(CreateEvidenceLine(
-                "Recommended CPU",
-                $"CPU {report.Processor!.Value.Number}"));
-            content.Children.Add(CreateEvidenceLine(
-                "Observed DPC + ISR duration",
+                "Median DPC + ISR",
                 report.TotalInterruptDurationMicroseconds is { } total
                     ? $"{total:F1} us"
                     : "—"));
             content.Children.Add(CreateEvidenceLine(
-                "Interrupt p99 tail",
+                "Median interrupt p99",
                 report.InterruptTailP99Microseconds is { } p99
                     ? $"{p99:F1} us"
                     : "—"));
         }
 
-        if (report.StabilityWindowCount > 0)
-        {
-            content.Children.Add(CreateEvidenceLine(
-                "Selection stability",
-                report.WinningPhysicalCoreIndex is { } coreIndex
-                    ? $"Physical core {coreIndex} won {report.WinningCoreVotes}/{report.StabilityWindowCount} windows"
-                    : $"{report.WinningCoreVotes}/{report.StabilityWindowCount} windows"));
-        }
-
         content.Children.Add(CreateEvidenceLine(
             "Reserved CPUs",
             report.ReservedProcessors.Count == 0
-                ? "None · all otherwise eligible cores were benchmarked"
+                ? "None"
                 : string.Join(", ", report.ReservedProcessors.Select(static processor => $"CPU {processor.Number}"))));
+
+        var verificationSummary = !report.ApplyEligible
+            ? "Apply gated"
+            : report.ControllerSpecificAttributionAvailable
+                ? "Target allocation + controller ETW"
+                : "Target allocation";
+        content.Children.Add(CreateEvidenceLine("Verification", verificationSummary));
+
+        if (mutationBlockedByOtherTarget)
+        {
+            content.Children.Add(CreateEvidenceLine(
+                "Mutation gate",
+                "Blocked · another target has unresolved journal ownership"));
+        }
+
+        var technical = new StackPanel { Spacing = 7d };
+        technical.Children.Add(CreateEvidenceLine(
+            "Controller",
+            report.ControllerInstanceId ?? "Unavailable"));
+        technical.Children.Add(CreateEvidenceLine(
+            "Verification mode",
+            report.VerificationMode));
+        technical.Children.Add(CreateMutedText(report.ApplyEligibilityReason));
+        technical.Children.Add(CreateMutedText(report.Reason));
 
         if (report.Reservations.Count != 0)
         {
-            content.Children.Add(CreateMutedText(
+            technical.Children.Add(CreateMutedText(
                 "Reserved by current explicit device policies:" + Environment.NewLine +
                 string.Join(
                     Environment.NewLine,
@@ -395,26 +413,21 @@ public sealed partial class MainWindow
                         $"• {reservation.DisplayName} · mask 0x{reservation.AffinityMask:X}"))));
         }
 
-        content.Children.Add(CreateEvidenceLine(
-            "Apply readiness",
-            report.ApplyEligible
-                ? report.ControllerSpecificAttributionAvailable
-                    ? $"Ready · controller-specific ETW available · {report.VerificationMode}"
-                    : $"Ready · target translated allocation is authoritative · {report.VerificationMode}"
-                : $"Gated · {report.ApplyEligibilityReason}"));
-        content.Children.Add(CreateMutedText(report.ApplyEligibilityReason));
-
-        if (mutationBlockedByOtherTarget)
+        if (mutationBlockedByOtherTarget &&
+            !string.IsNullOrWhiteSpace(mutationBlockerSummary))
         {
-            content.Children.Add(CreateEvidenceLine(
-                "Mutation gate",
-                "Blocked for Apply · another target has unresolved journal ownership"));
-            if (!string.IsNullOrWhiteSpace(mutationBlockerSummary))
-            {
-                content.Children.Add(CreateMutedText(
-                    $"USB diagnostics are still valid, but xHCI Apply is disabled until this recovery is closed:{Environment.NewLine}{mutationBlockerSummary}"));
-            }
+            technical.Children.Add(CreateMutedText(
+                "Unresolved mutation ownership:" + Environment.NewLine +
+                mutationBlockerSummary));
         }
+
+        content.Children.Add(new Expander
+        {
+            Header = "Technical details",
+            Content = technical,
+            IsExpanded = !benchmarkReady,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        });
 
         var dialog = new ContentDialog
         {
@@ -438,17 +451,22 @@ public sealed partial class MainWindow
                 ? readyToApply
                     ? $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply ready."
                     : $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply gated."
-                : $"USB/xHCI benchmark not ready · {report.Reason}";
+                : "USB/xHCI benchmark not ready.";
             return;
         }
 
+        var verificationCopy = report.ControllerSpecificAttributionAvailable
+            ? "After restart, LatencyPilot will require the target controller's translated allocation to match the requested CPU and will also use controller-specific ETW as an independent runtime check."
+            : "After restart, LatencyPilot will require the target controller's own translated allocation to match the requested CPU. Controller-specific ETW attribution is unavailable on this hardware, so LatencyPilot will not claim per-controller ISR proof unless that stronger evidence becomes available.";
         var confirm = new ContentDialog
         {
             XamlRoot = RootGrid.XamlRoot,
             Title = $"Apply xHCI to CPU {processor.Number}?",
             Content = new TextBlock
             {
-                Text = "LatencyPilot benchmarked USB/xHCI independently while excluding physical cores already reserved by explicit device policies. It will now journal the exact original controller policy, apply only the recommended xHCI affinity, restart/activate the controller when Windows permits it, then require controller-attributed ISR verification. Keep moving the selected USB mouse during the verification window. Any contradictory readable evidence triggers exact rollback.",
+                Text =
+                    $"LatencyPilot will journal the exact original xHCI policy before changing anything. {verificationCopy} " +
+                    "If the authoritative target allocation does not match, or controller-specific ETW produces contradictory evidence, the exact original state is restored. Keep using the selected USB mouse during verification.",
                 TextWrapping = TextWrapping.Wrap,
             },
             PrimaryButtonText = "Apply & verify",
@@ -457,13 +475,14 @@ public sealed partial class MainWindow
         };
         if (await confirm.ShowAsync() != ContentDialogResult.Primary)
         {
-            UsbEvidenceText.Text = "USB/xHCI recommendation was not applied.";
+            UsbEvidenceText.Text =
+                $"USB/xHCI benchmark ready · CPU {processor.Number} · not applied.";
             return;
         }
 
         var mask = 1UL << processor.Number;
         UsbEvidenceText.Text =
-            $"Applying CPU {processor.Number} to {report.ControllerInstanceId}; keep using the selected USB mouse during runtime verification…";
+            $"Applying CPU {processor.Number} to the routed xHCI controller · verification in progress…";
         var applyReport = await RunManualAffinityHelperAsync(
             "Apply",
             "Xhci",
@@ -495,23 +514,55 @@ public sealed partial class MainWindow
 
     private async Task ShowUsbApplyResultAsync(ManualAffinityHelperReport report)
     {
-        UsbEvidenceText.Text = report.Message;
+        var allocationVerified = report.Status is
+            "AppliedAllocationVerified" or
+            "AlreadyConfiguredAllocationVerified";
+        var runtimeVerified = report.Status is
+            "AppliedAndKept" or
+            "AlreadyConfigured";
+        var summary = report.RestartRequired
+            ? "USB/xHCI requires a reboot before verification can finish."
+            : runtimeVerified
+                ? "USB/xHCI applied · target allocation and controller ETW verified."
+                : allocationVerified
+                    ? "USB/xHCI applied · target allocation verified."
+                    : report.Succeeded
+                        ? "USB/xHCI operation completed."
+                        : "USB/xHCI change was not kept.";
+
+        UsbEvidenceText.Text = summary;
+
         var content = new StackPanel { Spacing = 8d };
         content.Children.Add(CreateEvidenceLine("Status", report.Status));
-        content.Children.Add(CreateMutedText(report.Message));
+        content.Children.Add(CreateMutedText(summary));
         if (!string.IsNullOrWhiteSpace(report.Verification))
         {
-            content.Children.Add(CreateEvidenceLine(
-                "Verification",
-                report.Verification));
+            var details = new StackPanel { Spacing = 7d };
+            details.Children.Add(CreateMutedText(report.Message));
+            details.Children.Add(CreateMutedText(report.Verification));
+            content.Children.Add(new Expander
+            {
+                Header = "Verification details",
+                Content = details,
+                IsExpanded = !report.Succeeded,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            });
+        }
+        else if (!string.IsNullOrWhiteSpace(report.Message))
+        {
+            content.Children.Add(CreateMutedText(report.Message));
         }
 
         await ShowFocusedDeviceEvidenceDialogAsync(
             report.RestartRequired
                 ? "USB / xHCI · reboot required"
-                : report.Succeeded
-                    ? "USB / xHCI · verified"
-                    : "USB / xHCI · not kept",
+                : runtimeVerified
+                    ? "USB / xHCI · runtime verified"
+                    : allocationVerified
+                        ? "USB / xHCI · allocation verified"
+                        : report.Succeeded
+                            ? "USB / xHCI · complete"
+                            : "USB / xHCI · not kept",
             content);
     }
 
