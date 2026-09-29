@@ -74,6 +74,7 @@ Before any post-v1 NIC mutation is implemented, a dedicated ADR and measurement 
 - [x] exact original-state snapshot/restore semantics;
 - [x] GPU measurement/ranking authority separated from broader product/safety authority;
 - [x] NIC/audio/generic cross-subsystem tuning removed from the v1 critical path.
+- [x] Network/RSS action filters to physical PnP-correlated RSS-capable NICs and uses existing miniport attribution + continuity checks for a bounded read-only runtime sample.
 
 ### Exit gate
 
@@ -315,7 +316,7 @@ Run USB/xHCI optimization
 
 Network / RSS
 Analyze network / RSS
-→ read-only evidence in v1
+→ physical NIC only → RSS/MSI-X/queues/processors → 5 s miniport DPC/ISR + continuity → read-only evidence in v1
 
 Restore original settings
 ```

@@ -18,7 +18,7 @@ public sealed partial class MainWindow
 
     private async Task RunUsbXhciWorkflowAsync()
     {
-        if (_usbSubsystemRunning || _gateAValidationRunning || _measurementBusy || _manualDeviceAffinityBusy)
+        if (_usbSubsystemRunning || _networkSubsystemRunning || _gateAValidationRunning || _measurementBusy || _manualDeviceAffinityBusy)
         {
             UsbEvidenceText.Text =
                 "USB/xHCI is unavailable while another measurement or mutation session owns the hardware.";

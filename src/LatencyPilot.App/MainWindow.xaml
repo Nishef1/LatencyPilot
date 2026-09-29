@@ -771,13 +771,13 @@
                                                 <TextBlock Text="Network" Style="{StaticResource SubsectionTitleTextStyle}" />
                                             </StackPanel>
                                             <TextBlock x:Name="NetworkEvidenceText" Text="—" FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                            <TextBlock Text="Separate diagnostics &#x00B7; physical NIC, RSS, driver, route state" Style="{StaticResource CaptionTextStyle}" />
+                                            <TextBlock Text="Independent analysis &#x00B7; physical NIC, RSS, miniport interrupt evidence" Style="{StaticResource CaptionTextStyle}" />
                                             <Button x:Name="NetworkSubsystemButton"
                                                     Click="NetworkSubsystemButton_Click"
                                                     Style="{StaticResource SecondaryButtonStyle}"
                                                     HorizontalAlignment="Left"
-                                                    AutomationProperties.Name="Inspect network RSS evidence">
-                                                <TextBlock Text="Inspect network / RSS" />
+                                                    AutomationProperties.Name="Analyze network RSS">
+                                                <TextBlock Text="Analyze network / RSS" />
                                             </Button>
                                         </StackPanel>
                                     </Border>

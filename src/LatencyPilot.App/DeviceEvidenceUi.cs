@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Protocol;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -15,6 +16,8 @@ public sealed partial class MainWindow
 {
     private const int MaximumInspectorRowsPerSection = 12;
     private static readonly TimeSpan InputTimingInspectionDuration = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan NetworkInspectionDuration = TimeSpan.FromSeconds(5);
+    private bool _networkSubsystemRunning;
 
     private async void InspectDeviceEvidenceButton_Click(object sender, RoutedEventArgs e)
     {
@@ -148,64 +151,482 @@ public sealed partial class MainWindow
 
     private async void NetworkSubsystemButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_networkSubsystemRunning ||
+            _usbSubsystemRunning ||
+            _gateAValidationRunning ||
+            _measurementBusy ||
+            _manualDeviceAffinityBusy)
+        {
+            NetworkEvidenceText.Text =
+                "Network/RSS analysis is unavailable while another measurement or mutation session owns the hardware.";
+            return;
+        }
+
+        _networkSubsystemRunning = true;
         NetworkSubsystemButton.IsEnabled = false;
+        UsbSubsystemButton.IsEnabled = false;
+        GpuGateAEntryButton.IsEnabled = false;
+        ManualDeviceAffinityButton.IsEnabled = false;
+        SetObservationControlsBusy(_measurementBusy);
+        UpdateScenarioSelectionEnabledState();
+
         try
         {
+            NetworkEvidenceText.Text = "Resolving the active physical RSS-capable network adapter…";
             var inspection = await Task.Run(CaptureDeviceEvidenceInspection);
-            await ShowNetworkSubsystemDialogAsync(inspection);
+            var target = await SelectNetworkRssTargetAsync(inspection.NetworkRss);
+            if (target is null)
+            {
+                NetworkEvidenceText.Text =
+                    "Network/RSS analysis unavailable · no physical RSS-capable adapter was selected.";
+                return;
+            }
+
+            var targetDevice = inspection.Inventory.Devices.FirstOrDefault(device =>
+                target.PnpCorrelation.IsAvailable &&
+                string.Equals(
+                    device.InstanceId,
+                    target.PnpCorrelation.PnpInstanceId,
+                    StringComparison.OrdinalIgnoreCase));
+
+            var before = NetworkEnvironmentContinuity.Capture(target);
+            NetworkRuntimeSummary? attribution = null;
+            NetworkEnvironmentContinuityResult? continuity = null;
+            string? runtimeReason = null;
+
+            if (targetDevice is null)
+            {
+                runtimeReason =
+                    "The selected RSS row no longer maps to a present PnP device; configuration evidence remains available.";
+            }
+            else if (!await EnsureObservationServiceReadyAsync())
+            {
+                runtimeReason =
+                    "The observation service is unavailable, so only current RSS configuration evidence can be shown.";
+            }
+            else
+            {
+                NetworkEvidenceText.Text =
+                    $"Capturing {NetworkInspectionDuration.TotalSeconds:F0} s of read-only miniport DPC/ISR evidence on {target.Name ?? target.InterfaceDescription ?? "the physical NIC"}…";
+                var capture = await ObservationServiceClient.CaptureKernelLatencyAsync(
+                    NetworkInspectionDuration,
+                    ObservationMaximumEvents);
+
+                attribution = AnalyzeNetworkRuntime(capture, targetDevice);
+                var after = NetworkEnvironmentContinuity.Capture(target);
+                if (before.IsAvailable && before.Snapshot is not null &&
+                    after.IsAvailable && after.Snapshot is not null)
+                {
+                    continuity = NetworkEnvironmentContinuity.Evaluate(
+                        before.Snapshot,
+                        after.Snapshot);
+                }
+                else
+                {
+                    runtimeReason =
+                        before.Reason ??
+                        after.Reason ??
+                        "Network continuity could not be proven across the runtime capture.";
+                }
+            }
+
+            NetworkEvidenceText.Text = attribution is null
+                ? $"Network/RSS configuration ready · {target.Name ?? target.InterfaceDescription ?? "physical NIC"}."
+                : attribution.HasTargetEvidence
+                    ? $"Network/RSS runtime evidence captured · {target.Name ?? target.InterfaceDescription ?? "physical NIC"}."
+                    : $"Network/RSS capture complete · no strong target miniport interrupt sample in this window.";
+
+            await ShowNetworkSubsystemDialogAsync(
+                target,
+                targetDevice,
+                attribution,
+                continuity,
+                runtimeReason);
         }
         catch (Exception exception) when (IsRecoverableDeviceEvidenceException(exception))
         {
-            Logger.Error(exception, "Network/RSS evidence inspection failed.");
-            NetworkEvidenceText.Text = "Network/RSS evidence unavailable";
+            Logger.Error(exception, "Network/RSS analysis failed.");
+            NetworkEvidenceText.Text = $"Network/RSS analysis unavailable · {exception.Message}";
         }
         finally
         {
+            _networkSubsystemRunning = false;
             NetworkSubsystemButton.IsEnabled = true;
+            UsbSubsystemButton.IsEnabled = true;
+            GpuGateAEntryButton.IsEnabled = true;
+            ManualDeviceAffinityButton.IsEnabled = true;
+            SetObservationControlsBusy(_measurementBusy);
+            UpdateScenarioSelectionEnabledState();
+            if (_gateASourceAssessment is not null)
+            {
+                ApplyGateASourceAssessmentUi(_gateASourceAssessment);
+            }
         }
     }
 
-    private async Task ShowNetworkSubsystemDialogAsync(DeviceEvidenceInspection inspection)
+    private async Task<NetworkRssAdapterSnapshot?> SelectNetworkRssTargetAsync(
+        NetworkRssSnapshot snapshot)
     {
-        var content = new StackPanel { Spacing = 12 };
-        content.Children.Add(CreateMutedText(
-            "Network/RSS is a separate subsystem surface. This v1 action is read-only and does not inherit GPU Gate A ranking or single-CPU affinity semantics."));
+        if (!snapshot.IsAvailable)
+        {
+            await ShowSimpleNetworkMessageAsync(
+                "Network / RSS unavailable",
+                $"Windows RSS provider evidence is {snapshot.Status}: {snapshot.Error ?? "no additional detail"}.");
+            return null;
+        }
 
-        var adapters = inspection.RepresentativeDevices
-            .Where(static item => item.Kind == RepresentativeDeviceKind.NetworkAdapter)
+        var physical = NetworkRssPhysicalAdapterSelector.Select(snapshot).ToArray();
+        if (physical.Length == 0)
+        {
+            await ShowSimpleNetworkMessageAsync(
+                "No physical RSS adapter",
+                "Windows did not expose a PnP-correlated physical adapter with an RSS settings row. Virtual switches, debug adapters and other software interfaces are intentionally excluded.");
+            return null;
+        }
+
+        var candidates = physical
+            .Select(adapter => (
+                Adapter: adapter,
+                Continuity: NetworkEnvironmentContinuity.Capture(adapter)))
             .ToArray();
-        AddSectionHeading(content, "Network adapters");
-        if (adapters.Length == 0)
+        var active = candidates
+            .Where(static candidate => candidate.Continuity.IsAvailable)
+            .ToArray();
+
+        if (active.Length == 1)
         {
-            content.Children.Add(CreateMutedText("No representative present network adapter was found."));
-        }
-        else
-        {
-            foreach (var adapter in adapters)
-            {
-                content.Children.Add(BuildDeviceEvidencePanel(adapter));
-            }
+            return active[0].Adapter;
         }
 
-        AddSectionHeading(content, "RSS provider evidence");
-        if (!inspection.NetworkRss.IsAvailable)
+        if (physical.Length == 1)
         {
-            content.Children.Add(CreateMutedText(
-                $"RSS provider evidence is {inspection.NetworkRss.Status}: {inspection.NetworkRss.Error ?? "no additional provider detail"}."));
-        }
-        else if (inspection.NetworkRss.Adapters.Count == 0)
-        {
-            content.Children.Add(CreateMutedText("StandardCimv2 returned no RSS setting rows."));
-        }
-        else
-        {
-            foreach (var adapter in inspection.NetworkRss.Adapters.Take(MaximumInspectorRowsPerSection))
-            {
-                content.Children.Add(BuildNetworkRssPanel(adapter));
-            }
+            return physical[0];
         }
 
-        await ShowFocusedDeviceEvidenceDialogAsync("Network / RSS evidence", content);
+        var source = active.Length > 0 ? active : candidates;
+        var picker = new ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            MinWidth = 420d,
+        };
+        foreach (var candidate in source)
+        {
+            picker.Items.Add(new ComboBoxItem
+            {
+                Content =
+                    $"{candidate.Adapter.Name ?? candidate.Adapter.InterfaceDescription ?? "Network adapter"}" +
+                    (candidate.Continuity.IsAvailable ? " · active" : " · configuration only"),
+                Tag = candidate.Adapter.PnpCorrelation.PnpInstanceId,
+            });
+        }
+        picker.SelectedIndex = 0;
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = RootGrid.XamlRoot,
+            Title = "Select physical network adapter",
+            Content = new StackPanel
+            {
+                Spacing = 10d,
+                Children =
+                {
+                    CreateMutedText(
+                        "LatencyPilot analyzes RSS as a multi-CPU receive-steering mechanism. Virtual switches and debug/software adapters are excluded from this subsystem action."),
+                    picker,
+                },
+            },
+            PrimaryButtonText = "Analyze this adapter",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary ||
+            picker.SelectedItem is not ComboBoxItem selected ||
+            selected.Tag is not string selectedPnpId)
+        {
+            return null;
+        }
+
+        return source
+            .Select(static candidate => candidate.Adapter)
+            .Single(adapter =>
+                string.Equals(
+                    adapter.PnpCorrelation.PnpInstanceId,
+                    selectedPnpId,
+                    StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task ShowNetworkSubsystemDialogAsync(
+        NetworkRssAdapterSnapshot adapter,
+        PnPDeviceSnapshot? device,
+        NetworkRuntimeSummary? attribution,
+        NetworkEnvironmentContinuityResult? continuity,
+        string? runtimeReason)
+    {
+        var processorSet = adapter.RssProcessorArray
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var headline = adapter.Enabled == false
+            ? "Physical NIC · RSS disabled"
+            : attribution?.HasTargetEvidence == true
+                ? "Physical NIC · runtime evidence captured"
+                : attribution is not null
+                    ? "Physical NIC · runtime sample partial"
+                    : "Physical NIC · configuration evidence";
+
+        var content = new StackPanel { Spacing = 10d };
+        content.Children.Add(new TextBlock
+        {
+            Text = headline,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = ThemeBrush(
+                adapter.Enabled == false
+                    ? "SemanticAttentionBrush"
+                    : "SemanticGoodBrush"),
+        });
+        content.Children.Add(CreateEvidenceLine(
+            "Adapter",
+            adapter.Name ?? adapter.InterfaceDescription ?? "Unnamed physical adapter"));
+        content.Children.Add(CreateEvidenceLine(
+            "RSS",
+            adapter.Enabled switch
+            {
+                true => "Enabled",
+                false => "Disabled",
+                null => "State unavailable",
+            }));
+        content.Children.Add(CreateEvidenceLine(
+            "Receive steering",
+            $"{FormatNullableNumber(adapter.NumberOfReceiveQueues)} queue(s) · " +
+            $"{(processorSet.Length == 0 ? "processor set unavailable" : $"{processorSet.Length} RSS processor(s)")}" +
+            (adapter.MaxProcessors is { } max ? $" · max {max}" : string.Empty)));
+        content.Children.Add(CreateEvidenceLine(
+            "MSI-X",
+            adapter.MsiXEnabled == true
+                ? "Enabled"
+                : adapter.MsiXSupported == true
+                    ? "Supported · not reported enabled"
+                    : adapter.MsiSupported == true
+                        ? "MSI supported"
+                        : "Unavailable"));
+
+        if (attribution is not null)
+        {
+            content.Children.Add(CreateEvidenceLine(
+                "Miniport runtime",
+                $"{attribution.MatchingDpcEventCount} DPC · {attribution.MatchingIsrEventCount} ISR · {attribution.TotalDurationMicroseconds:F1} us total"));
+            content.Children.Add(CreateEvidenceLine(
+                "Miniport tail",
+                $"DPC p99 {FormatMicroseconds(attribution.DpcP99Microseconds)} · ISR p99 {FormatMicroseconds(attribution.IsrP99Microseconds)}"));
+            content.Children.Add(CreateEvidenceLine(
+                "Capture integrity",
+                attribution.CaptureIntegrityValid
+                    ? attribution.ModuleListTruncated
+                        ? "Valid · module contributor list truncated"
+                        : "Valid"
+                    : "Invalid"));
+        }
+
+        content.Children.Add(CreateEvidenceLine(
+            "Environment continuity",
+            continuity is not null
+                ? continuity.IsStable
+                    ? "Stable during capture"
+                    : "Changed during capture"
+                : "Not proven"));
+
+        content.Children.Add(CreateMutedText(
+            "No network settings were changed. RSS is intentionally multi-CPU; v1 does not force the NIC onto a single CPU or rewrite its RSS profile."));
+
+        var technical = new StackPanel { Spacing = 7d };
+        technical.Children.Add(CreateSelectableEvidenceText(
+            $"PnP: {adapter.PnpCorrelation.PnpInstanceId ?? "—"}\n" +
+            $"Interface: {adapter.InterfaceDescription ?? "—"}\n" +
+            $"Hardware interface: {FormatNullableBoolean(adapter.HardwareInterface)} · connector present: {FormatNullableBoolean(adapter.ConnectorPresent)}"));
+        technical.Children.Add(CreateEvidenceLine(
+            "RSS profile",
+            FormatNullableNumber(adapter.Profile)));
+        technical.Children.Add(CreateEvidenceLine(
+            "Processor range",
+            $"base {FormatProcessor(adapter.BaseProcessorGroup, adapter.BaseProcessorNumber)} · " +
+            $"max {FormatProcessor(adapter.MaxProcessorGroup, adapter.MaxProcessorNumber)} · " +
+            $"NUMA {FormatNullableNumber(adapter.NumaNode)}"));
+        technical.Children.Add(CreateEvidenceLine(
+            "RSS processors",
+            processorSet.Length == 0 ? "—" : string.Join(", ", processorSet.Take(24))));
+        if (adapter.IndirectionTable.Count > 0)
+        {
+            technical.Children.Add(CreateEvidenceLine(
+                "Indirection table",
+                string.Join(", ", adapter.IndirectionTable.Take(24)) +
+                (adapter.IndirectionTable.Count > 24
+                    ? $" · +{adapter.IndirectionTable.Count - 24} more"
+                    : string.Empty)));
+        }
+
+        if (device is not null)
+        {
+            technical.Children.Add(CreateEvidenceLine(
+                "Miniport service",
+                device.ServiceName ?? "—"));
+            technical.Children.Add(CreateEvidenceLine(
+                "Driver",
+                device.Driver.IsAvailable
+                    ? $"{device.Driver.Provider ?? "—"} · {device.Driver.Version ?? "—"} · {device.Driver.InfPath ?? "—"}"
+                    : "metadata unavailable"));
+        }
+
+        if (attribution is not null)
+        {
+            technical.Children.Add(CreateEvidenceLine(
+                "Generic NDIS events",
+                attribution.GenericNdisEventCount.ToString(CultureInfo.InvariantCulture)));
+            technical.Children.Add(CreateEvidenceLine(
+                "Unresolved interrupt events",
+                attribution.UnresolvedInterruptEventCount.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (continuity is { IsStable: false })
+        {
+            technical.Children.Add(CreateMutedText(
+                "Continuity warnings:" + Environment.NewLine +
+                string.Join(Environment.NewLine, continuity.Reasons.Select(static reason => $"• {reason}"))));
+        }
+        if (!string.IsNullOrWhiteSpace(runtimeReason))
+        {
+            technical.Children.Add(CreateMutedText(runtimeReason));
+        }
+
+        content.Children.Add(new Expander
+        {
+            Header = "Technical details",
+            Content = technical,
+            IsExpanded = attribution is null || continuity is { IsStable: false },
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        });
+
+        await ShowFocusedDeviceEvidenceDialogAsync("Network / RSS analysis", content);
+    }
+
+    private async Task ShowSimpleNetworkMessageAsync(string title, string message)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = RootGrid.XamlRoot,
+            Title = title,
+            Content = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+            },
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        await dialog.ShowAsync();
+    }
+
+    private static NetworkRuntimeSummary AnalyzeNetworkRuntime(
+        KernelLatencyCaptureResponse capture,
+        PnPDeviceSnapshot adapter)
+    {
+        ArgumentNullException.ThrowIfNull(capture);
+        ArgumentNullException.ThrowIfNull(adapter);
+
+        if (string.IsNullOrWhiteSpace(adapter.ServiceName))
+        {
+            return new NetworkRuntimeSummary(
+                0,
+                0,
+                0,
+                capture.UnresolvedModuleEventCount,
+                0d,
+                null,
+                null,
+                IsCaptureIntegrityValid(capture),
+                capture.ModuleContributorListTruncated,
+                false);
+        }
+
+        var serviceName = NormalizeModuleStem(adapter.ServiceName);
+        var matching = capture.Modules
+            .Where(module =>
+                string.Equals(
+                    NormalizeModuleStem(module.ModuleName),
+                    serviceName,
+                    StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(
+                    NormalizeModuleStem(module.ImagePath),
+                    serviceName,
+                    StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var ndis = capture.Modules
+            .Where(module =>
+                string.Equals(
+                    NormalizeModuleStem(module.ModuleName),
+                    "ndis",
+                    StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(
+                    NormalizeModuleStem(module.ImagePath),
+                    "ndis",
+                    StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        return new NetworkRuntimeSummary(
+            matching.Sum(static module => module.Dpc.Count),
+            matching.Sum(static module => module.Isr.Count),
+            ndis.Sum(static module => module.Dpc.Count + module.Isr.Count),
+            capture.UnresolvedModuleEventCount,
+            matching.Sum(static module => module.TotalDurationMicroseconds),
+            MaxNullable(matching.Select(static module => module.Dpc.P99Microseconds)),
+            MaxNullable(matching.Select(static module => module.Isr.P99Microseconds)),
+            IsCaptureIntegrityValid(capture),
+            capture.ModuleContributorListTruncated,
+            matching.Length > 0);
+    }
+
+    private static bool IsCaptureIntegrityValid(KernelLatencyCaptureResponse capture) =>
+        capture.EventsLost == 0 &&
+        capture.InvalidEventCount == 0 &&
+        capture.InvalidImageEventCount == 0 &&
+        !capture.EventLimitReached;
+
+    private static string NormalizeModuleStem(string value)
+    {
+        var fileName = Path.GetFileName(value.Trim());
+        return Path.GetFileNameWithoutExtension(fileName);
+    }
+
+    private static double? MaxNullable(IEnumerable<double?> values)
+    {
+        var materialized = values
+            .Where(static value => value is not null)
+            .Select(static value => value!.Value)
+            .ToArray();
+        return materialized.Length == 0 ? null : materialized.Max();
+    }
+
+    private static string FormatMicroseconds(double? value) =>
+        value is null
+            ? "—"
+            : string.Create(CultureInfo.InvariantCulture, $"{value.Value:F1} us");
+
+    private sealed record NetworkRuntimeSummary(
+        int MatchingDpcEventCount,
+        int MatchingIsrEventCount,
+        int GenericNdisEventCount,
+        int UnresolvedInterruptEventCount,
+        double TotalDurationMicroseconds,
+        double? DpcP99Microseconds,
+        double? IsrP99Microseconds,
+        bool CaptureIntegrityValid,
+        bool ModuleListTruncated,
+        bool ServiceModuleObserved)
+    {
+        public bool HasTargetEvidence =>
+            CaptureIntegrityValid &&
+            ServiceModuleObserved &&
+            MatchingDpcEventCount + MatchingIsrEventCount > 0;
     }
 
     private async Task ShowFocusedDeviceEvidenceDialogAsync(string title, StackPanel content)

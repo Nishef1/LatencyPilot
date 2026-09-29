@@ -5,7 +5,9 @@ namespace LatencyPilot.Platform.Windows.Devices;
 
 internal sealed record NetworkAdapterPnpIdentity(
     string InterfaceDescription,
-    string PnpInstanceId);
+    string PnpInstanceId,
+    bool? HardwareInterface,
+    bool? ConnectorPresent);
 
 internal static class NetworkRssPropertyMapper
 {

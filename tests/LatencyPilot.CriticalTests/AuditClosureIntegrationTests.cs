@@ -146,6 +146,17 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(deviceEvidenceUi, "NetworkSubsystemButton_Click",
             "Network/RSS must have an independent user action.");
 
+        StringAssert.Contains(deviceEvidenceUi, "NetworkRssPhysicalAdapterSelector.Select",
+            "Network/RSS analysis must exclude virtual/debug adapters and choose from PnP-correlated physical RSS-capable NICs.");
+        StringAssert.Contains(deviceEvidenceUi, "ObservationServiceClient.CaptureKernelLatencyAsync",
+            "Network/RSS must capture bounded kernel runtime evidence instead of only dumping provider rows.");
+        StringAssert.Contains(deviceEvidenceUi, "AnalyzeNetworkRuntime",
+            "Network/RSS must attribute the observation-service module summary to the selected miniport service.");
+        StringAssert.Contains(deviceEvidenceUi, "NetworkEnvironmentContinuity.Evaluate",
+            "Network/RSS runtime evidence must be guarded by before/after interface continuity.");
+        StringAssert.Contains(deviceEvidenceUi, "No network settings were changed",
+            "The v1 network action must remain explicitly read-only.");
+
         var mainWindowXaml = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "MainWindow.xaml"));
         StringAssert.Contains(mainWindowXaml, "x:Name=\"MeasureGpuGateAButton\"",
             "Measure must expose GPU Gate A directly inside its subsystem card.");
@@ -155,6 +166,9 @@ public sealed class AuditClosureIntegrationTests
             "Measure must expose the independent Network/RSS action directly inside its subsystem card.");
         StringAssert.Contains(mainWindowXaml, "Click=\"UsbSubsystemButton_Click\"");
         StringAssert.Contains(mainWindowXaml, "Click=\"NetworkSubsystemButton_Click\"");
+
+        StringAssert.Contains(mainWindowXaml, "Analyze network / RSS",
+            "Devices must present the network action as analysis rather than a raw inspector dump.");
 
         var usbXhciUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "UsbXhciExperience.cs"));
         StringAssert.Contains(usbXhciUi, "--usb-xhci-readiness",

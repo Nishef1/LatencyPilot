@@ -62,9 +62,21 @@ public static class NetworkRssReader
                     }
 
                     var mapped = NetworkRssPropertyMapper.Map(ReadRssProperties(row));
+                    var correlation = NetworkRssPnpCorrelator.Resolve(
+                        mapped.InterfaceDescription,
+                        identities);
+                    var identity = correlation.IsAvailable
+                        ? identities.SingleOrDefault(item =>
+                            string.Equals(
+                                item.PnpInstanceId,
+                                correlation.PnpInstanceId,
+                                StringComparison.OrdinalIgnoreCase))
+                        : null;
                     adapters.Add(mapped with
                     {
-                        PnpCorrelation = NetworkRssPnpCorrelator.Resolve(mapped.InterfaceDescription, identities),
+                        PnpCorrelation = correlation,
+                        HardwareInterface = identity?.HardwareInterface,
+                        ConnectorPresent = identity?.ConnectorPresent,
                     });
                 }
             }
@@ -105,7 +117,7 @@ public static class NetworkRssReader
         using var searcher = new ManagementObjectSearcher(
             scope,
             new ObjectQuery(
-                "SELECT InterfaceDescription, PnPDeviceID FROM MSFT_NetAdapter WHERE InterfaceDescription IS NOT NULL"));
+                "SELECT InterfaceDescription, PnPDeviceID, HardwareInterface, ConnectorPresent FROM MSFT_NetAdapter WHERE InterfaceDescription IS NOT NULL"));
         using var rows = searcher.Get();
 
         foreach (ManagementObject row in rows)
@@ -125,7 +137,15 @@ public static class NetworkRssReader
                     continue;
                 }
 
-                identities.Add(new NetworkAdapterPnpIdentity(interfaceDescription, pnpDeviceId));
+                identities.Add(new NetworkAdapterPnpIdentity(
+                    interfaceDescription,
+                    pnpDeviceId,
+                    row.Properties["HardwareInterface"]?.Value is bool hardwareInterface
+                        ? hardwareInterface
+                        : null,
+                    row.Properties["ConnectorPresent"]?.Value is bool connectorPresent
+                        ? connectorPresent
+                        : null));
             }
         }
 
@@ -190,5 +210,26 @@ public sealed record NetworkRssInspectionCoverage(
         }
 
         return new NetworkRssInspectionCoverage(true, providerRows, correlatedRows, null);
+    }
+}
+
+
+public static class NetworkRssPhysicalAdapterSelector
+{
+    public static IReadOnlyList<NetworkRssAdapterSnapshot> Select(NetworkRssSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!snapshot.IsAvailable)
+        {
+            return [];
+        }
+
+        return snapshot.Adapters
+            .Where(static adapter =>
+                adapter.PnpCorrelation.IsAvailable &&
+                adapter.HardwareInterface == true &&
+                adapter.ConnectorPresent == true)
+            .OrderBy(static adapter => adapter.Name ?? adapter.InterfaceDescription, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 }

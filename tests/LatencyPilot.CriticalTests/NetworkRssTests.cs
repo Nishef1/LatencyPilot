@@ -51,15 +51,15 @@ public sealed class NetworkRssTests
 
         var correlated = NetworkRssPnpCorrelator.Resolve(
             mapped.InterfaceDescription,
-            [new NetworkAdapterPnpIdentity("Test 10GbE Adapter", "PCI\\VEN_TEST&DEV_NIC")]);
+            [new NetworkAdapterPnpIdentity("Test 10GbE Adapter", "PCI\\VEN_TEST&DEV_NIC", true, true)]);
         Assert.AreEqual(NetworkRssPnpCorrelationStatus.Available, correlated.Status);
         Assert.AreEqual("PCI\\VEN_TEST&DEV_NIC", correlated.PnpInstanceId);
 
         var ambiguous = NetworkRssPnpCorrelator.Resolve(
             mapped.InterfaceDescription,
             [
-                new NetworkAdapterPnpIdentity("Test 10GbE Adapter", "PCI\\VEN_A"),
-                new NetworkAdapterPnpIdentity("Test 10GbE Adapter", "PCI\\VEN_B"),
+                new NetworkAdapterPnpIdentity("Test 10GbE Adapter", "PCI\\VEN_A", true, true),
+                new NetworkAdapterPnpIdentity("Test 10GbE Adapter", "PCI\\VEN_B", true, true),
             ]);
         Assert.AreEqual(NetworkRssPnpCorrelationStatus.Ambiguous, ambiguous.Status);
 
@@ -99,6 +99,25 @@ public sealed class NetworkRssTests
                 adapter.InstanceId,
                 null),
         };
+        var physicalRss = rss with
+        {
+            HardwareInterface = true,
+            ConnectorPresent = true,
+        };
+        var virtualRss = rss with
+        {
+            Name = "vEthernet",
+            HardwareInterface = false,
+            ConnectorPresent = false,
+        };
+        var physicalSelection = NetworkRssPhysicalAdapterSelector.Select(new NetworkRssSnapshot(
+            NetworkRssReadStatus.Available,
+            [virtualRss, physicalRss],
+            DateTimeOffset.UnixEpoch,
+            null));
+        Assert.AreEqual(1, physicalSelection.Count);
+        Assert.AreEqual("Ethernet", physicalSelection[0].Name);
+
         var usableCoverage = NetworkRssInspectionCoverage.Evaluate(new NetworkRssSnapshot(
             NetworkRssReadStatus.Available,
             [rss],

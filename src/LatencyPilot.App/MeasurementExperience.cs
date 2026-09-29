@@ -98,7 +98,7 @@ public sealed partial class MainWindow
             MinWidth = 230,
             MaxWidth = 360,
             HorizontalAlignment = HorizontalAlignment.Left,
-            IsEnabled = !_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning,
+            IsEnabled = !_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning && !_networkSubsystemRunning,
         };
         _measurementScenarioComboBox.Items.Add(EvidenceExportService.GetMeasurementDisplayName(MeasurementScenario.RealWorld));
         _measurementScenarioComboBox.Items.Add(EvidenceExportService.GetMeasurementDisplayName(MeasurementScenario.IdleBaseline));
@@ -182,7 +182,7 @@ public sealed partial class MainWindow
 
     private async Task CaptureObservationAsync()
     {
-        if (_measurementBusy || _gateAValidationRunning || _usbSubsystemRunning)
+        if (_measurementBusy || _gateAValidationRunning || _usbSubsystemRunning || _networkSubsystemRunning)
         {
             return;
         }
@@ -227,7 +227,7 @@ public sealed partial class MainWindow
 
     private async Task CaptureBaselineAsync()
     {
-        if (_measurementBusy || _gateAValidationRunning || _usbSubsystemRunning)
+        if (_measurementBusy || _gateAValidationRunning || _usbSubsystemRunning || _networkSubsystemRunning)
         {
             return;
         }
@@ -479,7 +479,7 @@ public sealed partial class MainWindow
 
     private void UpdateScenarioSelectionEnabledState()
     {
-        var enabled = !_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning;
+        var enabled = !_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning && !_networkSubsystemRunning;
         if (_measurementScenarioComboBox is not null)
         {
             _measurementScenarioComboBox.IsEnabled = enabled;

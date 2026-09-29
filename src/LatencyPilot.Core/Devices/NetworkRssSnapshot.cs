@@ -43,6 +43,10 @@ public sealed record NetworkRssAdapterSnapshot(
     IReadOnlyList<string> IndirectionTable,
     IReadOnlyList<string> RssProcessorArray)
 {
+    public bool? HardwareInterface { get; init; }
+
+    public bool? ConnectorPresent { get; init; }
+
     public NetworkRssPnpCorrelation PnpCorrelation { get; init; } = new(
         NetworkRssPnpCorrelationStatus.MissingIdentity,
         null,

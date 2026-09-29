@@ -25,7 +25,7 @@ The product surface is now intentionally split by subsystem:
 
 - **GPU Gate A is GPU-only.** The App no longer asks for a primary mouse before Gate A, the elevated Gate A runner no longer accepts `--primary-input`, and new Gate A reports no longer create a post-GPU USB recommendation.
 - **USB / xHCI has its own Devices-page action** for route/controller evidence. Its future automatic selection/apply flow owns its own readiness and verification instead of borrowing Gate A authority.
-- **Network / RSS has its own Devices-page action** and remains read-only in v1. RSS is not modeled as a GPU-style single-CPU tournament.
+- **Network / RSS has its own Devices-page action** and remains read-only in v1. The action now selects a PnP-correlated physical RSS-capable NIC (excluding virtual/debug/software adapters), captures a short target-miniport DPC/ISR sample with network-environment continuity checks, and summarizes RSS/MSI-X/queue/processor evidence. RSS is not modeled as a GPU-style single-CPU tournament.
 - **Interrupt Policy Lab stays separate** as a manual development utility and is not the automatic entry point for GPU, USB, or network optimization.
 - Historical GPU reports that already contain a `UsbRecommendation` remain renderable for compatibility; new GPU Gate A sessions leave that optional field unset.
 
