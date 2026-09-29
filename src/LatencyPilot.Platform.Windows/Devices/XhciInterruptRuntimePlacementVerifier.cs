@@ -401,7 +401,7 @@ public static class XhciInterruptRuntimePlacementVerifier
 
         targetVectors = targetSet;
         reason =
-            $"Win32_PnPAllocatedResource mapped the target and all {peers.Count} same-service peer controller(s) to disjoint IRQ vector sets.";
+            $"Win32_PnPAllocatedResource mapped the target and all {peers.Length} same-service peer controller(s) to disjoint IRQ vector sets.";
         return true;
     }
 
