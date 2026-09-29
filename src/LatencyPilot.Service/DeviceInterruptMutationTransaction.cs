@@ -134,7 +134,7 @@ internal sealed class DeviceInterruptMutationTransaction
         }
     }
 
-    internal MutationJournalEntry DeferApplyVerificationToReboot(
+    internal MutationJournalEntry DeferXhciApplyVerificationToReboot(
         Guid experimentId,
         string reason)
     {
@@ -143,6 +143,13 @@ internal sealed class DeviceInterruptMutationTransaction
         var applied = GetEntry(experimentId, MutationJournalState.Applied);
         var original = DeviceInterruptMutationJournalCodec.DeserializeOriginal(applied.OriginalStateJson);
         var candidate = DeviceInterruptMutationJournalCodec.DeserializeCandidate(applied.CandidateStateJson);
+        if (original.TargetKind != DeviceInterruptTargetKind.XhciController ||
+            candidate.Operation != DeviceInterruptMutationOperation.XhciAffinity)
+        {
+            throw new NotSupportedException(
+                "Reboot verification deferral is reserved for a journal-owned xHCI affinity experiment.");
+        }
+
         if (!CandidateStored(original.DeviceInstanceId, candidate))
         {
             throw new InvalidOperationException(
