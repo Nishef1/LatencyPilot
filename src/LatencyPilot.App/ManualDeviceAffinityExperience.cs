@@ -1816,7 +1816,13 @@ public sealed partial class MainWindow
                 restartDeviceOnly);
             var status = report.Status is "RebootRequired" or "AppliedPolicyKept" or "AlreadyStoredPolicy"
                 ? "SemanticAttentionBrush"
-                : report.Status is "AppliedAndKept" or "AlreadyConfigured" or "Restored" or "NoLatencyPilotChange"
+                : report.Status is
+                    "AppliedAndKept" or
+                    "AlreadyConfigured" or
+                    "AppliedAllocationVerified" or
+                    "AlreadyConfiguredAllocationVerified" or
+                    "Restored" or
+                    "NoLatencyPilotChange"
                     ? "SemanticGoodBrush"
                     : "TextBrush";
             var message = report.Status == "RebootRequired"

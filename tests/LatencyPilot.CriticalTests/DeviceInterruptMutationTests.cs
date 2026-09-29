@@ -219,6 +219,10 @@ public sealed class DeviceInterruptMutationTests
             root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
         StringAssert.Contains(manualUiSource, "Steered by Windows (system)",
             "IRQ policy value 6 must be presented as the system-reserved steering policy rather than an unknown number.");
+
+        StringAssert.Contains(manualUiSource, "AppliedAllocationVerified",
+            "Policy Lab must present allocation-authoritative xHCI completion as a successful state rather than a neutral/unknown helper result.");
+        StringAssert.Contains(manualUiSource, "AlreadyConfiguredAllocationVerified");
         StringAssert.Contains(manualUiSource, "P-core");
         StringAssert.Contains(manualUiSource, "E-core");
         StringAssert.Contains(manualUiSource, "processor groups",
