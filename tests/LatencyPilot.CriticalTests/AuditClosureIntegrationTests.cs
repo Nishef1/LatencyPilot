@@ -181,8 +181,8 @@ public sealed class AuditClosureIntegrationTests
             pendingFirst >= 0 && editableSecond > pendingFirst,
             "Interrupt Policy Lab must list pending recovery before ordinary editable devices.");
 
-        var runScript = File.ReadAllText(Path.Combine(root, "run.ps1"));
-        StringAssert.Contains(runScript, "Detail: $installDetail",
+        var recoveryRunScript = File.ReadAllText(Path.Combine(root, "run.ps1"));
+        StringAssert.Contains(recoveryRunScript, "Detail: $installDetail",
             "run.ps1 must preserve the install/recovery diagnostic instead of hiding which journal state blocked Service replacement.");
 
         var usbXhciRunner = File.ReadAllText(Path.Combine(root, "tools", "LatencyPilot.GateAValidation", "UsbXhciReadinessRunner.cs"));
