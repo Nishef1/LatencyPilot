@@ -248,8 +248,8 @@ public sealed partial class MainWindow
                     canStartNewPolicyMutation,
                     inspectionOnlyReason);
             })
-            .OrderByDescending(static row => row.CanStartNewPolicyMutation)
-            .ThenByDescending(static row => row.HasPendingRecovery)
+            .OrderByDescending(static row => row.HasPendingRecovery)
+            .ThenByDescending(static row => row.CanStartNewPolicyMutation)
             .ThenByDescending(static row => row.HasExplicitOverride)
             .ThenBy(static row => row.Kind?.ToString(), StringComparer.OrdinalIgnoreCase)
             .ThenBy(static row => row.Device.DisplayName, StringComparer.OrdinalIgnoreCase)
@@ -590,7 +590,8 @@ public sealed partial class MainWindow
         searchBox.TextChanged += (_, _) => PopulateDevices(searchBox.Text, null);
 
         var initialId = selectedDeviceInstanceId
-            ?? snapshot.Rows.FirstOrDefault(static row => row.CanStartNewPolicyMutation || row.HasPendingRecovery)?.Device.InstanceId
+            ?? snapshot.Rows.FirstOrDefault(static row => row.HasPendingRecovery)?.Device.InstanceId
+            ?? snapshot.Rows.FirstOrDefault(static row => row.CanStartNewPolicyMutation)?.Device.InstanceId
             ?? snapshot.Rows[0].Device.InstanceId;
         PopulateDevices(string.Empty, initialId);
     }

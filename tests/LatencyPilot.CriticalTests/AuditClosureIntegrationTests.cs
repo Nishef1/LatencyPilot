@@ -162,6 +162,22 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(usbXhciUi, "TryResolveCurrentVerifiedGpuReservation",
             "Automatic USB Apply must require an independently verified current GPU reservation instead of inventing an exclusion.");
 
+        StringAssert.Contains(usbXhciUi, "Recovery required before USB / xHCI",
+            "A blocked USB run must explain recovery in the subsystem surface instead of showing only a generic mutation warning.");
+        StringAssert.Contains(usbXhciUi, "FormatMutationKind",
+            "The recovery dialog must identify the unresolved mutation kind/state/target for diagnosis.");
+
+        var manualAffinityUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
+        var pendingFirst = manualAffinityUi.IndexOf(".OrderByDescending(static row => row.HasPendingRecovery)", StringComparison.Ordinal);
+        var editableSecond = manualAffinityUi.IndexOf(".ThenByDescending(static row => row.CanStartNewPolicyMutation)", pendingFirst, StringComparison.Ordinal);
+        Assert.IsTrue(
+            pendingFirst >= 0 && editableSecond > pendingFirst,
+            "Interrupt Policy Lab must list pending recovery before ordinary editable devices.");
+
+        var runScript = File.ReadAllText(Path.Combine(root, "run.ps1"));
+        StringAssert.Contains(runScript, "Detail: $installDetail",
+            "run.ps1 must preserve the install/recovery diagnostic instead of hiding which journal state blocked Service replacement.");
+
         var usbXhciRunner = File.ReadAllText(Path.Combine(root, "tools", "LatencyPilot.GateAValidation", "UsbXhciReadinessRunner.cs"));
         StringAssert.Contains(usbXhciRunner, "CreateIndependent");
         StringAssert.Contains(usbXhciRunner, "KernelLatencyCapture.Capture");

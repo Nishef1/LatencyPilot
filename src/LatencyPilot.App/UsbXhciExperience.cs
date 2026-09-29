@@ -104,11 +104,23 @@ public sealed partial class MainWindow
 
             if (unresolved.Count != 0)
             {
+                var pendingSummary = string.Join(
+                    Environment.NewLine,
+                    unresolved.Take(4).Select(static entry =>
+                        $"• {FormatMutationKind(entry.Kind)} · {entry.State} · {entry.TargetId}"));
+                var more = unresolved.Count > 4
+                    ? $"{Environment.NewLine}• …and {unresolved.Count - 4} more unresolved entr{(unresolved.Count - 4 == 1 ? "y" : "ies")}."
+                    : string.Empty;
+
                 UsbEvidenceText.Text =
-                    $"USB/xHCI is blocked by {unresolved.Count} unresolved mutation journal entr{(unresolved.Count == 1 ? "y" : "ies")} owned by another target. Recover that state before starting a new hardware experiment.";
+                    $"USB/xHCI is blocked by {unresolved.Count} unresolved LatencyPilot mutation entr{(unresolved.Count == 1 ? "y" : "ies")} on another target.";
                 await ShowSimpleUsbMessageAsync(
-                    "Another mutation needs recovery",
-                    UsbEvidenceText.Text);
+                    "Recovery required before USB / xHCI",
+                    $"{UsbEvidenceText.Text}{Environment.NewLine}{Environment.NewLine}" +
+                    $"{pendingSummary}{more}{Environment.NewLine}{Environment.NewLine}" +
+                    "Why this happens: a previous Apply/Restore did not reach a terminal journal state, commonly because the app/service was interrupted or Windows still requires verification after a restart." +
+                    $"{Environment.NewLine}{Environment.NewLine}" +
+                    "Next: open Devices → Interrupt Policy Lab. The pending Recovery device is listed first. Resume & verify only when it is an ApplyRebootPending entry for the same experiment; otherwise choose Restore original. LatencyPilot will not start a second mutation until that entry reaches a terminal state.");
                 return;
             }
 
@@ -560,6 +572,16 @@ public sealed partial class MainWindow
                     : "USB / xHCI · not kept",
             content);
     }
+
+    private static string FormatMutationKind(string kind) =>
+        kind switch
+        {
+            "gpu-interrupt-affinity" => "GPU interrupt affinity",
+            "xhci-interrupt-affinity" => "USB/xHCI interrupt affinity",
+            "device-interrupt-affinity" => "Device interrupt affinity",
+            "device-msi-enable" => "Device MSI policy",
+            _ => kind,
+        };
 
     private async Task ShowSimpleUsbMessageAsync(string title, string message)
     {

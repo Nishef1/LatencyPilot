@@ -114,7 +114,7 @@ try {
                 if ($null -ne $existingService -and
                     $existingService.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Running) {
                     $serviceUpdateDeferredForRecovery = $true
-                    Write-Warning 'Protected Service update was deferred because LatencyPilot owns an unresolved journaled change. The existing running recovery host is preserved so the App can resume or restore that experiment.'
+                    Write-Warning "Protected Service update was deferred because LatencyPilot owns an unresolved journaled change. The existing running recovery host is preserved so the App can resume or restore that experiment. Detail: $installDetail"
                 }
                 else {
                     throw "Protected Service replacement is blocked by recovery work and no existing Running recovery host is available. $installDetail"
