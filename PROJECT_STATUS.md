@@ -177,10 +177,11 @@ select one exact primary USB mouse
 → three elevated 5 s quiet kernel ETW headroom windows
 → choose a majority-winning physical core, then the quieter logical sibling by median evidence
 → show a subsystem-owned benchmark result even when peer-controller allocation is unreadable
-→ evaluate controller-attribution readiness separately
-→ only when the recommendation is Ready and Apply/runtime attribution preflight is safe:
+→ evaluate controller-attribution strength separately
+→ when the recommendation is Ready and no unrelated mutation owns the machine:
    journal/apply the recommended xHCI mask through the existing bounded helper
-→ verify translated allocation + controller-attributed requested-mask-only ISR placement
+→ require usable target translated allocation; add controller-specific requested-mask-only ISR proof when attribution is available
+→ if in-place restart leaves allocation unavailable/structurally unusable, defer the same journaled mask to one full reboot
 → Keep, exact rollback, or durable reboot-pending resume
 ```
 
