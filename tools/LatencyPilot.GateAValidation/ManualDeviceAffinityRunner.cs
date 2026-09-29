@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Principal;
 using System.Text.Json;
+using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.Observation;
 using LatencyPilot.Core.System;
@@ -863,13 +864,31 @@ internal static class ManualDeviceAffinityRunner
             candidate.AffinityMask,
             out var masks,
             out var assignmentReason);
+
+        PendingXhciInputTimingCapture? pendingInputTiming = null;
+        ManualInputTimingSanityReport? inputTiming = null;
+        if (assignmentVerified)
+        {
+            pendingInputTiming = TryStartXhciInputTimingCapture(
+                options.DeviceInstanceId,
+                out inputTiming);
+        }
+        else
+        {
+            inputTiming = ManualInputTimingSanityReport.Skipped(
+                "Raw Input timing sanity was skipped because translated xHCI assignment was not verified.");
+        }
+
         var runtime = assignmentVerified
             ? VerifyXhciRuntimePlacement(options.DeviceInstanceId, candidate)
             : new ManualRuntimePlacementVerification(
                 false,
                 "Runtime ETW verification was skipped because the translated interrupt assignment escaped the requested processor mask.");
+
+        inputTiming ??= CompleteXhciInputTimingCapture(pendingInputTiming);
         var verified = assignmentVerified && runtime.Verified;
-        var verification = $"{assignmentReason} {runtime.Reason}";
+        var verification =
+            $"{assignmentReason} {runtime.Reason} {FormatInputTimingSanity(inputTiming)}";
         if (!verified)
         {
             var rollback = transaction.Rollback(experimentId);
@@ -889,7 +908,8 @@ internal static class ManualDeviceAffinityRunner
                     : rollbackNeedsReboot
                         ? "xHCI runtime verification failed. The exact original policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again."
                         : "xHCI affinity verification failed and rollback still requires recovery attention.",
-                allocatedMasks: masks);
+                allocatedMasks: masks,
+                inputTiming: inputTiming);
         }
 
         var kept = transaction.KeepVerified(experimentId, measurementVerified: true);
@@ -901,9 +921,145 @@ internal static class ManualDeviceAffinityRunner
             experimentId,
             restartRequired: false,
             verification: verification,
-            message: "xHCI affinity was journaled, applied, restarted, verified by Windows translated assignment plus clean controller-attributed requested-mask-only ETW ISR placement, and retained as an explicit manual choice.",
-            allocatedMasks: masks);
+            message:
+                "xHCI affinity was journaled, applied, restarted, verified by Windows translated assignment plus clean controller-attributed requested-mask-only ETW ISR placement, and retained as an explicit manual choice. " +
+                FormatInputTimingSanity(inputTiming),
+            allocatedMasks: masks,
+            inputTiming: inputTiming);
     }
+
+    private static PendingXhciInputTimingCapture? TryStartXhciInputTimingCapture(
+        string controllerInstanceId,
+        out ManualInputTimingSanityReport? unavailable)
+    {
+        unavailable = null;
+        try
+        {
+            var inventory = DeviceInventoryReader.CapturePresentDevices();
+            var routes = InputDeviceRouteReader.Capture(inventory).Routes
+                .Where(route =>
+                    route.RawInputDevice.Kind == RawInputDeviceKind.Mouse &&
+                    route.RawInputDevice.ResolutionStatus == RawInputRouteResolutionStatus.Available &&
+                    route.IsUsbBacked &&
+                    string.Equals(
+                        route.UsbHostControllerInstanceId,
+                        controllerInstanceId,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(route.RawInputDevice.DeviceInterfacePath))
+                .GroupBy(
+                    route => route.RawInputDevice.PnPInstanceId ??
+                        route.RawInputDevice.DeviceInterfacePath!,
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(static group => group.First())
+                .ToArray();
+
+            if (routes.Length == 0)
+            {
+                unavailable = ManualInputTimingSanityReport.Skipped(
+                    "No exact Raw Input mouse route was found on the selected xHCI controller; host-observable input timing sanity is unavailable.");
+                return null;
+            }
+
+            if (routes.Length != 1)
+            {
+                unavailable = ManualInputTimingSanityReport.Skipped(
+                    $"{routes.Length.ToString(CultureInfo.InvariantCulture)} exact Raw Input mouse routes share the selected xHCI controller; LatencyPilot will not guess which mouse is primary for timing sanity.");
+                return null;
+            }
+
+            var rawInputDevice = routes[0].RawInputDevice;
+            return new PendingXhciInputTimingCapture(
+                rawInputDevice,
+                RawInputTimingCapture.CaptureAsync(
+                    rawInputDevice,
+                    ManualRuntimePlacementCaptureDuration));
+        }
+        catch (Exception exception) when (exception is
+            Win32Exception or
+            InvalidDataException or
+            IOException or
+            UnauthorizedAccessException or
+            InvalidOperationException or
+            NotSupportedException or
+            System.Security.SecurityException)
+        {
+            unavailable = ManualInputTimingSanityReport.Skipped(
+                $"Raw Input timing sanity could not start: {exception.GetType().Name}: {exception.Message}");
+            return null;
+        }
+    }
+
+    private static ManualInputTimingSanityReport CompleteXhciInputTimingCapture(
+        PendingXhciInputTimingCapture? pending)
+    {
+        if (pending is null)
+        {
+            return ManualInputTimingSanityReport.Skipped(
+                "Raw Input timing sanity was not started.");
+        }
+
+        try
+        {
+            var capture = pending.CaptureTask.GetAwaiter().GetResult();
+            if (!capture.IsAvailable || capture.TimestampSeries is null)
+            {
+                return new ManualInputTimingSanityReport(
+                    capture.Status.ToString(),
+                    pending.Device.PnPInstanceId ?? pending.Device.DeviceInterfacePath,
+                    0,
+                    null,
+                    null,
+                    null,
+                    null,
+                    InputTimingSnapshot.HostObservableScope,
+                    capture.Error ??
+                        "Raw Input timing capture did not return a usable timestamp series.");
+            }
+
+            var timing = InputTimingAnalyzer.Analyze(capture.TimestampSeries);
+            return new ManualInputTimingSanityReport(
+                timing.Status.ToString(),
+                pending.Device.PnPInstanceId ?? pending.Device.DeviceInterfacePath,
+                timing.ReportCount,
+                timing.MedianIntervalMilliseconds,
+                timing.P95IntervalMilliseconds,
+                timing.P99IntervalMilliseconds,
+                timing.ObservedReportRateHz,
+                timing.MeasurementScope,
+                timing.Reason);
+        }
+        catch (Exception exception) when (exception is
+            ArgumentException or
+            InvalidOperationException or
+            InvalidDataException or
+            IOException or
+            Win32Exception)
+        {
+            return ManualInputTimingSanityReport.Skipped(
+                $"Raw Input timing sanity failed: {exception.GetType().Name}: {exception.Message}");
+        }
+    }
+
+    private static string FormatInputTimingSanity(ManualInputTimingSanityReport report)
+    {
+        if (!string.Equals(
+                report.Status,
+                InputTimingAnalysisStatus.Available.ToString(),
+                StringComparison.Ordinal) ||
+            report.MedianIntervalMilliseconds is null ||
+            report.P99IntervalMilliseconds is null)
+        {
+            return $"Raw Input sanity: {report.Status}. {report.Reason}";
+        }
+
+        var rate = report.ObservedReportRateHz is { } observedRate
+            ? string.Create(CultureInfo.InvariantCulture, $", observed rate {observedRate:F1} Hz")
+            : string.Empty;
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"Raw Input sanity: {report.ReportCount} reports, median {report.MedianIntervalMilliseconds:F3} ms, p99 {report.P99IntervalMilliseconds:F3} ms{rate}; scope={report.MeasurementScope}. This is host-observable dispatch timing, not click-to-photon latency.");
+    }
+
 
     private static ManualRuntimePlacementVerification VerifyGpuRuntimePlacement(
         string deviceInstanceId,
@@ -1125,7 +1281,8 @@ internal static class ManualDeviceAffinityRunner
         bool restartRequired,
         string? verification,
         string message,
-        IReadOnlyList<string>? allocatedMasks = null) =>
+        IReadOnlyList<string>? allocatedMasks = null,
+        ManualInputTimingSanityReport? inputTiming = null) =>
         new(
             Schema: "latencypilot-manual-device-affinity-v2",
             Action: options.Action.ToString(),
@@ -1148,7 +1305,8 @@ internal static class ManualDeviceAffinityRunner
                     .ToArray() ??
                 [],
             Verification: verification,
-            Message: message);
+            Message: message,
+            InputTiming: inputTiming);
 
     private static void EnsureAdministrator()
     {
@@ -1315,6 +1473,34 @@ internal enum ManualAffinityTargetKind
     Device = 3,
 }
 
+internal sealed record PendingXhciInputTimingCapture(
+    RawInputDeviceSnapshot Device,
+    Task<RawInputTimingCaptureResult> CaptureTask);
+
+internal sealed record ManualInputTimingSanityReport(
+    string Status,
+    string? DeviceInstanceId,
+    int ReportCount,
+    double? MedianIntervalMilliseconds,
+    double? P95IntervalMilliseconds,
+    double? P99IntervalMilliseconds,
+    double? ObservedReportRateHz,
+    string MeasurementScope,
+    string? Reason)
+{
+    internal static ManualInputTimingSanityReport Skipped(string reason) =>
+        new(
+            "Unavailable",
+            null,
+            0,
+            null,
+            null,
+            null,
+            null,
+            InputTimingSnapshot.HostObservableScope,
+            reason);
+}
+
 internal sealed record ManualRuntimePlacementVerification(bool Verified, string Reason);
 
 internal sealed record ManualDeviceAffinityReport(
@@ -1332,4 +1518,5 @@ internal sealed record ManualDeviceAffinityReport(
     ulong? StoredMask,
     IReadOnlyList<string> AllocatedMasks,
     string? Verification,
-    string Message);
+    string Message,
+    ManualInputTimingSanityReport? InputTiming = null);

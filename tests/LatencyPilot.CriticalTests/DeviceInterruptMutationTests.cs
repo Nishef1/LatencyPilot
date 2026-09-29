@@ -190,6 +190,12 @@ public sealed class DeviceInterruptMutationTests
             "Manual GPU affinity must expose a journal-owned reboot/resume flow.");
         StringAssert.Contains(manualRunnerSource, "XhciInterruptRuntimePlacementVerifier",
             "Manual xHCI Keep must require controller-attributed runtime ETW placement evidence.");
+        StringAssert.Contains(manualRunnerSource, "RawInputTimingCapture.CaptureAsync",
+            "Manual xHCI verification must collect a bounded host-observable Raw Input timing sanity sample when one exact mouse route owns the controller.");
+        StringAssert.Contains(manualRunnerSource, "InputTimingAnalyzer.Analyze",
+            "Raw Input timing sanity must use the shared timing analyzer instead of inventing a second interval interpretation.");
+        StringAssert.Contains(manualRunnerSource, "not click-to-photon latency",
+            "The xHCI timing sanity result must never be mislabeled as physical click-to-photon latency.");
         StringAssert.Contains(manualRunnerSource, "ApplyRebootPending");
         StringAssert.Contains(manualRunnerSource, "pendingCandidate.ProcessorNumber != candidate.ProcessorNumber");
         StringAssert.Contains(manualRunnerSource, "pendingCandidate.AffinityMask != candidate.AffinityMask",
