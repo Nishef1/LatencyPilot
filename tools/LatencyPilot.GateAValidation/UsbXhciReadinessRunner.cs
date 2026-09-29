@@ -16,7 +16,8 @@ namespace LatencyPilot.GateAValidation;
 internal static class UsbXhciReadinessRunner
 {
     internal const string ModeFlag = "--usb-xhci-readiness";
-    private static readonly TimeSpan CaptureDuration = TimeSpan.FromSeconds(10);
+    private const int CaptureWindowCount = 3;
+    private static readonly TimeSpan CaptureWindowDuration = TimeSpan.FromSeconds(5);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -49,14 +50,18 @@ internal static class UsbXhciReadinessRunner
                 inventory,
                 routedControllerId);
 
-            var capture = KernelLatencyCapture.Capture(
-                new KernelLatencyCaptureOptions(
-                    CaptureDuration,
-                    ObservationProtocol.MaximumCaptureEvents));
+            var captures = new KernelLatencyCaptureResult[CaptureWindowCount];
+            for (var window = 0; window < captures.Length; window++)
+            {
+                captures[window] = KernelLatencyCapture.Capture(
+                    new KernelLatencyCaptureOptions(
+                        CaptureWindowDuration,
+                        ObservationProtocol.MaximumCaptureEvents));
+            }
 
             var recommendation = UsbAffinityRecommendationPlanner.CreateWithReservations(
                 topology,
-                capture,
+                captures,
                 routes,
                 options.PrimaryInputDeviceInstanceId,
                 inventory,
@@ -98,16 +103,21 @@ internal static class UsbXhciReadinessRunner
                         reservation.AffinityMask,
                         reservation.Processors))
                     .ToArray(),
-                ApplyEligible: applyPreflight.CanAttemptControllerSpecificVerification,
+                ApplyEligible: applyPreflight.CanAttemptApply,
                 ApplyEligibilityReason: applyPreflight.Reason,
+                ControllerSpecificAttributionAvailable: applyPreflight.ControllerSpecificAttributionAvailable,
+                VerificationMode: applyPreflight.VerificationMode,
+                WinningPhysicalCoreIndex: recommendation.WinningPhysicalCoreIndex,
+                StabilityWindowCount: recommendation.StabilityWindowCount,
+                WinningCoreVotes: recommendation.WinningCoreVotes,
                 TotalInterruptDurationMicroseconds: evidence?.TotalInterruptDurationMicroseconds,
                 InterruptTailP99Microseconds: evidence?.InterruptTailP99Microseconds,
                 DpcCount: evidence?.DpcCount,
                 IsrCount: evidence?.IsrCount,
-                CaptureValid: capture.IsValid,
-                EventsLost: capture.EventsLost,
-                InvalidEventCount: capture.InvalidEventCount,
-                EventLimitReached: capture.EventLimitReached,
+                CaptureValid: captures.All(static capture => capture.IsValid),
+                EventsLost: captures.Sum(static capture => capture.EventsLost),
+                InvalidEventCount: captures.Sum(static capture => capture.InvalidEventCount),
+                EventLimitReached: captures.Any(static capture => capture.EventLimitReached),
                 Reason: recommendation.Reason);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -124,6 +134,11 @@ internal static class UsbXhciReadinessRunner
                 Reservations: [],
                 ApplyEligible: false,
                 ApplyEligibilityReason: "USB/xHCI Apply is unavailable because readiness capture failed.",
+                ControllerSpecificAttributionAvailable: false,
+                VerificationMode: "Unavailable",
+                WinningPhysicalCoreIndex: null,
+                StabilityWindowCount: 0,
+                WinningCoreVotes: 0,
                 TotalInterruptDurationMicroseconds: null,
                 InterruptTailP99Microseconds: null,
                 DpcCount: null,
@@ -152,6 +167,8 @@ internal static class UsbXhciReadinessRunner
         Console.WriteLine($"usb-xhci-processor={report.Processor?.Number.ToString(CultureInfo.InvariantCulture) ?? "unavailable"}");
         Console.WriteLine($"usb-xhci-reservations={report.ReservedProcessors.Count.ToString(CultureInfo.InvariantCulture)}");
         Console.WriteLine($"usb-xhci-apply-eligible={report.ApplyEligible}");
+        Console.WriteLine($"usb-xhci-verification-mode={report.VerificationMode}");
+        Console.WriteLine($"usb-xhci-core-votes={report.WinningCoreVotes}/{report.StabilityWindowCount}");
         Console.WriteLine($"usb-xhci-report={options.OutputPath}");
 
         return string.Equals(report.Status, UsbAffinityRecommendationStatus.NotReady.ToString(), StringComparison.Ordinal)
@@ -266,6 +283,11 @@ internal sealed record UsbXhciReadinessReport(
     IReadOnlyList<UsbXhciReservationReport> Reservations,
     bool ApplyEligible,
     string ApplyEligibilityReason,
+    bool ControllerSpecificAttributionAvailable,
+    string VerificationMode,
+    int? WinningPhysicalCoreIndex,
+    int StabilityWindowCount,
+    int WinningCoreVotes,
     double? TotalInterruptDurationMicroseconds,
     double? InterruptTailP99Microseconds,
     int? DpcCount,

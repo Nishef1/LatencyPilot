@@ -42,8 +42,18 @@ public sealed record XhciInterruptRuntimePlacementEvidence(
 }
 
 public sealed record XhciInterruptVerificationPreflight(
-    bool CanAttemptControllerSpecificVerification,
-    string Reason);
+    bool CanAttemptApply,
+    string Reason)
+{
+    public bool ControllerSpecificAttributionAvailable { get; init; }
+
+    public string VerificationMode { get; init; } = "AllocationAuthoritative";
+
+    // Compatibility/readability alias for tests and diagnostics that specifically
+    // care whether the stronger controller-specific ETW path is available.
+    public bool CanAttemptControllerSpecificVerification =>
+        ControllerSpecificAttributionAvailable;
+}
 
 
 public static class XhciInterruptRuntimePlacementVerifier
@@ -89,7 +99,11 @@ public static class XhciInterruptRuntimePlacementVerifier
         {
             return new(
                 true,
-                "The routed controller is the only present USBXHCI service instance; controller-specific ETW attribution can be attempted directly.");
+                "Apply is eligible. The routed controller is the only present USBXHCI service instance, so controller-specific ETW attribution can be attempted directly.")
+            {
+                ControllerSpecificAttributionAvailable = true,
+                VerificationMode = "ControllerEtw",
+            };
         }
 
         if (TryGetUniqueTargetVectors(
@@ -101,7 +115,11 @@ public static class XhciInterruptRuntimePlacementVerifier
         {
             return new(
                 true,
-                $"Controller-specific ETW vector attribution is available for IRQ vector(s) {FormatVectors(targetVectors)}. {vectorReason}");
+                $"Apply is eligible. Controller-specific ETW vector attribution is available for IRQ vector(s) {FormatVectors(targetVectors)}. {vectorReason}")
+            {
+                ControllerSpecificAttributionAvailable = true,
+                VerificationMode = "ControllerEtw",
+            };
         }
 
         foreach (var peer in peers)
@@ -110,8 +128,12 @@ public static class XhciInterruptRuntimePlacementVerifier
                 peer.InterruptResources.Resources.Count == 0)
             {
                 return new(
-                    false,
-                    $"USB benchmark is complete, but Apply is gated because neither device-specific IRQ-vector attribution nor ConfigMgr allocation-disjoint attribution can currently prove controller ownership. Vector path: {vectorReason} ConfigMgr peer '{peer.InstanceId}' has no readable translated allocation.");
+                    true,
+                    $"Apply is eligible with allocation-authoritative verification. Controller-specific ETW attribution is unavailable before Apply because peer '{peer.InstanceId}' has no readable translated allocation and the optional IRQ-vector path is unavailable ({vectorReason}). After Apply, LatencyPilot will keep the change only if the target controller's own translated allocation is confined to the requested mask; otherwise it rolls back.")
+                {
+                    ControllerSpecificAttributionAvailable = false,
+                    VerificationMode = "TargetAllocation",
+                };
             }
 
             if (peer.InterruptResources.Resources.Any(resource =>
@@ -119,22 +141,34 @@ public static class XhciInterruptRuntimePlacementVerifier
                     resource.AffinityMask == 0))
             {
                 return new(
-                    false,
-                    $"USB benchmark is complete, but Apply is gated because peer xHCI controller '{peer.InstanceId}' exposes unsupported translated allocation and the IRQ-vector fallback was unavailable. Vector path: {vectorReason}");
+                    true,
+                    $"Apply is eligible with allocation-authoritative verification. Peer xHCI controller '{peer.InstanceId}' exposes allocation that cannot support controller-specific ETW attribution and the optional IRQ-vector path is unavailable ({vectorReason}). Target allocation must verify after Apply or LatencyPilot will roll back.")
+                {
+                    ControllerSpecificAttributionAvailable = false,
+                    VerificationMode = "TargetAllocation",
+                };
             }
 
             if (peer.InterruptResources.Resources.Any(resource =>
                     (resource.AffinityMask & candidate.AffinityMask) != 0))
             {
                 return new(
-                    false,
-                    $"USB benchmark is complete, but Apply is gated because the recommended CPU overlaps translated allocation owned by peer xHCI controller '{peer.InstanceId}', and the IRQ-vector fallback was unavailable. Vector path: {vectorReason}");
+                    true,
+                    $"Apply is eligible with allocation-authoritative verification. Peer xHCI controller '{peer.InstanceId}' currently overlaps the recommended CPU, so shared-driver ETW cannot uniquely attribute ISR events before Apply. The target controller's own translated allocation must verify after Apply or LatencyPilot will roll back. Vector path: {vectorReason}")
+                {
+                    ControllerSpecificAttributionAvailable = false,
+                    VerificationMode = "TargetAllocation",
+                };
             }
         }
 
         return new(
             true,
-            $"The recommended CPU is disjoint from all {peers.Length} same-service peer xHCI controller allocation(s); controller-specific runtime verification can be attempted after Apply. IRQ-vector fallback was not required.");
+            $"Apply is eligible. The recommended CPU is disjoint from all {peers.Length} same-service peer xHCI controller allocation(s); controller-specific runtime verification can be attempted after Apply. IRQ-vector fallback was not required.")
+        {
+            ControllerSpecificAttributionAvailable = true,
+            VerificationMode = "ControllerEtw",
+        };
     }
 
     public static XhciInterruptRuntimePlacementEvidence Analyze(

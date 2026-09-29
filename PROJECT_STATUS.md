@@ -174,8 +174,8 @@ select one exact primary USB mouse
 → inspect journal-owned pending xHCI state and resume the same candidate when required
 → capture current explicit device-policy CPU reservations
 → exclude every reserved physical core except the current xHCI target
-→ elevated 10 s quiet kernel ETW headroom capture
-→ rank CPU headroom for the routed xHCI controller
+→ three elevated 5 s quiet kernel ETW headroom windows
+→ choose a majority-winning physical core, then the quieter logical sibling by median evidence
 → show a subsystem-owned benchmark result even when peer-controller allocation is unreadable
 → evaluate controller-attribution readiness separately
 → only when the recommendation is Ready and Apply/runtime attribution preflight is safe:

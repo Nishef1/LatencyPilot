@@ -47,7 +47,7 @@ Its flow does not consume a GPU benchmark result. Cross-subsystem exclusion come
 - primary-input selection when needed;
 - exact Raw Input → USB hub/port → xHCI routing;
 - current CPU-reservation discovery from explicit specified-processor device policies;
-- fresh interrupt-headroom evidence over the remaining unreserved physical cores;
+- three short fresh interrupt-headroom windows over the remaining unreserved physical cores, with physical-core majority voting before logical-sibling selection;
 - xHCI CPU selection;
 - xHCI apply/rollback ownership;
 - controller-specific runtime verification;
@@ -89,7 +89,7 @@ The development App now reflects this decision directly:
 - GPU Gate A no longer resolves primary input or emits new USB recommendations;
 - USB/xHCI owns an elevated readiness runner with fresh kernel ETW headroom evidence;
 - USB/xHCI derives reserved CPUs from actual current specified-processor device policies and does not require Gate A or any previous benchmark report;
-- unreadable peer xHCI allocation no longer invalidates ranking; Apply/runtime attribution first attempts device-associated IRQ-vector ownership through Win32_PnPAllocatedResource → Win32_IRQResource matched to ETW ISR Vector, then falls back to allocation-disjoint attribution;
+- unreadable peer xHCI allocation no longer invalidates ranking or permanently gates a rollback-safe Apply attempt. Post-Apply Keep requires the exact target controller's translated allocation to match the requested mask; controller-specific ETW is a stronger optional proof, and contradictory attributed ISR placement still forces rollback;
 - when a Ready recommendation is also Apply-eligible, the USB action reuses the bounded journaled xHCI Apply/runtime-verify/rollback path directly rather than routing through Policy Lab;
 - an owned `ApplyRebootPending` xHCI candidate is resumed with its exact journaled mask before any new recommendation;
 - Network/RSS remains a separate read-only action in v1.

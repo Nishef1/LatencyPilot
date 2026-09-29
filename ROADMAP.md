@@ -240,6 +240,7 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] independent elevated quiet ETW headroom capture owned by the USB/xHCI action;
 - [x] derive reservations from actual current specified-processor device policies, regardless of whether they were set manually or by another LatencyPilot subsystem;
 - [x] keep subsystem benchmarks independent: no GPU-result prerequisite or benchmark-result handoff;
+- [x] stabilize USB/xHCI selection with three short windows, physical-core majority voting and median sibling selection;
 - [x] exclude every reserved physical core, including SMT siblings, while excluding the current benchmark target from its own reservation snapshot;
 - [x] rank CPU headroom by total DPC+ISR duration, then p99 interrupt tail, then event-count context;
 - [x] bind recommendation to the exact interrupt-owning xHCI controller;

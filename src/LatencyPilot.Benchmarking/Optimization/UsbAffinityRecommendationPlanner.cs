@@ -8,7 +8,10 @@ public enum UsbAffinityRecommendationStatus { Ready = 0, NotReady = 1, Diagnosti
 
 public sealed record UsbAffinityRecommendation(
     UsbAffinityRecommendationStatus Status, string? ControllerInstanceId, LogicalProcessorId? Processor,
-    IReadOnlyList<string> InputDeviceInstanceIds, UsbAffinityCpuCandidate? CpuEvidence, string Reason)
+    IReadOnlyList<string> InputDeviceInstanceIds, UsbAffinityCpuCandidate? CpuEvidence, string Reason,
+    int? WinningPhysicalCoreIndex = null,
+    int StabilityWindowCount = 1,
+    int WinningCoreVotes = 1)
 {
     public bool HasCandidate =>
         ControllerInstanceId is not null &&
@@ -57,17 +60,39 @@ public static class UsbAffinityRecommendationPlanner
         UserInputRouteInventory inputRoutes,
         string primaryInputDeviceInstanceId,
         DeviceInventorySnapshot? deviceInventory,
+        IReadOnlyCollection<LogicalProcessorId> reservedProcessors) =>
+        CreateWithReservations(
+            topology,
+            [quietCapture],
+            inputRoutes,
+            primaryInputDeviceInstanceId,
+            deviceInventory,
+            reservedProcessors);
+
+    public static UsbAffinityRecommendation CreateWithReservations(
+        ProcessorTopologySnapshot topology,
+        IReadOnlyList<KernelLatencyCaptureResult> quietCaptures,
+        UserInputRouteInventory inputRoutes,
+        string primaryInputDeviceInstanceId,
+        DeviceInventorySnapshot? deviceInventory,
         IReadOnlyCollection<LogicalProcessorId> reservedProcessors)
     {
         ArgumentNullException.ThrowIfNull(topology);
-        ArgumentNullException.ThrowIfNull(quietCapture);
+        ArgumentNullException.ThrowIfNull(quietCaptures);
         ArgumentNullException.ThrowIfNull(inputRoutes);
         ArgumentNullException.ThrowIfNull(reservedProcessors);
         ArgumentException.ThrowIfNullOrWhiteSpace(primaryInputDeviceInstanceId);
-
-        if (!TryValidateCapture(quietCapture, out var captureReason))
+        if (quietCaptures.Count == 0)
         {
-            return NotReady(captureReason);
+            return NotReady("USB/xHCI requires at least one quiet headroom capture.");
+        }
+
+        foreach (var capture in quietCaptures)
+        {
+            if (!TryValidateCapture(capture, out var captureReason))
+            {
+                return NotReady(captureReason);
+            }
         }
 
         var primaryRoutes = inputRoutes.Routes.Where(route =>
@@ -95,13 +120,13 @@ public static class UsbAffinityRecommendationPlanner
             return NotReady("The selected primary mouse does not have one exact USB hub/port/xHCI route.");
         }
 
-        UsbAffinityCpuCandidate[] ranked;
+        UsbAffinityStableSelection stable;
         try
         {
-            ranked = UsbAffinityCpuSelector.Rank(
+            stable = UsbAffinityCpuSelector.SelectStable(
                 topology,
-                quietCapture,
-                reservedProcessors).ToArray();
+                quietCaptures,
+                reservedProcessors);
         }
         catch (Exception exception) when (
             exception is InvalidOperationException or
@@ -111,13 +136,21 @@ public static class UsbAffinityRecommendationPlanner
             return NotReady(exception.Message);
         }
 
-        var selected = ranked.FirstOrDefault();
-        if (selected is null)
+        if (!stable.IsStable || stable.Candidate is null)
         {
-            return NotReady(
-                "No CPU remains for USB/xHCI after excluding physical cores already reserved by explicit device interrupt-affinity policies.");
+            return new UsbAffinityRecommendation(
+                UsbAffinityRecommendationStatus.NotReady,
+                route.UsbHostControllerInstanceId,
+                null,
+                [primaryInputDeviceInstanceId],
+                null,
+                stable.Reason,
+                stable.PhysicalCoreIndex,
+                stable.WindowCount,
+                stable.WinningCoreVotes);
         }
 
+        var selected = stable.Candidate;
         var controller = route.UsbHostControllerInstanceId!;
         var reservedList = reservedProcessors
             .Distinct()
@@ -130,16 +163,19 @@ public static class UsbAffinityRecommendationPlanner
 
         var reason =
             $"Selected CPU {selected.Processor.Number} for primary input {primaryInputDeviceInstanceId} on xHCI {controller}: " +
-            $"{selected.TotalInterruptDurationMicroseconds:F1} us observed DPC+ISR time and " +
-            $"{selected.InterruptTailP99Microseconds:F1} us p99 tail. " +
-            reservationReason;
+            $"{selected.TotalInterruptDurationMicroseconds:F1} us median observed DPC+ISR time and " +
+            $"{selected.InterruptTailP99Microseconds:F1} us median p99 tail. " +
+            $"{stable.Reason} {reservationReason}";
         return new UsbAffinityRecommendation(
             UsbAffinityRecommendationStatus.Ready,
             controller,
             selected.Processor,
             [primaryInputDeviceInstanceId],
             selected,
-            reason);
+            reason,
+            stable.PhysicalCoreIndex,
+            stable.WindowCount,
+            stable.WinningCoreVotes);
     }
 
     public static UsbAffinityRecommendation Create(

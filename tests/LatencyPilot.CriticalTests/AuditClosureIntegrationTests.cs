@@ -177,6 +177,13 @@ public sealed class AuditClosureIntegrationTests
             usbXhciUi.Contains("Another mutation needs recovery", StringComparison.Ordinal),
             "The USB workflow must no longer fail before read-only readiness just because another target owns recovery.");
 
+        var manualRunner = File.ReadAllText(Path.Combine(
+            root, "tools", "LatencyPilot.GateAValidation", "ManualDeviceAffinityRunner.cs"));
+        StringAssert.Contains(manualRunner, "AppliedAllocationVerified",
+            "xHCI must be able to keep a rollback-safe change when the exact target translated allocation verifies but stronger peer-specific ETW attribution is unavailable.");
+        StringAssert.Contains(manualRunner, "XhciRuntimeVerificationStatus.Contradicted",
+            "Contradictory controller-specific ETW evidence must still force rollback.");
+
         var manualAffinityUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
         var pendingFirst = manualAffinityUi.IndexOf(".OrderByDescending(static row => row.HasPendingRecovery)", StringComparison.Ordinal);
         var editableSecond = manualAffinityUi.IndexOf(".ThenByDescending(static row => row.CanStartNewPolicyMutation)", pendingFirst, StringComparison.Ordinal);
@@ -194,13 +201,19 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(usbXhciRunner, "CreateWithReservations");
         StringAssert.Contains(usbXhciRunner, "KernelLatencyCapture.Capture");
         StringAssert.Contains(usbXhciRunner, "AssessApplyPreflight",
-            "Peer-controller attribution is an Apply prerequisite and must not invalidate the independent benchmark.");
+            "USB/xHCI should expose attribution strength before Apply without making peer visibility a permanent benchmark dependency.");
+        StringAssert.Contains(usbXhciRunner, "CaptureWindowCount = 3",
+            "USB/xHCI should use a small repeated-window stability check rather than a single noisy snapshot.");
 
         var xhciVerifier = File.ReadAllText(Path.Combine(
             root, "src", "LatencyPilot.Platform.Windows", "Devices", "XhciInterruptRuntimePlacementVerifier.cs"));
         StringAssert.Contains(xhciVerifier, "DeviceInterruptVector",
             "xHCI runtime verification must support device-associated IRQ-vector attribution when same-service peer ConfigMgr allocation is unreadable.");
         StringAssert.Contains(xhciVerifier, "PnpInterruptVectorReader.CaptureMany");
+        StringAssert.Contains(xhciVerifier, "CanAttemptApply",
+            "Preflight must distinguish permission to attempt a journaled Apply from availability of the stronger controller-specific ETW attribution.");
+        StringAssert.Contains(xhciVerifier, "VerificationMode = \"TargetAllocation\"",
+            "When peer attribution is unavailable, post-Apply target translated allocation is the fallback authority instead of a permanent gate.");
         var vectorReader = File.ReadAllText(Path.Combine(
             root, "src", "LatencyPilot.Platform.Windows", "Devices", "PnpInterruptVectorReader.cs"));
         StringAssert.Contains(vectorReader, "Win32_PnPAllocatedResource");

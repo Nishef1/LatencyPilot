@@ -58,7 +58,8 @@ public sealed class UsbOptimizationTests
             topology, capture, inventory, new LogicalProcessorId(0, 0), raw.PnPInstanceId!);
         Assert.IsTrue(recommendation.IsReady);
         Assert.AreEqual(controller.InstanceId, recommendation.ControllerInstanceId);
-        Assert.AreEqual(new LogicalProcessorId(0, 3), recommendation.Processor);
+        Assert.AreEqual(new LogicalProcessorId(0, 5), recommendation.Processor,
+            "Recommendation should rank physical-core interrupt pressure first, then select the quieter SMT sibling.");
 
         var independentWithoutGpuReservation = UsbAffinityRecommendationPlanner.CreateIndependent(
             topology,
@@ -81,6 +82,16 @@ public sealed class UsbOptimizationTests
         Assert.IsTrue(
             noReservationRanking.Any(static candidate => candidate.Processor.Number is 0 or 1),
             "Independent USB diagnostics must not silently invent a GPU-core exclusion when no verified GPU reservation was supplied.");
+
+        var stableSelection = UsbAffinityCpuSelector.SelectStable(
+            topology,
+            [capture, capture, capture],
+            [new LogicalProcessorId(0, 0)]);
+        Assert.IsTrue(stableSelection.IsStable);
+        Assert.AreEqual(2, stableSelection.PhysicalCoreIndex);
+        Assert.AreEqual(3, stableSelection.WinningCoreVotes);
+        Assert.AreEqual(3, stableSelection.WindowCount);
+        Assert.AreEqual(new LogicalProcessorId(0, 5), stableSelection.Candidate!.Processor);
 
         var otherRaw = raw with { DeviceInterfacePath = "\\\\?\\HID#VID_OTHER", PnPInstanceId = "HID\\VID_OTHER" };
         var otherControllerId = "PCI\\VEN_TEST&DEV_OTHER_XHCI";
@@ -174,9 +185,12 @@ public sealed class UsbOptimizationTests
                 blockedRecommendation.Processor!.Value.Group,
                 blockedRecommendation.Processor.Value.Number,
                 1UL << blockedRecommendation.Processor.Value.Number));
+        Assert.IsTrue(
+            overlappingPeerPreflight.CanAttemptApply,
+            "A journaled xHCI Apply may be attempted even when peer attribution is ambiguous; target translated allocation remains the post-Apply authority.");
         Assert.IsFalse(
-            overlappingPeerPreflight.CanAttemptControllerSpecificVerification,
-            "A valid benchmark recommendation must still refuse Apply when a same-service peer allocation overlaps the recommended CPU.");
+            overlappingPeerPreflight.ControllerSpecificAttributionAvailable,
+            "Peer overlap must still disable the stronger controller-specific ETW claim.");
 
         var unknownPeer = peerWithDisjointAllocation with
         {
@@ -200,9 +214,12 @@ public sealed class UsbOptimizationTests
             targetWithAllocation.InstanceId,
             [targetWithAllocation, unknownPeer],
             new DeviceInterruptAffinityCandidate(0, 3, 1UL << 3));
+        Assert.IsTrue(
+            unknownPeerPreflight.CanAttemptApply,
+            "Unreadable peer allocation must not permanently gate a rollback-safe Apply attempt.");
         Assert.IsFalse(
-            unknownPeerPreflight.CanAttemptControllerSpecificVerification,
-            "Unreadable peer allocation may gate Apply without invalidating the benchmark recommendation.");
+            unknownPeerPreflight.ControllerSpecificAttributionAvailable,
+            "Unreadable peer allocation still prevents the stronger controller-specific ETW attribution before Apply.");
 
         var vectorSnapshots = new Dictionary<string, DeviceInterruptVectorSnapshot>(
             StringComparer.OrdinalIgnoreCase)
@@ -224,9 +241,10 @@ public sealed class UsbOptimizationTests
             [targetWithAllocation, unknownPeer],
             new DeviceInterruptAffinityCandidate(0, 2, 1UL << 2),
             vectorSnapshots);
+        Assert.IsTrue(vectorPreflight.CanAttemptApply);
         Assert.IsTrue(
-            vectorPreflight.CanAttemptControllerSpecificVerification,
-            "A peer ConfigMgr allocation failure must not block Apply when the official PnP allocated-resource association maps target and peer to disjoint IRQ vectors.");
+            vectorPreflight.ControllerSpecificAttributionAvailable,
+            "Disjoint device-associated IRQ vectors should enable the stronger controller-specific ETW path.");
 
         var vectorPlacement = XhciInterruptRuntimePlacementVerifier.Analyze(
             sharedDriverCapture,
@@ -262,9 +280,12 @@ public sealed class UsbOptimizationTests
             [targetWithAllocation, unknownPeer],
             new DeviceInterruptAffinityCandidate(0, 2, 1UL << 2),
             overlappingVectorSnapshots);
+        Assert.IsTrue(
+            overlappingVectorPreflight.CanAttemptApply,
+            "Shared IRQ-vector ownership does not make a journaled Apply unsafe by itself; target translated allocation is checked after Apply.");
         Assert.IsFalse(
-            overlappingVectorPreflight.CanAttemptControllerSpecificVerification,
-            "A shared device-associated IRQ vector must remain fail-closed when peer ConfigMgr allocation is also unreadable.");
+            overlappingVectorPreflight.ControllerSpecificAttributionAvailable,
+            "Shared vector ownership must still prevent a controller-specific ETW claim.");
 
         var manuallyFixedGpu = new PnPDeviceSnapshot(
             "PCI\\VEN_TEST&DEV_GPU",

@@ -318,16 +318,28 @@ public sealed partial class MainWindow
         var hasCandidate =
             report.ControllerInstanceId is not null &&
             report.Processor is not null;
+        var benchmarkReady =
+            string.Equals(report.Status, "Ready", StringComparison.Ordinal) &&
+            hasCandidate;
         var readyToApply =
             !mutationBlockedByOtherTarget &&
             report.ApplyEligible &&
-            string.Equals(report.Status, "Ready", StringComparison.Ordinal) &&
-            hasCandidate;
+            benchmarkReady;
+        var headline = !benchmarkReady
+            ? "Benchmark not ready"
+            : readyToApply
+                ? "Benchmark ready · apply ready"
+                : "Benchmark ready · apply gated";
+        UsbEvidenceText.Text = benchmarkReady
+            ? readyToApply
+                ? $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply ready."
+                : $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply gated."
+            : $"USB/xHCI benchmark not ready · {report.Reason}";
 
         var content = new StackPanel { Spacing = 8d };
         content.Children.Add(new TextBlock
         {
-            Text = report.Status,
+            Text = headline,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = ThemeBrush(
                 readyToApply
@@ -358,6 +370,15 @@ public sealed partial class MainWindow
                     : "—"));
         }
 
+        if (report.StabilityWindowCount > 0)
+        {
+            content.Children.Add(CreateEvidenceLine(
+                "Selection stability",
+                report.WinningPhysicalCoreIndex is { } coreIndex
+                    ? $"Physical core {coreIndex} won {report.WinningCoreVotes}/{report.StabilityWindowCount} windows"
+                    : $"{report.WinningCoreVotes}/{report.StabilityWindowCount} windows"));
+        }
+
         content.Children.Add(CreateEvidenceLine(
             "Reserved CPUs",
             report.ReservedProcessors.Count == 0
@@ -377,8 +398,11 @@ public sealed partial class MainWindow
         content.Children.Add(CreateEvidenceLine(
             "Apply readiness",
             report.ApplyEligible
-                ? "Ready for controller-specific verification after Apply"
-                : $"Benchmark complete · Apply gated: {report.ApplyEligibilityReason}"));
+                ? report.ControllerSpecificAttributionAvailable
+                    ? $"Ready · controller-specific ETW available · {report.VerificationMode}"
+                    : $"Ready · target translated allocation is authoritative · {report.VerificationMode}"
+                : $"Gated · {report.ApplyEligibilityReason}"));
+        content.Children.Add(CreateMutedText(report.ApplyEligibilityReason));
 
         if (mutationBlockedByOtherTarget)
         {
@@ -410,7 +434,11 @@ public sealed partial class MainWindow
             report.ControllerInstanceId is null ||
             report.Processor is not { } processor)
         {
-            UsbEvidenceText.Text = report.Reason;
+            UsbEvidenceText.Text = benchmarkReady
+                ? readyToApply
+                    ? $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply ready."
+                    : $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply gated."
+                : $"USB/xHCI benchmark not ready · {report.Reason}";
             return;
         }
 
@@ -532,6 +560,11 @@ public sealed partial class MainWindow
         IReadOnlyList<UsbXhciReservationUiReport> Reservations,
         bool ApplyEligible,
         string ApplyEligibilityReason,
+        bool ControllerSpecificAttributionAvailable,
+        string VerificationMode,
+        int? WinningPhysicalCoreIndex,
+        int StabilityWindowCount,
+        int WinningCoreVotes,
         double? TotalInterruptDurationMicroseconds,
         double? InterruptTailP99Microseconds,
         int? DpcCount,

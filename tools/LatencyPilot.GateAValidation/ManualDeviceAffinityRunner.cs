@@ -815,21 +815,32 @@ internal static class ManualDeviceAffinityRunner
                 out var assignmentReason);
             var runtime = assignmentVerified
                 ? VerifyXhciRuntimePlacement(options.DeviceInstanceId, candidate)
-                : new ManualRuntimePlacementVerification(
-                    false,
-                    "Runtime ETW verification was skipped because the translated interrupt assignment escaped the requested processor mask.");
-            var verified = assignmentVerified && runtime.Verified;
+                : XhciRuntimePlacementVerification.Unavailable(
+                    "Runtime ETW verification was skipped because the target controller's translated interrupt assignment did not prove the requested processor mask.");
+
+            var succeeded =
+                assignmentVerified &&
+                runtime.Status != XhciRuntimeVerificationStatus.Contradicted;
+            var status = !assignmentVerified
+                ? "AlreadyStoredUnverified"
+                : runtime.Status == XhciRuntimeVerificationStatus.Verified
+                    ? "AlreadyConfigured"
+                    : "AlreadyConfiguredAllocationVerified";
             return CreateReport(
                 options,
-                verified ? "AlreadyConfigured" : "AlreadyStoredUnverified",
-                succeeded: verified,
+                status,
+                succeeded,
                 TryGetPresentDevice(options.DeviceInstanceId),
                 experimentId: null,
                 restartRequired: false,
                 verification: $"{assignmentReason} {runtime.Reason}",
-                message: verified
-                    ? "The requested xHCI affinity was already stored; Windows kept allocation inside the requested processor mask and clean ETW observed USBXHCI ISR execution only inside that mask. No LatencyPilot write was required."
-                    : "The requested xHCI affinity is already stored, but LatencyPilot could not prove both translated assignment and controller-attributed requested-mask-only runtime ISR placement. No write was attempted and LatencyPilot does not claim ownership of this existing policy.",
+                message: !assignmentVerified
+                    ? "The requested xHCI policy is already stored, but the target controller's translated allocation did not prove the requested mask. No write was attempted."
+                    : runtime.Status == XhciRuntimeVerificationStatus.Verified
+                        ? "The requested xHCI affinity is already active: the target controller's translated allocation matches the requested mask and controller-specific ETW independently confirmed ISR placement."
+                        : runtime.Status == XhciRuntimeVerificationStatus.Unavailable
+                            ? "The requested xHCI affinity is already active according to the target controller's translated allocation. Controller-specific ETW attribution is unavailable on this hardware, so LatencyPilot records allocation-authoritative verification without inventing a controller-specific ISR claim."
+                            : "The target controller's translated allocation matches the requested mask, but controller-specific ETW produced contradictory placement evidence. No new write was attempted.",
                 allocatedMasks: masks);
         }
 
@@ -891,20 +902,21 @@ internal static class ManualDeviceAffinityRunner
         else
         {
             inputTiming = ManualInputTimingSanityReport.Skipped(
-                "Raw Input timing sanity was skipped because translated xHCI assignment was not verified.");
+                "Raw Input timing sanity was skipped because the target controller's translated xHCI assignment was not verified.");
         }
 
         var runtime = assignmentVerified
             ? VerifyXhciRuntimePlacement(options.DeviceInstanceId, candidate)
-            : new ManualRuntimePlacementVerification(
-                false,
-                "Runtime ETW verification was skipped because the translated interrupt assignment escaped the requested processor mask.");
+            : XhciRuntimePlacementVerification.Unavailable(
+                "Controller-specific ETW verification was skipped because the target controller's translated assignment did not prove the requested processor mask.");
 
         inputTiming ??= CompleteXhciInputTimingCapture(pendingInputTiming);
-        var verified = assignmentVerified && runtime.Verified;
         var verification =
             $"{assignmentReason} {runtime.Reason} {FormatInputTimingSanity(inputTiming)}";
-        if (!verified)
+
+        var contradictoryRuntime =
+            runtime.Status == XhciRuntimeVerificationStatus.Contradicted;
+        if (!assignmentVerified || contradictoryRuntime)
         {
             var rollback = transaction.Rollback(experimentId);
             var restored = rollback.Entry.State == MutationJournalState.Reverted && rollback.OriginalStateRestored;
@@ -919,26 +931,35 @@ internal static class ManualDeviceAffinityRunner
                 restartRequired: rollbackNeedsReboot,
                 verification: verification,
                 message: restored && !rollbackNeedsReboot
-                    ? "xHCI affinity did not pass translated-assignment plus controller-attributed runtime ISR verification; exact original state was restored."
+                    ? !assignmentVerified
+                        ? "The target xHCI controller's translated allocation did not stay inside the requested processor mask; the exact original state was restored."
+                        : "Controller-specific ETW contradicted the requested xHCI placement; the exact original state was restored."
                     : rollbackNeedsReboot
-                        ? "xHCI runtime verification failed. The exact original policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again."
-                        : "xHCI affinity verification failed and rollback still requires recovery attention.",
+                        ? "xHCI verification failed. The exact original policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again."
+                        : "xHCI verification failed and rollback still requires recovery attention.",
                 allocatedMasks: masks,
                 inputTiming: inputTiming);
         }
 
-        var kept = transaction.KeepVerified(experimentId, measurementVerified: true);
+        var fullRuntimeVerification =
+            runtime.Status == XhciRuntimeVerificationStatus.Verified;
+        var kept = fullRuntimeVerification
+            ? transaction.KeepVerified(experimentId, measurementVerified: true)
+            : transaction.KeepStoredPolicyVerified(experimentId, storedPolicyVerified: true);
+
         return CreateReport(
             options,
-            "AppliedAndKept",
+            fullRuntimeVerification ? "AppliedAndKept" : "AppliedAllocationVerified",
             succeeded: kept.State == MutationJournalState.Kept,
             TryGetPresentDevice(options.DeviceInstanceId),
             experimentId,
             restartRequired: false,
             verification: verification,
-            message:
-                "xHCI affinity was journaled, applied, restarted, verified by Windows translated assignment plus clean controller-attributed requested-mask-only ETW ISR placement, and retained as an explicit manual choice. " +
-                FormatInputTimingSanity(inputTiming),
+            message: fullRuntimeVerification
+                ? "xHCI affinity was journaled, applied, restarted, verified by the target controller's translated allocation plus controller-specific ETW ISR placement, and retained. " +
+                  FormatInputTimingSanity(inputTiming)
+                : "xHCI affinity was journaled, applied, restarted, and retained because the target controller's own translated allocation is confined to the requested processor mask. Controller-specific ETW attribution is unavailable on this hardware, so no stronger per-controller ISR claim is made. " +
+                  FormatInputTimingSanity(inputTiming),
             allocatedMasks: masks,
             inputTiming: inputTiming);
     }
@@ -1126,7 +1147,7 @@ internal static class ManualDeviceAffinityRunner
                     : $"GPU runtime placement was not proven because attribution used {attribution.Mode}/{attribution.ModuleName}; shared WDDM fallback is diagnostic only and cannot authorize Keep.");
     }
 
-    private static ManualRuntimePlacementVerification VerifyXhciRuntimePlacement(
+    private static XhciRuntimePlacementVerification VerifyXhciRuntimePlacement(
         string deviceInstanceId,
         DeviceInterruptAffinityCandidate candidate)
     {
@@ -1149,18 +1170,36 @@ internal static class ManualDeviceAffinityRunner
         }
         catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException)
         {
-            return new(false, $"xHCI runtime attribution is unavailable: {exception.Message}");
+            return XhciRuntimePlacementVerification.Unavailable(
+                $"Controller-specific xHCI ETW attribution is unavailable: {exception.Message}");
         }
 
-        var confirmed =
-            capture.IsValid &&
-            placement.ConfirmsRequestedPlacement;
+        if (!capture.IsValid)
+        {
+            return XhciRuntimePlacementVerification.Unavailable(
+                $"Controller-specific xHCI ETW capture was not clean enough for an ISR claim: eventsLost={capture.EventsLost}, invalidEvents={capture.InvalidEventCount}, invalidImageEvents={capture.InvalidImageEventCount}, eventLimitReached={capture.EventLimitReached}.");
+        }
 
-        return new(
-            confirmed,
-            confirmed
-                ? $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {placement.MatchingResolvedIsrEventCount} controller-attributed USBXHCI ISR event(s), all on {FormatProcessorMask(candidate.AffinityMask)} via {attribution.AttributionMode} attribution."
-                : $"xHCI runtime placement was not proven: captureValid={capture.IsValid}, attributableIsr={placement.MatchingResolvedIsrEventCount}, inRequestedMaskIsr={placement.InRequestedMaskIsrEventCount}, primaryCpuIsr={placement.TargetProcessorIsrEventCount}, offTargetIsr={placement.OffTargetIsrEventCount}, unresolvedIsr={placement.UnresolvedIsrEventCount}, mode={attribution.AttributionMode}, requestedMask=0x{candidate.AffinityMask:X}.");
+        if (!placement.HasRuntimeEvidence)
+        {
+            return XhciRuntimePlacementVerification.Unavailable(
+                $"Controller-specific xHCI ETW attribution produced no ISR sample for the target during the {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s verification window.");
+        }
+
+        if (placement.OffTargetIsrEventCount > 0)
+        {
+            return XhciRuntimePlacementVerification.Contradicted(
+                $"Controller-specific xHCI ETW observed {placement.OffTargetIsrEventCount} target-attributed ISR event(s) outside requested mask 0x{candidate.AffinityMask:X}; mode={attribution.AttributionMode}.");
+        }
+
+        if (placement.ConfirmsRequestedPlacement)
+        {
+            return XhciRuntimePlacementVerification.Verified(
+                $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {placement.MatchingResolvedIsrEventCount} controller-attributed USBXHCI ISR event(s), all on {FormatProcessorMask(candidate.AffinityMask)} via {attribution.AttributionMode} attribution.");
+        }
+
+        return XhciRuntimePlacementVerification.Unavailable(
+            $"Controller-specific xHCI ETW did not produce enough evidence for a stronger ISR claim: attributableIsr={placement.MatchingResolvedIsrEventCount}, inRequestedMaskIsr={placement.InRequestedMaskIsrEventCount}, unresolvedIsr={placement.UnresolvedIsrEventCount}, mode={attribution.AttributionMode}.");
     }
 
     private static bool CanObserveAllocatedAffinity(
@@ -1514,6 +1553,27 @@ internal sealed record ManualInputTimingSanityReport(
             null,
             InputTimingSnapshot.HostObservableScope,
             reason);
+}
+
+internal enum XhciRuntimeVerificationStatus
+{
+    Verified = 0,
+    Unavailable = 1,
+    Contradicted = 2,
+}
+
+internal sealed record XhciRuntimePlacementVerification(
+    XhciRuntimeVerificationStatus Status,
+    string Reason)
+{
+    internal static XhciRuntimePlacementVerification Verified(string reason) =>
+        new(XhciRuntimeVerificationStatus.Verified, reason);
+
+    internal static XhciRuntimePlacementVerification Unavailable(string reason) =>
+        new(XhciRuntimeVerificationStatus.Unavailable, reason);
+
+    internal static XhciRuntimePlacementVerification Contradicted(string reason) =>
+        new(XhciRuntimeVerificationStatus.Contradicted, reason);
 }
 
 internal sealed record ManualRuntimePlacementVerification(bool Verified, string Reason);
