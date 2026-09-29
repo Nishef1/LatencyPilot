@@ -348,7 +348,8 @@ After a verified GPU Keep, current design:
 6. bind recommendation to the interrupt-owning controller;
 7. apply only after the shared mutation/recovery substrate is physically proven;
 8. verify controller-specific runtime placement;
-9. rollback xHCI safely on verification failure.
+9. when one exact mouse route owns that controller, capture bounded Raw Input report-interval timing concurrently as host-observable sanity evidence; ambiguity or unavailable input activity does not weaken or replace ETW placement authority;
+10. rollback xHCI safely on verification failure.
 
 The GPU and xHCI choices are sequential, not a generic Pareto optimizer.
 

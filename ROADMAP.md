@@ -263,7 +263,7 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] fail-closed controller-specific ETW runtime-placement verifier primitive for either one present `USBXHCI` service instance or multiple same-service controllers whose translated allocations are all readable and disjoint from the requested mask; unknown/overlapping peer allocation remains ambiguous;
 - [x] candidate-aware xHCI runtime verification is integrated into the elevated manual validation path, including exact rollback on failed verification;
 - [ ] integrate the same verified xHCI path into the normal automatic product orchestration after the physical GPU/mutation gates close;
-- [ ] Raw Input timing sanity check after apply;
+- [x] development/manual xHCI verification captures a bounded host-observable Raw Input timing sanity sample concurrently with ETW when one exact mouse route owns the controller; ambiguous/no-mouse routes remain explicitly unavailable and never weaken the ETW Keep gate;
 - [ ] integrated rollback of USB/xHCI while preserving a proven GPU winner when USB verification fails;
 - [ ] representative high-polling hardware physical evidence.
 

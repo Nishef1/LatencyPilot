@@ -318,7 +318,7 @@ Physical Gate A therefore remains a separate requirement on one exact clean gree
 
 These are scope rules for future work, not an expansion of the current `gpu-affinity-benchmark-v6` method:
 
-- **xHCI:** automatic decisions remain bound to the exact primary-input controller and require controller-specific runtime placement verification.
+- **xHCI:** automatic decisions remain bound to the exact primary-input controller and require controller-specific runtime placement verification. Development/manual post-apply verification may concurrently capture Raw Input report intervals when one exact mouse route owns the controller. Those intervals are host-observable dispatch timing only; they are diagnostic sanity evidence, not click-to-photon latency and not a replacement for ETW placement proof.
 - **Network/RSS:** no GPU-style single-CPU ranking is defined. RSS deliberately distributes receive work across processors and MSI-X may associate messages with RSS queues. Any future network experiment must first capture physical-NIC identity, RSS capabilities/profile/queue count, RSS processor set and per-CPU network interrupt/DPC evidence. Public-Internet speed tests are not decision-grade benchmark authority; use kernel/local evidence and a controlled local peer when available.
 - **Storage:** diagnostic evidence only. No storage affinity/MSI/queue benchmark or mutation is part of LatencyPilot's planned optimization methods.
 - **Audio/WDF:** diagnostic until an exact device/controller attribution and subsystem-specific verifier exist. A high framework/module count alone is not a mutation target.
