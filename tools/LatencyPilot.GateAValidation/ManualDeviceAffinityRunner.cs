@@ -777,7 +777,12 @@ internal static class ManualDeviceAffinityRunner
             {
                 try
                 {
-                    return VerifyAndKeepXhci(transaction, options, candidate, pending[0].ExperimentId);
+                    return VerifyAndKeepXhci(
+                        transaction,
+                        options,
+                        candidate,
+                        pending[0].ExperimentId,
+                        allowRebootDeferral: false);
                 }
                 catch
                 {
@@ -870,7 +875,12 @@ internal static class ManualDeviceAffinityRunner
                     $"xHCI affinity apply stopped in {applied.Entry.State}.");
             }
 
-            return VerifyAndKeepXhci(transaction, options, candidate, entry.ExperimentId);
+            return VerifyAndKeepXhci(
+                transaction,
+                options,
+                candidate,
+                entry.ExperimentId,
+                allowRebootDeferral: true);
         }
         catch
         {
@@ -883,13 +893,35 @@ internal static class ManualDeviceAffinityRunner
         DeviceInterruptMutationTransaction transaction,
         ManualAffinityOptions options,
         DeviceInterruptAffinityCandidate candidate,
-        Guid experimentId)
+        Guid experimentId,
+        bool allowRebootDeferral)
     {
+        var allocationObservable = CanObserveAllocatedAffinity(
+            options.DeviceInstanceId,
+            out var allocationStatus);
         var assignmentVerified = VerifyAllocatedAffinity(
             options.DeviceInstanceId,
             candidate.AffinityMask,
             out var masks,
             out var assignmentReason);
+
+        if (!allocationObservable && allowRebootDeferral)
+        {
+            var pending = transaction.DeferApplyVerificationToReboot(
+                experimentId,
+                $"In-place xHCI restart completed, but usable translated interrupt allocation is unavailable ({allocationStatus}). {assignmentReason}");
+            return CreateReport(
+                options,
+                "RebootRequired",
+                succeeded: false,
+                TryGetPresentDevice(options.DeviceInstanceId),
+                experimentId,
+                restartRequired: true,
+                verification: assignmentReason,
+                message:
+                    "The xHCI policy is still stored and journal-owned, but the in-place controller restart did not expose usable translated interrupt allocation. Reboot Windows once, then run USB/xHCI again to resume the same CPU and verify it before Keep. No rollback was performed because there is no readable contradictory allocation evidence.",
+                allocatedMasks: masks);
+        }
 
         PendingXhciInputTimingCapture? pendingInputTiming = null;
         ManualInputTimingSanityReport? inputTiming = null;
@@ -931,9 +963,11 @@ internal static class ManualDeviceAffinityRunner
                 restartRequired: rollbackNeedsReboot,
                 verification: verification,
                 message: restored && !rollbackNeedsReboot
-                    ? !assignmentVerified
-                        ? "The target xHCI controller's translated allocation did not stay inside the requested processor mask; the exact original state was restored."
-                        : "Controller-specific ETW contradicted the requested xHCI placement; the exact original state was restored."
+                    ? !allocationObservable
+                        ? "After reboot, Windows still did not expose usable translated allocation for the target xHCI controller, so LatencyPilot could not prove the requested processor mask and restored the exact original state."
+                        : !assignmentVerified
+                            ? "The target xHCI controller's readable translated allocation did not stay inside the requested processor mask; the exact original state was restored."
+                            : "Controller-specific ETW contradicted the requested xHCI placement; the exact original state was restored."
                     : rollbackNeedsReboot
                         ? "xHCI verification failed. The exact original policy is stored, but Windows requires a reboot before rollback activation can be verified. Reboot and press Restore again."
                         : "xHCI verification failed and rollback still requires recovery attention.",
@@ -1209,8 +1243,16 @@ internal static class ManualDeviceAffinityRunner
         var device = TryGetPresentDevice(deviceInstanceId)
             ?? throw new InvalidOperationException("The manual affinity target is no longer a present PnP device.");
         status = device.InterruptResources.ReadStatus;
-        return status == InterruptResourceReadStatus.Available &&
-            device.InterruptResources.Resources.Count > 0;
+        if (status != InterruptResourceReadStatus.Available ||
+            device.InterruptResources.Resources.Count == 0)
+        {
+            return false;
+        }
+
+        var processorGroupCount = ProcessorTopologyReader.Capture().ProcessorGroupCount;
+        return device.InterruptResources.Resources.All(resource =>
+            resource.AffinityMask != 0 &&
+            resource.ProcessorGroup < processorGroupCount);
     }
 
     private static bool VerifyAllocatedAffinity(
@@ -1238,6 +1280,19 @@ internal static class ManualDeviceAffinityRunner
         if (resources.ReadStatus != InterruptResourceReadStatus.Available || resources.Resources.Count == 0)
         {
             reason = $"Allocated interrupt resources are {resources.ReadStatus}; active affinity cannot be proven.";
+            return false;
+        }
+
+        var processorGroupCount = ProcessorTopologyReader.Capture().ProcessorGroupCount;
+        var unusableResources = resources.Resources
+            .Where(resource =>
+                resource.AffinityMask == 0 ||
+                resource.ProcessorGroup >= processorGroupCount)
+            .ToArray();
+        if (unusableResources.Length != 0)
+        {
+            reason =
+                $"Allocated interrupt descriptors are present but {unusableResources.Length.ToString(CultureInfo.InvariantCulture)} of {resources.Resources.Count.ToString(CultureInfo.InvariantCulture)} do not expose a usable processor-group affinity for this machine ({processorGroupCount.ToString(CultureInfo.InvariantCulture)} group(s)); active placement is unavailable rather than contradictory. Raw descriptors: {string.Join(", ", masks)}.";
             return false;
         }
 
