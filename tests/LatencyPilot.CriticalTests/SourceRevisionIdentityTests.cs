@@ -123,11 +123,11 @@ public sealed class SourceRevisionIdentityTests
             "LatencyPilot.App",
             "MeasurementExperience.cs"));
         Assert.IsTrue(
-            CountOccurrences(measurementSource, "if (_measurementBusy || _gateAValidationRunning || _usbSubsystemRunning)") >= 2,
-            "Quick observation and repeated baseline must reject entry while GPU Gate A or the independent USB/xHCI hardware session is running.");
+            CountOccurrences(measurementSource, "if (_measurementBusy || _gateAValidationRunning || _usbSubsystemRunning || _networkSubsystemRunning)") >= 2,
+            "Quick observation and repeated baseline must reject entry while GPU Gate A, USB/xHCI, or Network/RSS owns the hardware observation session.");
         StringAssert.Contains(
             measurementSource,
-            "IsEnabled = !_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning");
+            "IsEnabled = !_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning && !_networkSubsystemRunning");
 
         var readinessSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
@@ -136,10 +136,13 @@ public sealed class SourceRevisionIdentityTests
             "MeasurementReadinessExperience.cs"));
         StringAssert.Contains(
             readinessSource,
-            "!_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning");
+            "!_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning && !_networkSubsystemRunning");
         StringAssert.Contains(
             readinessSource,
             "USB/xHCI run in progress · measurement preparation locked.");
+        StringAssert.Contains(
+            readinessSource,
+            "Network/RSS analysis in progress · measurement preparation locked.");
 
         var mainWindowSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
@@ -148,8 +151,8 @@ public sealed class SourceRevisionIdentityTests
             "MainWindow.xaml.cs"));
         StringAssert.Contains(
             mainWindowSource,
-            "var controlsBusy = busy || _gateAValidationRunning || _usbSubsystemRunning;",
-            "Observation controls must stay locked while either privileged subsystem session owns measurement/mutation activity.");
+            "_networkSubsystemRunning;",
+            "Observation controls must stay locked while GPU, USB/xHCI, or Network/RSS owns measurement/mutation activity.");
         StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(true);");
         StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(false);");
         StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(_measurementBusy);");

@@ -178,12 +178,17 @@ public sealed partial class MainWindow : Window
 
     private void SetObservationControlsBusy(bool busy)
     {
-        var controlsBusy = busy || _gateAValidationRunning || _usbSubsystemRunning;
+        var controlsBusy =
+            busy ||
+            _gateAValidationRunning ||
+            _usbSubsystemRunning ||
+            _networkSubsystemRunning;
         CaptureObservationButton.IsEnabled = !controlsBusy && _observationServiceReady;
         CaptureBaselineButton.IsEnabled = !controlsBusy && _observationServiceReady;
         RefreshServiceButton.IsEnabled = !controlsBusy;
         ExportEvidenceButton.IsEnabled = !controlsBusy && _latestEvidenceJson is not null;
         UsbSubsystemButton.IsEnabled = !controlsBusy;
+        NetworkSubsystemButton.IsEnabled = !controlsBusy;
     }
 
     private void RenderCapture(KernelLatencyCaptureResponse capture)
