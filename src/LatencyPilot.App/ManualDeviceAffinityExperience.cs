@@ -221,7 +221,6 @@ public sealed partial class MainWindow
         var rows = inventory.Devices
             .Where(device =>
                 device.InterruptConfiguration.InterruptManagementKeyExists ||
-                device.InterruptResources.HasAssignedInterrupts ||
                 classified.ContainsKey(device.InstanceId))
             .Select(device =>
             {

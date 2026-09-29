@@ -71,11 +71,10 @@ public static class ManualDeviceAffinityPolicyEligibility
 
         var targetKind = ClassifyTarget(device);
         if (targetKind == ManualDeviceAffinityPolicyTargetKind.Device &&
-            !device.InterruptConfiguration.InterruptManagementKeyExists &&
-            !device.InterruptResources.HasAssignedInterrupts)
+            !device.InterruptConfiguration.InterruptManagementKeyExists)
         {
             inspectionOnlyReason =
-                "This device exposes neither an Interrupt Management registry surface nor allocated interrupt resources. LatencyPilot will not invent an affinity policy for a PnP node that has no interrupt evidence.";
+                "This device does not expose the documented Interrupt Management registry surface. LatencyPilot will not invent an affinity policy for an arbitrary PnP node just because ConfigMgr happens to report resources.";
             return false;
         }
 
