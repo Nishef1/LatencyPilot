@@ -134,6 +134,29 @@ internal sealed class DeviceInterruptMutationTransaction
         }
     }
 
+    internal MutationJournalEntry DeferApplyVerificationToReboot(
+        Guid experimentId,
+        string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        using var guard = MutationOperationLock.Acquire();
+        var applied = GetEntry(experimentId, MutationJournalState.Applied);
+        var original = DeviceInterruptMutationJournalCodec.DeserializeOriginal(applied.OriginalStateJson);
+        var candidate = DeviceInterruptMutationJournalCodec.DeserializeCandidate(applied.CandidateStateJson);
+        if (!CandidateStored(original.DeviceInstanceId, candidate))
+        {
+            throw new InvalidOperationException(
+                "Candidate cannot be deferred for reboot verification because the stored interrupt configuration no longer matches the journaled candidate.");
+        }
+
+        return journal.Transition(
+            applied.ExperimentId,
+            applied.Revision,
+            MutationJournalState.Applied,
+            MutationJournalState.ApplyRebootPending,
+            Bound(reason));
+    }
+
     internal MutationJournalEntry KeepVerified(Guid experimentId, bool measurementVerified)
     {
         if (!measurementVerified)
