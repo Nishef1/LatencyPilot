@@ -210,8 +210,12 @@ public sealed class DeviceInterruptMutationTests
             "Allocated interrupt resources must remain inside the requested processor mask.");
         StringAssert.Contains(manualRunnerSource, "VerificationFailedRolledBack",
             "Readable contradictory allocation must fail closed and restore exact original state.");
+        StringAssert.Contains(manualRunnerSource, "runtimeWithoutAllocation",
+            "Manual GPU verification must still attempt authoritative direct-driver ETW when ConfigMgr translated allocation is unavailable.");
         StringAssert.Contains(manualRunnerSource, "AppliedPolicyKept",
-            "When allocation is unavailable, generic manual policy must be retained only under an explicit policy-only status.");
+            "When both allocation and authoritative ETW proof are unavailable, manual GPU policy must remain distinguishable as policy-only.");
+        StringAssert.Contains(manualRunnerSource, "AppliedAndKept",
+            "Direct-driver ETW may close manual GPU runtime verification when translated allocation is unavailable.");
         StringAssert.Contains(manualRunnerSource, "AlreadyStoredPolicy",
             "A pre-existing generic policy with unavailable allocation must remain distinguishable from fully active-verified placement.");
         StringAssert.Contains(manualRunnerSource, "No subsystem-specific ISR attribution claim is made",

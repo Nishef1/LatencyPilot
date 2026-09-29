@@ -353,15 +353,22 @@ internal static class ManualDeviceAffinityRunner
 
             if (!allocationObservable)
             {
+                var runtimeWithoutAllocation = VerifyGpuRuntimePlacement(
+                    options.DeviceInstanceId,
+                    candidate);
                 return CreateReport(
                     options,
-                    "AlreadyStoredPolicy",
+                    runtimeWithoutAllocation.Verified ? "AlreadyConfigured" : "AlreadyStoredPolicy",
                     succeeded: true,
                     TryGetPresentDevice(options.DeviceInstanceId),
                     experimentId: null,
                     restartRequired: false,
-                    verification: $"Stored policy matches the requested mask. Active translated allocation is unavailable ({allocationStatus}), so runtime GPU placement is not claimed.",
-                    message: "The requested GPU affinity policy is already stored. Windows is not exposing translated interrupt allocation for this adapter, so LatencyPilot keeps this as a manual policy state rather than claiming runtime-verified placement.",
+                    verification: runtimeWithoutAllocation.Verified
+                        ? $"Stored policy matches the requested mask. ConfigMgr translated allocation is unavailable ({allocationStatus}), but direct display-driver ETW independently verified runtime ISR placement. {runtimeWithoutAllocation.Reason}"
+                        : $"Stored policy matches the requested mask. ConfigMgr translated allocation is unavailable ({allocationStatus}). Direct display-driver ETW did not independently prove runtime placement. {runtimeWithoutAllocation.Reason}",
+                    message: runtimeWithoutAllocation.Verified
+                        ? "The requested GPU affinity policy is already stored and a clean direct-driver ETW capture verified that GPU ISR activity stayed inside the requested processor mask, even though Windows did not expose translated allocation."
+                        : "The requested GPU affinity policy is already stored. Windows is not exposing translated interrupt allocation, and direct-driver ETW did not independently prove placement, so LatencyPilot keeps this as a manual policy state without claiming runtime verification.",
                     allocatedMasks: masks);
             }
 
@@ -369,7 +376,7 @@ internal static class ManualDeviceAffinityRunner
                 ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
                 : new ManualRuntimePlacementVerification(
                     false,
-                    "Runtime ETW verification was skipped because translated interrupt allocation did not prove the requested processor mask.");
+                    "Runtime ETW verification was skipped because readable translated interrupt allocation contradicted or failed to prove the requested processor mask.");
             var verified = assignmentVerified && runtime.Verified;
             return CreateReport(
                 options,
@@ -452,18 +459,25 @@ internal static class ManualDeviceAffinityRunner
 
         if (!allocationObservable)
         {
+            var runtimeWithoutAllocation = VerifyGpuRuntimePlacement(
+                options.DeviceInstanceId,
+                candidate);
             var keptPolicy = transaction.KeepStoredPolicyVerified(
                 experimentId,
                 storedPolicyVerified: true);
             return CreateReport(
                 options,
-                "AppliedPolicyKept",
+                runtimeWithoutAllocation.Verified ? "AppliedAndKept" : "AppliedPolicyKept",
                 succeeded: keptPolicy.State == MutationJournalState.Kept,
                 TryGetPresentDevice(options.DeviceInstanceId),
                 experimentId,
                 restartRequired: false,
-                verification: $"Stored policy and activation/restart path were verified. Active translated allocation is unavailable ({allocationStatus}); no active ISR-placement claim is made.",
-                message: "GPU affinity policy was retained as an explicit manual choice because the requested mask is stored, but Windows is not exposing translated interrupt allocation for this adapter. LatencyPilot does not claim runtime-verified placement.",
+                verification: runtimeWithoutAllocation.Verified
+                    ? $"Stored policy and activation/restart path were verified. ConfigMgr translated allocation is unavailable ({allocationStatus}), but direct display-driver ETW independently verified runtime ISR placement. {runtimeWithoutAllocation.Reason}"
+                    : $"Stored policy and activation/restart path were verified. ConfigMgr translated allocation is unavailable ({allocationStatus}). Direct display-driver ETW did not independently prove runtime placement. {runtimeWithoutAllocation.Reason}",
+                message: runtimeWithoutAllocation.Verified
+                    ? "GPU affinity was kept and runtime-verified by direct display-driver ETW: all attributed ISR activity stayed inside the requested processor mask. Windows translated allocation remains unavailable, so the verification source is ETW rather than ConfigMgr allocation."
+                    : "GPU affinity policy was retained as an explicit manual choice because the requested mask is stored, but Windows translated allocation is unavailable and direct-driver ETW did not independently prove runtime placement.",
                 allocatedMasks: masks);
         }
 
@@ -471,7 +485,7 @@ internal static class ManualDeviceAffinityRunner
             ? VerifyGpuRuntimePlacement(options.DeviceInstanceId, candidate)
             : new ManualRuntimePlacementVerification(
                 false,
-                "Runtime ETW verification was skipped because translated interrupt allocation did not prove the requested processor mask.");
+                "Runtime ETW verification was skipped because readable translated interrupt allocation contradicted or failed to prove the requested processor mask.");
         var verified = assignmentVerified && runtime.Verified;
         var verification = $"{assignmentReason} {runtime.Reason}";
 

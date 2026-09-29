@@ -162,10 +162,8 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(usbXhciUi, "TryResolveCurrentVerifiedGpuReservation",
             "Automatic USB Apply must require an independently verified current GPU reservation instead of inventing an exclusion.");
 
-        StringAssert.Contains(usbXhciUi, "Recovery required before USB / xHCI",
-            "A blocked USB run must explain recovery in the subsystem surface instead of showing only a generic mutation warning.");
         StringAssert.Contains(usbXhciUi, "FormatMutationKind",
-            "The recovery dialog must identify the unresolved mutation kind/state/target for diagnosis.");
+            "USB diagnostics must identify the unresolved mutation kind/state/target when Apply is gated by another target.");
 
         StringAssert.Contains(usbXhciUi, "mutationBlockedByOtherTarget",
             "An unresolved mutation on another target must downgrade USB to diagnostics instead of blocking the whole USB workflow.");

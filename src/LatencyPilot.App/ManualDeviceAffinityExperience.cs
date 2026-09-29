@@ -781,13 +781,13 @@ public sealed partial class MainWindow
             : row.TargetKind == "Gpu" &&
                 row.HasExplicitOverride &&
                 row.Device.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available
-                    ? "Policy set · runtime unverified"
+                    ? "Policy set · allocation unreadable"
                     : row.TargetKind is "Gpu" or "Xhci"
                         ? "Verification capable"
                         : "Manual policy";
         var capabilityBrush = !row.CanStartNewPolicyMutation
             ? "MutedTextBrush"
-            : capabilityLabel == "Policy set · runtime unverified"
+            : capabilityLabel == "Policy set · allocation unreadable"
                 ? "SemanticAttentionBrush"
                 : row.TargetKind is "Gpu" or "Xhci"
                     ? "SemanticGoodBrush"
@@ -943,7 +943,7 @@ public sealed partial class MainWindow
                     : row.TargetKind == "Xhci"
                         ? "Apply & verify re-reads allocation from the elevated helper and keeps nothing unless active allocation and controller-attributed ISR placement are both proven."
                         : row.TargetKind == "Gpu"
-                            ? "The GPU allocation is not readable. Manual policy can still be retained after the stored mask and restart are verified, but LatencyPilot will label active placement as unverified instead of claiming runtime proof."
+                            ? "The ConfigMgr GPU allocation is not readable. Apply & verify will still attempt an independent clean direct display-driver ETW ISR-placement proof. If ETW cannot prove the requested mask, the stored policy may remain retained but runtime placement stays unverified."
                             : "The current allocation is not readable. Manual policy editing is still available, matching Windows IntPolicy behavior; LatencyPilot will verify the stored policy and device restart, but will label active placement as unverified until Windows exposes interrupt allocation.",
                 TextWrapping = TextWrapping.Wrap,
                 Style = AppStyle("CaptionTextStyle"),
