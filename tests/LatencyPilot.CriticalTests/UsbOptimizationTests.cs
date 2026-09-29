@@ -1,4 +1,5 @@
 #pragma warning disable CA1822 // AuditCase methods are reflection-invoked by ConsolidatedCriticalTests.
+using System.Buffers.Binary;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.Observation;
@@ -365,5 +366,25 @@ public sealed class UsbOptimizationTests
         Assert.AreEqual("USB\\VID_TEST", composite.MatchedDeviceInstanceId);
         Assert.AreEqual(3u, composite.Evidence.Port?.ConnectionIndex);
 
+        var irqDescriptor = new byte[AllocatedIrqDescriptorParser.Descriptor64Size];
+        BinaryPrimitives.WriteUInt32LittleEndian(irqDescriptor.AsSpan(0, 4), 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            irqDescriptor.AsSpan(4, 4),
+            AllocatedIrqDescriptorParser.IrqTypeRange);
+        BinaryPrimitives.WriteUInt16LittleEndian(irqDescriptor.AsSpan(8, 2), 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(irqDescriptor.AsSpan(10, 2), 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(irqDescriptor.AsSpan(12, 4), 44);
+        BinaryPrimitives.WriteUInt64LittleEndian(irqDescriptor.AsSpan(16, 8), 1UL << 7);
+        Assert.IsTrue(
+            AllocatedIrqDescriptorParser.TryParseResourceList(irqDescriptor, out var parsedIrq),
+            "The documented 64-bit IRQ_DES resource-list layout must decode the processor group and KAFFINITY mask without field drift.");
+        Assert.AreEqual((ushort)0, parsedIrq.ProcessorGroup);
+        Assert.AreEqual(1UL << 7, parsedIrq.AffinityMask);
+        Assert.AreEqual(44u, parsedIrq.Irq);
+
+        BinaryPrimitives.WriteUInt64LittleEndian(irqDescriptor.AsSpan(16, 8), 0);
+        Assert.IsFalse(
+            AllocatedIrqDescriptorParser.TryParseResourceList(irqDescriptor, out _),
+            "A zero affinity names no processor and must not be promoted to runtime-placement evidence.");
     }
 }
