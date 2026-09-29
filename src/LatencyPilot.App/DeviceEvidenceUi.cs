@@ -418,7 +418,7 @@ public sealed partial class MainWindow
                 $"{attribution.MatchingDpcEventCount} DPC · {attribution.MatchingIsrEventCount} ISR · {attribution.TotalDurationMicroseconds:F1} us total"));
             content.Children.Add(CreateEvidenceLine(
                 "Miniport tail",
-                $"DPC p99 {FormatMicroseconds(attribution.DpcP99Microseconds)} · ISR p99 {FormatMicroseconds(attribution.IsrP99Microseconds)}"));
+                $"DPC p99 {FormatNetworkMicroseconds(attribution.DpcP99Microseconds)} · ISR p99 {FormatNetworkMicroseconds(attribution.IsrP99Microseconds)}"));
             content.Children.Add(CreateEvidenceLine(
                 "Capture integrity",
                 attribution.CaptureIntegrityValid
@@ -606,7 +606,7 @@ public sealed partial class MainWindow
         return materialized.Length == 0 ? null : materialized.Max();
     }
 
-    private static string FormatMicroseconds(double? value) =>
+    private static string FormatNetworkMicroseconds(double? value) =>
         value is null
             ? "—"
             : string.Create(CultureInfo.InvariantCulture, $"{value.Value:F1} us");
