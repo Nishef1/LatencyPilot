@@ -167,6 +167,13 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(usbXhciUi, "FormatMutationKind",
             "The recovery dialog must identify the unresolved mutation kind/state/target for diagnosis.");
 
+        StringAssert.Contains(usbXhciUi, "mutationBlockedByOtherTarget",
+            "An unresolved mutation on another target must downgrade USB to diagnostics instead of blocking the whole USB workflow.");
+        StringAssert.Contains(usbXhciUi, "Blocked for Apply · another target has unresolved journal ownership");
+        Assert.IsFalse(
+            usbXhciUi.Contains("Another mutation needs recovery", StringComparison.Ordinal),
+            "The USB workflow must no longer fail before read-only readiness just because another target owns recovery.");
+
         var manualAffinityUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
         var pendingFirst = manualAffinityUi.IndexOf(".OrderByDescending(static row => row.HasPendingRecovery)", StringComparison.Ordinal);
         var editableSecond = manualAffinityUi.IndexOf(".ThenByDescending(static row => row.CanStartNewPolicyMutation)", pendingFirst, StringComparison.Ordinal);

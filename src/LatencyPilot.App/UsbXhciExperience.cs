@@ -102,39 +102,31 @@ public sealed partial class MainWindow
                 return;
             }
 
-            if (unresolved.Count != 0)
-            {
-                var pendingSummary = string.Join(
+            var mutationBlockedByOtherTarget = unresolved.Count != 0;
+            var blockerSummary = mutationBlockedByOtherTarget
+                ? string.Join(
                     Environment.NewLine,
                     unresolved.Take(4).Select(static entry =>
-                        $"• {FormatMutationKind(entry.Kind)} · {entry.State} · {entry.TargetId}"));
-                var more = unresolved.Count > 4
-                    ? $"{Environment.NewLine}• …and {unresolved.Count - 4} more unresolved entr{(unresolved.Count - 4 == 1 ? "y" : "ies")}."
-                    : string.Empty;
+                        $"• {FormatMutationKind(entry.Kind)} · {entry.State} · {entry.TargetId}"))
+                : null;
 
-                UsbEvidenceText.Text =
-                    $"USB/xHCI is blocked by {unresolved.Count} unresolved LatencyPilot mutation entr{(unresolved.Count == 1 ? "y" : "ies")} on another target.";
-                await ShowSimpleUsbMessageAsync(
-                    "Recovery required before USB / xHCI",
-                    $"{UsbEvidenceText.Text}{Environment.NewLine}{Environment.NewLine}" +
-                    $"{pendingSummary}{more}{Environment.NewLine}{Environment.NewLine}" +
-                    "Why this happens: a previous Apply/Restore did not reach a terminal journal state, commonly because the app/service was interrupted or Windows still requires verification after a restart." +
-                    $"{Environment.NewLine}{Environment.NewLine}" +
-                    "Next: open Devices → Interrupt Policy Lab. The pending Recovery device is listed first. Resume & verify only when it is an ApplyRebootPending entry for the same experiment; otherwise choose Restore original. LatencyPilot will not start a second mutation until that entry reaches a terminal state.");
-                return;
-            }
-
-            var gpuReservation = await Task.Run(TryResolveCurrentVerifiedGpuReservation);
-            UsbEvidenceText.Text = gpuReservation is null
-                ? "Capturing USB/xHCI interrupt headroom. No verified GPU reservation is available, so the result will be diagnostic-only."
-                : $"Capturing USB/xHCI interrupt headroom with GPU CPU {gpuReservation.Processor.Number} reserved…";
+            var gpuReservation = mutationBlockedByOtherTarget
+                ? null
+                : await Task.Run(TryResolveCurrentVerifiedGpuReservation);
+            UsbEvidenceText.Text = mutationBlockedByOtherTarget
+                ? "Capturing USB/xHCI diagnostics. Another target still owns an unresolved mutation, so this run cannot Apply a new xHCI policy."
+                : gpuReservation is null
+                    ? "Capturing USB/xHCI interrupt headroom. No verified GPU reservation is available, so the result will be diagnostic-only."
+                    : $"Capturing USB/xHCI interrupt headroom with GPU CPU {gpuReservation.Processor.Number} reserved…";
 
             var report = await RunUsbXhciReadinessHelperAsync(
                 primaryRoute.RawInputDevice.PnPInstanceId!,
                 gpuReservation?.Processor);
             await ShowUsbXhciReadinessResultAsync(
                 report,
-                gpuReservation);
+                gpuReservation,
+                mutationBlockedByOtherTarget,
+                blockerSummary);
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
@@ -428,12 +420,15 @@ public sealed partial class MainWindow
 
     private async Task ShowUsbXhciReadinessResultAsync(
         UsbXhciReadinessUiReport report,
-        VerifiedGpuReservation? gpuReservation)
+        VerifiedGpuReservation? gpuReservation,
+        bool mutationBlockedByOtherTarget,
+        string? mutationBlockerSummary)
     {
         var hasCandidate =
             report.ControllerInstanceId is not null &&
             report.Processor is not null;
         var readyToApply =
+            !mutationBlockedByOtherTarget &&
             string.Equals(report.Status, "Ready", StringComparison.Ordinal) &&
             hasCandidate &&
             gpuReservation is not null;
@@ -477,6 +472,18 @@ public sealed partial class MainWindow
             gpuReservation is null
                 ? "Unavailable · diagnostic-only ranking"
                 : $"CPU {gpuReservation.Processor.Number} · latest verified GPU Keep still matches stored policy"));
+
+        if (mutationBlockedByOtherTarget)
+        {
+            content.Children.Add(CreateEvidenceLine(
+                "Mutation gate",
+                "Blocked for Apply · another target has unresolved journal ownership"));
+            if (!string.IsNullOrWhiteSpace(mutationBlockerSummary))
+            {
+                content.Children.Add(CreateMutedText(
+                    $"USB diagnostics are still valid, but xHCI Apply is disabled until this recovery is closed:{Environment.NewLine}{mutationBlockerSummary}"));
+            }
+        }
 
         var dialog = new ContentDialog
         {
