@@ -49,6 +49,8 @@ public sealed record NetworkRssAdapterSnapshot(
 
     public bool? ConnectorPresent { get; init; }
 
+    public bool HardwareInfoAvailable { get; init; }
+
     public NetworkRssPnpCorrelation PnpCorrelation { get; init; } = new(
         NetworkRssPnpCorrelationStatus.MissingIdentity,
         null,
