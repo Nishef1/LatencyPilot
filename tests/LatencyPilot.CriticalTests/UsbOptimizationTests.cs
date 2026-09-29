@@ -204,6 +204,68 @@ public sealed class UsbOptimizationTests
             unknownPeerPreflight.CanAttemptControllerSpecificVerification,
             "Unreadable peer allocation may gate Apply without invalidating the benchmark recommendation.");
 
+        var vectorSnapshots = new Dictionary<string, DeviceInterruptVectorSnapshot>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            [targetWithAllocation.InstanceId] = new(
+                targetWithAllocation.InstanceId,
+                DeviceInterruptVectorReadStatus.Available,
+                [44],
+                null),
+            [unknownPeer.InstanceId] = new(
+                unknownPeer.InstanceId,
+                DeviceInterruptVectorReadStatus.Available,
+                [45],
+                null),
+        };
+
+        var vectorPreflight = XhciInterruptRuntimePlacementVerifier.AssessApplyPreflight(
+            targetWithAllocation.InstanceId,
+            [targetWithAllocation, unknownPeer],
+            new DeviceInterruptAffinityCandidate(0, 2, 1UL << 2),
+            vectorSnapshots);
+        Assert.IsTrue(
+            vectorPreflight.CanAttemptControllerSpecificVerification,
+            "A peer ConfigMgr allocation failure must not block Apply when the official PnP allocated-resource association maps target and peer to disjoint IRQ vectors.");
+
+        var vectorPlacement = XhciInterruptRuntimePlacementVerifier.Analyze(
+            sharedDriverCapture,
+            targetWithAllocation.InstanceId,
+            [targetWithAllocation, unknownPeer],
+            new DeviceInterruptAffinityCandidate(0, 2, 1UL << 2),
+            vectorSnapshots);
+        Assert.IsTrue(vectorPlacement.ConfirmsRequestedPlacement);
+        var vectorAttribution = XhciInterruptRuntimePlacementVerifier.ResolveIsrAttribution(
+            sharedDriverCapture,
+            targetWithAllocation.InstanceId,
+            [targetWithAllocation, unknownPeer],
+            new DeviceInterruptAffinityCandidate(0, 2, 1UL << 2),
+            vectorSnapshots);
+        Assert.AreEqual(
+            XhciInterruptIsrAttributionMode.DeviceInterruptVector,
+            vectorAttribution.AttributionMode);
+        Assert.AreEqual(1, vectorAttribution.Events.Count);
+        Assert.AreEqual(44, vectorAttribution.Events[0].InterruptVector);
+
+        var overlappingVectorSnapshots = new Dictionary<string, DeviceInterruptVectorSnapshot>(
+            vectorSnapshots,
+            StringComparer.OrdinalIgnoreCase)
+        {
+            [unknownPeer.InstanceId] = new(
+                unknownPeer.InstanceId,
+                DeviceInterruptVectorReadStatus.Available,
+                [44],
+                null),
+        };
+        var overlappingVectorPreflight = XhciInterruptRuntimePlacementVerifier.AssessApplyPreflight(
+            targetWithAllocation.InstanceId,
+            [targetWithAllocation, unknownPeer],
+            new DeviceInterruptAffinityCandidate(0, 2, 1UL << 2),
+            overlappingVectorSnapshots);
+        Assert.IsFalse(
+            overlappingVectorPreflight.CanAttemptControllerSpecificVerification,
+            "A shared device-associated IRQ vector must remain fail-closed when peer ConfigMgr allocation is also unreadable.");
+
         var manuallyFixedGpu = new PnPDeviceSnapshot(
             "PCI\\VEN_TEST&DEV_GPU",
             new Guid("4D36E968-E325-11CE-BFC1-08002BE10318"),

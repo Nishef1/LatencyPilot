@@ -7,6 +7,7 @@ public enum XhciInterruptIsrAttributionMode
 {
     SingleServiceInstance = 0,
     DisjointAllocatedAffinity = 1,
+    DeviceInterruptVector = 2,
 }
 
 public sealed record XhciInterruptIsrAttribution(
@@ -52,27 +53,28 @@ public static class XhciInterruptRuntimePlacementVerifier
         IReadOnlyList<PnPDeviceSnapshot> devices,
         DeviceInterruptAffinityCandidate candidate)
     {
+        var controllerIds = GetMatchingControllerIds(deviceInstanceId, devices);
+        var vectors = PnpInterruptVectorReader.CaptureMany(controllerIds);
+        return AssessApplyPreflight(
+            deviceInstanceId,
+            devices,
+            candidate,
+            vectors);
+    }
+
+    public static XhciInterruptVerificationPreflight AssessApplyPreflight(
+        string deviceInstanceId,
+        IReadOnlyList<PnPDeviceSnapshot> devices,
+        DeviceInterruptAffinityCandidate candidate,
+        IReadOnlyDictionary<string, DeviceInterruptVectorSnapshot> vectorSnapshots)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
         ArgumentNullException.ThrowIfNull(devices);
         ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(vectorSnapshots);
 
-        var target = devices.FirstOrDefault(device =>
-            string.Equals(device.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase));
-        if (target is null)
-        {
-            return new(false, "The routed xHCI controller is not present in the current device inventory.");
-        }
-
-        if (string.IsNullOrWhiteSpace(target.ServiceName) ||
-            !string.Equals(
-                NormalizeModuleStem(target.ServiceName),
-                "USBXHCI",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return new(false, "The routed USB controller is not owned by the USBXHCI service.");
-        }
-
-        var serviceName = NormalizeModuleStem(target.ServiceName);
+        var target = GetTargetController(deviceInstanceId, devices);
+        var serviceName = NormalizeModuleStem(target.ServiceName!);
         var peers = devices
             .Where(device =>
                 !string.Equals(device.InstanceId, target.InstanceId, StringComparison.OrdinalIgnoreCase) &&
@@ -85,7 +87,21 @@ public static class XhciInterruptRuntimePlacementVerifier
 
         if (peers.Length == 0)
         {
-            return new(true, "The routed controller is the only present USBXHCI service instance; controller-specific ETW attribution can be attempted directly.");
+            return new(
+                true,
+                "The routed controller is the only present USBXHCI service instance; controller-specific ETW attribution can be attempted directly.");
+        }
+
+        if (TryGetUniqueTargetVectors(
+                target,
+                peers,
+                vectorSnapshots,
+                out var targetVectors,
+                out var vectorReason))
+        {
+            return new(
+                true,
+                $"Controller-specific ETW vector attribution is available for IRQ vector(s) {FormatVectors(targetVectors)}. {vectorReason}");
         }
 
         foreach (var peer in peers)
@@ -95,7 +111,7 @@ public static class XhciInterruptRuntimePlacementVerifier
             {
                 return new(
                     false,
-                    $"Peer xHCI controller '{peer.InstanceId}' has no readable translated allocation. USB benchmarking is still valid, but Apply must wait because controller-specific runtime attribution cannot yet be proven safely.");
+                    $"USB benchmark is complete, but Apply is gated because neither device-specific IRQ-vector attribution nor ConfigMgr allocation-disjoint attribution can currently prove controller ownership. Vector path: {vectorReason} ConfigMgr peer '{peer.InstanceId}' has no readable translated allocation.");
             }
 
             if (peer.InterruptResources.Resources.Any(resource =>
@@ -104,7 +120,7 @@ public static class XhciInterruptRuntimePlacementVerifier
             {
                 return new(
                     false,
-                    $"Peer xHCI controller '{peer.InstanceId}' exposes an unsupported translated allocation. USB benchmarking is still valid, but Apply is not armed.");
+                    $"USB benchmark is complete, but Apply is gated because peer xHCI controller '{peer.InstanceId}' exposes unsupported translated allocation and the IRQ-vector fallback was unavailable. Vector path: {vectorReason}");
             }
 
             if (peer.InterruptResources.Resources.Any(resource =>
@@ -112,13 +128,13 @@ public static class XhciInterruptRuntimePlacementVerifier
             {
                 return new(
                     false,
-                    $"The recommended CPU overlaps translated allocation owned by peer xHCI controller '{peer.InstanceId}'. Benchmark selection remains valid, but Apply is not safe for controller-specific attribution.");
+                    $"USB benchmark is complete, but Apply is gated because the recommended CPU overlaps translated allocation owned by peer xHCI controller '{peer.InstanceId}', and the IRQ-vector fallback was unavailable. Vector path: {vectorReason}");
             }
         }
 
         return new(
             true,
-            $"The recommended CPU is disjoint from all {peers.Length} same-service peer xHCI controller allocation(s); controller-specific runtime verification can be attempted after Apply.");
+            $"The recommended CPU is disjoint from all {peers.Length} same-service peer xHCI controller allocation(s); controller-specific runtime verification can be attempted after Apply. IRQ-vector fallback was not required.");
     }
 
     public static XhciInterruptRuntimePlacementEvidence Analyze(
@@ -135,13 +151,31 @@ public static class XhciInterruptRuntimePlacementVerifier
         KernelLatencyCaptureResult capture,
         string deviceInstanceId,
         IReadOnlyList<PnPDeviceSnapshot> devices,
-        DeviceInterruptAffinityCandidate candidate) =>
+        DeviceInterruptAffinityCandidate candidate)
+    {
+        var controllerIds = GetMatchingControllerIds(deviceInstanceId, devices);
+        var vectors = PnpInterruptVectorReader.CaptureMany(controllerIds);
+        return Analyze(
+            capture,
+            deviceInstanceId,
+            devices,
+            candidate,
+            vectors);
+    }
+
+    public static XhciInterruptRuntimePlacementEvidence Analyze(
+        KernelLatencyCaptureResult capture,
+        string deviceInstanceId,
+        IReadOnlyList<PnPDeviceSnapshot> devices,
+        DeviceInterruptAffinityCandidate candidate,
+        IReadOnlyDictionary<string, DeviceInterruptVectorSnapshot> vectorSnapshots) =>
         Analyze(
             ResolveIsrAttribution(
                 capture,
                 deviceInstanceId,
                 devices,
-                candidate),
+                candidate,
+                vectorSnapshots),
             candidate);
 
     public static XhciInterruptIsrAttribution ResolveIsrAttribution(
@@ -156,29 +190,30 @@ public static class XhciInterruptRuntimePlacementVerifier
         IReadOnlyList<PnPDeviceSnapshot> devices,
         DeviceInterruptAffinityCandidate? candidate)
     {
+        var controllerIds = GetMatchingControllerIds(deviceInstanceId, devices);
+        var vectors = PnpInterruptVectorReader.CaptureMany(controllerIds);
+        return ResolveIsrAttribution(
+            capture,
+            deviceInstanceId,
+            devices,
+            candidate,
+            vectors);
+    }
+
+    public static XhciInterruptIsrAttribution ResolveIsrAttribution(
+        KernelLatencyCaptureResult capture,
+        string deviceInstanceId,
+        IReadOnlyList<PnPDeviceSnapshot> devices,
+        DeviceInterruptAffinityCandidate? candidate,
+        IReadOnlyDictionary<string, DeviceInterruptVectorSnapshot> vectorSnapshots)
+    {
         ArgumentNullException.ThrowIfNull(capture);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
         ArgumentNullException.ThrowIfNull(devices);
+        ArgumentNullException.ThrowIfNull(vectorSnapshots);
 
-        var target = devices.FirstOrDefault(device =>
-            string.Equals(device.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase));
-        if (target is null)
-        {
-            throw new InvalidOperationException(
-                "The requested xHCI runtime-verification target is not a present PnP device.");
-        }
-
-        if (string.IsNullOrWhiteSpace(target.ServiceName) ||
-            !string.Equals(
-                NormalizeModuleStem(target.ServiceName),
-                "USBXHCI",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            throw new NotSupportedException(
-                "Manual xHCI runtime verification requires a present target owned by the USBXHCI service.");
-        }
-
-        var serviceName = NormalizeModuleStem(target.ServiceName);
+        var target = GetTargetController(deviceInstanceId, devices);
+        var serviceName = NormalizeModuleStem(target.ServiceName!);
         var matchingControllers = devices
             .Where(device =>
                 !string.IsNullOrWhiteSpace(device.ServiceName) &&
@@ -207,10 +242,51 @@ public static class XhciInterruptRuntimePlacementVerifier
         if (candidate is null)
         {
             throw new NotSupportedException(
-                $"Controller-specific {serviceName} ISR attribution found {matchingControllers.Length} present controllers using the same driver service. A requested processor mask is required to prove allocation-disjoint ownership.");
+                $"Controller-specific {serviceName} ISR attribution found {matchingControllers.Length} present controllers using the same driver service. A requested processor mask is required.");
         }
 
-        ValidateDisjointAllocationAttribution(target, matchingControllers, candidate);
+        var peers = matchingControllers
+            .Where(device =>
+                !string.Equals(device.InstanceId, target.InstanceId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (TryGetUniqueTargetVectors(
+                target,
+                peers,
+                vectorSnapshots,
+                out var targetVectors,
+                out _))
+        {
+            var targetVectorSet = targetVectors.ToHashSet();
+            var targetVectorIsr = capture.Events
+                .Where(static item => item.Kind == KernelLatencyEventKind.Isr)
+                .Where(item =>
+                    item.InterruptVector is { } vector &&
+                    targetVectorSet.Contains(vector))
+                .ToArray();
+
+            var conflictingKnownModules = targetVectorIsr
+                .Where(item =>
+                    item.ModulePath is not null &&
+                    !ModuleMatchesService(item.ModulePath, serviceName))
+                .ToArray();
+            if (conflictingKnownModules.Length != 0)
+            {
+                throw new NotSupportedException(
+                    $"Device-associated IRQ vector attribution observed {conflictingKnownModules.Length} ISR event(s) on the target vector(s) from a different resolved module. Controller ownership is inconsistent, so verification fails closed.");
+            }
+
+            return new XhciInterruptIsrAttribution(
+                deviceInstanceId,
+                serviceName,
+                Array.AsReadOnly(targetVectorIsr),
+                targetVectorIsr.Count(static item => item.ModulePath is null),
+                XhciInterruptIsrAttributionMode.DeviceInterruptVector);
+        }
+
+        ValidateDisjointAllocationAttribution(
+            target,
+            matchingControllers,
+            candidate);
 
         var candidateMask = candidate.AffinityMask;
         var targetOnly = matchingModuleIsr
@@ -227,6 +303,110 @@ public static class XhciInterruptRuntimePlacementVerifier
                 item.Kind == KernelLatencyEventKind.Isr && item.ModulePath is null),
             XhciInterruptIsrAttributionMode.DisjointAllocatedAffinity);
     }
+
+    private static PnPDeviceSnapshot GetTargetController(
+        string deviceInstanceId,
+        IReadOnlyList<PnPDeviceSnapshot> devices)
+    {
+        var target = devices.FirstOrDefault(device =>
+            string.Equals(device.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            throw new InvalidOperationException(
+                "The requested xHCI runtime-verification target is not a present PnP device.");
+        }
+
+        if (string.IsNullOrWhiteSpace(target.ServiceName) ||
+            !string.Equals(
+                NormalizeModuleStem(target.ServiceName),
+                "USBXHCI",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NotSupportedException(
+                "Manual xHCI runtime verification requires a present target owned by the USBXHCI service.");
+        }
+
+        return target;
+    }
+
+    private static IReadOnlyList<string> GetMatchingControllerIds(
+        string deviceInstanceId,
+        IReadOnlyList<PnPDeviceSnapshot> devices)
+    {
+        var target = GetTargetController(deviceInstanceId, devices);
+        var serviceName = NormalizeModuleStem(target.ServiceName!);
+        return devices
+            .Where(device =>
+                !string.IsNullOrWhiteSpace(device.ServiceName) &&
+                string.Equals(
+                    NormalizeModuleStem(device.ServiceName),
+                    serviceName,
+                    StringComparison.OrdinalIgnoreCase))
+            .Select(static device => device.InstanceId)
+            .ToArray();
+    }
+
+    private static bool TryGetUniqueTargetVectors(
+        PnPDeviceSnapshot target,
+        IReadOnlyList<PnPDeviceSnapshot> peers,
+        IReadOnlyDictionary<string, DeviceInterruptVectorSnapshot> vectorSnapshots,
+        out IReadOnlyList<int> targetVectors,
+        out string reason)
+    {
+        targetVectors = [];
+        if (!vectorSnapshots.TryGetValue(target.InstanceId, out var targetSnapshot) ||
+            !targetSnapshot.HasVectors)
+        {
+            reason = vectorSnapshots.TryGetValue(target.InstanceId, out targetSnapshot)
+                ? $"target PnP IRQ mapping is {targetSnapshot.Status}" +
+                  (string.IsNullOrWhiteSpace(targetSnapshot.Error) ? "." : $": {targetSnapshot.Error}")
+                : "target PnP IRQ mapping was not captured.";
+            return false;
+        }
+
+        var targetSet = targetSnapshot.Vectors
+            .Where(static vector => vector is > 0 and <= byte.MaxValue)
+            .Distinct()
+            .OrderBy(static vector => vector)
+            .ToArray();
+        if (targetSet.Length == 0)
+        {
+            reason = "target PnP IRQ mapping returned no ETW-compatible interrupt vectors.";
+            return false;
+        }
+
+        foreach (var peer in peers)
+        {
+            if (!vectorSnapshots.TryGetValue(peer.InstanceId, out var peerSnapshot) ||
+                !peerSnapshot.HasVectors)
+            {
+                reason = vectorSnapshots.TryGetValue(peer.InstanceId, out peerSnapshot)
+                    ? $"peer '{peer.InstanceId}' PnP IRQ mapping is {peerSnapshot.Status}" +
+                      (string.IsNullOrWhiteSpace(peerSnapshot.Error) ? "." : $": {peerSnapshot.Error}")
+                    : $"peer '{peer.InstanceId}' PnP IRQ mapping was not captured.";
+                return false;
+            }
+
+            var overlap = peerSnapshot.Vectors
+                .Intersect(targetSet)
+                .OrderBy(static vector => vector)
+                .ToArray();
+            if (overlap.Length != 0)
+            {
+                reason =
+                    $"peer '{peer.InstanceId}' shares IRQ vector(s) {FormatVectors(overlap)} with the target.";
+                return false;
+            }
+        }
+
+        targetVectors = targetSet;
+        reason =
+            $"Win32_PnPAllocatedResource mapped the target and all {peers.Count} same-service peer controller(s) to disjoint IRQ vector sets.";
+        return true;
+    }
+
+    private static string FormatVectors(IEnumerable<int> vectors) =>
+        string.Join(", ", vectors.Select(static vector => $"0x{vector:X2}"));
 
     private static void ValidateDisjointAllocationAttribution(
         PnPDeviceSnapshot target,

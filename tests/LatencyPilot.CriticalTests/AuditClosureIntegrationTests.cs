@@ -195,6 +195,16 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(usbXhciRunner, "KernelLatencyCapture.Capture");
         StringAssert.Contains(usbXhciRunner, "AssessApplyPreflight",
             "Peer-controller attribution is an Apply prerequisite and must not invalidate the independent benchmark.");
+
+        var xhciVerifier = File.ReadAllText(Path.Combine(
+            root, "src", "LatencyPilot.Platform.Windows", "Devices", "XhciInterruptRuntimePlacementVerifier.cs"));
+        StringAssert.Contains(xhciVerifier, "DeviceInterruptVector",
+            "xHCI runtime verification must support device-associated IRQ-vector attribution when same-service peer ConfigMgr allocation is unreadable.");
+        StringAssert.Contains(xhciVerifier, "PnpInterruptVectorReader.CaptureMany");
+        var vectorReader = File.ReadAllText(Path.Combine(
+            root, "src", "LatencyPilot.Platform.Windows", "Devices", "PnpInterruptVectorReader.cs"));
+        StringAssert.Contains(vectorReader, "Win32_PnPAllocatedResource");
+        StringAssert.Contains(vectorReader, "Win32_IRQResource");
         Assert.IsFalse(usbXhciRunner.Contains("--gpu-processor", StringComparison.Ordinal),
             "USB/xHCI must not accept a GPU benchmark handoff argument.");
         Assert.IsFalse(usbXhciRunner.Contains("GateAClosureEligible", StringComparison.Ordinal),

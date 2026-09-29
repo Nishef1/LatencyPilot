@@ -89,7 +89,7 @@ The development App now reflects this decision directly:
 - GPU Gate A no longer resolves primary input or emits new USB recommendations;
 - USB/xHCI owns an elevated readiness runner with fresh kernel ETW headroom evidence;
 - USB/xHCI derives reserved CPUs from actual current specified-processor device policies and does not require Gate A or any previous benchmark report;
-- unreadable peer xHCI allocation no longer invalidates ranking; it is reported as a separate Apply/runtime-attribution preflight gate;
+- unreadable peer xHCI allocation no longer invalidates ranking; Apply/runtime attribution first attempts device-associated IRQ-vector ownership through Win32_PnPAllocatedResource → Win32_IRQResource matched to ETW ISR Vector, then falls back to allocation-disjoint attribution;
 - when a Ready recommendation is also Apply-eligible, the USB action reuses the bounded journaled xHCI Apply/runtime-verify/rollback path directly rather than routing through Policy Lab;
 - an owned `ApplyRebootPending` xHCI candidate is resumed with its exact journaled mask before any new recommendation;
 - Network/RSS remains a separate read-only action in v1.
