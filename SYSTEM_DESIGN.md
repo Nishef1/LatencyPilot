@@ -373,7 +373,7 @@ Future scope is intentionally asymmetric rather than a generic device optimizer:
 - **Storage:** inventory/evidence only. No LatencyPilot affinity, MSI/MSI-X or queue mutation for NVMe/SATA/Storport. Windows storage stacks already use multi-queue/message and dynamic redirection mechanisms that a generic single-mask optimizer would fight rather than understand.
 - **Audio:** diagnostic by default. USB audio is first attributed through its owning USB/xHCI controller. PCIe/HDAudio mutation requires a future device-specific verifier and physical evidence; it is not implied by high `Wdf01000`/audio DPC observations.
 - **WDF/other devices:** do not add a generic stack-attribution optimizer preemptively. Existing ETW module attribution and exact xHCI routing are the first tools; deeper stack attribution is justified only by a remaining material unexplained hotspot.
-- **Allocation:** continue simple sequential exclusion of already-selected physical cores. No generic reservation service, weighted score or Pareto allocator is introduced for hypothetical future subsystems.
+- **Allocation:** each subsystem independently reads the same current explicit-policy CPU-reservation snapshot and excludes those physical cores from its own candidate set. No hidden benchmark-result handoff, weighted score or Pareto allocator is introduced.
 
 Network evidence must prefer local/kernel measurements over public-Internet variability. Existing offloads, RSS and interrupt moderation are workload-dependent controls and are not blindly disabled.
 
@@ -397,7 +397,7 @@ snapshot exact original
 → resolve ownership
 ```
 
-Cancellation is rollback-biased. Unresolved/diverged ownership blocks unsafe follow-on work. Upgrade/uninstall must preserve recovery ability while owned state exists.
+Cancellation is rollback-biased. Unresolved/diverged ownership blocks unsafe follow-on mutation. Ordinary Service replacement may proceed across terminal Kept state when the journal is healthy and has no unresolved work; uninstall remains stricter and requires managed changes to be restored so recovery capability is never removed while retained state is owned.
 
 ## 14. UI model
 

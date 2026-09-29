@@ -162,9 +162,21 @@ public sealed class UsbOptimizationTests
                 [targetWithAllocation, allPeerAllocated],
                 DateTimeOffset.UnixEpoch));
         Assert.AreEqual(
-            UsbAffinityRecommendationStatus.NotReady,
+            UsbAffinityRecommendationStatus.Ready,
             blockedRecommendation.Status,
-            "Automatic xHCI selection must fail closed when every eligible CPU overlaps a same-service peer controller allocation.");
+            "Peer-controller overlap is an Apply/runtime-attribution gate, not a benchmark-ranking dependency.");
+        Assert.IsNotNull(blockedRecommendation.Processor);
+
+        var overlappingPeerPreflight = XhciInterruptRuntimePlacementVerifier.AssessApplyPreflight(
+            targetWithAllocation.InstanceId,
+            [targetWithAllocation, allPeerAllocated],
+            new DeviceInterruptAffinityCandidate(
+                blockedRecommendation.Processor!.Value.Group,
+                blockedRecommendation.Processor.Value.Number,
+                1UL << blockedRecommendation.Processor.Value.Number));
+        Assert.IsFalse(
+            overlappingPeerPreflight.CanAttemptControllerSpecificVerification,
+            "A valid benchmark recommendation must still refuse Apply when a same-service peer allocation overlaps the recommended CPU.");
 
         var unknownPeer = peerWithDisjointAllocation with
         {

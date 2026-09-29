@@ -56,7 +56,7 @@ The 2026-09-28 cross-check against Windows interrupt-affinity/RSS semantics, mai
 5. **Storage stays diagnostics-only.** Inventory, driver identity and DPC/ISR evidence may be reported, but LatencyPilot will not automatically or manually tune NVMe/SATA/Storport affinity, MSI/MSI-X layout or queue topology.
 6. **Audio remains diagnostic/conditional.** USB audio is first reasoned about through its owning USB/xHCI route. PCIe/HDAudio gets no automatic affinity path unless a future device-specific verifier and physical evidence justify one.
 7. **Do not build a generic WDF/driver-stack optimizer now.** Reuse existing ETW module attribution and exact xHCI routing first. Add deeper stack attribution only if a material WDF hotspot remains unexplained after the narrow v1 path.
-8. **Keep allocation simple.** Reuse sequential physical-core exclusions/reservations already needed for GPU→xHCI. Do not add a generic reservation framework, weighted score or Pareto allocator merely to anticipate NIC/audio work.
+8. **Keep allocation simple.** Every subsystem reads the same current explicit-policy CPU reservations and skips those physical cores in its own benchmark. Do not pass benchmark winners between subsystems and do not add a weighted score or Pareto allocator merely to anticipate NIC/audio work.
 
 Before any post-v1 NIC mutation is implemented, a dedicated ADR and measurement contract must define snapshot/restore, RSS-aware candidate constraints, primary metrics, guardrails and physical exit evidence.
 
