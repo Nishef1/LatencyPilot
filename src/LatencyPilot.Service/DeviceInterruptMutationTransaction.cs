@@ -154,7 +154,7 @@ internal sealed class DeviceInterruptMutationTransaction
             applied.Revision,
             MutationJournalState.Applied,
             MutationJournalState.ApplyRebootPending,
-            Bound(reason));
+            reason.Length <= 2048 ? reason : reason[..2048]);
     }
 
     internal MutationJournalEntry KeepVerified(Guid experimentId, bool measurementVerified)
