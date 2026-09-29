@@ -562,21 +562,46 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <Border Grid.Column="0" Style="{StaticResource MetricTileStyle}">
-                                                <StackPanel Spacing="5">
+                                                <StackPanel Spacing="8">
                                                     <TextBlock Text="GPU Gate A" Style="{StaticResource MetricLabelTextStyle}" />
                                                     <TextBlock Text="Benchmark only GPU interrupt-affinity candidates and keep or restore only GPU state." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
+                                                    <Button x:Name="MeasureGpuGateAButton"
+                                                            Visibility="{Binding Visibility, ElementName=GpuGateAEntryButton}"
+                                                            IsEnabled="{Binding IsEnabled, ElementName=GpuGateAEntryButton}"
+                                                            Click="GpuGateAEntryButton_Click"
+                                                            Style="{StaticResource SecondaryButtonStyle}"
+                                                            HorizontalAlignment="Left"
+                                                            AutomationProperties.Name="Run GPU Gate A from Measure">
+                                                        <TextBlock Text="Run GPU Gate A" />
+                                                    </Button>
                                                 </StackPanel>
                                             </Border>
                                             <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
-                                                <StackPanel Spacing="5">
+                                                <StackPanel Spacing="8">
                                                     <TextBlock Text="USB / xHCI" Style="{StaticResource MetricLabelTextStyle}" />
                                                     <TextBlock Text="Resolve the exact input controller, capture fresh headroom, recommend a CPU, then verify/rollback independently." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
+                                                    <Button x:Name="MeasureUsbSubsystemButton"
+                                                            IsEnabled="{Binding IsEnabled, ElementName=UsbSubsystemButton}"
+                                                            Click="UsbSubsystemButton_Click"
+                                                            Style="{StaticResource SecondaryButtonStyle}"
+                                                            HorizontalAlignment="Left"
+                                                            AutomationProperties.Name="Run USB xHCI from Measure">
+                                                        <TextBlock Text="Run USB / xHCI" />
+                                                    </Button>
                                                 </StackPanel>
                                             </Border>
                                             <Border Grid.Column="2" Style="{StaticResource MetricTileStyle}">
-                                                <StackPanel Spacing="5">
+                                                <StackPanel Spacing="8">
                                                     <TextBlock Text="Network / RSS" Style="{StaticResource MetricLabelTextStyle}" />
                                                     <TextBlock Text="Inspect physical-NIC and RSS evidence independently. Mutation remains outside v1 until its own method is proven." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
+                                                    <Button x:Name="MeasureNetworkSubsystemButton"
+                                                            IsEnabled="{Binding IsEnabled, ElementName=NetworkSubsystemButton}"
+                                                            Click="NetworkSubsystemButton_Click"
+                                                            Style="{StaticResource SecondaryButtonStyle}"
+                                                            HorizontalAlignment="Left"
+                                                            AutomationProperties.Name="Analyze network RSS from Measure">
+                                                        <TextBlock Text="Analyze Network / RSS" />
+                                                    </Button>
                                                 </StackPanel>
                                             </Border>
                                         </Grid>

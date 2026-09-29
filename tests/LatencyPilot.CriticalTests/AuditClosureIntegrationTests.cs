@@ -144,6 +144,16 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(deviceEvidenceUi, "NetworkSubsystemButton_Click",
             "Network/RSS must have an independent user action.");
 
+        var mainWindowXaml = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "MainWindow.xaml"));
+        StringAssert.Contains(mainWindowXaml, "x:Name=\"MeasureGpuGateAButton\"",
+            "Measure must expose GPU Gate A directly inside its subsystem card.");
+        StringAssert.Contains(mainWindowXaml, "x:Name=\"MeasureUsbSubsystemButton\"",
+            "Measure must expose the independent USB/xHCI action directly inside its subsystem card.");
+        StringAssert.Contains(mainWindowXaml, "x:Name=\"MeasureNetworkSubsystemButton\"",
+            "Measure must expose the independent Network/RSS action directly inside its subsystem card.");
+        StringAssert.Contains(mainWindowXaml, "Click=\"UsbSubsystemButton_Click\"");
+        StringAssert.Contains(mainWindowXaml, "Click=\"NetworkSubsystemButton_Click\"");
+
         var usbXhciUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "UsbXhciExperience.cs"));
         StringAssert.Contains(usbXhciUi, "--usb-xhci-readiness",
             "USB/xHCI must own an independent elevated readiness run rather than borrowing GPU Gate A.");
