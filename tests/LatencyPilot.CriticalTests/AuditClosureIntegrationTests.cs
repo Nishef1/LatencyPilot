@@ -147,7 +147,22 @@ public sealed class AuditClosureIntegrationTests
             "Network/RSS must have an independent user action.");
 
         StringAssert.Contains(deviceEvidenceUi, "NetworkRssPhysicalAdapterSelector.Select",
-            "Network/RSS analysis must exclude virtual/debug adapters and choose from PnP-correlated physical RSS-capable NICs.");
+            "Network analysis must exclude virtual/debug adapters while keeping PnP-correlated physical NICs even when RSS settings are not exposed.");
+        StringAssert.Contains(deviceEvidenceUi, "RSS settings are optional here",
+            "Missing MSFT_NetAdapterRssSettingData must not be misreported as absence of a physical NIC.");
+        StringAssert.Contains(deviceEvidenceUi, "RssSettingsAvailable",
+            "Network UX must distinguish missing RSS settings from missing physical hardware.");
+
+        var networkRssReader = File.ReadAllText(Path.Combine(
+            root, "src", "LatencyPilot.Platform.Windows", "Devices", "NetworkRssReader.cs"));
+        StringAssert.Contains(networkRssReader, "AddPhysicalAdaptersWithoutRssRows",
+            "MSFT_NetAdapter physical identities must survive even when no RSS settings row exists.");
+        StringAssert.Contains(networkRssReader, "Physical adapter discovered through MSFT_NetAdapter",
+            "The fallback row must preserve provenance rather than pretending RSS provider evidence existed.");
+        StringAssert.Contains(networkRssReader, "StartsWith(\"PCI\\\\\"",
+            "Physical PCI NIC identity must remain usable even if optional MSFT_NetAdapter flags are missing or inconsistent.");
+        StringAssert.Contains(deviceEvidenceUi, "CaptureForTarget",
+            "Before/after continuity must re-read current network evidence instead of comparing the same cached RSS snapshot twice.");
         StringAssert.Contains(deviceEvidenceUi, "ObservationServiceClient.CaptureKernelLatencyAsync",
             "Network/RSS must capture bounded kernel runtime evidence instead of only dumping provider rows.");
         StringAssert.Contains(deviceEvidenceUi, "AnalyzeNetworkRuntime",

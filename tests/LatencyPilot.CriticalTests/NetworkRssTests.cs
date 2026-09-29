@@ -118,6 +118,35 @@ public sealed class NetworkRssTests
         Assert.AreEqual(1, physicalSelection.Count);
         Assert.AreEqual("Ethernet", physicalSelection[0].Name);
 
+        var physicalWithoutRss = physicalRss with
+        {
+            Name = "Realtek PCIe GbE Family Controller",
+            InterfaceDescription = "Realtek PCIe GbE Family Controller",
+            RssSettingsAvailable = false,
+            HardwareInterface = false,
+            ConnectorPresent = null,
+            Enabled = null,
+            NumberOfReceiveQueues = null,
+            RssProcessorArray = [],
+            PnpCorrelation = new NetworkRssPnpCorrelation(
+                NetworkRssPnpCorrelationStatus.Available,
+                "PCI\\VEN_10EC&DEV_8168",
+                null),
+        };
+        var physicalWithoutRssSelection = NetworkRssPhysicalAdapterSelector.Select(
+            new NetworkRssSnapshot(
+                NetworkRssReadStatus.Available,
+                [virtualRss, physicalWithoutRss],
+                DateTimeOffset.UnixEpoch,
+                null));
+        Assert.AreEqual(1, physicalWithoutRssSelection.Count);
+        Assert.IsFalse(physicalWithoutRssSelection[0].RssSettingsAvailable,
+            "A physical NIC must remain analyzable when Windows/driver does not expose MSFT_NetAdapterRssSettingData.");
+        Assert.AreEqual(
+            "PCI\\VEN_10EC&DEV_8168",
+            physicalWithoutRssSelection[0].PnpCorrelation.PnpInstanceId,
+            "Authoritative PCI/USB PnP identity is sufficient physical evidence even if a provider flag is missing or wrong.");
+
         var usableCoverage = NetworkRssInspectionCoverage.Evaluate(new NetworkRssSnapshot(
             NetworkRssReadStatus.Available,
             [rss],
@@ -129,6 +158,13 @@ public sealed class NetworkRssTests
             [],
             DateTimeOffset.UnixEpoch,
             null)).IsUsable);
+        var noRssCoverage = NetworkRssInspectionCoverage.Evaluate(new NetworkRssSnapshot(
+            NetworkRssReadStatus.Available,
+            [physicalWithoutRss],
+            DateTimeOffset.UnixEpoch,
+            null));
+        Assert.IsFalse(noRssCoverage.IsUsable,
+            "RSS provider coverage remains unavailable even though the physical NIC itself is still analyzable.");
 
         var targetInterface = new NetworkInterfaceContinuitySnapshot(
             "interface-1",

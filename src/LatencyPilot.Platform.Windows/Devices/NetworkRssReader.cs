@@ -42,6 +42,46 @@ public static class NetworkRssReader
 
             var identities = ReadAdapterIdentities(scope);
             var adapters = new List<NetworkRssAdapterSnapshot>();
+            var rssProviderWarning = TryReadRssAdapters(scope, identities, adapters);
+            AddPhysicalAdaptersWithoutRssRows(adapters, identities);
+
+            return new NetworkRssSnapshot(
+                NetworkRssReadStatus.Available,
+                adapters.AsReadOnly(),
+                capturedAtUtc,
+                rssProviderWarning);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            return Failure(NetworkRssReadStatus.AccessDenied, capturedAtUtc, exception);
+        }
+        catch (ManagementException exception) when (exception.ErrorCode == ManagementStatus.AccessDenied)
+        {
+            return Failure(NetworkRssReadStatus.AccessDenied, capturedAtUtc, exception);
+        }
+        catch (ManagementException exception) when (
+            exception.ErrorCode is ManagementStatus.InvalidNamespace or ManagementStatus.InvalidClass)
+        {
+            return Failure(NetworkRssReadStatus.ProviderUnavailable, capturedAtUtc, exception);
+        }
+        catch (PlatformNotSupportedException exception)
+        {
+            return Failure(NetworkRssReadStatus.ProviderUnavailable, capturedAtUtc, exception);
+        }
+        catch (Exception exception) when (
+            exception is ManagementException or InvalidDataException or InvalidOperationException)
+        {
+            return Failure(NetworkRssReadStatus.ReadFailed, capturedAtUtc, exception);
+        }
+    }
+
+    private static string? TryReadRssAdapters(
+        ManagementScope scope,
+        IReadOnlyList<NetworkAdapterPnpIdentity> identities,
+        List<NetworkRssAdapterSnapshot> adapters)
+    {
+        try
+        {
             using var searcher = new ManagementObjectSearcher(
                 scope,
                 new ObjectQuery(
@@ -81,33 +121,20 @@ public static class NetworkRssReader
                 }
             }
 
-            return new NetworkRssSnapshot(
-                NetworkRssReadStatus.Available,
-                adapters.AsReadOnly(),
-                capturedAtUtc,
-                null);
+            return null;
         }
         catch (UnauthorizedAccessException exception)
         {
-            return Failure(NetworkRssReadStatus.AccessDenied, capturedAtUtc, exception);
-        }
-        catch (ManagementException exception) when (exception.ErrorCode == ManagementStatus.AccessDenied)
-        {
-            return Failure(NetworkRssReadStatus.AccessDenied, capturedAtUtc, exception);
+            return $"RSS settings provider access was denied: {exception.Message}";
         }
         catch (ManagementException exception) when (
-            exception.ErrorCode is ManagementStatus.InvalidNamespace or ManagementStatus.InvalidClass)
+            exception.ErrorCode is
+                ManagementStatus.AccessDenied or
+                ManagementStatus.InvalidClass or
+                ManagementStatus.InvalidNamespace or
+                ManagementStatus.NotFound)
         {
-            return Failure(NetworkRssReadStatus.ProviderUnavailable, capturedAtUtc, exception);
-        }
-        catch (PlatformNotSupportedException exception)
-        {
-            return Failure(NetworkRssReadStatus.ProviderUnavailable, capturedAtUtc, exception);
-        }
-        catch (Exception exception) when (
-            exception is ManagementException or InvalidDataException or InvalidOperationException)
-        {
-            return Failure(NetworkRssReadStatus.ReadFailed, capturedAtUtc, exception);
+            return $"RSS settings provider is unavailable: {exception.ErrorCode}: {exception.Message}";
         }
     }
 
@@ -152,6 +179,58 @@ public static class NetworkRssReader
         return identities.AsReadOnly();
     }
 
+    private static void AddPhysicalAdaptersWithoutRssRows(
+        List<NetworkRssAdapterSnapshot> adapters,
+        IReadOnlyList<NetworkAdapterPnpIdentity> identities)
+    {
+        var representedPnpIds = adapters
+            .Where(static adapter => adapter.PnpCorrelation.IsAvailable)
+            .Select(static adapter => adapter.PnpCorrelation.PnpInstanceId!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var identity in identities)
+        {
+            if (!IsPhysicalHardwareIdentity(identity) ||
+                representedPnpIds.Contains(identity.PnpInstanceId))
+            {
+                continue;
+            }
+
+            adapters.Add(new NetworkRssAdapterSnapshot(
+                identity.InterfaceDescription,
+                identity.InterfaceDescription,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                [],
+                [])
+            {
+                RssSettingsAvailable = false,
+                HardwareInterface = identity.HardwareInterface,
+                ConnectorPresent = identity.ConnectorPresent,
+                PnpCorrelation = new NetworkRssPnpCorrelation(
+                    NetworkRssPnpCorrelationStatus.Available,
+                    identity.PnpInstanceId,
+                    "Physical adapter discovered through MSFT_NetAdapter; no RSS settings row was exposed by Windows or the driver."),
+            });
+        }
+    }
+
+    private static bool IsPhysicalHardwareIdentity(NetworkAdapterPnpIdentity identity) =>
+        identity.HardwareInterface == true ||
+        identity.PnpInstanceId.StartsWith("PCI\\", StringComparison.OrdinalIgnoreCase) ||
+        identity.PnpInstanceId.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase);
+
     private static Dictionary<string, object?> ReadRssProperties(ManagementObject row)
     {
         var properties = new Dictionary<string, object?>(RssPropertyNames.Length, StringComparer.Ordinal);
@@ -180,8 +259,10 @@ public sealed record NetworkRssInspectionCoverage(
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        var providerRows = snapshot.Adapters.Count;
-        var correlatedRows = snapshot.Adapters.Count(static adapter => adapter.PnpCorrelation.IsAvailable);
+        var providerRows = snapshot.Adapters.Count(static adapter => adapter.RssSettingsAvailable);
+        var correlatedRows = snapshot.Adapters.Count(static adapter =>
+            adapter.RssSettingsAvailable &&
+            adapter.PnpCorrelation.IsAvailable);
         if (!snapshot.IsAvailable)
         {
             return new NetworkRssInspectionCoverage(
@@ -197,7 +278,9 @@ public sealed record NetworkRssInspectionCoverage(
                 false,
                 0,
                 0,
-                "RSS provider returned no adapter setting rows.");
+                snapshot.Adapters.Any(static adapter => adapter.PnpCorrelation.IsAvailable)
+                    ? "Physical network adapter evidence is available, but Windows/driver exposed no RSS settings rows."
+                    : "RSS provider returned no adapter setting rows.");
         }
 
         if (correlatedRows == 0)
@@ -227,8 +310,9 @@ public static class NetworkRssPhysicalAdapterSelector
         return snapshot.Adapters
             .Where(static adapter =>
                 adapter.PnpCorrelation.IsAvailable &&
-                adapter.HardwareInterface == true &&
-                adapter.ConnectorPresent == true)
+                (adapter.HardwareInterface == true ||
+                 adapter.PnpCorrelation.PnpInstanceId!.StartsWith("PCI\\", StringComparison.OrdinalIgnoreCase) ||
+                 adapter.PnpCorrelation.PnpInstanceId.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase)))
             .OrderBy(static adapter => adapter.Name ?? adapter.InterfaceDescription, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }

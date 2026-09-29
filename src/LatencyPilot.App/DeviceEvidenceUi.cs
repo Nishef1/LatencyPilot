@@ -30,7 +30,8 @@ public sealed partial class MainWindow
             var inspection = await Task.Run(CaptureDeviceEvidenceInspection);
 
             var rssSummary = inspection.NetworkRss.IsAvailable
-                ? string.Create(CultureInfo.InvariantCulture, $"{inspection.NetworkRss.Adapters.Count:N0} RSS row(s)")
+                ? $"{inspection.NetworkRss.Adapters.Count(static adapter => adapter.RssSettingsAvailable):N0} RSS row(s) · " +
+                  $"{inspection.NetworkRss.Adapters.Count(static adapter => !adapter.RssSettingsAvailable && adapter.PnpCorrelation.IsAvailable):N0} physical adapter(s) without RSS settings"
                 : $"RSS {inspection.NetworkRss.Status}";
             var warningSummary = inspection.Warnings.Count == 0
                 ? string.Empty
@@ -190,7 +191,8 @@ public sealed partial class MainWindow
                     target.PnpCorrelation.PnpInstanceId,
                     StringComparison.OrdinalIgnoreCase));
 
-            var before = NetworkEnvironmentContinuity.Capture(target);
+            var before = NetworkEnvironmentContinuity.CaptureForTarget(
+                target.PnpCorrelation.PnpInstanceId!);
             NetworkRuntimeSummary? attribution = null;
             NetworkEnvironmentContinuityResult? continuity = null;
             string? runtimeReason = null;
@@ -214,7 +216,8 @@ public sealed partial class MainWindow
                     ObservationMaximumEvents);
 
                 attribution = AnalyzeNetworkRuntime(capture, targetDevice);
-                var after = NetworkEnvironmentContinuity.Capture(target);
+                var after = NetworkEnvironmentContinuity.CaptureForTarget(
+                    target.PnpCorrelation.PnpInstanceId!);
                 if (before.IsAvailable && before.Snapshot is not null &&
                     after.IsAvailable && after.Snapshot is not null)
                 {
@@ -280,8 +283,8 @@ public sealed partial class MainWindow
         if (physical.Length == 0)
         {
             await ShowSimpleNetworkMessageAsync(
-                "No physical RSS adapter",
-                "Windows did not expose a PnP-correlated physical adapter with an RSS settings row. Virtual switches, debug adapters and other software interfaces are intentionally excluded.");
+                "No physical network adapter",
+                "Windows did not expose a PnP-correlated physical network adapter. RSS settings are optional here; virtual switches, debug adapters and other software interfaces remain excluded.");
             return null;
         }
 
@@ -368,13 +371,17 @@ public sealed partial class MainWindow
             .Where(static value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var headline = adapter.Enabled == false
-            ? "Physical NIC · RSS disabled"
-            : attribution?.HasTargetEvidence == true
-                ? "Physical NIC · runtime evidence captured"
-                : attribution is not null
-                    ? "Physical NIC · runtime sample partial"
-                    : "Physical NIC · configuration evidence";
+        var headline = !adapter.RssSettingsAvailable
+            ? attribution?.HasTargetEvidence == true
+                ? "Physical NIC · RSS settings unavailable · runtime evidence captured"
+                : "Physical NIC · RSS settings unavailable"
+            : adapter.Enabled == false
+                ? "Physical NIC · RSS disabled"
+                : attribution?.HasTargetEvidence == true
+                    ? "Physical NIC · runtime evidence captured"
+                    : attribution is not null
+                        ? "Physical NIC · runtime sample partial"
+                        : "Physical NIC · configuration evidence";
 
         var content = new StackPanel { Spacing = 10d };
         content.Children.Add(new TextBlock
@@ -391,17 +398,21 @@ public sealed partial class MainWindow
             adapter.Name ?? adapter.InterfaceDescription ?? "Unnamed physical adapter"));
         content.Children.Add(CreateEvidenceLine(
             "RSS",
-            adapter.Enabled switch
-            {
-                true => "Enabled",
-                false => "Disabled",
-                null => "State unavailable",
-            }));
+            !adapter.RssSettingsAvailable
+                ? "Settings not exposed by Windows/driver"
+                : adapter.Enabled switch
+                {
+                    true => "Enabled",
+                    false => "Disabled",
+                    null => "State unavailable",
+                }));
         content.Children.Add(CreateEvidenceLine(
             "Receive steering",
-            $"{FormatNullableNumber(adapter.NumberOfReceiveQueues)} queue(s) · " +
-            $"{(processorSet.Length == 0 ? "processor set unavailable" : $"{processorSet.Length} RSS processor(s)")}" +
-            (adapter.MaxProcessors is { } max ? $" · max {max}" : string.Empty)));
+            !adapter.RssSettingsAvailable
+                ? "RSS queue/processor settings unavailable; runtime miniport analysis still runs"
+                : $"{FormatNullableNumber(adapter.NumberOfReceiveQueues)} queue(s) · " +
+                  $"{(processorSet.Length == 0 ? "processor set unavailable" : $"{processorSet.Length} RSS processor(s)")}" +
+                  (adapter.MaxProcessors is { } max ? $" · max {max}" : string.Empty)));
         content.Children.Add(CreateEvidenceLine(
             "MSI-X",
             adapter.MsiXEnabled == true
@@ -438,7 +449,9 @@ public sealed partial class MainWindow
                 : "Not proven"));
 
         content.Children.Add(CreateMutedText(
-            "No network settings were changed. RSS is intentionally multi-CPU; v1 does not force the NIC onto a single CPU or rewrite its RSS profile."));
+            adapter.RssSettingsAvailable
+                ? "No network settings were changed. RSS is intentionally multi-CPU; v1 does not force the NIC onto a single CPU or rewrite its RSS profile."
+                : "No network settings were changed. This driver did not expose an RSS settings row, but LatencyPilot still analyzes the physical NIC and its miniport runtime evidence."));
 
         var technical = new StackPanel { Spacing = 7d };
         technical.Children.Add(CreateSelectableEvidenceText(
@@ -703,7 +716,7 @@ public sealed partial class MainWindow
                 $"Showing the first {MaximumInspectorRowsPerSection} input routes; the captured inventory contains {inspection.InputRoutes.Routes.Count}."));
         }
 
-        AddSectionHeading(content, "Network RSS provider evidence");
+        AddSectionHeading(content, "Network adapter / RSS evidence");
         if (!inspection.NetworkRss.IsAvailable)
         {
             content.Children.Add(CreateMutedText(
@@ -711,7 +724,7 @@ public sealed partial class MainWindow
         }
         else if (inspection.NetworkRss.Adapters.Count == 0)
         {
-            content.Children.Add(CreateMutedText("StandardCimv2 returned no RSS setting rows."));
+            content.Children.Add(CreateMutedText("StandardCimv2 returned no physical adapter or RSS setting evidence."));
         }
         else
         {
@@ -722,7 +735,7 @@ public sealed partial class MainWindow
             if (inspection.NetworkRss.Adapters.Count > MaximumInspectorRowsPerSection)
             {
                 content.Children.Add(CreateMutedText(
-                    $"Showing the first {MaximumInspectorRowsPerSection} RSS rows; the provider returned {inspection.NetworkRss.Adapters.Count}."));
+                    $"Showing the first {MaximumInspectorRowsPerSection} network evidence rows; {inspection.NetworkRss.Adapters.Count} were captured."));
             }
         }
 
@@ -867,7 +880,9 @@ public sealed partial class MainWindow
         var stack = (StackPanel)panel.Child;
         stack.Children.Add(new TextBlock
         {
-            Text = "StandardCimv2 RSS",
+            Text = adapter.RssSettingsAvailable
+                ? "StandardCimv2 RSS"
+                : "Physical network adapter",
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("AccentBrush"),
@@ -881,14 +896,19 @@ public sealed partial class MainWindow
             Foreground = ThemeBrush("TextBrush"),
         });
         stack.Children.Add(CreateEvidenceLine(
-            "Provider state",
-            $"RSS {FormatNullableBoolean(adapter.Enabled)} · MSI {FormatNullableBoolean(adapter.MsiSupported)} · MSI-X supported {FormatNullableBoolean(adapter.MsiXSupported)} · MSI-X enabled {FormatNullableBoolean(adapter.MsiXEnabled)}"));
-        stack.Children.Add(CreateEvidenceLine(
-            "Capacity",
-            $"queues {FormatNullableNumber(adapter.NumberOfReceiveQueues)} · interrupt messages {FormatNullableNumber(adapter.NumberOfInterruptMessages)} · max processors {FormatNullableNumber(adapter.MaxProcessors)} · profile {FormatNullableNumber(adapter.Profile)}"));
-        stack.Children.Add(CreateEvidenceLine(
-            "Processor range",
-            $"base {FormatProcessor(adapter.BaseProcessorGroup, adapter.BaseProcessorNumber)} · max {FormatProcessor(adapter.MaxProcessorGroup, adapter.MaxProcessorNumber)} · NUMA {FormatNullableNumber(adapter.NumaNode)}"));
+            "RSS settings",
+            adapter.RssSettingsAvailable
+                ? $"RSS {FormatNullableBoolean(adapter.Enabled)} · MSI {FormatNullableBoolean(adapter.MsiSupported)} · MSI-X supported {FormatNullableBoolean(adapter.MsiXSupported)} · MSI-X enabled {FormatNullableBoolean(adapter.MsiXEnabled)}"
+                : "Not exposed by Windows/driver for this physical adapter"));
+        if (adapter.RssSettingsAvailable)
+        {
+            stack.Children.Add(CreateEvidenceLine(
+                "Capacity",
+                $"queues {FormatNullableNumber(adapter.NumberOfReceiveQueues)} · interrupt messages {FormatNullableNumber(adapter.NumberOfInterruptMessages)} · max processors {FormatNullableNumber(adapter.MaxProcessors)} · profile {FormatNullableNumber(adapter.Profile)}"));
+            stack.Children.Add(CreateEvidenceLine(
+                "Processor range",
+                $"base {FormatProcessor(adapter.BaseProcessorGroup, adapter.BaseProcessorNumber)} · max {FormatProcessor(adapter.MaxProcessorGroup, adapter.MaxProcessorNumber)} · NUMA {FormatNullableNumber(adapter.NumaNode)}"));
+        }
         stack.Children.Add(CreateSelectableEvidenceText(
             $"PnP correlation: {adapter.PnpCorrelation.Status} · {adapter.PnpCorrelation.PnpInstanceId ?? adapter.PnpCorrelation.Reason ?? "—"}"));
 

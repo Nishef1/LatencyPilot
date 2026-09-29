@@ -64,7 +64,7 @@ public static class NetworkEnvironmentContinuity
         if (matches.Length != 1)
         {
             return Unavailable(
-                "The selected PnP network adapter does not map uniquely to one current RSS provider row.");
+                "The selected PnP network adapter does not map uniquely to one current physical-adapter evidence row.");
         }
 
         return Capture(matches[0]);
@@ -75,12 +75,12 @@ public static class NetworkEnvironmentContinuity
         ArgumentNullException.ThrowIfNull(rss);
         if (!rss.PnpCorrelation.IsAvailable || string.IsNullOrWhiteSpace(rss.PnpCorrelation.PnpInstanceId))
         {
-            return Unavailable("The selected RSS row has no authoritative PnP identity.");
+            return Unavailable("The selected network adapter has no authoritative PnP identity.");
         }
 
         if (string.IsNullOrWhiteSpace(rss.InterfaceDescription))
         {
-            return Unavailable("The selected RSS row has no interface description for managed-interface correlation.");
+            return Unavailable("The selected network adapter has no interface description for managed-interface correlation.");
         }
 
         try
@@ -271,6 +271,7 @@ public static class NetworkEnvironmentContinuity
     private static bool RssMatches(NetworkRssAdapterSnapshot left, NetworkRssAdapterSnapshot right) =>
         StringEquals(left.Name, right.Name) &&
         StringEquals(left.InterfaceDescription, right.InterfaceDescription) &&
+        left.RssSettingsAvailable == right.RssSettingsAvailable &&
         left.Enabled == right.Enabled &&
         left.MsiSupported == right.MsiSupported &&
         left.MsiXSupported == right.MsiXSupported &&

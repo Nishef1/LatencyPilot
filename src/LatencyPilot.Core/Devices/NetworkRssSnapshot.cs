@@ -43,6 +43,8 @@ public sealed record NetworkRssAdapterSnapshot(
     IReadOnlyList<string> IndirectionTable,
     IReadOnlyList<string> RssProcessorArray)
 {
+    public bool RssSettingsAvailable { get; init; } = true;
+
     public bool? HardwareInterface { get; init; }
 
     public bool? ConnectorPresent { get; init; }
