@@ -118,9 +118,7 @@ public static class DeviceInterruptConfigurationStore
         using (var key = tx.CreateOrOpenKey(RegistryHive.LocalMachine, HardwareSubPath(original.DeviceInstanceId, AffinitySubKey)))
         {
             key.SetValue(DevicePolicyValue, unchecked((int)IrqPolicySpecifiedProcessors), RegistryValueKind.DWord);
-            var mask = new byte[8];
-            BinaryPrimitives.WriteUInt64LittleEndian(mask, candidate.AffinityMask);
-            key.SetValue(AssignmentSetOverrideValue, mask, RegistryValueKind.Binary);
+            SetAffinityMaskValue(key, original.AssignmentSetOverride, candidate.AffinityMask);
         }
         tx.Commit();
         if (!IsDeviceAffinityStored(Capture(original.DeviceInstanceId), candidate))
@@ -328,7 +326,74 @@ public static class DeviceInterruptConfigurationStore
     }
     private static bool ValuesEqual(RegistryValueSnapshot a, RegistryValueSnapshot b) => a.Exists == b.Exists && a.Kind == b.Kind && a.Data.AsSpan().SequenceEqual(b.Data);
     private static bool TryDword(RegistryValueSnapshot value, out uint result) { if (value.Exists && value.Kind == RegistryValueKind.DWord && value.Data.Length == 4) { result = BinaryPrimitives.ReadUInt32LittleEndian(value.Data); return true; } result = 0; return false; }
-    private static bool TryMask(RegistryValueSnapshot value, out ulong result) { if (value.Exists && value.Kind == RegistryValueKind.Binary && value.Data.Length is > 0 and <= 8) { Span<byte> p = stackalloc byte[8]; p.Clear(); value.Data.CopyTo(p); result = BinaryPrimitives.ReadUInt64LittleEndian(p); return true; } result = 0; return false; }
+    private static bool TryMask(RegistryValueSnapshot value, out ulong result)
+    {
+        if (!value.Exists)
+        {
+            result = 0;
+            return false;
+        }
+
+        switch (value.Kind)
+        {
+            case RegistryValueKind.DWord when value.Data.Length == sizeof(uint):
+                result = BinaryPrimitives.ReadUInt32LittleEndian(value.Data);
+                return true;
+            case RegistryValueKind.QWord when value.Data.Length == sizeof(ulong):
+                result = BinaryPrimitives.ReadUInt64LittleEndian(value.Data);
+                return true;
+            case RegistryValueKind.Binary when value.Data.Length is > 0 and <= sizeof(ulong):
+            {
+                Span<byte> padded = stackalloc byte[sizeof(ulong)];
+                padded.Clear();
+                value.Data.CopyTo(padded);
+                result = BinaryPrimitives.ReadUInt64LittleEndian(padded);
+                return true;
+            }
+            default:
+                result = 0;
+                return false;
+        }
+    }
+
+    private static void SetAffinityMaskValue(
+        TransactionalRegistryKey key,
+        RegistryValueSnapshot originalValue,
+        ulong affinityMask)
+    {
+        // Microsoft documents REG_BINARY, REG_DWORD and REG_QWORD for
+        // AssignmentSetOverride. Preserve an existing supported type when the
+        // new mask fits so LatencyPilot interoperates cleanly with IntPolicy,
+        // driver INF defaults and other documented tools instead of rewriting
+        // the representation just because it can.
+        if (originalValue.Exists &&
+            originalValue.Kind == RegistryValueKind.DWord &&
+            affinityMask <= uint.MaxValue)
+        {
+            key.SetValue(
+                AssignmentSetOverrideValue,
+                unchecked((int)(uint)affinityMask),
+                RegistryValueKind.DWord);
+            return;
+        }
+
+        if (originalValue.Exists &&
+            originalValue.Kind == RegistryValueKind.QWord)
+        {
+            key.SetValue(
+                AssignmentSetOverrideValue,
+                unchecked((long)affinityMask),
+                RegistryValueKind.QWord);
+            return;
+        }
+
+        var bytes = new byte[sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes, affinityMask);
+        key.SetValue(
+            AssignmentSetOverrideValue,
+            bytes,
+            RegistryValueKind.Binary);
+    }
     private static void ValidateCandidate(DeviceInterruptAffinityCandidate c)
     {
         if (c.ProcessorGroup != 0 ||

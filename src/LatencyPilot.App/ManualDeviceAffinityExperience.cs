@@ -213,7 +213,7 @@ public sealed partial class MainWindow
 
         var cpuOptions = topology.Cores
             .SelectMany(core => core.LogicalProcessors.Select(
-                processor => new ManualAffinityCpuOption(processor, core.Index)))
+                processor => new ManualAffinityCpuOption(processor, core.Index, core.EfficiencyClass)))
             .Where(static option => option.Processor.Group == 0 && option.Processor.Number < 64)
             .OrderBy(static option => option.Processor.Number)
             .ToArray();
@@ -255,7 +255,11 @@ public sealed partial class MainWindow
             .ThenBy(static row => row.Device.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return new ManualAffinitySnapshot(rows, cpuOptions, journalInspectionError);
+        return new ManualAffinitySnapshot(
+            rows,
+            cpuOptions,
+            topology.ProcessorGroupCount,
+            journalInspectionError);
     }
 
     private static ulong? TryGetPendingAffinityMask(MutationJournalEntry? entry)
@@ -368,6 +372,25 @@ public sealed partial class MainWindow
                 Child = new TextBlock
                 {
                     Text = $"{journalInspectionError} No recovery action is enabled until the journal can be read safely.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Style = AppStyle("CaptionTextStyle"),
+                    Foreground = ThemeBrush("SemanticAttentionBrush"),
+                },
+            });
+        }
+
+        if (snapshot.ProcessorGroupCount > 1)
+        {
+            host.Children.Add(new Border
+            {
+                Padding = new Thickness(10d),
+                CornerRadius = new CornerRadius(8d),
+                Background = ThemeBrush("SurfaceAltBrush"),
+                BorderBrush = ThemeBrush("BorderBrush"),
+                BorderThickness = new Thickness(1d),
+                Child = new TextBlock
+                {
+                    Text = $"This machine exposes {snapshot.ProcessorGroupCount.ToString(CultureInfo.InvariantCulture)} processor groups. The documented KAFFINITY editor in this development surface currently targets group 0 only; CPUs in other groups are intentionally not shown or mutated.",
                     TextWrapping = TextWrapping.Wrap,
                     Style = AppStyle("CaptionTextStyle"),
                     Foreground = ThemeBrush("SemanticAttentionBrush"),
@@ -1087,15 +1110,31 @@ public sealed partial class MainWindow
             {
                 var coreGroup = coreGroups[coreIndex];
                 var coreContent = new StackPanel { Spacing = 6d };
+                var coreOptions = coreGroup.ToArray();
+                var efficiencyClasses = snapshot.CpuOptions
+                    .Select(static option => option.EfficiencyClass)
+                    .Distinct()
+                    .ToArray();
+                var heterogeneous = efficiencyClasses.Length > 1;
+                var highestEfficiencyClass = efficiencyClasses.Length == 0
+                    ? (byte)0
+                    : efficiencyClasses.Max();
+                var coreEfficiencyClass = coreOptions[0].EfficiencyClass;
+                var coreType = heterogeneous
+                    ? coreEfficiencyClass == highestEfficiencyClass
+                        ? " · P-core"
+                        : " · E-core"
+                    : string.Empty;
+
                 coreContent.Children.Add(new TextBlock
                 {
-                    Text = $"Core {coreGroup.Key.ToString(CultureInfo.InvariantCulture)}",
+                    Text = $"Core {coreGroup.Key.ToString(CultureInfo.InvariantCulture)}{coreType}",
                     Style = AppStyle("MetricLabelTextStyle"),
                     Foreground = ThemeBrush("MutedTextBrush"),
                 });
 
                 var siblingGrid = new Grid { ColumnSpacing = 6d };
-                var siblings = coreGroup
+                var siblings = coreOptions
                     .OrderBy(static option => option.Processor.Number)
                     .ToArray();
                 for (var siblingIndex = 0; siblingIndex < siblings.Length; siblingIndex++)
@@ -1121,10 +1160,10 @@ public sealed partial class MainWindow
                     };
                     AutomationProperties.SetName(
                         cpuButton,
-                        $"CPU {option.Processor.Number.ToString(CultureInfo.InvariantCulture)}, physical core {option.PhysicalCoreIndex.ToString(CultureInfo.InvariantCulture)}");
+                        $"CPU {option.Processor.Number.ToString(CultureInfo.InvariantCulture)}, physical core {option.PhysicalCoreIndex.ToString(CultureInfo.InvariantCulture)}, efficiency class {option.EfficiencyClass.ToString(CultureInfo.InvariantCulture)}");
                     ToolTipService.SetToolTip(
                         cpuButton,
-                        $"Logical processor {option.Processor.Number.ToString(CultureInfo.InvariantCulture)} · physical core {option.PhysicalCoreIndex.ToString(CultureInfo.InvariantCulture)}");
+                        $"Logical processor {option.Processor.Number.ToString(CultureInfo.InvariantCulture)} · physical core {option.PhysicalCoreIndex.ToString(CultureInfo.InvariantCulture)} · efficiency class {option.EfficiencyClass.ToString(CultureInfo.InvariantCulture)}");
                     cpuButton.Checked += (_, _) =>
                     {
                         if (synchronizingCpuSelection)
@@ -1602,6 +1641,7 @@ public sealed partial class MainWindow
             3 => "All processors",
             4 => "Specified processors",
             5 => "Spread MSI messages",
+            6 => "Steered by Windows (system)",
             var value => $"Policy {Convert.ToString(value, CultureInfo.InvariantCulture)}",
         };
     }
@@ -1945,6 +1985,7 @@ public sealed partial class MainWindow
             3 => "All processors",
             4 => "Specified processors",
             5 => "Spread MSI messages",
+            6 => "Steered by Windows (system)",
             var value => $"Policy {Convert.ToString(value, CultureInfo.InvariantCulture)}",
         };
         var mask = configuration.AssignmentSetOverrideMask is { } affinity
@@ -1988,6 +2029,7 @@ public sealed partial class MainWindow
     private sealed record ManualAffinitySnapshot(
         IReadOnlyList<ManualAffinityDeviceRow> Rows,
         IReadOnlyList<ManualAffinityCpuOption> CpuOptions,
+        int ProcessorGroupCount,
         string? JournalInspectionError);
 
     private enum ManualAffinityActionChoice
@@ -2016,10 +2058,11 @@ public sealed partial class MainWindow
 
     private sealed record ManualAffinityCpuOption(
         LogicalProcessorId Processor,
-        int PhysicalCoreIndex)
+        int PhysicalCoreIndex,
+        byte EfficiencyClass)
     {
         public override string ToString() =>
-            $"CPU {Processor.Number.ToString(CultureInfo.InvariantCulture)} · core {PhysicalCoreIndex.ToString(CultureInfo.InvariantCulture)}";
+            $"CPU {Processor.Number.ToString(CultureInfo.InvariantCulture)} · core {PhysicalCoreIndex.ToString(CultureInfo.InvariantCulture)} · efficiency {EfficiencyClass.ToString(CultureInfo.InvariantCulture)}";
     }
 
     private sealed record ManualAffinityHelperReport(

@@ -121,6 +121,13 @@ public sealed class DeviceInterruptMutationTests
             "LatencyPilot must never tune MessageNumberLimit as part of bounded MSI enablement.");
         StringAssert.Contains(storeSource, "ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation",
             "The lowest public generic affinity write boundary must enforce inspection-only storage/System classes; exact Restore remains separate.");
+
+        StringAssert.Contains(storeSource, "RegistryValueKind.DWord when value.Data.Length == sizeof(uint)",
+            "AssignmentSetOverride must accept the documented REG_DWORD representation.");
+        StringAssert.Contains(storeSource, "RegistryValueKind.QWord when value.Data.Length == sizeof(ulong)",
+            "AssignmentSetOverride must accept the documented REG_QWORD representation.");
+        StringAssert.Contains(storeSource, "SetAffinityMaskValue",
+            "Affinity writes should preserve an existing supported mask representation when possible instead of forcing every foreign policy to REG_BINARY.");
         var txSource = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Service", "DeviceInterruptMutationTransaction.cs"));
         StringAssert.Contains(txSource, "MutationOperationLock.Acquire()");
         StringAssert.Contains(txSource, "ApplyRebootPending");
@@ -178,6 +185,15 @@ public sealed class DeviceInterruptMutationTests
             journalInspectorSource,
             "MutationJournalState.Kept",
             "A terminal Kept policy must remain legal during ordinary Service replacement while uninstall stays stricter.");
+
+        var manualUiSource = File.ReadAllText(Path.Combine(
+            root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
+        StringAssert.Contains(manualUiSource, "Steered by Windows (system)",
+            "IRQ policy value 6 must be presented as the system-reserved steering policy rather than an unknown number.");
+        StringAssert.Contains(manualUiSource, "P-core");
+        StringAssert.Contains(manualUiSource, "E-core");
+        StringAssert.Contains(manualUiSource, "processor groups",
+            "The manual editor must disclose its group-0-only KAFFINITY boundary instead of silently hiding additional processor groups.");
 
         var manualRunnerSource = File.ReadAllText(Path.Combine(
             root, "tools", "LatencyPilot.GateAValidation", "ManualDeviceAffinityRunner.cs"));
