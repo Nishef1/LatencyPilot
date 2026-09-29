@@ -185,11 +185,28 @@ public sealed class NetworkRssTests
         var before = new NetworkEnvironmentContinuitySnapshot(
             adapter.InstanceId,
             rss,
-            targetInterface,
+            targetInterface with
+            {
+                BytesReceived = 1_000,
+                BytesSent = 2_000,
+            },
             [targetInterface.InterfaceId],
             new SystemAwakeTimeSnapshot(1_000, 10_000_000));
-        var after = before with { AwakeTime = new SystemAwakeTimeSnapshot(21_000, 210_000_000) };
+        var after = before with
+        {
+            AwakeTime = new SystemAwakeTimeSnapshot(21_000, 210_000_000),
+            TargetInterface = before.TargetInterface with
+            {
+                BytesReceived = 5_000,
+                BytesSent = 2_500,
+            },
+        };
         Assert.IsTrue(NetworkEnvironmentContinuity.Evaluate(before, after).IsStable);
+        var traffic = NetworkEnvironmentContinuity.MeasureTraffic(before, after);
+        Assert.IsTrue(traffic.IsAvailable);
+        Assert.IsTrue(traffic.HasTraffic);
+        Assert.AreEqual(4_000L, traffic.BytesReceived);
+        Assert.AreEqual(500L, traffic.BytesSent);
         Assert.IsFalse(NetworkEnvironmentContinuity.Evaluate(
             before,
             after with { UpInterfaceIds = [targetInterface.InterfaceId, "vpn-interface"] }).IsStable);
