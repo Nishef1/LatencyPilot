@@ -143,7 +143,7 @@ public sealed partial class MainWindow
                 _gateAValidationStateText.Text = "Evidence-ready";
                 ApplyGateAStateBadgeBrushes("SemanticGoodBrush", "SemanticGoodSoftBrush");
                 _gateAValidationButton.Content = "Run Gate A";
-                _gateAValidationButton.IsEnabled = !_measurementBusy && !_gateAValidationRunning;
+                _gateAValidationButton.IsEnabled = !_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning;
                 GpuGateAEntryButton.IsEnabled = _gateAValidationButton.IsEnabled;
                 AutomationProperties.SetName(_gateAValidationButton, "Run evidence-ready GPU Gate A validation");
                 ToolTipService.SetToolTip(
@@ -158,7 +158,7 @@ public sealed partial class MainWindow
                 _gateAValidationStateText.Text = "Development only";
                 ApplyGateAStateBadgeBrushes("SemanticAttentionBrush", "SemanticAttentionSoftBrush");
                 _gateAValidationButton.Content = "Run development validation";
-                _gateAValidationButton.IsEnabled = !_measurementBusy && !_gateAValidationRunning;
+                _gateAValidationButton.IsEnabled = !_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning;
                 GpuGateAEntryButton.IsEnabled = _gateAValidationButton.IsEnabled;
                 AutomationProperties.SetName(_gateAValidationButton, "Run development-only GPU affinity validation");
                 ToolTipService.SetToolTip(
@@ -215,9 +215,9 @@ public sealed partial class MainWindow
             return;
         }
 
-        if (_measurementBusy || _gateAValidationRunning)
+        if (_measurementBusy || _gateAValidationRunning || _usbSubsystemRunning)
         {
-            SetGateAValidationStatus("GPU Gate A is unavailable while another measurement is running.");
+            SetGateAValidationStatus("GPU Gate A is unavailable while another measurement or USB/xHCI session is running.");
             return;
         }
 

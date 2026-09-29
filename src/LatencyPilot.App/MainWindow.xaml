@@ -570,7 +570,7 @@
                                             <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
                                                 <StackPanel Spacing="5">
                                                     <TextBlock Text="USB / xHCI" Style="{StaticResource MetricLabelTextStyle}" />
-                                                    <TextBlock Text="Resolve the exact input controller and run its own readiness, selection, and verification flow." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
+                                                    <TextBlock Text="Resolve the exact input controller, capture fresh headroom, recommend a CPU, then verify/rollback independently." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
                                                 </StackPanel>
                                             </Border>
                                             <Border Grid.Column="2" Style="{StaticResource MetricTileStyle}">
@@ -769,8 +769,8 @@
                                                     Click="UsbSubsystemButton_Click"
                                                     Style="{StaticResource SecondaryButtonStyle}"
                                                     HorizontalAlignment="Left"
-                                                    AutomationProperties.Name="Check USB xHCI evidence">
-                                                <TextBlock Text="Check USB / xHCI" />
+                                                    AutomationProperties.Name="Run USB xHCI">
+                                                <TextBlock Text="Run USB / xHCI" />
                                             </Button>
                                         </StackPanel>
                                     </Border>

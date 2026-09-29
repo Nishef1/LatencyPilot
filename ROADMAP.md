@@ -49,8 +49,8 @@ A development-only **Interrupt Policy Lab**, independent of GPU Gate A, may insp
 
 The 2026-09-28 cross-check against Windows interrupt-affinity/RSS semantics, maintained community tools and field reports changes the expansion order, not the current v1 scope:
 
-1. **Finish v1 before adding another optimizer.** GPU → exact primary-input xHCI remains the only automatic v1 mutation sequence.
-2. **Physical NIC/RSS is the first post-v1 candidate, not a v1 requirement.** Start read-only: identify the real physical NIC, RSS capability/profile/queue count, current RSS processor set, per-CPU network interrupt/DPC evidence and MSI/MSI-X context. Device interrupt affinity and RSS steering are separate mechanisms and must remain separate in the model.
+1. **Finish v1 before adding another optimizer.** GPU and exact primary-input xHCI remain the only mutation-capable v1 domains, exposed as separate subsystem actions. A later orchestrator may sequence them without merging their authority.
+2. **Physical NIC/RSS mutation is the first post-v1 candidate, not a v1 requirement.** v1 already exposes a separate read-only Network/RSS evidence action for physical-NIC identity, RSS capability/profile/queue count, current RSS processor set and MSI/MSI-X context. Device interrupt affinity and RSS steering are separate mechanisms and must remain separate in the model.
 3. **Do not create a GPU-style single-CPU NIC tournament.** RSS is intentionally multi-CPU and can align MSI-X messages with receive queues. Any future network mutation needs its own ADR/methodology and must compare a small bounded RSS-aware configuration set under controlled local/kernel evidence.
 4. **Do not use public Internet speed tests as decision authority.** Kernel/NDIS counters, ETW/per-CPU interrupt evidence and, when available, a controlled local peer are the acceptable evidence sources. Existing checksum/LSO/RSC/interrupt-moderation defaults are not blindly disabled; each has workload-dependent tradeoffs.
 5. **Storage stays diagnostics-only.** Inventory, driver identity and DPC/ISR evidence may be reported, but LatencyPilot will not automatically or manually tune NVMe/SATA/Storport affinity, MSI/MSI-X layout or queue topology.
@@ -83,7 +83,7 @@ The v1 workflow, safety boundary and rollback owner are unambiguous without chat
 
 ## Phase 1 — Preflight and exact snapshot
 
-**State: MOST SOURCE EXISTS; INTEGRATED V1 PREFLIGHT OPEN**
+**State: MOST SOURCE EXISTS; PER-SUBSYSTEM PREFLIGHT UX OPEN**
 
 Available:
 
@@ -97,16 +97,16 @@ Available:
 
 Remaining:
 
-- [ ] one integrated **Optimize Interrupt Affinity** preflight;
+- [ ] per-subsystem preflight/status surface for GPU and USB/xHCI;
 - [ ] quiet/background-load check with actionable warning rather than killing user apps;
-- [ ] combined GPU + xHCI baseline snapshot owned by one product session;
+- [ ] explicit GPU-reservation handoff contract for USB/xHCI without sharing Gate A authority;
 - [ ] explicit pending-reboot/multi-GPU/unsupported-topology user-facing stop reason.
 
 ---
 
 ## Phase 2 — Baseline interrupt evidence
 
-**State: MEASUREMENT ENGINE EXISTS; INTEGRATED V1 DEEP BASELINE OPEN**
+**State: MEASUREMENT ENGINE EXISTS; PER-SUBSYSTEM DEEP BASELINE INTEGRATION OPEN**
 
 Available:
 
@@ -119,7 +119,7 @@ Available:
 
 Remaining:
 
-- [ ] wire the deep baseline into the automatic workflow;
+- [ ] wire the deep baseline into the applicable subsystem actions without creating a shared hidden score;
 - [ ] persist before values needed by final comparison: per-CPU DPC/ISR counts, total duration, tail duration and module attribution;
 - [ ] surface quiet-condition warnings without making background-app closure a blind hard requirement.
 
@@ -229,23 +229,24 @@ Public mutation IPC remains unarmed until this physical gate passes.
 
 ## Phase 5 — Automatic USB/input CPU selection
 
-**State: READ-ONLY AUTOMATIC RECOMMENDATION SOURCE IMPLEMENTED; PHYSICAL EVIDENCE PENDING**
+**State: INDEPENDENT READINESS/RECOMMENDATION ACTION IMPLEMENTED; PHYSICAL EVIDENCE PENDING**
 
-- [x] Raw Input identity, with explicit primary-mouse handoff into the post-GPU Gate A recommendation; multiple exact mouse routes require an explicit user choice rather than heuristic substitution;
+- [x] independent USB/xHCI Devices-page action owns explicit primary-mouse selection; multiple exact mouse routes require an explicit user choice rather than heuristic substitution;
 - [x] PnP ancestry;
 - [x] USB hub/port correlation;
 - [x] exact xHCI controller identity;
 - [x] Raw Input host timing metrics;
 - [x] candidate-aware xHCI ISR runtime-placement verifier with fail-closed shared-controller disambiguation;
-- [x] post-GPU quiet ETW headroom capture after verified GPU Keep;
+- [x] independent elevated quiet ETW headroom capture owned by the USB/xHCI action;
+- [x] resolve a separately verified current GPU reservation when available; no reservation is invented;
+- [x] without a verified GPU reservation, produce DiagnosticOnly ranking and refuse automatic Apply;
 - [x] keep GPU and xHCI decisions sequential: no second per-CPU USB tournament and no joint weighted/Pareto score;
-- [x] exclude the whole physical core containing the GPU winner, including SMT sibling;
+- [x] exclude the whole physical core containing the verified GPU reservation, including SMT sibling;
 - [x] rank CPU headroom by total DPC+ISR duration, then p99 interrupt tail, then event-count context;
 - [x] bind recommendation to the exact interrupt-owning xHCI controller;
 - [x] on shared-service multi-xHCI systems, exclude CPUs that overlap readable peer-controller translated allocation and fail closed when peer allocation is unavailable;
-- [x] persist route/controller/CPU and transparent reason in Gate A evidence;
+- [x] independent USB result renders controller/CPU/reason without modifying or extending GPU Gate A reports;
 - [ ] representative physical input/xHCI evidence;
-- [x] development Gate A result renders the persisted primary-input/xHCI recommendation and reason without recomputing it;
 - [ ] normal-user rendering in the integrated product workflow after physical arming gates.
 
 ---
@@ -258,27 +259,28 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] exact stored-state snapshot and durable journal integration;
 - [x] restart-required/reboot-pending state plus exact rollback/recovery source;
 - [x] fail-closed controller-specific ETW runtime-placement verifier primitive for either one present `USBXHCI` service instance or multiple same-service controllers whose translated allocations are all readable and disjoint from the requested mask; unknown/overlapping peer allocation remains ambiguous;
-- [x] candidate-aware xHCI runtime verification is integrated into the elevated manual validation path, including exact rollback on failed verification;
-- [ ] integrate the same verified xHCI path into the normal automatic product orchestration after the physical GPU/mutation gates close;
-- [x] development/manual xHCI verification captures a bounded host-observable Raw Input timing sanity sample concurrently with ETW when one exact mouse route owns the controller; ambiguous/no-mouse routes remain explicitly unavailable and never weaken the ETW Keep gate;
-- [ ] integrated rollback of USB/xHCI while preserving a proven GPU winner when USB verification fails;
-- [ ] representative high-polling hardware physical evidence.
+- [x] candidate-aware xHCI runtime verification is integrated into the elevated mutation substrate, including exact rollback on failed verification;
+- [x] the independent USB/xHCI development action calls that same bounded Apply/verify/rollback substrate only after a Ready recommendation;
+- [x] reboot-pending xHCI state is detected from the durable journal and resumed with the exact owned mask instead of planning a new candidate;
+- [x] development xHCI verification captures a bounded host-observable Raw Input timing sanity sample concurrently with ETW when one exact mouse route owns the controller; ambiguous/no-mouse routes remain explicitly unavailable and never weaken the ETW Keep gate;
+- [x] USB verification failure rolls back only the xHCI-owned state and does not rewrite a separately retained GPU state;
+- [ ] representative high-polling hardware physical evidence;
+- [ ] public typed product mutation arming after the physical gates close.
 
 ---
 
 ## Phase 7 — One reboot and post-login verification
 
-**State: DEVICE-INTERRUPT REBOOT/RECOVERY PRIMITIVES IMPLEMENTED; COMBINED PRODUCT WORKFLOW OPEN**
+**State: DEVICE-INTERRUPT REBOOT/RECOVERY PRIMITIVES IMPLEMENTED; INDEPENDENT USB RESUME WIRED**
 
 - [x] durable journal survives interruption/restart;
 - [x] recovery re-reads actual machine state;
 - [x] GPU restart/reboot-required detection primitives;
 - [x] generic device-interrupt apply/rollback reboot-pending + resume source;
-- [ ] persist one combined GPU+xHCI pending-verification product session;
-- [ ] request one product-level reboot when required;
-- [ ] post-login verify stored GPU/xHCI policies as one session;
-- [ ] prove runtime GPU and xHCI interrupt placement;
-- [ ] restore baseline if either managed state cannot be verified.
+- [x] independent USB/xHCI UI detects an owned ApplyRebootPending controller candidate and resumes the exact journal mask;
+- [ ] physically verify the independent xHCI reboot/resume path;
+- [ ] public product reboot/resume UX after mutation arming;
+- [ ] restore only the subsystem whose owned state cannot be verified, preserving independently proven state elsewhere.
 
 ---
 
@@ -298,22 +300,27 @@ Public mutation IPC remains unarmed until this physical gate passes.
 
 ## Phase 9 — Normal-user v1 UX and release
 
-**State: DEVELOPMENT RESULT UX + RELEASE FOUNDATIONS EXIST; FINAL ONE-BUTTON PRODUCT FLOW OPEN**
+**State: SEPARATE DEVELOPMENT SUBSYSTEM SURFACES + RELEASE FOUNDATIONS EXIST; PRODUCT ARMING OPEN**
 
 Target normal-user surface:
 
 ```text
-Optimize Interrupt Affinity
+GPU
+Run GPU optimization
+→ GPU-only progress/result/Keep-or-Restore
 
-✓ Hardware detected
-✓ Baseline captured
-✓ GPU hypotheses tested
-✓ GPU target selected and verified, or Original retained safely
-✓ Input/xHCI CPU selected and verified
-↻ Restart if required
+USB / xHCI
+Run USB/xHCI optimization
+→ exact input route → headroom → Apply/verify/rollback
+
+Network / RSS
+Analyze network / RSS
+→ read-only evidence in v1
 
 Restore original settings
 ```
+
+A later optional `Optimize all` action may sequence already-proven GPU and USB actions, but it is not required for v1 and must not collapse their progress, evidence, verification or rollback authority.
 
 - [x] non-elevated WinUI shell;
 - [x] development GPU Gate A progress and safe-stop experience;
@@ -325,8 +332,8 @@ Restore original settings
 - [x] self-contained Windows 11 x64 App/Service release source;
 - [x] install/upgrade/uninstall recovery checks and signing hooks;
 - [ ] real Windows render inspection in light/dark/high-contrast and text scaling;
-- [ ] integrated normal-user `Optimize Interrupt Affinity` orchestration;
-- [ ] concise final product before/after result UI;
+- [ ] arm typed normal-user GPU and USB mutation actions after physical gates close;
+- [ ] concise per-subsystem before/after result UI;
 - [ ] prominent Restore original settings;
 - [ ] physical accessibility/keyboard pass;
 - [ ] signed package, clean-machine install, upgrade/uninstall and recovery validation.
@@ -356,4 +363,4 @@ Hosted CI proves software contracts only. It does not close physical Gate A or s
 
 Repository/source completion means every v1 source outcome is implemented or explicitly gated by a documented physical safety prerequisite, canonical docs match actual source, and the exact final HEAD is green in hosted Tests.
 
-True v1 completion additionally requires physical GPU Gate A, xHCI apply/verify, combined reboot/recovery, final before/after UX, accessibility/runtime validation and signed package/install/upgrade/uninstall evidence.
+True v1 completion additionally requires physical GPU Gate A, independent xHCI apply/verify/reboot-resume evidence, final per-subsystem before/after UX, accessibility/runtime validation and signed package/install/upgrade/uninstall evidence.

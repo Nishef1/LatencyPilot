@@ -60,6 +60,28 @@ public sealed class UsbOptimizationTests
         Assert.AreEqual(controller.InstanceId, recommendation.ControllerInstanceId);
         Assert.AreEqual(new LogicalProcessorId(0, 3), recommendation.Processor);
 
+        var independentWithoutGpuReservation = UsbAffinityRecommendationPlanner.CreateIndependent(
+            topology,
+            capture,
+            inventory,
+            raw.PnPInstanceId!,
+            deviceInventory: null,
+            reservedGpuProcessor: null);
+        Assert.AreEqual(
+            UsbAffinityRecommendationStatus.DiagnosticOnly,
+            independentWithoutGpuReservation.Status,
+            "An independent USB run may rank CPU headroom without a GPU reservation, but it must not authorize Apply.");
+        Assert.IsTrue(independentWithoutGpuReservation.HasCandidate);
+        Assert.IsFalse(independentWithoutGpuReservation.IsReady);
+
+        var noReservationRanking = UsbAffinityCpuSelector.Rank(
+            topology,
+            capture,
+            reservedGpuProcessor: null);
+        Assert.IsTrue(
+            noReservationRanking.Any(static candidate => candidate.Processor.Number is 0 or 1),
+            "Independent USB diagnostics must not silently invent a GPU-core exclusion when no verified GPU reservation was supplied.");
+
         var otherRaw = raw with { DeviceInterfacePath = "\\\\?\\HID#VID_OTHER", PnPInstanceId = "HID\\VID_OTHER" };
         var otherControllerId = "PCI\\VEN_TEST&DEV_OTHER_XHCI";
         var otherRoute = route with

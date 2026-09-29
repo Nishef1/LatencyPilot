@@ -144,6 +144,20 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(deviceEvidenceUi, "NetworkSubsystemButton_Click",
             "Network/RSS must have an independent user action.");
 
+        var usbXhciUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "UsbXhciExperience.cs"));
+        StringAssert.Contains(usbXhciUi, "--usb-xhci-readiness",
+            "USB/xHCI must own an independent elevated readiness run rather than borrowing GPU Gate A.");
+        StringAssert.Contains(usbXhciUi, "RunManualAffinityHelperAsync",
+            "A readiness-approved USB recommendation must reuse the journaled xHCI apply/verify/rollback substrate.");
+        StringAssert.Contains(usbXhciUi, "TryResolveCurrentVerifiedGpuReservation",
+            "Automatic USB Apply must require an independently verified current GPU reservation instead of inventing an exclusion.");
+
+        var usbXhciRunner = File.ReadAllText(Path.Combine(root, "tools", "LatencyPilot.GateAValidation", "UsbXhciReadinessRunner.cs"));
+        StringAssert.Contains(usbXhciRunner, "CreateIndependent");
+        StringAssert.Contains(usbXhciRunner, "KernelLatencyCapture.Capture");
+        Assert.IsFalse(usbXhciRunner.Contains("GateAClosureEligible", StringComparison.Ordinal),
+            "USB/xHCI readiness must not inherit GPU Gate A closure authority.");
+
         var reportContract = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Core", "Benchmarking", "GpuAutoAffinityReport.cs"));
         StringAssert.Contains(reportContract, "screening-logical");
         Assert.IsFalse(reportContract.Contains("screening-representative", StringComparison.Ordinal));

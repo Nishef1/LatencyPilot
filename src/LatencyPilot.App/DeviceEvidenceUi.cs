@@ -143,24 +143,8 @@ public sealed partial class MainWindow
             OverflowException or
             COMException;
 
-    private async void UsbSubsystemButton_Click(object sender, RoutedEventArgs e)
-    {
-        UsbSubsystemButton.IsEnabled = false;
-        try
-        {
-            var inspection = await Task.Run(CaptureDeviceEvidenceInspection);
-            await ShowUsbSubsystemDialogAsync(inspection);
-        }
-        catch (Exception exception) when (IsRecoverableDeviceEvidenceException(exception))
-        {
-            Logger.Error(exception, "USB/xHCI evidence inspection failed.");
-            UsbEvidenceText.Text = "USB/xHCI evidence unavailable";
-        }
-        finally
-        {
-            UsbSubsystemButton.IsEnabled = true;
-        }
-    }
+    private async void UsbSubsystemButton_Click(object sender, RoutedEventArgs e) =>
+        await RunUsbXhciWorkflowAsync();
 
     private async void NetworkSubsystemButton_Click(object sender, RoutedEventArgs e)
     {
@@ -179,42 +163,6 @@ public sealed partial class MainWindow
         {
             NetworkSubsystemButton.IsEnabled = true;
         }
-    }
-
-    private async Task ShowUsbSubsystemDialogAsync(DeviceEvidenceInspection inspection)
-    {
-        var content = new StackPanel { Spacing = 12 };
-        content.Children.Add(CreateMutedText(
-            "USB/xHCI is a separate subsystem action. This view resolves the input route and controller evidence only; GPU Gate A does not choose or recommend a USB CPU."));
-
-        var controllers = inspection.RepresentativeDevices
-            .Where(static item => item.Kind == RepresentativeDeviceKind.XhciController)
-            .ToArray();
-        AddSectionHeading(content, "xHCI controllers");
-        if (controllers.Length == 0)
-        {
-            content.Children.Add(CreateMutedText("No present USBXHCI controller was found in the representative device inventory."));
-        }
-        else
-        {
-            foreach (var controller in controllers)
-            {
-                content.Children.Add(BuildDeviceEvidencePanel(controller));
-            }
-        }
-
-        AddSectionHeading(content, "Input routes and USB ports");
-        content.Children.Add(CreateMutedText(string.Create(
-            CultureInfo.InvariantCulture,
-            $"{inspection.InputRoutes.Routes.Count:N0} Raw Input route(s) · {inspection.InputRoutes.UsbBackedRouteCount:N0} USB-backed · {inspection.InputRoutes.ExactUsbPortRouteCount:N0} exact hub/port match(es).")));
-        foreach (var route in inspection.InputRoutes.Routes
-                     .Where(static route => route.IsUsbBacked)
-                     .Take(MaximumInspectorRowsPerSection))
-        {
-            content.Children.Add(BuildInputRoutePanel(route));
-        }
-
-        await ShowFocusedDeviceEvidenceDialogAsync("USB / xHCI evidence", content);
     }
 
     private async Task ShowNetworkSubsystemDialogAsync(DeviceEvidenceInspection inspection)

@@ -28,6 +28,11 @@ internal static partial class GateAOneClickProgram
             return await GpuAutoAffinityGateARunner.RunAsync(args);
         }
 
+        if (args.Contains(UsbXhciReadinessRunner.ModeFlag, StringComparer.Ordinal))
+        {
+            return await UsbXhciReadinessRunner.RunAsync(args);
+        }
+
         GateAOptions? options = null;
         var steps = new List<GateAStepReport>();
         var startedAtUtc = DateTimeOffset.UtcNow;

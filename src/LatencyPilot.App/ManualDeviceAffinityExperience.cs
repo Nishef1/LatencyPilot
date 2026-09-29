@@ -60,10 +60,10 @@ public sealed partial class MainWindow
             return;
         }
 
-        if (_gateAValidationRunning)
+        if (_gateAValidationRunning || _usbSubsystemRunning)
         {
             ManualDeviceAffinityStatusText.Text =
-                "Manual affinity is blocked while GPU Gate A owns the mutation/measurement session.";
+                "Manual affinity is blocked while GPU Gate A or the USB/xHCI workflow owns the mutation/measurement session.";
             return;
         }
 
@@ -1734,11 +1734,11 @@ public sealed partial class MainWindow
             return;
         }
 
-        if (_gateAValidationRunning)
+        if (_gateAValidationRunning || _usbSubsystemRunning)
         {
             SetManualAffinityStatus(
                 dialogStatusText,
-                "Manual affinity is blocked while GPU Gate A owns the mutation/measurement session.",
+                "Manual affinity is blocked while GPU Gate A or the USB/xHCI workflow owns the mutation/measurement session.",
                 "SemanticAttentionBrush");
             return;
         }

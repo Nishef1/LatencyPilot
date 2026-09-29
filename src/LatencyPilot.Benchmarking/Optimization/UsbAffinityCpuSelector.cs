@@ -23,29 +23,39 @@ public static class UsbAffinityCpuSelector
     public static IReadOnlyList<UsbAffinityCpuCandidate> Rank(
         ProcessorTopologySnapshot topology,
         KernelLatencyCaptureResult capture,
-        LogicalProcessorId gpuWinner)
+        LogicalProcessorId gpuWinner) =>
+        Rank(topology, capture, (LogicalProcessorId?)gpuWinner);
+
+    public static IReadOnlyList<UsbAffinityCpuCandidate> Rank(
+        ProcessorTopologySnapshot topology,
+        KernelLatencyCaptureResult capture,
+        LogicalProcessorId? reservedGpuProcessor)
     {
         ArgumentNullException.ThrowIfNull(topology);
         ArgumentNullException.ThrowIfNull(capture);
 
-        if (topology.ProcessorGroupCount != 1 || gpuWinner.Group != 0)
+        if (topology.ProcessorGroupCount != 1 ||
+            reservedGpuProcessor is { Group: not 0 })
         {
             throw new NotSupportedException(
                 "Automatic USB/xHCI affinity v1 currently requires one processor group.");
         }
 
-        var gpuCore = topology.Cores.SingleOrDefault(core =>
-            core.LogicalProcessors.Contains(gpuWinner))
-            ?? throw new ArgumentException(
-                "The GPU winner does not exist in the supplied processor topology.",
-                nameof(gpuWinner));
+        var reservedGpuCoreIndex = reservedGpuProcessor is { } gpuProcessor
+            ? topology.Cores.SingleOrDefault(core =>
+                core.LogicalProcessors.Contains(gpuProcessor))?.Index
+                ?? throw new ArgumentException(
+                    "The reserved GPU processor does not exist in the supplied processor topology.",
+                    nameof(reservedGpuProcessor))
+            : (int?)null;
 
         var ranked = new List<UsbAffinityCpuCandidate>();
         foreach (var core in topology.Cores)
         {
-            // Do not place xHCI on the same physical core as the GPU winner,
-            // including its SMT sibling.
-            if (core.Index == gpuCore.Index)
+            // When a separately verified GPU reservation is available, keep xHCI
+            // off that entire physical core, including its SMT sibling. Independent
+            // USB diagnostics may rank without a reservation, but cannot auto-apply.
+            if (reservedGpuCoreIndex is { } excludedCore && core.Index == excludedCore)
             {
                 continue;
             }

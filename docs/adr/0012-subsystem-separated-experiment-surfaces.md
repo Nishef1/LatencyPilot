@@ -80,6 +80,20 @@ That orchestration must preserve each subsystem's own:
 
 It must not turn GPU Gate A back into an umbrella session.
 
+## Implemented source shape
+
+The development App now reflects this decision directly:
+
+- Devices exposes independent GPU, USB/xHCI and Network/RSS actions;
+- GPU Gate A no longer resolves primary input or emits new USB recommendations;
+- USB/xHCI owns an elevated readiness runner with fresh kernel ETW headroom evidence;
+- USB/xHCI produces `DiagnosticOnly` ranking when no separately verified GPU reservation is available and refuses automatic Apply in that state;
+- when a Ready recommendation exists, the USB action reuses the bounded journaled xHCI Apply/runtime-verify/rollback path directly rather than routing through Policy Lab;
+- an owned `ApplyRebootPending` xHCI candidate is resumed with its exact journaled mask before any new recommendation;
+- Network/RSS remains a separate read-only action in v1.
+
+Public Service mutation remains unarmed; these development actions do not bypass the physical/product arming gates.
+
 ## Consequences
 
 ### Positive

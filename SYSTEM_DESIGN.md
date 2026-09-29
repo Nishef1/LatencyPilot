@@ -336,22 +336,24 @@ Uses real paired screening for selected logical CPUs, reports the best observed 
 
 Captures bounded Original-only observations with no affinity mutation or restart. It measures variability only.
 
-## 11. Input/xHCI path
+## 11. Independent input/xHCI path
 
-After a verified GPU Keep, current design:
+USB/xHCI is a separate subsystem action from GPU Gate A. Current development design:
 
-1. stop the GPU benchmark workload;
-2. capture fresh quiet interrupt-headroom evidence;
-3. resolve primary Raw Input through USB topology to the exact xHCI controller;
-4. exclude the whole physical core containing the GPU winner;
-5. rank remaining logical CPUs by interrupt-duration/tail evidence, with counts as context;
-6. bind recommendation to the interrupt-owning controller;
-7. apply only after the shared mutation/recovery substrate is physically proven;
-8. verify controller-specific runtime placement;
-9. when one exact mouse route owns that controller, capture bounded Raw Input report-interval timing concurrently as host-observable sanity evidence; ambiguity or unavailable input activity does not weaken or replace ETW placement authority;
-10. rollback xHCI safely on verification failure.
+1. resolve or explicitly select one primary Raw Input mouse with an exact USB hub/port/xHCI route;
+2. inspect durable xHCI journal ownership first; if the routed controller has an `ApplyRebootPending` candidate, resume that exact owned mask instead of planning a new one;
+3. independently resolve the latest Full GPU Keep report that is source/evidence eligible, terminally verified, still matches the current GPU driver version and still matches the current stored GPU affinity policy;
+4. capture fresh elevated quiet kernel interrupt-headroom evidence owned by the USB action;
+5. when a verified GPU reservation exists, exclude its entire physical core; without one, rank diagnostically but mark the recommendation `DiagnosticOnly`;
+6. rank logical CPUs by interrupt-duration/tail evidence, with counts as context;
+7. bind the recommendation to the interrupt-owning controller and fail closed when same-service peer xHCI allocation makes controller attribution ambiguous;
+8. only a `Ready` recommendation with a verified GPU reservation may enter the automatic development Apply path;
+9. reuse the bounded journal/restart/rollback mutation substrate for the xHCI controller;
+10. require translated allocation plus controller-specific requested-mask-only runtime ISR placement before Keep;
+11. when one exact mouse route owns that controller, capture bounded Raw Input report-interval timing concurrently as host-observable sanity evidence; ambiguity or unavailable input activity does not weaken or replace ETW placement authority;
+12. rollback only the xHCI-owned state on verification failure, preserving independently retained GPU state.
 
-The GPU and xHCI choices are sequential, not a generic Pareto optimizer.
+The GPU and xHCI choices are sequential, but their UI, progress, evidence and closure authority are independent. They are not a generic Pareto optimizer.
 
 ### Development manual device-affinity surface
 
@@ -361,7 +363,7 @@ For every manual change, the stored candidate must survive activation/restart ha
 
 HDAudio **MSI enablement** remains disabled. The helper may recognize `AudioMsi` only to restore exact journal-owned MSI state from the superseded development lab; it cannot start or Keep a new HDAudio MSI experiment. This recovery compatibility exists so removing the invalid verifier does not strand an owned mutation. Current manual audio/network/HID affinity edits are policy edits only unless Windows exposes translated allocation. Storage and Windows System-class infrastructure are inspection-only for new mutations; any older journal-owned state can still be restored. For NICs, RSS/MSI-X steering is a separate NDIS mechanism and is never conflated with this device policy.
 
-This developer surface is separate from public product IPC and does not expand the automatic v1 optimizer beyond GPU + primary-input xHCI. `MutationAvailable=false` remains required until the physical/product arming gates close.
+This developer surface is separate from public product IPC. GPU Gate A, USB/xHCI and Network/RSS remain separate subsystem surfaces; the manual Policy Lab is not their automatic entry point. `MutationAvailable=false` remains required until the physical/product arming gates close.
 
 ## 11.1 Post-v1 subsystem expansion boundary
 

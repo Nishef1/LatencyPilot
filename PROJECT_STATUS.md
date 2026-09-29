@@ -55,18 +55,18 @@ preflight / quiet-context capture
 
 NIC/RSS mutation, audio affinity, BIOS/HAGS/MSI/power changes and a generic cross-subsystem optimizer remain outside the v1 automatic path.
 
-The v1 decisions are deliberately sequential: GPU benchmark evidence owns only the GPU decision; after the GPU reaches a verified terminal state, one fresh quiet ETW headroom capture selects the primary-input xHCI CPU. There is no joint GPU/xHCI weighted score and no second per-CPU USB benchmark.
+The v1 decisions are deliberately sequential **but exposed as separate actions**. GPU benchmark evidence owns only the GPU decision. The independent USB/xHCI action may consume a separately verified current GPU reservation as an exclusion input, then performs its own fresh quiet ETW headroom capture and controller-bound selection. There is no joint GPU/xHCI weighted score and no second per-CPU USB tournament.
 
 ### 2026-09-28 scope reconciliation
 
 Research and source review found four scope contradictions and resolves them without widening v1:
 
-- an earlier expansion idea would have made physical NIC/RSS the third automatic v1 stage, but Windows RSS is a separate multi-CPU receive-steering mechanism and MSI-X can align interrupts with RSS queues. **Decision:** keep NIC/RSS outside v1; after v1 closure, start with read-only physical-NIC/RSS evidence and require a dedicated ADR/method before any mutation;
+- an earlier expansion idea would have made physical NIC/RSS the third automatic mutation stage, but Windows RSS is a separate multi-CPU receive-steering mechanism and MSI-X can align interrupts with RSS queues. **Decision:** keep a separate read-only Network/RSS evidence action in v1, keep NIC/RSS mutation outside v1, and require a dedicated ADR/method plus physical evidence before any future mutation;
 - the development manual picker previously allowed generic storage/system-device affinity edits, while the owner direction and Windows storage/platform architecture argue against LatencyPilot tuning them. **Resolved:** storage and Windows System-class infrastructure are now inspection-only for new mutations in both UI and elevated helper; journal-owned Restore remains available;
 - a generic WDF stack-attribution/optimizer layer was considered to explain every remaining hotspot. **Decision:** do not build it preemptively; use existing module evidence and exact xHCI routing first, then add deeper attribution only for an unresolved material hotspot;
 - a generic cross-subsystem reservation/weighted allocator was considered for GPU/xHCI/NIC/audio. **Decision:** retain the current sequential model and simple physical-core exclusion. No new allocator infrastructure is justified.
 
-This reconciliation is a planning/scope change only. Current automatic source remains GPU → primary-input xHCI, and public mutation remains unarmed.
+This reconciliation is a planning/scope change only. Current source exposes GPU Gate A and USB/xHCI as separate subsystem actions; a later orchestrator may sequence them without merging their authority. Public mutation remains unarmed.
 
 ## Implemented source
 
@@ -164,11 +164,29 @@ The result surface now distinguishes:
 
 Candidate bars remain based on persisted paired 1%-low effect and UI code does not invent a second ranking. A RestoreOriginal result can still truthfully show the best-observed CPU.
 
-### USB/xHCI recommendation
+### Independent USB/xHCI action
 
-After a verified GPU Keep, current source can stop the GPU benchmark, capture quiet ETW headroom, carry an explicit primary Raw Input mouse identity across the elevation boundary, resolve it to one exact xHCI controller, exclude the GPU winner's physical core, rank remaining CPUs by interrupt duration/tail evidence, and persist/render the recommendation. On multi-controller systems the planner now excludes CPUs that overlap readable same-service peer-controller allocation and returns NotReady when peer allocation is unreadable, so it does not recommend a candidate the runtime verifier cannot attribute safely.
+The Devices page now owns an independent USB/xHCI workflow rather than receiving a recommendation from GPU Gate A:
 
-The xHCI recommendation remains read-only/product-gated until the shared mutation/recovery substrate closes physical GPU Gate A. The controller-specific runtime-placement verifier supports one present `USBXHCI` service instance and same-service multi-controller systems when translated allocations are readable and disjoint from the requested mask; unknown or overlapping peers remain fail-closed. The remaining open item is automatic product Apply/Keep orchestration plus physical evidence, not attribution-source logic.
+```text
+select one exact primary USB mouse
+→ resolve Raw Input → USB hub/port → exact xHCI controller
+→ inspect journal-owned pending xHCI state and resume the same candidate when required
+→ resolve a separately verified current GPU reservation when available
+→ elevated 10 s quiet kernel ETW headroom capture
+→ rank CPU headroom for the routed xHCI controller
+→ exclude the verified GPU physical core when that reservation exists
+→ fail closed on ambiguous/unreadable same-service peer-controller allocation
+→ show a subsystem-owned result
+→ only when the GPU reservation is verified and the recommendation is Ready:
+   journal/apply the recommended xHCI mask through the existing bounded helper
+→ verify translated allocation + controller-attributed requested-mask-only ISR placement
+→ Keep, exact rollback, or durable reboot-pending resume
+```
+
+When no separately verified GPU reservation is available, the independent USB action may still produce a **DiagnosticOnly** CPU ranking, but that result cannot authorize Apply. The GPU reservation resolver accepts only a latest Full GPU report that retained a verified candidate, was source/evidence eligible, still matches the current stored GPU affinity policy, and still matches the recorded GPU driver version.
+
+The controller-specific runtime-placement verifier supports one present `USBXHCI` service instance and same-service multi-controller systems when translated allocations are readable and disjoint from the requested mask; unknown or overlapping peers remain fail-closed. Raw Input timing remains bounded host-observable sanity evidence and never replaces ETW placement proof. Public product mutation is still unarmed; this is the development/physical-validation path for the independent USB surface.
 
 ## Verification state
 
@@ -225,29 +243,29 @@ Graphics-hook warnings such as `nvspcap64.dll` remain explicit interference cont
 | Phase | Current source state | What remains |
 | --- | --- | --- |
 | 0 Scope/safety | **Source complete** | Keep exact-head verification current |
-| 1 Preflight | **Most primitives exist** | Integrated quiet check + combined GPU/xHCI preflight |
-| 2 Baseline | **ETW engine exists** | Wire deep comparable baseline into one-button workflow |
+| 1 Preflight | **Most primitives exist** | Per-subsystem quiet/preflight UX + explicit handoff rules |
+| 2 Baseline | **ETW engine exists** | Wire comparable baseline evidence into the applicable subsystem actions |
 | 3 GPU search | **Restart-canonicalized observer-isolated adaptive v6 source/result contracts implemented** | Exact-head CI + physical v6 Gate A + repeat + recovery/render inspection |
 | 4 GPU Keep | **Internal verified-Keep source implemented** | Physical proof, typed product IPC, arming gates |
-| 5 USB selection | **Read-only recommendation implemented** | Representative physical evidence + product rendering |
-| 6 USB apply | **Internal reversible substrate / product-gated** | Integrated physical apply/verify/rollback evidence |
-| 7 Reboot verify | **Recovery/reboot primitives implemented** | Combined GPU+xHCI reboot/resume verification |
-| 8 Before/after | **Metric/report primitives exist** | Integrated comparable final capture/report |
-| 9 UX/release | **Development Gate A result UX implemented** | Real render/accessibility + one-button product UX + release closure |
+| 5 USB selection | **Independent readiness/recommendation action implemented** | Representative physical evidence |
+| 6 USB apply | **Independent development Apply/verify/rollback wired to bounded xHCI substrate** | Physical apply/verify/rollback evidence + product arming |
+| 7 Reboot verify | **Recovery/reboot primitives + independent USB resume wired** | Physical reboot/resume verification |
+| 8 Before/after | **Metric/report primitives exist** | Comparable per-subsystem final capture/report |
+| 9 UX/release | **Separate GPU / USB / Network development surfaces implemented** | Real render/accessibility + product arming + release closure |
 
 ## Immediate execution ladder
 
 1. **Completed source work:** GPU Gate A v6 now gives every eligible logical CPU a paired first-pass screen, keeps best-observed rank separate from retained CPU, and can try the highest-ranked guardrail-safe finalist for final placement verification.
 2. **Hosted software evidence rule:** only a green **Tests** workflow on the exact final HEAD is current evidence. Older green runs remain historical and are never promoted to a newer SHA; hosted success proves software contracts only and never substitutes for physical GPU/xHCI evidence.
-3. **Scope decision completed:** v1 stays GPU → exact primary-input xHCI. NIC/RSS becomes a post-v1 read-only-first candidate; storage remains diagnostics-only; audio remains diagnostic/conditional; no generic WDF optimizer or cross-subsystem allocator is added.
+3. **Scope decision completed:** v1 keeps GPU and exact primary-input xHCI as the mutation-capable domains, but exposes them as separate subsystem actions. NIC/RSS has its own read-only action; storage remains diagnostics-only; audio remains diagnostic/conditional; no generic WDF optimizer or cross-subsystem allocator is added.
 4. **Source hardening completed:** storage/System-class new mutations are blocked in UI, helper and the lowest generic write boundary; actual PnP target kind owns GPU/xHCI/generic verification routing; xHCI runtime verification supports single-controller attribution and allocation-disjoint same-service multi-controller attribution while keeping overlap/unknown peers fail-closed. GPU Gate A is now GPU-only; USB/xHCI route/controller evidence and Network/RSS evidence have independent Devices-page actions. The elevated development xHCI verification path can capture bounded host-observable Raw Input report timing concurrently with ETW when exactly one mouse route owns that controller; this is diagnostic sanity evidence only, never click-to-photon evidence and never a substitute for controller-attributed ISR placement.
-5. **Still open for v1:** one clean physical v6 Full GPU Gate A run, whole-search repeatability, Stop/recovery/render inspection, representative xHCI apply/runtime + Raw Input sanity evidence on real hardware, then normal automatic orchestration + combined reboot/recovery + final product arming. These are intentionally gated; no public/normal-user mutation surface is armed ahead of that evidence.
+5. **Still open for v1:** one clean physical v6 Full GPU Gate A run, whole-search repeatability, Stop/recovery/render inspection, representative independent xHCI Apply/runtime + Raw Input sanity evidence on real hardware, then public typed mutation arming, final per-subsystem before/after UX and release closure. These are intentionally gated; no public/normal-user mutation surface is armed ahead of that evidence.
 6. **Completed cleanup:** storage-class and Windows System-class infrastructure rows are inspection-only in the manual tool and elevated helper; recovery of older journal-owned state remains supported.
-7. **Only after v1 closure:** prototype physical-NIC/RSS **read-only** evidence using existing Windows/ETW/CIM surfaces. Mutation is not authorized until a separate ADR/methodology and physical evidence make a bounded RSS-aware experiment worthwhile.
+7. **Only after v1 closure:** consider a bounded physical-NIC/RSS **mutation** experiment. The v1 Network/RSS action remains read-only; mutation is not authorized until a separate ADR/methodology and physical evidence make an RSS-aware experiment worthwhile.
 
 
 ## Completion rule
 
 Repository/source completion means every current v1 source outcome is implemented or explicitly gated by a documented physical safety prerequisite, canonical docs match actual source, and the exact final HEAD is green in hosted Tests.
 
-True v1 completion additionally requires physical GPU Gate A, xHCI apply/verify, combined reboot/recovery, final before/after UX, accessibility/runtime validation and signed package/install/upgrade/uninstall evidence.
+True v1 completion additionally requires physical GPU Gate A, independent xHCI apply/verify/reboot-resume evidence, final per-subsystem before/after UX, accessibility/runtime validation and signed package/install/upgrade/uninstall evidence.
