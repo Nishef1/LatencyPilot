@@ -28,16 +28,24 @@ public sealed partial class MainWindow
 
     internal void InitializeManualDeviceAffinityExperience()
     {
-        ManualDeviceAffinityCard.Visibility =
-            IsDevelopmentGateAAvailable(_gateARepositoryRoot) &&
-            File.Exists(Path.Combine(
-                _gateARepositoryRoot!,
-                "tools",
-                "LatencyPilot.GateAValidation",
-                "LatencyPilot.GateAValidation.csproj"))
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+        var repositoryRoot = _gateARepositoryRoot ?? TryFindRepositoryRoot();
+        if (!IsDevelopmentInterruptPolicyLabAvailable(repositoryRoot))
+        {
+            ManualDeviceAffinityCard.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        _gateARepositoryRoot ??= repositoryRoot;
+        ManualDeviceAffinityCard.Visibility = Visibility.Visible;
     }
+
+    internal static bool IsDevelopmentInterruptPolicyLabAvailable(string? repositoryRoot) =>
+        !string.IsNullOrWhiteSpace(repositoryRoot) &&
+        File.Exists(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "LatencyPilot.GateAValidation",
+            "LatencyPilot.GateAValidation.csproj"));
 
     private async void ManualDeviceAffinityButton_Click(object sender, RoutedEventArgs e)
     {
@@ -1830,7 +1838,7 @@ public sealed partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(_gateARepositoryRoot))
         {
-            throw new InvalidOperationException("Manual affinity is available only from a development checkout.");
+            throw new InvalidOperationException("Interrupt Policy Lab is available only from a development checkout.");
         }
 
         var helperProject = Path.Combine(
@@ -1840,7 +1848,7 @@ public sealed partial class MainWindow
             "LatencyPilot.GateAValidation.csproj");
         if (!File.Exists(helperProject))
         {
-            throw new FileNotFoundException("The elevated Gate A helper project was not found.", helperProject);
+            throw new FileNotFoundException("The elevated development helper project was not found.", helperProject);
         }
 
         var outputDirectory = Path.Combine(

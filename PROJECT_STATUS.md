@@ -109,9 +109,9 @@ The developer UI provides:
 
 CPU selection uses current topology/CPU-set eligibility; unsupported topology fails safely. The diagnostic scope selector remains a WinUI `ContentDialog`; the manual interrupt-affinity tool is an independent WinUI window.
 
-### Development manual device affinity lab
+### Development Interrupt Policy Lab
 
-The Devices page now exposes a development-only manual affinity surface without changing the public observation-only Service contract:
+The Devices page now exposes a development-only manual affinity surface without changing the public observation-only Service contract. Its availability is independent of the GPU Gate A predicate; the two surfaces share internal helper implementation only to avoid duplicating privileged/recovery plumbing:
 
 - the development UI keeps the familiar Interrupt-Affinity Policy Configuration Tool information model, but now opens as an independent modern WinUI tool window with an adaptive device master/detail layout, supported-target-first filtering, theme-matched title chrome, concise advanced identity details, Fluent device/action icons, physical-core-grouped multi-CPU selection, and Current policy / Specified mask / Current assignment evidence;
 - current stored interrupt policy / `AssignmentSetOverride` and translated allocated interrupt-resource masks are shown separately for latency-sensitive present devices;

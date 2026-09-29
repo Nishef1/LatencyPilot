@@ -238,6 +238,10 @@ public sealed class DeviceInterruptMutationTests
             "Inspection-only rows must preserve recovery for previously journaled LatencyPilot state.");
         StringAssert.Contains(appSource, "_gateAValidationRunning",
             "Manual mutation must not run concurrently with GPU Gate A.");
+        StringAssert.Contains(appSource, "IsDevelopmentInterruptPolicyLabAvailable",
+            "The manual interrupt-policy lab must have its own development availability boundary instead of reusing the GPU Gate A predicate.");
+        Assert.IsFalse(appSource.Contains("IsDevelopmentGateAAvailable(_gateARepositoryRoot)", StringComparison.Ordinal),
+            "The manual interrupt-policy lab must not be visibility-coupled to the GPU Gate A availability predicate.");
         StringAssert.Contains(appSource, "HashSet<byte>",
             "Manual affinity UI must support independent multi-selection of processor buttons.");
         StringAssert.Contains(appSource, "cpuButton.Checked +=",
