@@ -123,23 +123,33 @@ public sealed class SourceRevisionIdentityTests
             "LatencyPilot.App",
             "MeasurementExperience.cs"));
         Assert.IsTrue(
-            CountOccurrences(measurementSource, "if (_measurementBusy || _gateAValidationRunning)") >= 2,
-            "Quick observation and repeated baseline must both reject entry while Gate A is running.");
-        StringAssert.Contains(measurementSource, "IsEnabled = !_measurementBusy && !_gateAValidationRunning");
+            CountOccurrences(measurementSource, "if (_measurementBusy || _gateAValidationRunning || _usbSubsystemRunning)") >= 2,
+            "Quick observation and repeated baseline must reject entry while GPU Gate A or the independent USB/xHCI hardware session is running.");
+        StringAssert.Contains(
+            measurementSource,
+            "IsEnabled = !_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning");
 
         var readinessSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "src",
             "LatencyPilot.App",
             "MeasurementReadinessExperience.cs"));
-        StringAssert.Contains(readinessSource, "!_measurementBusy && !_gateAValidationRunning");
+        StringAssert.Contains(
+            readinessSource,
+            "!_measurementBusy && !_gateAValidationRunning && !_usbSubsystemRunning");
+        StringAssert.Contains(
+            readinessSource,
+            "USB/xHCI run in progress · measurement preparation locked.");
 
         var mainWindowSource = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "src",
             "LatencyPilot.App",
             "MainWindow.xaml.cs"));
-        StringAssert.Contains(mainWindowSource, "var controlsBusy = busy || _gateAValidationRunning;");
+        StringAssert.Contains(
+            mainWindowSource,
+            "var controlsBusy = busy || _gateAValidationRunning || _usbSubsystemRunning;",
+            "Observation controls must stay locked while either privileged subsystem session owns measurement/mutation activity.");
         StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(true);");
         StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(false);");
         StringAssert.Contains(mainWindowSource, "SetObservationControlsBusy(_measurementBusy);");
