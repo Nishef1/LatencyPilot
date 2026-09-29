@@ -2,7 +2,7 @@
 
 This is the live execution ledger for `ROADMAP.md`. Current source/runtime evidence owns actual state; plans and historical chat do not.
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 ## Overall
 
@@ -15,8 +15,21 @@ Last updated: 2026-09-28
 - GPU evidence envelope/report: **`latencypilot-gpu-benchmark-v1` / `latencypilot-gpu-auto-affinity-report-v3`**. The evidence envelope schema remains v1; method/report identities are versioned independently.
 - Product/safety authority: **ADR 0006**.
 - GPU measurement/search/ranking authority: **ADR 0011**.
+- Subsystem surface/authority separation: **ADR 0012**.
 - ADR 0010 remains the historical v5 contract; ADR 0009 remains historical v4 (ADR 0008 historical v3). None governs new v6 evidence.
 - Hosted GitHub Actions is **software-contract evidence only**.
+
+## 2026-09-29 subsystem-surface separation
+
+The product surface is now intentionally split by subsystem:
+
+- **GPU Gate A is GPU-only.** The App no longer asks for a primary mouse before Gate A, the elevated Gate A runner no longer accepts `--primary-input`, and new Gate A reports no longer create a post-GPU USB recommendation.
+- **USB / xHCI has its own Devices-page action** for route/controller evidence. Its future automatic selection/apply flow owns its own readiness and verification instead of borrowing Gate A authority.
+- **Network / RSS has its own Devices-page action** and remains read-only in v1. RSS is not modeled as a GPU-style single-CPU tournament.
+- **Interrupt Policy Lab stays separate** as a manual development utility and is not the automatic entry point for GPU, USB, or network optimization.
+- Historical GPU reports that already contain a `UsbRecommendation` remain renderable for compatibility; new GPU Gate A sessions leave that optional field unset.
+
+The long-term GPU → xHCI product sequence is still valid as orchestration, but it is no longer represented as one Gate A button/session. Each subsystem must be independently observable, runnable and verifiable before any combined "Optimize all" experience can compose them.
 
 ## Current v1 direction
 
@@ -227,7 +240,7 @@ Graphics-hook warnings such as `nvspcap64.dll` remain explicit interference cont
 1. **Completed source work:** GPU Gate A v6 now gives every eligible logical CPU a paired first-pass screen, keeps best-observed rank separate from retained CPU, and can try the highest-ranked guardrail-safe finalist for final placement verification.
 2. **Hosted software evidence rule:** only a green **Tests** workflow on the exact final HEAD is current evidence. Older green runs remain historical and are never promoted to a newer SHA; hosted success proves software contracts only and never substitutes for physical GPU/xHCI evidence.
 3. **Scope decision completed:** v1 stays GPU → exact primary-input xHCI. NIC/RSS becomes a post-v1 read-only-first candidate; storage remains diagnostics-only; audio remains diagnostic/conditional; no generic WDF optimizer or cross-subsystem allocator is added.
-4. **Source hardening completed:** storage/System-class new mutations are blocked in UI, helper and the lowest generic write boundary; actual PnP target kind owns GPU/xHCI/generic verification routing; xHCI runtime verification supports single-controller attribution and allocation-disjoint same-service multi-controller attribution while keeping overlap/unknown peers fail-closed. Gate A carries an explicit primary Raw Input mouse identity into the post-GPU recommendation. The elevated development xHCI verification path now also captures bounded host-observable Raw Input report timing concurrently with ETW when exactly one mouse route owns that controller; this is diagnostic sanity evidence only, never click-to-photon evidence and never a substitute for controller-attributed ISR placement.
+4. **Source hardening completed:** storage/System-class new mutations are blocked in UI, helper and the lowest generic write boundary; actual PnP target kind owns GPU/xHCI/generic verification routing; xHCI runtime verification supports single-controller attribution and allocation-disjoint same-service multi-controller attribution while keeping overlap/unknown peers fail-closed. GPU Gate A is now GPU-only; USB/xHCI route/controller evidence and Network/RSS evidence have independent Devices-page actions. The elevated development xHCI verification path can capture bounded host-observable Raw Input report timing concurrently with ETW when exactly one mouse route owns that controller; this is diagnostic sanity evidence only, never click-to-photon evidence and never a substitute for controller-attributed ISR placement.
 5. **Still open for v1:** one clean physical v6 Full GPU Gate A run, whole-search repeatability, Stop/recovery/render inspection, representative xHCI apply/runtime + Raw Input sanity evidence on real hardware, then normal automatic orchestration + combined reboot/recovery + final product arming. These are intentionally gated; no public/normal-user mutation surface is armed ahead of that evidence.
 6. **Completed cleanup:** storage-class and Windows System-class infrastructure rows are inspection-only in the manual tool and elevated helper; recovery of older journal-owned state remains supported.
 7. **Only after v1 closure:** prototype physical-NIC/RSS **read-only** evidence using existing Windows/ETW/CIM surfaces. Mutation is not authorized until a separate ADR/methodology and physical evidence make a bounded RSS-aware experiment worthwhile.

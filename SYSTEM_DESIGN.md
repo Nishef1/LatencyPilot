@@ -198,7 +198,7 @@ Privileged boundary. Public v6 is observation-only. Future product mutations mus
 
 ### `LatencyPilot.App`
 
-Normal-user orchestration and presentation. A development checkout may expose Gate A and bounded diagnostic scopes; normal-user v1 ultimately exposes `Optimize Interrupt Affinity` and `Restore original settings` after arming gates pass.
+Normal-user orchestration and presentation. A development checkout exposes GPU Gate A as a GPU-only experiment plus separate USB/xHCI and Network/RSS subsystem actions. A future normal-user `Optimize all` flow may compose independently proven subsystem actions, but no non-GPU authority is hidden inside GPU Gate A. `Restore original settings` remains explicit after arming gates pass.
 
 For Gate A completion, App consumes `GateAResultPresentation` derived from the validated authoritative report. The renderer must not re-rank candidates from raw/shuffled execution order.
 

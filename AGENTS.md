@@ -2,7 +2,7 @@
 
 This file is authoritative for coding agents and contributors working in this repository.
 
-LatencyPilot is a **measurement-first Windows 11 interrupt-affinity product with read-only diagnostics**, not a generic optimizer. The v1 automatic mutation surface is intentionally limited to GPU and the exact xHCI controller that owns the selected primary-input route. The engineering objective is to make those changes measurable, attributable, reversible and safe enough to reason about.
+LatencyPilot is a **measurement-first Windows 11 interrupt-affinity product with read-only diagnostics**, not a generic optimizer. The v1 automatic mutation surface is intentionally limited to GPU and the exact xHCI controller that owns the selected primary-input route. **GPU Gate A is GPU-only:** it must not select a primary input, create a USB/xHCI recommendation or inherit non-GPU closure authority. USB/xHCI and Network/RSS are separate subsystem surfaces; Network/RSS remains read-only in v1. The engineering objective is to make supported changes measurable, attributable, reversible and safe enough to reason about.
 
 Before changing code, read:
 

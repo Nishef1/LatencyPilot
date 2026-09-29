@@ -143,6 +143,141 @@ public sealed partial class MainWindow
             OverflowException or
             COMException;
 
+    private async void UsbSubsystemButton_Click(object sender, RoutedEventArgs e)
+    {
+        UsbSubsystemButton.IsEnabled = false;
+        try
+        {
+            var inspection = await Task.Run(CaptureDeviceEvidenceInspection);
+            await ShowUsbSubsystemDialogAsync(inspection);
+        }
+        catch (Exception exception) when (IsRecoverableDeviceEvidenceException(exception))
+        {
+            Logger.Error(exception, "USB/xHCI evidence inspection failed.");
+            UsbEvidenceText.Text = "USB/xHCI evidence unavailable";
+        }
+        finally
+        {
+            UsbSubsystemButton.IsEnabled = true;
+        }
+    }
+
+    private async void NetworkSubsystemButton_Click(object sender, RoutedEventArgs e)
+    {
+        NetworkSubsystemButton.IsEnabled = false;
+        try
+        {
+            var inspection = await Task.Run(CaptureDeviceEvidenceInspection);
+            await ShowNetworkSubsystemDialogAsync(inspection);
+        }
+        catch (Exception exception) when (IsRecoverableDeviceEvidenceException(exception))
+        {
+            Logger.Error(exception, "Network/RSS evidence inspection failed.");
+            NetworkEvidenceText.Text = "Network/RSS evidence unavailable";
+        }
+        finally
+        {
+            NetworkSubsystemButton.IsEnabled = true;
+        }
+    }
+
+    private async Task ShowUsbSubsystemDialogAsync(DeviceEvidenceInspection inspection)
+    {
+        var content = new StackPanel { Spacing = 12 };
+        content.Children.Add(CreateMutedText(
+            "USB/xHCI is a separate subsystem action. This view resolves the input route and controller evidence only; GPU Gate A does not choose or recommend a USB CPU."));
+
+        var controllers = inspection.RepresentativeDevices
+            .Where(static item => item.Kind == RepresentativeDeviceKind.XhciController)
+            .ToArray();
+        AddSectionHeading(content, "xHCI controllers");
+        if (controllers.Length == 0)
+        {
+            content.Children.Add(CreateMutedText("No present USBXHCI controller was found in the representative device inventory."));
+        }
+        else
+        {
+            foreach (var controller in controllers)
+            {
+                content.Children.Add(BuildDeviceEvidencePanel(controller));
+            }
+        }
+
+        AddSectionHeading(content, "Input routes and USB ports");
+        content.Children.Add(CreateMutedText(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{inspection.InputRoutes.Routes.Count:N0} Raw Input route(s) · {inspection.InputRoutes.UsbBackedRouteCount:N0} USB-backed · {inspection.InputRoutes.ExactUsbPortRouteCount:N0} exact hub/port match(es).")));
+        foreach (var route in inspection.InputRoutes.Routes
+                     .Where(static route => route.IsUsbBacked)
+                     .Take(MaximumInspectorRowsPerSection))
+        {
+            content.Children.Add(BuildInputRoutePanel(route));
+        }
+
+        await ShowFocusedDeviceEvidenceDialogAsync("USB / xHCI evidence", content);
+    }
+
+    private async Task ShowNetworkSubsystemDialogAsync(DeviceEvidenceInspection inspection)
+    {
+        var content = new StackPanel { Spacing = 12 };
+        content.Children.Add(CreateMutedText(
+            "Network/RSS is a separate subsystem surface. This v1 action is read-only and does not inherit GPU Gate A ranking or single-CPU affinity semantics."));
+
+        var adapters = inspection.RepresentativeDevices
+            .Where(static item => item.Kind == RepresentativeDeviceKind.NetworkAdapter)
+            .ToArray();
+        AddSectionHeading(content, "Network adapters");
+        if (adapters.Length == 0)
+        {
+            content.Children.Add(CreateMutedText("No representative present network adapter was found."));
+        }
+        else
+        {
+            foreach (var adapter in adapters)
+            {
+                content.Children.Add(BuildDeviceEvidencePanel(adapter));
+            }
+        }
+
+        AddSectionHeading(content, "RSS provider evidence");
+        if (!inspection.NetworkRss.IsAvailable)
+        {
+            content.Children.Add(CreateMutedText(
+                $"RSS provider evidence is {inspection.NetworkRss.Status}: {inspection.NetworkRss.Error ?? "no additional provider detail"}."));
+        }
+        else if (inspection.NetworkRss.Adapters.Count == 0)
+        {
+            content.Children.Add(CreateMutedText("StandardCimv2 returned no RSS setting rows."));
+        }
+        else
+        {
+            foreach (var adapter in inspection.NetworkRss.Adapters.Take(MaximumInspectorRowsPerSection))
+            {
+                content.Children.Add(BuildNetworkRssPanel(adapter));
+            }
+        }
+
+        await ShowFocusedDeviceEvidenceDialogAsync("Network / RSS evidence", content);
+    }
+
+    private async Task ShowFocusedDeviceEvidenceDialogAsync(string title, StackPanel content)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = RootGrid.XamlRoot,
+            Title = title,
+            Content = new ScrollViewer
+            {
+                MaxHeight = 620,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = content,
+            },
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        await dialog.ShowAsync();
+    }
+
     private async Task ShowDeviceEvidenceDialogAsync(DeviceEvidenceInspection inspection)
     {
         var content = new StackPanel { Spacing = 12 };

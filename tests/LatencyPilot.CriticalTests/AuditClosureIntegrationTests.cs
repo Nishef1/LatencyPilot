@@ -118,26 +118,31 @@ public sealed class AuditClosureIntegrationTests
         var gateAUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "GateAValidationExperience.cs"));
         var gateAResultUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "GateAResultExperience.cs"));
         StringAssert.Contains(gateAResultUi, "BuildGateAUsbRecommendation",
-            "The persisted post-GPU xHCI recommendation must be visible in the development result surface.");
+            "Historical reports may still render a persisted USB recommendation, but new GPU Gate A runs must not create one.");
         StringAssert.Contains(gateAUi, "Run development validation");
         StringAssert.Contains(gateAUi, "--allow-dirty-development-source");
         StringAssert.Contains(gateAUi, "GateAClosureEligible");
-        StringAssert.Contains(gateAUi, "InputDeviceRouteReader.Capture",
-            "Gate A must carry an explicit Raw Input mouse identity into post-GPU xHCI routing rather than leaving the real recommendation permanently NotReady.");
-        StringAssert.Contains(gateAUi, "--primary-input",
-            "The selected primary Raw Input identity must cross the elevation boundary explicitly.");
-        StringAssert.Contains(gateAUi, "Select primary mouse",
-            "Multiple exact mouse routes must require an explicit user choice rather than a first-device heuristic.");
+        Assert.IsFalse(gateAUi.Contains("InputDeviceRouteReader.Capture", StringComparison.Ordinal),
+            "GPU Gate A must not resolve USB/input routes.");
+        Assert.IsFalse(gateAUi.Contains("--primary-input", StringComparison.Ordinal),
+            "GPU Gate A must not carry a primary-input identity across its elevation boundary.");
+        Assert.IsFalse(gateAUi.Contains("Select primary mouse", StringComparison.Ordinal),
+            "Primary-input selection belongs to the USB/xHCI subsystem flow, not GPU Gate A.");
         Assert.IsFalse(gateAUi.Contains("ReadCleanSourceRevisionAsync", StringComparison.Ordinal));
 
         var gateARunner = File.ReadAllText(Path.Combine(root, "tools", "LatencyPilot.GateAValidation", "GpuAutoAffinityGateARunner.cs"));
         StringAssert.Contains(gateARunner, "AllowDirtyDevelopmentSource");
         StringAssert.Contains(gateARunner, "GateAClosureEligible");
         StringAssert.Contains(gateARunner, "DevelopmentOnly");
-        StringAssert.Contains(gateARunner, "PrimaryInputDeviceInstanceId",
-            "The elevated runner must preserve the explicit primary input identity through GPU completion.");
-        StringAssert.Contains(gateARunner, "primaryInputDeviceInstanceId",
-            "Post-GPU xHCI recommendation must consume the explicit primary input identity.");
+        Assert.IsFalse(gateARunner.Contains("PrimaryInputDeviceInstanceId", StringComparison.Ordinal),
+            "GPU Gate A runner must not own USB/input identity.");
+        Assert.IsFalse(gateARunner.Contains("CaptureUsbRecommendation", StringComparison.Ordinal),
+            "GPU Gate A runner must not generate post-GPU USB recommendations.");
+        var deviceEvidenceUi = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "DeviceEvidenceUi.cs"));
+        StringAssert.Contains(deviceEvidenceUi, "UsbSubsystemButton_Click",
+            "USB/xHCI must have an independent user action.");
+        StringAssert.Contains(deviceEvidenceUi, "NetworkSubsystemButton_Click",
+            "Network/RSS must have an independent user action.");
 
         var reportContract = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Core", "Benchmarking", "GpuAutoAffinityReport.cs"));
         StringAssert.Contains(reportContract, "screening-logical");

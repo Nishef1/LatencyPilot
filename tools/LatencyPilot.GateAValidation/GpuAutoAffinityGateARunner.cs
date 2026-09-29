@@ -7,11 +7,9 @@ using System.Text.Json;
 using LatencyPilot.Benchmarking.Candidates;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Benchmarking;
-using LatencyPilot.Core.Observation;
 using LatencyPilot.Core.System;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
-using LatencyPilot.Platform.Windows.Etw;
 using LatencyPilot.Platform.Windows.System;
 
 namespace LatencyPilot.GateAValidation;
@@ -170,23 +168,6 @@ internal static class GpuAutoAffinityGateARunner
             stage = "final stop and report verification";
             await TryStopBenchmarkAsync(benchmark).ConfigureAwait(false);
 
-            UsbAffinityRecommendationReport? usbRecommendation = null;
-            if (result.Recommendation == GpuOptimizationRecommendation.KeepCandidate &&
-                result.Finalist is not null)
-            {
-                stage = "post-GPU USB recommendation";
-                usbRecommendation = CaptureUsbRecommendation(
-                    topology,
-                    result.Finalist.Processor,
-                    options.PrimaryInputDeviceInstanceId,
-                    sessionCancellation.Token);
-                Console.WriteLine(
-                    $"usb-recommendation={usbRecommendation.Status};" +
-                    $"controller={usbRecommendation.ControllerInstanceId ?? "unavailable"};" +
-                    $"processor={usbRecommendation.Processor?.ToString() ?? "unavailable"}");
-                stage = "final stop and report verification";
-            }
-
             var unresolvedAfter = MutationJournalReadOnlyInspector.GetUnresolved(
                 MutationJournal.GetDefaultDatabasePath());
             var finalSourceAssessment = await ReadFinalSourceAssessmentAsync(options).ConfigureAwait(false);
@@ -202,7 +183,6 @@ internal static class GpuAutoAffinityGateARunner
                 ];
             var finalReport = completedReport with
             {
-                UsbRecommendation = usbRecommendation,
                 SourceState = effectiveSourceState.ToString(),
                 GateAClosureEligible = closureEligible,
                 Reasons = reportReasons,
@@ -380,78 +360,6 @@ internal static class GpuAutoAffinityGateARunner
                     Console.Error.WriteLine($"Unable to dispose the Gate A benchmark control channel cleanly: {exception.Message}");
                 }
             }
-        }
-    }
-
-    private static UsbAffinityRecommendationReport CaptureUsbRecommendation(
-        ProcessorTopologySnapshot topology,
-        LogicalProcessorId gpuWinner,
-        string? primaryInputDeviceInstanceId,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(primaryInputDeviceInstanceId))
-        {
-            return new UsbAffinityRecommendationReport(
-                UsbAffinityRecommendationStatus.NotReady.ToString(),
-                null,
-                null,
-                [],
-                null,
-                null,
-                null,
-                null,
-                "No explicit primary Raw Input mouse identity was supplied. LatencyPilot will not guess which mouse owns the xHCI route.");
-        }
-
-        try
-        {
-            var capture = KernelLatencyCapture.Capture(
-                new KernelLatencyCaptureOptions(TimeSpan.FromSeconds(10), 500_000),
-                cancellationToken);
-            var deviceInventory = DeviceInventoryReader.CapturePresentDevices();
-            var routes = InputDeviceRouteReader.Capture(deviceInventory);
-            var recommendation = UsbAffinityRecommendationPlanner.Create(
-                topology,
-                capture,
-                routes,
-                gpuWinner,
-                primaryInputDeviceInstanceId,
-                deviceInventory);
-            var evidence = recommendation.CpuEvidence;
-            return new UsbAffinityRecommendationReport(
-                recommendation.Status.ToString(),
-                recommendation.ControllerInstanceId,
-                recommendation.Processor,
-                recommendation.InputDeviceInstanceIds,
-                evidence?.TotalInterruptDurationMicroseconds,
-                evidence?.InterruptTailP99Microseconds,
-                evidence?.DpcCount,
-                evidence?.IsrCount,
-                recommendation.Reason);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (exception is
-            Win32Exception or
-            IOException or
-            InvalidDataException or
-            InvalidOperationException or
-            NotSupportedException or
-            UnauthorizedAccessException or
-            System.Security.SecurityException)
-        {
-            return new UsbAffinityRecommendationReport(
-                UsbAffinityRecommendationStatus.NotReady.ToString(),
-                null,
-                null,
-                [],
-                null,
-                null,
-                null,
-                null,
-                $"Post-GPU USB/xHCI recommendation is unavailable: {exception.GetType().Name}: {exception.Message}");
         }
     }
 
@@ -770,7 +678,6 @@ internal static class GpuAutoAffinityGateARunner
         string BenchmarkPipeName,
         string BenchmarkToken,
         bool AllowDirtyDevelopmentSource,
-        string? PrimaryInputDeviceInstanceId,
         GpuAutoAffinitySearchScope SearchScope,
         IReadOnlyList<LogicalProcessorId> RequestedProcessors)
     {
@@ -811,7 +718,7 @@ internal static class GpuAutoAffinityGateARunner
                 }
 
                 if (token is not ("--repo-root" or "--expected-commit" or "--output" or
-                    "--progress" or "--cancel" or "--session-id" or "--benchmark-pipe" or "--benchmark-token" or "--candidate-cpus" or "--primary-input"))
+                    "--progress" or "--cancel" or "--session-id" or "--benchmark-pipe" or "--benchmark-token" or "--candidate-cpus"))
                 {
                     throw new ArgumentException($"Unknown GPU auto-affinity Gate A option '{token}'.");
                 }
@@ -890,9 +797,6 @@ internal static class GpuAutoAffinityGateARunner
                 Required("--benchmark-pipe"),
                 benchmarkToken,
                 allowDirtyDevelopmentSource,
-                values.TryGetValue("--primary-input", out var primaryInput)
-                    ? primaryInput.Trim()
-                    : null,
                 diagnoseOriginal ? GpuAutoAffinitySearchScope.OriginalDiagnostics : custom ? GpuAutoAffinitySearchScope.Custom : GpuAutoAffinitySearchScope.Full,
                 requested.ToArray());
         }

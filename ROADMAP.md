@@ -1,31 +1,28 @@
 # LatencyPilot Product Roadmap
 
 Status: **Authoritative completion plan**  
-Last updated: 2026-09-25
+Last updated: 2026-09-29
 
 `PROJECT_STATUS.md` owns current execution/evidence state. This file owns required product outcomes. Source-complete and physically validated are different claims.
 
 ## Product definition — v1
 
-LatencyPilot v1 automates one narrow, reversible Windows 11 workflow:
+LatencyPilot v1 exposes narrow, reversible **subsystem-scoped actions** rather than one umbrella benchmark button:
 
 ```text
-preflight / quiet check
-→ baseline DPC/ISR evidence
-→ robust Original variability estimate
-→ paired GPU affinity screening
-→ exhaustive paired first-pass screen of every eligible logical CPU
-→ bounded adaptive recheck + finalist confirmation
-→ final runtime GPU ISR-placement verification
-→ measure remaining per-CPU interrupt headroom
-→ resolve primary input to exact xHCI controller
-→ choose/apply a separate USB/xHCI interrupt CPU
-→ reboot once when required
-→ verify GPU + xHCI runtime placement
-→ show before/after evidence + Restore original settings
+GPU Gate A
+→ GPU-only benchmark / candidate search / Keep-or-Restore / runtime verification
+
+USB / xHCI
+→ independent input-route + controller evidence
+→ independent xHCI readiness / selection / verification flow
+
+Network / RSS
+→ independent read-only evidence in v1
+→ no GPU-style single-CPU mutation contract
 ```
 
-Product/safety authority remains ADR 0006. GPU measurement/search/ranking authority is ADR 0011; ADR 0010 remains historical v5 evidence and ADR 0009 remains historical v4 evidence for new runs. GPU and xHCI are intentionally sequential: GPU ranking is never reused as a USB ranking, and v1 has no joint weighted/Pareto allocator.
+A later product-level "Optimize all" orchestration may sequence already-proven subsystem actions, but it must call those actions as separate authorities rather than hiding them behind GPU Gate A. Product/safety authority remains ADR 0006. GPU measurement/search/ranking authority is ADR 0011; subsystem-surface separation is ADR 0012. GPU ranking is never reused as a USB ranking, and v1 has no joint weighted/Pareto allocator.
 
 ### v1 includes
 
