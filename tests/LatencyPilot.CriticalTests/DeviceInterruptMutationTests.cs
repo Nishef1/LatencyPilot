@@ -164,8 +164,10 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(txSource, "ApplyRebootPending");
         StringAssert.Contains(txSource, "RollbackRebootPending");
         StringAssert.Contains(txSource, "ResumeAfterReboot");
-        StringAssert.Contains(txSource, "DeferApplyVerificationToReboot",
-            "Applied xHCI candidates need a bounded reboot-verification deferral instead of treating unavailable translated allocation as contradictory.");
+        StringAssert.Contains(txSource, "DeferXhciApplyVerificationToReboot",
+            "Applied xHCI candidates need a bounded, xHCI-only reboot-verification deferral instead of treating unavailable translated allocation as contradictory.");
+        StringAssert.Contains(txSource, "original.TargetKind != DeviceInterruptTargetKind.XhciController",
+            "The Applied -> ApplyRebootPending deferral must not become a generic escape hatch for arbitrary device mutations.");
         StringAssert.Contains(txSource, "original.TargetKind == DeviceInterruptTargetKind.DisplayAdapter",
             "Manual display-adapter affinity must use reboot-pending activation instead of live-restarting the GPU that may be rendering the WinUI app.");
         StringAssert.Contains(txSource, "MutationJournalState.ApplyRebootPending",
@@ -250,8 +252,15 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(manualRunnerSource, "VerifyAllocatedAffinity");
         StringAssert.Contains(manualRunnerSource, "GpuInterruptRuntimePlacementVerifier",
             "A fully runtime-verified manual GPU result must still require ETW placement evidence.");
-        StringAssert.Contains(manualRunnerSource, "CanObserveAllocatedAffinity",
-            "Manual GPU policy retention must distinguish unavailable allocation from readable contradictory evidence.");
+        Assert.IsFalse(
+            manualRunnerSource.Contains("CanObserveAllocatedAffinity", StringComparison.Ordinal),
+            "Allocation observability and mask verification must come from one coherent device snapshot so a restart-time re-enumeration cannot turn missing evidence into a false contradiction.");
+        StringAssert.Contains(manualRunnerSource, "out var allocationObservable",
+            "The single allocation verifier must explicitly return whether translated allocation is usable.");
+        StringAssert.Contains(manualRunnerSource, "activeMasksByGroup",
+            "Translated allocation must be checked against the processors that are actually active in each Windows processor group.");
+        StringAssert.Contains(manualRunnerSource, "resource.AffinityMask == ulong.MaxValue",
+            "The documented all-processors affinity sentinel must be normalized against the active processor mask before comparison.");
         StringAssert.Contains(manualRunnerSource, "KeepStoredPolicyVerified",
             "When GPU allocation is unavailable, the explicit manual policy may be retained only through the policy-only journal keep path.");
         Assert.IsFalse(manualRunnerSource.Contains("GpuInterruptAffinityMutationTransaction(journal)", StringComparison.Ordinal),
@@ -259,7 +268,9 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(manualRunnerSource, "select that same mask after reboot to resume it",
             "Manual GPU affinity must expose a journal-owned reboot/resume flow.");
         StringAssert.Contains(manualRunnerSource, "XhciInterruptRuntimePlacementVerifier",
-            "Manual xHCI Keep must require controller-attributed runtime ETW placement evidence.");
+            "Manual xHCI verification must still attempt the stronger controller-attributed ETW path when ownership can be proven.");
+        StringAssert.Contains(manualRunnerSource, "AppliedAllocationVerified",
+            "Usable target translated allocation is the minimum xHCI Keep authority when controller-specific ETW attribution is unavailable.");
         StringAssert.Contains(manualRunnerSource, "RawInputTimingCapture.CaptureAsync",
             "Manual xHCI verification must collect a bounded host-observable Raw Input timing sanity sample when one exact mouse route owns the controller.");
         StringAssert.Contains(manualRunnerSource, "InputTimingAnalyzer.Analyze",
@@ -276,8 +287,8 @@ public sealed class DeviceInterruptMutationTests
             "Manual GPU affinity must expose an explicit device-only restart choice separate from a full system reboot.");
         StringAssert.Contains(manualRunnerSource, "RestartedInPlace",
             "Manual GPU affinity must verify the device-only restart result before claiming the candidate is active.");
-        StringAssert.Contains(manualRunnerSource, "(resource.AffinityMask & ~targetMask) == 0",
-            "Allocated interrupt resources must remain inside the requested processor mask.");
+        StringAssert.Contains(manualRunnerSource, "(item.EffectiveMask & ~targetMask) == 0",
+            "Normalized allocated interrupt resources must remain inside the requested processor mask.");
         StringAssert.Contains(manualRunnerSource, "VerificationFailedRolledBack",
             "Readable contradictory allocation must fail closed and restore exact original state.");
         StringAssert.Contains(manualRunnerSource, "active placement is unavailable rather than contradictory",
