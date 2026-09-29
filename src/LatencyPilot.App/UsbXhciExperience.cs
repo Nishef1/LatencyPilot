@@ -456,8 +456,8 @@ public sealed partial class MainWindow
         }
 
         var verificationCopy = report.ControllerSpecificAttributionAvailable
-            ? "After restart, LatencyPilot will require the target controller's translated allocation to match the requested CPU and will also use controller-specific ETW as an independent runtime check."
-            : "After restart, LatencyPilot will require the target controller's own translated allocation to match the requested CPU. Controller-specific ETW attribution is unavailable on this hardware, so LatencyPilot will not claim per-controller ISR proof unless that stronger evidence becomes available.";
+            ? "After restart, LatencyPilot will require the target controller's translated allocation to match the requested CPU and will also use controller-specific ETW as an independent runtime check. If the in-place restart cannot expose usable translated allocation, the journaled candidate is kept pending for one full reboot before LatencyPilot decides whether to Keep or roll back."
+            : "After restart, LatencyPilot will require the target controller's own translated allocation to match the requested CPU. Controller-specific ETW attribution is unavailable on this hardware. If the in-place restart cannot expose usable translated allocation, the journaled candidate is kept pending for one full reboot; after reboot it must verify or LatencyPilot restores the exact original state.";
         var confirm = new ContentDialog
         {
             XamlRoot = RootGrid.XamlRoot,
@@ -466,7 +466,7 @@ public sealed partial class MainWindow
             {
                 Text =
                     $"LatencyPilot will journal the exact original xHCI policy before changing anything. {verificationCopy} " +
-                    "If the authoritative target allocation does not match, or controller-specific ETW produces contradictory evidence, the exact original state is restored. Keep using the selected USB mouse during verification.",
+                    "Readable contradictory target allocation or contradictory controller-specific ETW restores the exact original state. If translated allocation is merely unavailable after the in-place restart, LatencyPilot will ask for one reboot instead of misclassifying missing evidence as a contradiction. Keep using the selected USB mouse during verification.",
                 TextWrapping = TextWrapping.Wrap,
             },
             PrimaryButtonText = "Apply & verify",
