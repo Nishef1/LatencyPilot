@@ -96,8 +96,10 @@ public sealed class AuditClosureIntegrationTests
             "The elevated installer must persist its concrete failure reason for the parent launcher.");
         StringAssert.Contains(installScript, "$checkerExecutable = $sourceServiceExe",
             "A missing protected recovery executable must be repairable only through the freshly built read-only journal checker.");
-        StringAssert.Contains(installScript, "LATENCYPILOT_UNINSTALL_SAFE_V1",
-            "Repair must continue to require the canonical read-only safety token before replacement.");
+        StringAssert.Contains(installScript, "LATENCYPILOT_REPLACEMENT_SAFE_V1",
+            "Service replacement must use the dedicated read-only replacement-safety token so terminal Kept policies do not block ordinary upgrades.");
+        Assert.IsFalse(installScript.Contains("LATENCYPILOT_UNINSTALL_SAFE_V1", StringComparison.Ordinal),
+            "Protected-Service replacement must not reuse the stricter uninstall contract.");
         StringAssert.Contains(installScript, "$isFreshInstall",
             "A state-less first install must not deadlock on a missing journal before the Service has ever started.");
         StringAssert.Contains(installScript, "-not $isFreshInstall",
@@ -159,8 +161,11 @@ public sealed class AuditClosureIntegrationTests
             "USB/xHCI must own an independent elevated readiness run rather than borrowing GPU Gate A.");
         StringAssert.Contains(usbXhciUi, "RunManualAffinityHelperAsync",
             "A readiness-approved USB recommendation must reuse the journaled xHCI apply/verify/rollback substrate.");
-        StringAssert.Contains(usbXhciUi, "TryResolveCurrentVerifiedGpuReservation",
-            "Automatic USB Apply must require an independently verified current GPU reservation instead of inventing an exclusion.");
+        Assert.IsFalse(
+            usbXhciUi.Contains("TryResolveCurrentVerifiedGpuReservation", StringComparison.Ordinal),
+            "USB/xHCI must not depend on Gate A or any previous benchmark report to decide which CPUs are already fixed.");
+        StringAssert.Contains(usbXhciUi, "Reserved CPUs",
+            "USB/xHCI result UX must show CPU reservations discovered from current device policy state.");
 
         StringAssert.Contains(usbXhciUi, "FormatMutationKind",
             "USB diagnostics must identify the unresolved mutation kind/state/target when Apply is gated by another target.");
@@ -184,8 +189,14 @@ public sealed class AuditClosureIntegrationTests
             "run.ps1 must preserve the install/recovery diagnostic instead of hiding which journal state blocked Service replacement.");
 
         var usbXhciRunner = File.ReadAllText(Path.Combine(root, "tools", "LatencyPilot.GateAValidation", "UsbXhciReadinessRunner.cs"));
-        StringAssert.Contains(usbXhciRunner, "CreateIndependent");
+        StringAssert.Contains(usbXhciRunner, "InterruptCpuReservationPlanner.Capture",
+            "USB/xHCI must derive exclusions from current explicit device policies, not prior benchmark provenance.");
+        StringAssert.Contains(usbXhciRunner, "CreateWithReservations");
         StringAssert.Contains(usbXhciRunner, "KernelLatencyCapture.Capture");
+        StringAssert.Contains(usbXhciRunner, "AssessApplyPreflight",
+            "Peer-controller attribution is an Apply prerequisite and must not invalidate the independent benchmark.");
+        Assert.IsFalse(usbXhciRunner.Contains("--gpu-processor", StringComparison.Ordinal),
+            "USB/xHCI must not accept a GPU benchmark handoff argument.");
         Assert.IsFalse(usbXhciRunner.Contains("GateAClosureEligible", StringComparison.Ordinal),
             "USB/xHCI readiness must not inherit GPU Gate A closure authority.");
 

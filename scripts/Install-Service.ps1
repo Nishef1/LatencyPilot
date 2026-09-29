@@ -88,24 +88,16 @@ $hasProgramDataState = Test-Path -LiteralPath $programDataStateDirectory -PathTy
 $isFreshInstall = $null -eq $existing -and -not $hasProgramDataState
 
 function Assert-RecoverySafeForReplacement {
-    $installedServiceExe = Join-Path $managedServiceDirectory 'LatencyPilot.Service.exe'
-    $checkerExecutable = $installedServiceExe
-    $checkerDescription = 'installed recovery host'
-
-    if (-not (Test-Path -LiteralPath $installedServiceExe -PathType Leaf)) {
-        # A partially removed/corrupted protected directory cannot repair itself
-        # because its old recovery host is gone. The freshly built Service exposes
-        # the same read-only --check-uninstall contract, so use it only to inspect
-        # the shared ProgramData journal. Replacement is still blocked unless that
-        # checker proves there are no retained or unresolved managed changes.
-        $checkerExecutable = $sourceServiceExe
-        $checkerDescription = 'freshly built read-only recovery checker'
-        Write-Warning 'Installed LatencyPilot recovery host is missing. Using the freshly built Service only to verify the mutation journal before repairing the protected installation.'
-    }
+    # Service replacement is different from uninstall. A terminal Kept entry
+    # intentionally owns a retained machine policy and must survive ordinary
+    # development/service upgrades. Only unresolved work or an unhealthy journal
+    # blocks replacement.
+    $checkerExecutable = $sourceServiceExe
+    $checkerDescription = 'freshly built read-only replacement checker'
 
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $checkerExecutable
-    $startInfo.Arguments = '--check-uninstall'
+    $startInfo.Arguments = '--check-replacement'
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
@@ -124,14 +116,14 @@ function Assert-RecoverySafeForReplacement {
         }
         $output = $outputTask.GetAwaiter().GetResult().Trim()
         $details = $errorTask.GetAwaiter().GetResult().Trim()
-        if ($checker.ExitCode -ne 0 -or $output -ne 'LATENCYPILOT_UNINSTALL_SAFE_V1') {
+        if ($checker.ExitCode -ne 0 -or $output -ne 'LATENCYPILOT_REPLACEMENT_SAFE_V1') {
             $detailSuffix = if ([string]::IsNullOrWhiteSpace($details)) {
                 "The $checkerDescription did not return the expected safety token."
             }
             else {
                 $details
             }
-            throw "Service replacement is blocked until all managed changes are restored and the mutation journal is healthy. $detailSuffix"
+            throw "Service replacement is blocked until unresolved mutation work is recovered and the journal is healthy. $detailSuffix"
         }
     }
     finally {
@@ -165,9 +157,9 @@ if (-not $isManagedSource -and -not $isFreshInstall -and
         $blockedMessage = $_.Exception.Message
         $isUnresolvedExperimentBlock =
             $blockedMessage.StartsWith(
-                'Service replacement is blocked until all managed changes are restored and the mutation journal is healthy.',
+                'Service replacement is blocked until unresolved mutation work is recovered and the journal is healthy.',
                 [System.StringComparison]::Ordinal) -and
-            $blockedMessage.IndexOf('Uninstall blocked: Experiment ', [System.StringComparison]::Ordinal) -ge 0
+            $blockedMessage.IndexOf('Replacement blocked: Experiment ', [System.StringComparison]::Ordinal) -ge 0
 
         if ($null -ne $existing -and
             $existing.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Stopped -and

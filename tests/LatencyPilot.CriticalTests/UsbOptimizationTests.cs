@@ -68,11 +68,11 @@ public sealed class UsbOptimizationTests
             deviceInventory: null,
             reservedGpuProcessor: null);
         Assert.AreEqual(
-            UsbAffinityRecommendationStatus.DiagnosticOnly,
+            UsbAffinityRecommendationStatus.Ready,
             independentWithoutGpuReservation.Status,
-            "An independent USB run may rank CPU headroom without a GPU reservation, but it must not authorize Apply.");
+            "USB benchmarking is independent of GPU benchmark provenance; no GPU result is required to rank its own candidates.");
         Assert.IsTrue(independentWithoutGpuReservation.HasCandidate);
-        Assert.IsFalse(independentWithoutGpuReservation.IsReady);
+        Assert.IsTrue(independentWithoutGpuReservation.IsReady);
 
         var noReservationRanking = UsbAffinityCpuSelector.Rank(
             topology,
@@ -180,9 +180,45 @@ public sealed class UsbOptimizationTests
                 [targetWithAllocation, unknownPeer],
                 DateTimeOffset.UnixEpoch));
         Assert.AreEqual(
-            UsbAffinityRecommendationStatus.NotReady,
+            UsbAffinityRecommendationStatus.Ready,
             unknownPeerRecommendation.Status,
-            "Automatic xHCI selection must not promise controller-specific verification when peer allocation is unreadable.");
+            "Unreadable peer allocation must not invalidate the USB benchmark itself; it is an Apply/verification prerequisite, not a ranking dependency.");
+
+        var unknownPeerPreflight = XhciInterruptRuntimePlacementVerifier.AssessApplyPreflight(
+            targetWithAllocation.InstanceId,
+            [targetWithAllocation, unknownPeer],
+            new DeviceInterruptAffinityCandidate(0, 3, 1UL << 3));
+        Assert.IsFalse(
+            unknownPeerPreflight.CanAttemptControllerSpecificVerification,
+            "Unreadable peer allocation may gate Apply without invalidating the benchmark recommendation.");
+
+        var manuallyFixedGpu = new PnPDeviceSnapshot(
+            "PCI\\VEN_TEST&DEV_GPU",
+            new Guid("4D36E968-E325-11CE-BFC1-08002BE10318"),
+            "Fixed GPU",
+            "Test Vendor",
+            "PCI",
+            "nvlddmkm",
+            new DriverMetadataSnapshot("1.0", "Test Vendor", "gpu.inf"),
+            InterruptConfigurationSnapshot.Available(null, null, 4, (1UL << 0) | (1UL << 1)),
+            InterruptResourceSnapshot.ReadFailed());
+        var reservations = InterruptCpuReservationPlanner.Capture(
+            new DeviceInventorySnapshot(
+                [manuallyFixedGpu, targetWithAllocation, peerWithDisjointAllocation],
+                DateTimeOffset.UnixEpoch),
+            targetWithAllocation.InstanceId);
+        CollectionAssert.AreEquivalent(
+            new[] { new LogicalProcessorId(0, 0), new LogicalProcessorId(0, 1) },
+            reservations.Processors.ToArray(),
+            "A manually fixed GPU policy must reserve its selected CPUs regardless of which benchmark created that policy.");
+
+        var rankedWithReservations = UsbAffinityCpuSelector.Rank(
+            topology,
+            capture,
+            reservations.Processors);
+        Assert.IsFalse(
+            rankedWithReservations.Any(static candidate => candidate.Processor.Number is 0 or 1),
+            "USB benchmarking must skip the entire physical core already reserved by another fixed device policy.");
 
         var xhciCandidate = new DeviceInterruptAffinityCandidate(0, 2, 1UL << 2);
         var sharedDriverPlacement = XhciInterruptRuntimePlacementVerifier.Analyze(

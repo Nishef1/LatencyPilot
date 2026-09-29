@@ -157,10 +157,27 @@ public sealed class DeviceInterruptMutationTests
         var installSource = File.ReadAllText(Path.Combine(root, "scripts", "Install-Service.ps1"));
         StringAssert.Contains(installSource, "Start-RecoveryHostForDeferredReplacement",
             "The elevated installer must start the existing protected recovery host when replacement is blocked by an unresolved experiment.");
-        StringAssert.Contains(installSource, ".IndexOf('Uninstall blocked: Experiment ', [System.StringComparison]::Ordinal) -ge 0",
-            "The elevated installer must use a Windows PowerShell-compatible ordinal predicate when classifying the checker result.");
+        StringAssert.Contains(installSource, ".IndexOf('Replacement blocked: Experiment ', [System.StringComparison]::Ordinal) -ge 0",
+            "The elevated installer must classify unresolved replacement blockers separately from uninstall blockers.");
+        StringAssert.Contains(installSource, "--check-replacement",
+            "Ordinary protected-Service replacement must use the replacement-safety contract so terminal Kept policies survive updates.");
+        Assert.IsFalse(installSource.Contains("--check-uninstall", StringComparison.Ordinal),
+            "Service replacement must not reuse uninstall safety, because uninstall intentionally rejects terminal Kept policies.");
         StringAssert.Contains(installSource, "Write-InstallResult -Status 'Deferred'",
             "The elevated installer must report a deferred recovery-host start without claiming that replacement succeeded.");
+
+        var serviceProgramSource = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Service", "Program.cs"));
+        StringAssert.Contains(serviceProgramSource, "--check-replacement",
+            "Protected-Service upgrades need a replacement safety contract distinct from uninstall.");
+        StringAssert.Contains(serviceProgramSource, "LATENCYPILOT_REPLACEMENT_SAFE_V1");
+
+        var journalInspectorSource = File.ReadAllText(Path.Combine(
+            root, "src", "LatencyPilot.Persistence", "MutationJournalReadOnlyInspector.cs"));
+        StringAssert.Contains(journalInspectorSource, "EnsureSafeForReplacement");
+        StringAssert.Contains(
+            journalInspectorSource,
+            "MutationJournalState.Kept",
+            "A terminal Kept policy must remain legal during ordinary Service replacement while uninstall stays stricter.");
 
         var manualRunnerSource = File.ReadAllText(Path.Combine(
             root, "tools", "LatencyPilot.GateAValidation", "ManualDeviceAffinityRunner.cs"));

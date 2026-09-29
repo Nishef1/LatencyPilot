@@ -7,20 +7,32 @@ using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
 
-if (args.Length > 0 && args[0] == "--check-uninstall")
+if (args.Length > 0 &&
+    args[0] is "--check-uninstall" or "--check-replacement")
 {
     if (args.Length != 1)
     {
-        Console.Error.WriteLine("The uninstall check accepts no additional arguments.");
+        Console.Error.WriteLine("The journal safety check accepts no additional arguments.");
         return 2;
     }
 
+    var replacementCheck = args[0] == "--check-replacement";
     try
     {
         // Run before host/logging initialization: inspection must not create or
         // repair a missing journal and must never start observation or mutation.
-        MutationJournalReadOnlyInspector.EnsureSafeForUninstall(MutationJournal.GetDefaultDatabasePath());
-        Console.WriteLine("LATENCYPILOT_UNINSTALL_SAFE_V1");
+        var databasePath = MutationJournal.GetDefaultDatabasePath();
+        if (replacementCheck)
+        {
+            MutationJournalReadOnlyInspector.EnsureSafeForReplacement(databasePath);
+            Console.WriteLine("LATENCYPILOT_REPLACEMENT_SAFE_V1");
+        }
+        else
+        {
+            MutationJournalReadOnlyInspector.EnsureSafeForUninstall(databasePath);
+            Console.WriteLine("LATENCYPILOT_UNINSTALL_SAFE_V1");
+        }
+
         return 0;
     }
     catch (Exception exception) when (exception is
@@ -28,11 +40,13 @@ if (args.Length > 0 && args[0] == "--check-uninstall")
         UnauthorizedAccessException or
         System.Security.SecurityException or
         InvalidOperationException or
+        InvalidDataException or
         FormatException or
         OverflowException or
         Microsoft.Data.Sqlite.SqliteException)
     {
-        Console.Error.WriteLine($"Uninstall blocked: {exception.Message}");
+        Console.Error.WriteLine(
+            $"{(replacementCheck ? "Replacement" : "Uninstall")} blocked: {exception.Message}");
         return 1;
     }
 }

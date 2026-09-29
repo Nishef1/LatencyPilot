@@ -55,7 +55,7 @@ preflight / quiet-context capture
 
 NIC/RSS mutation, audio affinity, BIOS/HAGS/MSI/power changes and a generic cross-subsystem optimizer remain outside the v1 automatic path.
 
-The v1 decisions are deliberately sequential **but exposed as separate actions**. GPU benchmark evidence owns only the GPU decision. The independent USB/xHCI action may consume a separately verified current GPU reservation as an exclusion input, then performs its own fresh quiet ETW headroom capture and controller-bound selection. There is no joint GPU/xHCI weighted score and no second per-CPU USB tournament.
+The v1 subsystem benchmarks are **independent actions**. GPU evidence owns only the GPU decision; USB/xHCI owns only its own route, headroom ranking and verification. Cross-subsystem coordination is limited to a CPU-reservation snapshot derived from current explicit specified-processor device policies. A manually fixed GPU therefore reserves the same CPU/core capacity as a Gate-A-fixed GPU, without requiring benchmark provenance. There is no joint weighted score or hidden cross-benchmark ranking.
 
 ### 2026-09-28 scope reconciliation
 
@@ -172,19 +172,19 @@ The Devices page now owns an independent USB/xHCI workflow rather than receiving
 select one exact primary USB mouse
 → resolve Raw Input → USB hub/port → exact xHCI controller
 → inspect journal-owned pending xHCI state and resume the same candidate when required
-→ resolve a separately verified current GPU reservation when available
+→ capture current explicit device-policy CPU reservations
+→ exclude every reserved physical core except the current xHCI target
 → elevated 10 s quiet kernel ETW headroom capture
 → rank CPU headroom for the routed xHCI controller
-→ exclude the verified GPU physical core when that reservation exists
-→ fail closed on ambiguous/unreadable same-service peer-controller allocation
-→ show a subsystem-owned result
-→ only when the GPU reservation is verified and the recommendation is Ready:
+→ show a subsystem-owned benchmark result even when peer-controller allocation is unreadable
+→ evaluate controller-attribution readiness separately
+→ only when the recommendation is Ready and Apply/runtime attribution preflight is safe:
    journal/apply the recommended xHCI mask through the existing bounded helper
 → verify translated allocation + controller-attributed requested-mask-only ISR placement
 → Keep, exact rollback, or durable reboot-pending resume
 ```
 
-When no separately verified GPU reservation is available, the independent USB action may still produce a **DiagnosticOnly** CPU ranking, but that result cannot authorize Apply. The GPU reservation resolver accepts only a latest Full GPU report that retained a verified candidate, was source/evidence eligible, still matches the current stored GPU affinity policy, and still matches the recorded GPU driver version.
+USB/xHCI no longer consumes a GPU report or special GPU reservation object. Any present device with a readable explicit specified-processor policy contributes its current mask to the reservation snapshot, and USB excludes the corresponding physical cores before ranking. The current xHCI target is excluded from reservation discovery so its own prior policy does not hide candidates while it is being benchmarked.
 
 The controller-specific runtime-placement verifier supports one present `USBXHCI` service instance and same-service multi-controller systems when translated allocations are readable and disjoint from the requested mask; unknown or overlapping peers remain fail-closed. Raw Input timing remains bounded host-observable sanity evidence and never replaces ETW placement proof. Public product mutation is still unarmed; this is the development/physical-validation path for the independent USB surface.
 

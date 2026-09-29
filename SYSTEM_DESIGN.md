@@ -342,18 +342,18 @@ USB/xHCI is a separate subsystem action from GPU Gate A. Current development des
 
 1. resolve or explicitly select one primary Raw Input mouse with an exact USB hub/port/xHCI route;
 2. inspect durable xHCI journal ownership first; if the routed controller has an `ApplyRebootPending` candidate, resume that exact owned mask instead of planning a new one;
-3. independently resolve the latest Full GPU Keep report that is source/evidence eligible, terminally verified, still matches the current GPU driver version and still matches the current stored GPU affinity policy;
-4. capture fresh elevated quiet kernel interrupt-headroom evidence owned by the USB action;
-5. when a verified GPU reservation exists, exclude its entire physical core; without one, rank diagnostically but mark the recommendation `DiagnosticOnly`;
-6. rank logical CPUs by interrupt-duration/tail evidence, with counts as context;
-7. bind the recommendation to the interrupt-owning controller and fail closed when same-service peer xHCI allocation makes controller attribution ambiguous;
-8. only a `Ready` recommendation with a verified GPU reservation may enter the automatic development Apply path;
+3. capture current explicit device interrupt-affinity policies and build a CPU-reservation snapshot from actual machine state, independent of which benchmark or manual tool created those policies;
+4. exclude every reserved logical CPU's entire physical core, including SMT siblings, except the current xHCI target itself;
+5. capture fresh elevated quiet kernel interrupt-headroom evidence owned by the USB action;
+6. rank the remaining logical CPUs by interrupt-duration/tail evidence, with counts as context;
+7. bind the recommendation to the interrupt-owning controller; unreadable same-service peer allocation does not invalidate the benchmark result;
+8. evaluate peer-controller attribution separately as an Apply/runtime-verification preflight; Apply remains fail-closed when controller-specific proof cannot be planned safely;
 9. reuse the bounded journal/restart/rollback mutation substrate for the xHCI controller;
 10. require translated allocation plus controller-specific requested-mask-only runtime ISR placement before Keep;
 11. when one exact mouse route owns that controller, capture bounded Raw Input report-interval timing concurrently as host-observable sanity evidence; ambiguity or unavailable input activity does not weaken or replace ETW placement authority;
 12. rollback only the xHCI-owned state on verification failure, preserving independently retained GPU state.
 
-The GPU and xHCI choices are sequential, but their UI, progress, evidence and closure authority are independent. They are not a generic Pareto optimizer.
+GPU and xHCI benchmarks are independent. Their only shared scheduling input is the current CPU-reservation snapshot derived from explicit device policy state. A future orchestrator may run them sequentially, but no benchmark owns or supplies another benchmark's result.
 
 ### Development manual device-affinity surface
 

@@ -106,7 +106,7 @@ try {
             $replacementBlockedForRecovery =
                 -not [string]::IsNullOrWhiteSpace($installDetail) -and
                 $installDetail.StartsWith(
-                    'Service replacement is blocked until all managed changes are restored and the mutation journal is healthy.',
+                    'Service replacement is blocked until unresolved mutation work is recovered and the journal is healthy.',
                     [System.StringComparison]::Ordinal)
 
             if ($replacementBlockedForRecovery) {
@@ -114,7 +114,7 @@ try {
                 if ($null -ne $existingService -and
                     $existingService.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Running) {
                     $serviceUpdateDeferredForRecovery = $true
-                    Write-Warning "Protected Service update was deferred because LatencyPilot owns an unresolved journaled change. The existing running recovery host is preserved so the App can resume or restore that experiment. Detail: $installDetail"
+                    Write-Warning "Protected Service update was deferred because LatencyPilot has unresolved mutation work. A terminal Kept policy no longer blocks ordinary Service replacement. The existing running recovery host is preserved so the App can resume or restore the unresolved experiment. Detail: $installDetail"
                 }
                 else {
                     throw "Protected Service replacement is blocked by recovery work and no existing Running recovery host is available. $installDetail"
@@ -143,7 +143,7 @@ try {
 
     if ($serviceUpdateDeferredForRecovery) {
         Write-Host "Protected Service state: Running ($serviceName; update deferred for journal recovery)" -ForegroundColor Yellow
-        Write-Warning 'Mutation remains fail-closed until the pending experiment is resumed or restored.'
+        Write-Warning 'New mutation remains fail-closed until unresolved recovery work is resumed or restored. Terminal Kept policies are not an update blocker.'
     }
     else {
         Write-Host "Protected Service state: Running ($serviceName)" -ForegroundColor Green

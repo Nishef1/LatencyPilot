@@ -42,11 +42,12 @@ The optional `UsbRecommendation` field remains readable for historical report co
 
 USB/xHCI gets an independent product/development entry point.
 
-Its flow may later consume an already verified GPU terminal state as an exclusion/guardrail input, but that does not make USB part of GPU Gate A. USB/xHCI owns:
+Its flow does not consume a GPU benchmark result. Cross-subsystem exclusion comes only from current explicit device-policy CPU reservations observed on the machine. A manually fixed GPU, a Gate-A-fixed GPU or another supported fixed device therefore reserves CPU capacity through the same mechanism. USB/xHCI owns:
 
 - primary-input selection when needed;
 - exact Raw Input → USB hub/port → xHCI routing;
-- fresh interrupt-headroom evidence;
+- current CPU-reservation discovery from explicit specified-processor device policies;
+- fresh interrupt-headroom evidence over the remaining unreserved physical cores;
 - xHCI CPU selection;
 - xHCI apply/rollback ownership;
 - controller-specific runtime verification;
@@ -87,8 +88,9 @@ The development App now reflects this decision directly:
 - Devices exposes independent GPU, USB/xHCI and Network/RSS actions;
 - GPU Gate A no longer resolves primary input or emits new USB recommendations;
 - USB/xHCI owns an elevated readiness runner with fresh kernel ETW headroom evidence;
-- USB/xHCI produces `DiagnosticOnly` ranking when no separately verified GPU reservation is available and refuses automatic Apply in that state;
-- when a Ready recommendation exists, the USB action reuses the bounded journaled xHCI Apply/runtime-verify/rollback path directly rather than routing through Policy Lab;
+- USB/xHCI derives reserved CPUs from actual current specified-processor device policies and does not require Gate A or any previous benchmark report;
+- unreadable peer xHCI allocation no longer invalidates ranking; it is reported as a separate Apply/runtime-attribution preflight gate;
+- when a Ready recommendation is also Apply-eligible, the USB action reuses the bounded journaled xHCI Apply/runtime-verify/rollback path directly rather than routing through Policy Lab;
 - an owned `ApplyRebootPending` xHCI candidate is resumed with its exact journaled mask before any new recommendation;
 - Network/RSS remains a separate read-only action in v1.
 

@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using LatencyPilot.Core.Benchmarking;
 using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
 using LatencyPilot.Persistence;
@@ -110,21 +109,14 @@ public sealed partial class MainWindow
                         $"• {FormatMutationKind(entry.Kind)} · {entry.State} · {entry.TargetId}"))
                 : null;
 
-            var gpuReservation = mutationBlockedByOtherTarget
-                ? null
-                : await Task.Run(TryResolveCurrentVerifiedGpuReservation);
             UsbEvidenceText.Text = mutationBlockedByOtherTarget
-                ? "Capturing USB/xHCI diagnostics. Another target still owns an unresolved mutation, so this run cannot Apply a new xHCI policy."
-                : gpuReservation is null
-                    ? "Capturing USB/xHCI interrupt headroom. No verified GPU reservation is available, so the result will be diagnostic-only."
-                    : $"Capturing USB/xHCI interrupt headroom with GPU CPU {gpuReservation.Processor.Number} reserved…";
+                ? "Capturing USB/xHCI benchmark evidence. Existing fixed CPU policies are reserved automatically; Apply stays disabled until the unrelated recovery closes."
+                : "Capturing USB/xHCI interrupt headroom. CPUs already fixed by explicit device affinity policies are excluded automatically.";
 
             var report = await RunUsbXhciReadinessHelperAsync(
-                primaryRoute.RawInputDevice.PnPInstanceId!,
-                gpuReservation?.Processor);
+                primaryRoute.RawInputDevice.PnPInstanceId!);
             await ShowUsbXhciReadinessResultAsync(
                 report,
-                gpuReservation,
                 mutationBlockedByOtherTarget,
                 blockerSummary);
         }
@@ -239,101 +231,8 @@ public sealed partial class MainWindow
                 StringComparison.OrdinalIgnoreCase));
     }
 
-    private VerifiedGpuReservation? TryResolveCurrentVerifiedGpuReservation()
-    {
-        var validationRoot = GetValidationDirectory();
-        if (!Directory.Exists(validationRoot))
-        {
-            return null;
-        }
-
-        ProcessorTopologySnapshot topology;
-        try
-        {
-            topology = ProcessorTopologyReader.Capture();
-        }
-        catch (Exception exception) when (
-            exception is Win32Exception or InvalidDataException or NotSupportedException)
-        {
-            Logger.Warning(exception, "USB/xHCI could not capture topology while resolving the current GPU reservation.");
-            return null;
-        }
-
-        foreach (var directory in Directory
-                     .EnumerateDirectories(validationRoot, "gpu-auto-affinity-*", SearchOption.TopDirectoryOnly)
-                     .OrderByDescending(static path => Directory.GetLastWriteTimeUtc(path)))
-        {
-            var reportPath = Path.Combine(directory, "gpu-auto-affinity-report.json");
-            if (!File.Exists(reportPath))
-            {
-                continue;
-            }
-
-            try
-            {
-                var report = JsonSerializer.Deserialize<GpuAutoAffinityReport>(
-                    File.ReadAllText(reportPath),
-                    GateAJsonOptions);
-                if (report is null ||
-                    !string.Equals(report.Schema, GpuAutoAffinityReport.SchemaId, StringComparison.Ordinal) ||
-                    report.SearchScope != GpuAutoAffinitySearchScope.Full ||
-                    report.FinalProcessor is not { } processor ||
-                    processor.Group != 0 ||
-                    !report.FinalStateVerified ||
-                    !report.GateAClosureEligible ||
-                    report.OriginalStateRestored ||
-                    !string.Equals(
-                        report.FinalRecommendation,
-                        "KeepCandidate",
-                        StringComparison.Ordinal) ||
-                    report.FinalStoredState is null)
-                {
-                    continue;
-                }
-
-                var candidate = GpuInterruptAffinityCandidate.Create(topology, processor);
-                var currentGpuState = GpuInterruptAffinityPolicyStore.Capture(
-                    report.FinalStoredState.DeviceInstanceId);
-                if (!string.Equals(
-                        currentGpuState.DriverVersion,
-                        report.FinalStoredState.DriverVersion,
-                        StringComparison.OrdinalIgnoreCase) ||
-                    !GpuInterruptAffinityPolicyStore.IsCandidateStored(
-                        report.FinalStoredState.DeviceInstanceId,
-                        candidate))
-                {
-                    continue;
-                }
-
-                return new VerifiedGpuReservation(
-                    processor,
-                    report.FinalStoredState.DeviceInstanceId,
-                    reportPath,
-                    report.EndedAtUtc);
-            }
-            catch (Exception exception) when (
-                exception is IOException or
-                UnauthorizedAccessException or
-                InvalidDataException or
-                JsonException or
-                InvalidOperationException or
-                NotSupportedException or
-                ArgumentException or
-                System.Security.SecurityException)
-            {
-                Logger.Debug(
-                    exception,
-                    "Ignoring unusable historical GPU report {GpuReportPath} while resolving USB reservation.",
-                    reportPath);
-            }
-        }
-
-        return null;
-    }
-
     private async Task<UsbXhciReadinessUiReport> RunUsbXhciReadinessHelperAsync(
-        string primaryInputDeviceInstanceId,
-        LogicalProcessorId? reservedGpuProcessor)
+        string primaryInputDeviceInstanceId)
     {
         if (string.IsNullOrWhiteSpace(_gateARepositoryRoot))
         {
@@ -383,13 +282,6 @@ public sealed partial class MainWindow
             startInfo.ArgumentList.Add(argument);
         }
 
-        if (reservedGpuProcessor is { } gpuProcessor)
-        {
-            startInfo.ArgumentList.Add("--gpu-processor");
-            startInfo.ArgumentList.Add(
-                gpuProcessor.Number.ToString(CultureInfo.InvariantCulture));
-        }
-
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException(
                 "The elevated USB/xHCI readiness helper could not be started.");
@@ -408,7 +300,7 @@ public sealed partial class MainWindow
                 "USB/xHCI readiness helper returned an empty report.");
         if (!string.Equals(
                 report.Schema,
-                "latencypilot-usb-xhci-readiness-v1",
+                "latencypilot-usb-xhci-readiness-v2",
                 StringComparison.Ordinal))
         {
             throw new InvalidDataException(
@@ -420,7 +312,6 @@ public sealed partial class MainWindow
 
     private async Task ShowUsbXhciReadinessResultAsync(
         UsbXhciReadinessUiReport report,
-        VerifiedGpuReservation? gpuReservation,
         bool mutationBlockedByOtherTarget,
         string? mutationBlockerSummary)
     {
@@ -429,9 +320,9 @@ public sealed partial class MainWindow
             report.Processor is not null;
         var readyToApply =
             !mutationBlockedByOtherTarget &&
+            report.ApplyEligible &&
             string.Equals(report.Status, "Ready", StringComparison.Ordinal) &&
-            hasCandidate &&
-            gpuReservation is not null;
+            hasCandidate;
 
         var content = new StackPanel { Spacing = 8d };
         content.Children.Add(new TextBlock
@@ -468,10 +359,26 @@ public sealed partial class MainWindow
         }
 
         content.Children.Add(CreateEvidenceLine(
-            "GPU reservation",
-            gpuReservation is null
-                ? "Unavailable · diagnostic-only ranking"
-                : $"CPU {gpuReservation.Processor.Number} · latest verified GPU Keep still matches stored policy"));
+            "Reserved CPUs",
+            report.ReservedProcessors.Count == 0
+                ? "None · all otherwise eligible cores were benchmarked"
+                : string.Join(", ", report.ReservedProcessors.Select(static processor => $"CPU {processor.Number}"))));
+
+        if (report.Reservations.Count != 0)
+        {
+            content.Children.Add(CreateMutedText(
+                "Reserved by current explicit device policies:" + Environment.NewLine +
+                string.Join(
+                    Environment.NewLine,
+                    report.Reservations.Select(static reservation =>
+                        $"• {reservation.DisplayName} · mask 0x{reservation.AffinityMask:X}"))));
+        }
+
+        content.Children.Add(CreateEvidenceLine(
+            "Apply readiness",
+            report.ApplyEligible
+                ? "Ready for controller-specific verification after Apply"
+                : $"Benchmark complete · Apply gated: {report.ApplyEligibilityReason}"));
 
         if (mutationBlockedByOtherTarget)
         {
@@ -513,7 +420,7 @@ public sealed partial class MainWindow
             Title = $"Apply xHCI to CPU {processor.Number}?",
             Content = new TextBlock
             {
-                Text = "LatencyPilot will journal the exact original controller policy, apply only the recommended xHCI affinity, restart/activate the controller when Windows permits it, then require translated-allocation plus controller-attributed ISR verification. Keep moving the selected USB mouse during the verification window. Any contradictory readable evidence triggers exact rollback.",
+                Text = "LatencyPilot benchmarked USB/xHCI independently while excluding physical cores already reserved by explicit device policies. It will now journal the exact original controller policy, apply only the recommended xHCI affinity, restart/activate the controller when Windows permits it, then require controller-attributed ISR verification. Keep moving the selected USB mouse during the verification window. Any contradictory readable evidence triggers exact rollback.",
                 TextWrapping = TextWrapping.Wrap,
             },
             PrimaryButtonText = "Apply & verify",
@@ -607,11 +514,11 @@ public sealed partial class MainWindow
         await dialog.ShowAsync();
     }
 
-    private sealed record VerifiedGpuReservation(
-        LogicalProcessorId Processor,
+    private sealed record UsbXhciReservationUiReport(
         string DeviceInstanceId,
-        string ReportPath,
-        DateTimeOffset VerifiedAtUtc);
+        string DisplayName,
+        ulong AffinityMask,
+        IReadOnlyList<LogicalProcessorId> Processors);
 
     private sealed record UsbXhciReadinessUiReport(
         string Schema,
@@ -621,7 +528,10 @@ public sealed partial class MainWindow
         string PrimaryInputDeviceInstanceId,
         string? ControllerInstanceId,
         LogicalProcessorId? Processor,
-        LogicalProcessorId? ReservedGpuProcessor,
+        IReadOnlyList<LogicalProcessorId> ReservedProcessors,
+        IReadOnlyList<UsbXhciReservationUiReport> Reservations,
+        bool ApplyEligible,
+        string ApplyEligibilityReason,
         double? TotalInterruptDurationMicroseconds,
         double? InterruptTailP99Microseconds,
         int? DpcCount,

@@ -12,14 +12,7 @@ public static class MutationJournalReadOnlyInspector
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
 
         using var connection = OpenReadOnly(databasePath);
-        using (var integrity = connection.CreateCommand())
-        {
-            integrity.CommandText = "PRAGMA quick_check;";
-            if (!string.Equals(integrity.ExecuteScalar() as string, "ok", StringComparison.Ordinal))
-            {
-                throw new InvalidDataException("The mutation journal failed its integrity check. Keep the recovery tools installed.");
-            }
-        }
+        EnsureIntegrity(connection);
 
         using var command = connection.CreateCommand();
         // Name every required column so an empty but malformed table cannot pass.
@@ -40,6 +33,42 @@ public static class MutationJournalReadOnlyInspector
             {
                 throw new InvalidOperationException(
                     $"Experiment {entry.ExperimentId:D} is {storedState}. Restore and verify all managed changes before uninstalling.");
+            }
+        }
+    }
+
+    public static void EnsureSafeForReplacement(string databasePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+
+        using var connection = OpenReadOnly(databasePath);
+        EnsureIntegrity(connection);
+
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT experiment_id, kind, target_id, original_state_json, candidate_state_json,
+                   state, created_utc, updated_utc, failure_reason, revision
+            FROM mutation_journal;
+            """;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var entry = ReadEntry(reader);
+            var storedState = reader.GetString(reader.GetOrdinal("state"));
+            if (!string.Equals(storedState, entry.State.ToString(), StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"Experiment {entry.ExperimentId:D} has an invalid journal state '{storedState}'.");
+            }
+
+            if (entry.State is not (
+                    MutationJournalState.Reverted or
+                    MutationJournalState.Kept or
+                    MutationJournalState.AbortedBeforeApply))
+            {
+                throw new InvalidOperationException(
+                    $"Experiment {entry.ExperimentId:D} is {entry.State}. Resume or restore unresolved work before replacing the recovery host.");
             }
         }
     }
@@ -80,6 +109,17 @@ public static class MutationJournalReadOnlyInspector
         }
 
         return entries;
+    }
+
+    private static void EnsureIntegrity(SqliteConnection connection)
+    {
+        using var integrity = connection.CreateCommand();
+        integrity.CommandText = "PRAGMA quick_check;";
+        if (!string.Equals(integrity.ExecuteScalar() as string, "ok", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "The mutation journal failed its integrity check. Keep the recovery tools installed.");
+        }
     }
 
     private static SqliteConnection OpenReadOnly(string databasePath)

@@ -42,10 +42,12 @@ public interface IAutomaticOptimizationStageRunner
 }
 
 /// <summary>
-/// Internal sequencing contract for the ADR 0006 automatic v1 path. It
-/// deliberately excludes non-v1 mutation domains such as MSI mode and does
-/// not arm public mutation; ServiceBoundary.MutationAvailable remains the
-/// exact-revision physical-validation gate.
+/// Optional composition contract for a future "Optimize all" experience.
+/// Individual subsystem benchmarks remain independently runnable and must
+/// discover CPU reservations from current machine policy state rather than
+/// consuming hidden winner/provenance output from an earlier stage. This
+/// orchestrator sequences actions only; it does not own their ranking,
+/// verification, rollback, or reservation semantics.
 /// </summary>
 public sealed class AutomaticOptimizationWorkflow
 {

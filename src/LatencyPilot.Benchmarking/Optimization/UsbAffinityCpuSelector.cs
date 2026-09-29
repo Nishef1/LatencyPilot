@@ -29,33 +29,42 @@ public static class UsbAffinityCpuSelector
     public static IReadOnlyList<UsbAffinityCpuCandidate> Rank(
         ProcessorTopologySnapshot topology,
         KernelLatencyCaptureResult capture,
-        LogicalProcessorId? reservedGpuProcessor)
+        LogicalProcessorId? reservedGpuProcessor) =>
+        Rank(
+            topology,
+            capture,
+            reservedGpuProcessor is { } processor
+                ? [processor]
+                : Array.Empty<LogicalProcessorId>());
+
+    public static IReadOnlyList<UsbAffinityCpuCandidate> Rank(
+        ProcessorTopologySnapshot topology,
+        KernelLatencyCaptureResult capture,
+        IReadOnlyCollection<LogicalProcessorId> reservedProcessors)
     {
         ArgumentNullException.ThrowIfNull(topology);
         ArgumentNullException.ThrowIfNull(capture);
+        ArgumentNullException.ThrowIfNull(reservedProcessors);
 
         if (topology.ProcessorGroupCount != 1 ||
-            reservedGpuProcessor is { Group: not 0 })
+            reservedProcessors.Any(static processor => processor.Group != 0))
         {
             throw new NotSupportedException(
                 "Automatic USB/xHCI affinity v1 currently requires one processor group.");
         }
 
-        var reservedGpuCoreIndex = reservedGpuProcessor is { } gpuProcessor
-            ? topology.Cores.SingleOrDefault(core =>
-                core.LogicalProcessors.Contains(gpuProcessor))?.Index
-                ?? throw new ArgumentException(
-                    "The reserved GPU processor does not exist in the supplied processor topology.",
-                    nameof(reservedGpuProcessor))
-            : (int?)null;
+        var reservedCoreIndexes = topology.Cores
+            .Where(core => core.LogicalProcessors.Any(reservedProcessors.Contains))
+            .Select(static core => core.Index)
+            .ToHashSet();
 
         var ranked = new List<UsbAffinityCpuCandidate>();
         foreach (var core in topology.Cores)
         {
-            // When a separately verified GPU reservation is available, keep xHCI
-            // off that entire physical core, including its SMT sibling. Independent
-            // USB diagnostics may rank without a reservation, but cannot auto-apply.
-            if (reservedGpuCoreIndex is { } excludedCore && core.Index == excludedCore)
+            // Existing explicit interrupt-affinity policies are treated as CPU
+            // reservations. Exclude the whole physical core so an SMT sibling is
+            // not benchmarked as if it were independent capacity.
+            if (reservedCoreIndexes.Contains(core.Index))
             {
                 continue;
             }
@@ -114,7 +123,7 @@ public static class UsbAffinityCpuSelector
         return ranked.Count > 0
             ? ranked[0]
             : throw new InvalidOperationException(
-                "No logical processor remains for USB/xHCI affinity after excluding the GPU winner physical core.");
+                "No logical processor remains for USB/xHCI affinity after excluding reserved physical cores.");
     }
 
     private static double Percentile99(double[] sortedAscending)

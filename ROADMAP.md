@@ -99,7 +99,7 @@ Remaining:
 
 - [ ] per-subsystem preflight/status surface for GPU and USB/xHCI;
 - [ ] quiet/background-load check with actionable warning rather than killing user apps;
-- [ ] explicit GPU-reservation handoff contract for USB/xHCI without sharing Gate A authority;
+- [x] generic CPU-reservation snapshot from current explicit device policies; no benchmark-result handoff between GPU and USB/xHCI;
 - [ ] explicit pending-reboot/multi-GPU/unsupported-topology user-facing stop reason.
 
 ---
@@ -238,10 +238,9 @@ Public mutation IPC remains unarmed until this physical gate passes.
 - [x] Raw Input host timing metrics;
 - [x] candidate-aware xHCI ISR runtime-placement verifier with fail-closed shared-controller disambiguation;
 - [x] independent elevated quiet ETW headroom capture owned by the USB/xHCI action;
-- [x] resolve a separately verified current GPU reservation when available; no reservation is invented;
-- [x] without a verified GPU reservation, produce DiagnosticOnly ranking and refuse automatic Apply;
-- [x] keep GPU and xHCI decisions sequential: no second per-CPU USB tournament and no joint weighted/Pareto score;
-- [x] exclude the whole physical core containing the verified GPU reservation, including SMT sibling;
+- [x] derive reservations from actual current specified-processor device policies, regardless of whether they were set manually or by another LatencyPilot subsystem;
+- [x] keep subsystem benchmarks independent: no GPU-result prerequisite or benchmark-result handoff;
+- [x] exclude every reserved physical core, including SMT siblings, while excluding the current benchmark target from its own reservation snapshot;
 - [x] rank CPU headroom by total DPC+ISR duration, then p99 interrupt tail, then event-count context;
 - [x] bind recommendation to the exact interrupt-owning xHCI controller;
 - [x] on shared-service multi-xHCI systems, exclude CPUs that overlap readable peer-controller translated allocation and fail closed when peer allocation is unavailable;
@@ -320,7 +319,7 @@ Analyze network / RSS
 Restore original settings
 ```
 
-A later optional `Optimize all` action may sequence already-proven GPU and USB actions, but it is not required for v1 and must not collapse their progress, evidence, verification or rollback authority.
+A later optional `Optimize all` action may sequence already-proven subsystem actions, but each action still discovers reservations from machine state and remains independently runnable. The orchestrator must not pass hidden winner/provenance state from one benchmark into another.
 
 - [x] non-elevated WinUI shell;
 - [x] development GPU Gate A progress and safe-stop experience;

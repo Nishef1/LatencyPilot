@@ -40,11 +40,29 @@ public static class UsbAffinityRecommendationPlanner
         UserInputRouteInventory inputRoutes,
         string primaryInputDeviceInstanceId,
         DeviceInventorySnapshot? deviceInventory,
-        LogicalProcessorId? reservedGpuProcessor)
+        LogicalProcessorId? reservedGpuProcessor) =>
+        CreateWithReservations(
+            topology,
+            quietCapture,
+            inputRoutes,
+            primaryInputDeviceInstanceId,
+            deviceInventory,
+            reservedGpuProcessor is { } processor
+                ? [processor]
+                : Array.Empty<LogicalProcessorId>());
+
+    public static UsbAffinityRecommendation CreateWithReservations(
+        ProcessorTopologySnapshot topology,
+        KernelLatencyCaptureResult quietCapture,
+        UserInputRouteInventory inputRoutes,
+        string primaryInputDeviceInstanceId,
+        DeviceInventorySnapshot? deviceInventory,
+        IReadOnlyCollection<LogicalProcessorId> reservedProcessors)
     {
         ArgumentNullException.ThrowIfNull(topology);
         ArgumentNullException.ThrowIfNull(quietCapture);
         ArgumentNullException.ThrowIfNull(inputRoutes);
+        ArgumentNullException.ThrowIfNull(reservedProcessors);
         ArgumentException.ThrowIfNullOrWhiteSpace(primaryInputDeviceInstanceId);
 
         if (!TryValidateCapture(quietCapture, out var captureReason))
@@ -83,7 +101,7 @@ public static class UsbAffinityRecommendationPlanner
             ranked = UsbAffinityCpuSelector.Rank(
                 topology,
                 quietCapture,
-                reservedGpuProcessor).ToArray();
+                reservedProcessors).ToArray();
         }
         catch (Exception exception) when (
             exception is InvalidOperationException or
@@ -93,48 +111,30 @@ public static class UsbAffinityRecommendationPlanner
             return NotReady(exception.Message);
         }
 
-        var controller = route.UsbHostControllerInstanceId!;
-        var selected = ranked.FirstOrDefault(candidate =>
-            IsCandidateAttributableAcrossPeerControllers(
-                controller,
-                candidate.Processor,
-                deviceInventory,
-                out _));
+        var selected = ranked.FirstOrDefault();
         if (selected is null)
         {
-            var attributionReason = "No eligible xHCI CPU remains after peer-controller attribution checks.";
-            if (ranked.Length > 0)
-            {
-                _ = IsCandidateAttributableAcrossPeerControllers(
-                    controller,
-                    ranked[0].Processor,
-                    deviceInventory,
-                    out attributionReason);
-            }
-
-            return NotReady(attributionReason);
+            return NotReady(
+                "No CPU remains for USB/xHCI after excluding physical cores already reserved by explicit device interrupt-affinity policies.");
         }
 
-        _ = IsCandidateAttributableAcrossPeerControllers(
-            controller,
-            selected.Processor,
-            deviceInventory,
-            out var selectedAttributionReason);
-
-        var status = reservedGpuProcessor is null
-            ? UsbAffinityRecommendationStatus.DiagnosticOnly
-            : UsbAffinityRecommendationStatus.Ready;
-        var reservationReason = reservedGpuProcessor is { } gpuProcessor
-            ? $"The physical core containing verified GPU CPU {gpuProcessor.Number} was excluded."
-            : "No separately verified GPU reservation was available, so this CPU ranking is diagnostic only and cannot authorize xHCI Apply.";
+        var controller = route.UsbHostControllerInstanceId!;
+        var reservedList = reservedProcessors
+            .Distinct()
+            .OrderBy(static processor => processor.Group)
+            .ThenBy(static processor => processor.Number)
+            .ToArray();
+        var reservationReason = reservedList.Length == 0
+            ? "No existing explicit interrupt-affinity CPU reservations were detected."
+            : $"Skipped {reservedList.Length} reserved logical CPU(s): {string.Join(", ", reservedList.Select(static processor => $"CPU {processor.Number}"))}. Their physical cores were excluded from this benchmark.";
 
         var reason =
             $"Selected CPU {selected.Processor.Number} for primary input {primaryInputDeviceInstanceId} on xHCI {controller}: " +
             $"{selected.TotalInterruptDurationMicroseconds:F1} us observed DPC+ISR time and " +
             $"{selected.InterruptTailP99Microseconds:F1} us p99 tail. " +
-            $"{reservationReason} {selectedAttributionReason}";
+            reservationReason;
         return new UsbAffinityRecommendation(
-            status,
+            UsbAffinityRecommendationStatus.Ready,
             controller,
             selected.Processor,
             [primaryInputDeviceInstanceId],
@@ -152,75 +152,13 @@ public static class UsbAffinityRecommendationPlanner
         ArgumentNullException.ThrowIfNull(inputRoutes);
         ArgumentException.ThrowIfNullOrWhiteSpace(primaryInputDeviceInstanceId);
 
-        return CreateIndependent(
+        return CreateWithReservations(
             topology,
             quietCapture,
             inputRoutes,
             primaryInputDeviceInstanceId,
             deviceInventory,
-            gpuWinner);
-    }
-
-    private static bool IsCandidateAttributableAcrossPeerControllers(
-        string controllerInstanceId,
-        LogicalProcessorId processor,
-        DeviceInventorySnapshot? deviceInventory,
-        out string reason)
-    {
-        if (deviceInventory is null)
-        {
-            reason = "Peer-controller allocation was not supplied; final xHCI runtime verification remains authoritative.";
-            return true;
-        }
-
-        var target = deviceInventory.Devices.FirstOrDefault(device =>
-            string.Equals(device.InstanceId, controllerInstanceId, StringComparison.OrdinalIgnoreCase));
-        if (target is null || string.IsNullOrWhiteSpace(target.ServiceName))
-        {
-            reason = "The routed xHCI controller is not present in the captured device inventory.";
-            return false;
-        }
-
-        var peers = deviceInventory.Devices
-            .Where(device =>
-                !string.Equals(device.InstanceId, controllerInstanceId, StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(device.ServiceName) &&
-                string.Equals(device.ServiceName, target.ServiceName, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        if (peers.Length == 0)
-        {
-            reason = "The target is the only present controller using this driver service.";
-            return true;
-        }
-
-        var candidateMask = 1UL << processor.Number;
-        foreach (var peer in peers)
-        {
-            if (peer.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available ||
-                peer.InterruptResources.Resources.Count == 0)
-            {
-                reason = $"Peer xHCI controller '{peer.InstanceId}' has no readable translated interrupt allocation, so controller-specific runtime proof cannot be planned safely.";
-                return false;
-            }
-
-            if (peer.InterruptResources.Resources.Any(resource =>
-                    resource.ProcessorGroup != processor.Group ||
-                    resource.AffinityMask == 0))
-            {
-                reason = $"Peer xHCI controller '{peer.InstanceId}' exposes an unsupported or empty translated interrupt allocation.";
-                return false;
-            }
-
-            if (peer.InterruptResources.Resources.Any(resource =>
-                    (resource.AffinityMask & candidateMask) != 0))
-            {
-                reason = $"CPU {processor.Number} overlaps translated interrupt allocation owned by peer xHCI controller '{peer.InstanceId}'.";
-                return false;
-            }
-        }
-
-        reason = $"CPU {processor.Number} is disjoint from all {peers.Length} same-service peer xHCI controller allocation(s).";
-        return true;
+            [gpuWinner]);
     }
 
     private static bool TryValidateCapture(KernelLatencyCaptureResult capture, out string reason)

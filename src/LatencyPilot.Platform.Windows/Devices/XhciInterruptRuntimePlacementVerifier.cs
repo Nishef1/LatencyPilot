@@ -40,8 +40,87 @@ public sealed record XhciInterruptRuntimePlacementEvidence(
         OffTargetIsrEventCount == 0;
 }
 
+public sealed record XhciInterruptVerificationPreflight(
+    bool CanAttemptControllerSpecificVerification,
+    string Reason);
+
+
 public static class XhciInterruptRuntimePlacementVerifier
 {
+    public static XhciInterruptVerificationPreflight AssessApplyPreflight(
+        string deviceInstanceId,
+        IReadOnlyList<PnPDeviceSnapshot> devices,
+        DeviceInterruptAffinityCandidate candidate)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstanceId);
+        ArgumentNullException.ThrowIfNull(devices);
+        ArgumentNullException.ThrowIfNull(candidate);
+
+        var target = devices.FirstOrDefault(device =>
+            string.Equals(device.InstanceId, deviceInstanceId, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            return new(false, "The routed xHCI controller is not present in the current device inventory.");
+        }
+
+        if (string.IsNullOrWhiteSpace(target.ServiceName) ||
+            !string.Equals(
+                NormalizeModuleStem(target.ServiceName),
+                "USBXHCI",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new(false, "The routed USB controller is not owned by the USBXHCI service.");
+        }
+
+        var serviceName = NormalizeModuleStem(target.ServiceName);
+        var peers = devices
+            .Where(device =>
+                !string.Equals(device.InstanceId, target.InstanceId, StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(device.ServiceName) &&
+                string.Equals(
+                    NormalizeModuleStem(device.ServiceName),
+                    serviceName,
+                    StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (peers.Length == 0)
+        {
+            return new(true, "The routed controller is the only present USBXHCI service instance; controller-specific ETW attribution can be attempted directly.");
+        }
+
+        foreach (var peer in peers)
+        {
+            if (peer.InterruptResources.ReadStatus != InterruptResourceReadStatus.Available ||
+                peer.InterruptResources.Resources.Count == 0)
+            {
+                return new(
+                    false,
+                    $"Peer xHCI controller '{peer.InstanceId}' has no readable translated allocation. USB benchmarking is still valid, but Apply must wait because controller-specific runtime attribution cannot yet be proven safely.");
+            }
+
+            if (peer.InterruptResources.Resources.Any(resource =>
+                    resource.ProcessorGroup != candidate.ProcessorGroup ||
+                    resource.AffinityMask == 0))
+            {
+                return new(
+                    false,
+                    $"Peer xHCI controller '{peer.InstanceId}' exposes an unsupported translated allocation. USB benchmarking is still valid, but Apply is not armed.");
+            }
+
+            if (peer.InterruptResources.Resources.Any(resource =>
+                    (resource.AffinityMask & candidate.AffinityMask) != 0))
+            {
+                return new(
+                    false,
+                    $"The recommended CPU overlaps translated allocation owned by peer xHCI controller '{peer.InstanceId}'. Benchmark selection remains valid, but Apply is not safe for controller-specific attribution.");
+            }
+        }
+
+        return new(
+            true,
+            $"The recommended CPU is disjoint from all {peers.Length} same-service peer xHCI controller allocation(s); controller-specific runtime verification can be attempted after Apply.");
+    }
+
     public static XhciInterruptRuntimePlacementEvidence Analyze(
         KernelLatencyCaptureResult capture,
         string deviceInstanceId,
