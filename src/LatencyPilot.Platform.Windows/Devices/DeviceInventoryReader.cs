@@ -126,7 +126,10 @@ public static class DeviceInventoryReader
             {
                 if (interruptManagement is null)
                 {
-                    return InterruptConfigurationSnapshot.Available(null, null, null, null);
+                    return InterruptConfigurationSnapshot.Available(null, null, null, null) with
+                    {
+                        InterruptManagementKeyExists = false,
+                    };
                 }
 
                 using var msi = interruptManagement.OpenSubKey(MsiPropertiesKey, writable: false);
@@ -136,7 +139,10 @@ public static class DeviceInventoryReader
                     ReadDword(msi, "MSISupported"),
                     ReadDword(msi, "MessageNumberLimit"),
                     ReadDword(affinity, "DevicePolicy"),
-                    ReadAffinityMask(affinity, "AssignmentSetOverride"));
+                    ReadAffinityMask(affinity, "AssignmentSetOverride")) with
+                {
+                    InterruptManagementKeyExists = true,
+                };
             }
         }
         catch (Exception exception) when (IsRecoverableMetadataException(exception))

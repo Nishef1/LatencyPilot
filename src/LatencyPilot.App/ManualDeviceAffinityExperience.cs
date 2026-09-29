@@ -219,6 +219,10 @@ public sealed partial class MainWindow
             .ToArray();
 
         var rows = inventory.Devices
+            .Where(device =>
+                device.InterruptConfiguration.InterruptManagementKeyExists ||
+                device.InterruptResources.HasAssignedInterrupts ||
+                classified.ContainsKey(device.InstanceId))
             .Select(device =>
             {
                 classified.TryGetValue(device.InstanceId, out var kind);
@@ -457,7 +461,7 @@ public sealed partial class MainWindow
         });
         devicesHeading.Children.Add(new TextBlock
         {
-            Text = $"{supportedCount.ToString(CultureInfo.InvariantCulture)} editable · {snapshot.Rows.Count.ToString(CultureInfo.InvariantCulture)} present devices",
+            Text = $"{supportedCount.ToString(CultureInfo.InvariantCulture)} editable · {snapshot.Rows.Count.ToString(CultureInfo.InvariantCulture)} interrupt-capable devices",
             Style = AppStyle("CaptionTextStyle"),
             Foreground = ThemeBrush("MutedTextBrush"),
         });

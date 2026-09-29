@@ -23,6 +23,8 @@ public sealed record InterruptConfigurationSnapshot(
     uint? DevicePolicy,
     ulong? AssignmentSetOverrideMask)
 {
+    public bool InterruptManagementKeyExists { get; init; }
+
     public bool HasAnyConfiguration =>
         MsiSupported is not null ||
         MessageNumberLimit is not null ||

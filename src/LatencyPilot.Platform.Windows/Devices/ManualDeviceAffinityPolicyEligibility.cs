@@ -69,6 +69,16 @@ public static class ManualDeviceAffinityPolicyEligibility
             return false;
         }
 
+        var targetKind = ClassifyTarget(device);
+        if (targetKind == ManualDeviceAffinityPolicyTargetKind.Device &&
+            !device.InterruptConfiguration.InterruptManagementKeyExists &&
+            !device.InterruptResources.HasAssignedInterrupts)
+        {
+            inspectionOnlyReason =
+                "This device exposes neither an Interrupt Management registry surface nor allocated interrupt resources. LatencyPilot will not invent an affinity policy for a PnP node that has no interrupt evidence.";
+            return false;
+        }
+
         inspectionOnlyReason = null;
         return true;
     }

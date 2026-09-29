@@ -58,7 +58,14 @@ public sealed class DeviceInterruptMutationTests
 
         var networkDevice = CreatePresentDevice(
             new Guid("4D36E972-E325-11CE-BFC1-08002BE10318"),
-            "Test NIC");
+            "Test NIC") with
+        {
+            InterruptConfiguration = InterruptConfigurationSnapshot
+                .Available(null, null, null, null) with
+            {
+                InterruptManagementKeyExists = true,
+            },
+        };
         Assert.IsTrue(
             ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation(
                 networkDevice,
@@ -81,6 +88,15 @@ public sealed class DeviceInterruptMutationTests
         Assert.AreEqual(
             ManualDeviceAffinityPolicyTargetKind.Xhci,
             ManualDeviceAffinityPolicyEligibility.ClassifyTarget(xhciDevice));
+
+        var nonInterruptDevice = CreatePresentDevice(
+            new Guid("50127DC3-0F36-415E-A6CC-4CB3BE910B65"),
+            "Test processor node");
+        Assert.IsFalse(
+            ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation(
+                nonInterruptDevice,
+                out var nonInterruptReason));
+        StringAssert.Contains(nonInterruptReason!, "no interrupt evidence");
 
 
         var candidate = DeviceInterruptMutationCandidate.EnableMsi();
@@ -110,6 +126,14 @@ public sealed class DeviceInterruptMutationTests
         Assert.AreEqual(multiMask, genericRoundTrip.ToAffinityCandidate().AffinityMask);
 
         var root = FindRepositoryRoot();
+        var inventoryReaderSource = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Platform.Windows", "Devices", "DeviceInventoryReader.cs"));
+        StringAssert.Contains(inventoryReaderSource, "InterruptManagementKeyExists = true",
+            "Device inventory must preserve whether the documented Interrupt Management surface actually exists.");
+
+        var manualUiSourceFilter = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
+        StringAssert.Contains(manualUiSourceFilter, "interrupt-capable devices",
+            "Policy Lab should not present every present PnP node as an editable interrupt target.");
+
         var storeSource = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Platform.Windows", "Devices", "DeviceInterruptConfigurationStore.cs"));
         StringAssert.Contains(storeSource, "MSISupported");
         StringAssert.Contains(storeSource, "MessageNumberLimit");
