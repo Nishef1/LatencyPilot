@@ -9,6 +9,7 @@ public static class NetworkRssReader
     private const string NamespacePath = @"\\.\root\StandardCimv2";
     private const int MaximumRssRows = 256;
     private const int MaximumAdapterIdentityRows = 512;
+    private const int MaximumHardwareInfoRows = 512;
 
     private static readonly string[] RssPropertyNames =
     [
@@ -41,15 +42,20 @@ public static class NetworkRssReader
             scope.Connect();
 
             var identities = ReadAdapterIdentities(scope);
+            var (hardwareInfo, hardwareInfoWarning) = TryReadHardwareInfo(scope);
             var adapters = new List<NetworkRssAdapterSnapshot>();
-            var rssProviderWarning = TryReadRssAdapters(scope, identities, adapters);
-            AddPhysicalAdaptersWithoutRssRows(adapters, identities);
+            var rssProviderWarning = TryReadRssAdapters(
+                scope,
+                identities,
+                hardwareInfo,
+                adapters);
+            AddPhysicalAdaptersWithoutRssRows(adapters, identities, hardwareInfo);
 
             return new NetworkRssSnapshot(
                 NetworkRssReadStatus.Available,
                 adapters.AsReadOnly(),
                 capturedAtUtc,
-                rssProviderWarning);
+                CombineWarnings(rssProviderWarning, hardwareInfoWarning));
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -78,6 +84,7 @@ public static class NetworkRssReader
     private static string? TryReadRssAdapters(
         ManagementScope scope,
         IReadOnlyList<NetworkAdapterPnpIdentity> identities,
+        IReadOnlyDictionary<string, NetworkAdapterHardwareInfo> hardwareInfo,
         List<NetworkRssAdapterSnapshot> adapters)
     {
         try
@@ -102,6 +109,10 @@ public static class NetworkRssReader
                     }
 
                     var mapped = NetworkRssPropertyMapper.Map(ReadRssProperties(row));
+                    hardwareInfo.TryGetValue(
+                        mapped.InterfaceDescription ?? string.Empty,
+                        out var hardware);
+                    mapped = MergeHardwareInfo(mapped, hardware);
                     var correlation = NetworkRssPnpCorrelator.Resolve(
                         mapped.InterfaceDescription,
                         identities);
@@ -135,6 +146,84 @@ public static class NetworkRssReader
                 ManagementStatus.NotFound)
         {
             return $"RSS settings provider is unavailable: {exception.ErrorCode}: {exception.Message}";
+        }
+    }
+
+    private static (
+        IReadOnlyDictionary<string, NetworkAdapterHardwareInfo> ByInterfaceDescription,
+        string? Warning)
+        TryReadHardwareInfo(ManagementScope scope)
+    {
+        try
+        {
+            var rowsByDescription = new List<NetworkAdapterHardwareInfo>();
+            using var searcher = new ManagementObjectSearcher(
+                scope,
+                new ObjectQuery(
+                    "SELECT InterfaceDescription, MsiSupported, MsiXSupported, MsiXEnabled, NumMsiMessages " +
+                    "FROM MSFT_NetAdapterHardwareInfoSettingData WHERE InterfaceDescription IS NOT NULL"));
+            using var rows = searcher.Get();
+
+            foreach (ManagementObject row in rows)
+            {
+                using (row)
+                {
+                    if (rowsByDescription.Count >= MaximumHardwareInfoRows)
+                    {
+                        throw new InvalidDataException(
+                            $"MSFT_NetAdapterHardwareInfoSettingData returned more than {MaximumHardwareInfoRows} rows.");
+                    }
+
+                    var mapped = NetworkRssPropertyMapper.Map(new Dictionary<string, object?>
+                    {
+                        ["InterfaceDescription"] = row.Properties["InterfaceDescription"]?.Value,
+                        ["MsiSupported"] = row.Properties["MsiSupported"]?.Value,
+                        ["MsiXSupported"] = row.Properties["MsiXSupported"]?.Value,
+                        ["MsiXEnabled"] = row.Properties["MsiXEnabled"]?.Value,
+                        ["NumberOfInterruptMessages"] = row.Properties["NumMsiMessages"]?.Value,
+                    });
+                    if (string.IsNullOrWhiteSpace(mapped.InterfaceDescription))
+                    {
+                        continue;
+                    }
+
+                    rowsByDescription.Add(new NetworkAdapterHardwareInfo(
+                        mapped.InterfaceDescription,
+                        mapped.MsiSupported,
+                        mapped.MsiXSupported,
+                        mapped.MsiXEnabled,
+                        mapped.NumberOfInterruptMessages));
+                }
+            }
+
+            var unique = rowsByDescription
+                .GroupBy(
+                    static item => item.InterfaceDescription,
+                    StringComparer.OrdinalIgnoreCase)
+                .Where(static group => group.Count() == 1)
+                .ToDictionary(
+                    static group => group.Key,
+                    static group => group.Single(),
+                    StringComparer.OrdinalIgnoreCase);
+            return (unique, null);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            return (
+                new Dictionary<string, NetworkAdapterHardwareInfo>(StringComparer.OrdinalIgnoreCase),
+                $"Network hardware-info provider access was denied: {exception.Message}");
+        }
+        catch (ManagementException exception)
+        {
+            return (
+                new Dictionary<string, NetworkAdapterHardwareInfo>(StringComparer.OrdinalIgnoreCase),
+                $"Network hardware-info provider is unavailable: {exception.ErrorCode}: {exception.Message}");
+        }
+        catch (InvalidDataException exception)
+        {
+            return (
+                new Dictionary<string, NetworkAdapterHardwareInfo>(StringComparer.OrdinalIgnoreCase),
+                $"Network hardware-info provider returned unusable data: {exception.Message}");
         }
     }
 
@@ -181,7 +270,8 @@ public static class NetworkRssReader
 
     private static void AddPhysicalAdaptersWithoutRssRows(
         List<NetworkRssAdapterSnapshot> adapters,
-        IReadOnlyList<NetworkAdapterPnpIdentity> identities)
+        IReadOnlyList<NetworkAdapterPnpIdentity> identities,
+        IReadOnlyDictionary<string, NetworkAdapterHardwareInfo> hardwareInfo)
     {
         var representedPnpIds = adapters
             .Where(static adapter => adapter.PnpCorrelation.IsAvailable)
@@ -196,14 +286,15 @@ public static class NetworkRssReader
                 continue;
             }
 
+            hardwareInfo.TryGetValue(identity.InterfaceDescription, out var hardware);
             adapters.Add(new NetworkRssAdapterSnapshot(
                 identity.InterfaceDescription,
                 identity.InterfaceDescription,
                 null,
-                null,
-                null,
-                null,
-                null,
+                hardware?.MsiSupported,
+                hardware?.MsiXSupported,
+                hardware?.MsiXEnabled,
+                hardware?.NumberOfInterruptMessages,
                 null,
                 null,
                 null,
@@ -218,6 +309,7 @@ public static class NetworkRssReader
                 RssSettingsAvailable = false,
                 HardwareInterface = identity.HardwareInterface,
                 ConnectorPresent = identity.ConnectorPresent,
+                HardwareInfoAvailable = hardware is not null,
                 PnpCorrelation = new NetworkRssPnpCorrelation(
                     NetworkRssPnpCorrelationStatus.Available,
                     identity.PnpInstanceId,
@@ -225,6 +317,21 @@ public static class NetworkRssReader
             });
         }
     }
+
+    private static NetworkRssAdapterSnapshot MergeHardwareInfo(
+        NetworkRssAdapterSnapshot adapter,
+        NetworkAdapterHardwareInfo? hardware) =>
+        hardware is null
+            ? adapter
+            : adapter with
+            {
+                MsiSupported = adapter.MsiSupported ?? hardware.MsiSupported,
+                MsiXSupported = adapter.MsiXSupported ?? hardware.MsiXSupported,
+                MsiXEnabled = adapter.MsiXEnabled ?? hardware.MsiXEnabled,
+                NumberOfInterruptMessages =
+                    adapter.NumberOfInterruptMessages ?? hardware.NumberOfInterruptMessages,
+                HardwareInfoAvailable = true,
+            };
 
     private static bool IsPhysicalHardwareIdentity(NetworkAdapterPnpIdentity identity) =>
         identity.HardwareInterface == true ||
@@ -241,6 +348,24 @@ public static class NetworkRssReader
 
         return properties;
     }
+
+    private static string? CombineWarnings(params string?[] warnings)
+    {
+        var available = warnings
+            .Where(static warning => !string.IsNullOrWhiteSpace(warning))
+            .Select(static warning => warning!)
+            .ToArray();
+        return available.Length == 0
+            ? null
+            : string.Join(" ", available);
+    }
+
+    private sealed record NetworkAdapterHardwareInfo(
+        string InterfaceDescription,
+        bool? MsiSupported,
+        bool? MsiXSupported,
+        bool? MsiXEnabled,
+        uint? NumberOfInterruptMessages);
 
     private static NetworkRssSnapshot Failure(
         NetworkRssReadStatus status,
