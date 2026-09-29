@@ -25,7 +25,23 @@ public sealed record NetworkInterfaceContinuitySnapshot(
     IReadOnlyList<string> GatewayAddresses,
     WifiConnectionContinuityStatus WifiStatus,
     string? WifiSsid,
-    string? WifiBssid);
+    string? WifiBssid)
+{
+    public long? BytesReceived { get; init; }
+
+    public long? BytesSent { get; init; }
+}
+
+public sealed record NetworkTrafficDelta(
+    long? BytesReceived,
+    long? BytesSent)
+{
+    public bool IsAvailable => BytesReceived is not null && BytesSent is not null;
+
+    public bool HasTraffic =>
+        IsAvailable &&
+        (BytesReceived.GetValueOrDefault() > 0 || BytesSent.GetValueOrDefault() > 0);
+}
 
 public sealed record NetworkEnvironmentContinuitySnapshot(
     string TargetPnpInstanceId,
@@ -176,6 +192,29 @@ public static class NetworkEnvironmentContinuity
         return new NetworkEnvironmentContinuityResult(reasons.Count == 0, reasons.AsReadOnly());
     }
 
+    public static NetworkTrafficDelta MeasureTraffic(
+        NetworkEnvironmentContinuitySnapshot before,
+        NetworkEnvironmentContinuitySnapshot after)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+
+        if (!StringEquals(
+                before.TargetInterface.InterfaceId,
+                after.TargetInterface.InterfaceId))
+        {
+            return new NetworkTrafficDelta(null, null);
+        }
+
+        return new NetworkTrafficDelta(
+            CounterDelta(
+                before.TargetInterface.BytesReceived,
+                after.TargetInterface.BytesReceived),
+            CounterDelta(
+                before.TargetInterface.BytesSent,
+                after.TargetInterface.BytesSent));
+    }
+
     private static NetworkInterfaceContinuitySnapshot CaptureInterface(NetworkInterface networkInterface)
     {
         var properties = networkInterface.GetIPProperties();
@@ -206,6 +245,18 @@ public static class NetworkEnvironmentContinuity
             .OrderBy(static address => address, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        long? bytesReceived = null;
+        long? bytesSent = null;
+        try
+        {
+            var statistics = networkInterface.GetIPv4Statistics();
+            bytesReceived = statistics.BytesReceived;
+            bytesSent = statistics.BytesSent;
+        }
+        catch (NetworkInformationException)
+        {
+        }
+
         var wifiStatus = WifiConnectionContinuityStatus.NotApplicable;
         string? wifiSsid = null;
         string? wifiBssid = null;
@@ -225,8 +276,19 @@ public static class NetworkEnvironmentContinuity
             gateways,
             wifiStatus,
             wifiSsid,
-            wifiBssid);
+            wifiBssid)
+        {
+            BytesReceived = bytesReceived,
+            BytesSent = bytesSent,
+        };
     }
+
+    private static long? CounterDelta(long? before, long? after) =>
+        before is { } beforeValue &&
+        after is { } afterValue &&
+        afterValue >= beforeValue
+            ? afterValue - beforeValue
+            : null;
 
     private static (WifiConnectionContinuityStatus Status, string? Ssid, string? Bssid) CaptureWifi(string interfaceId)
     {
@@ -272,6 +334,7 @@ public static class NetworkEnvironmentContinuity
         StringEquals(left.Name, right.Name) &&
         StringEquals(left.InterfaceDescription, right.InterfaceDescription) &&
         left.RssSettingsAvailable == right.RssSettingsAvailable &&
+        left.HardwareInfoAvailable == right.HardwareInfoAvailable &&
         left.Enabled == right.Enabled &&
         left.MsiSupported == right.MsiSupported &&
         left.MsiXSupported == right.MsiXSupported &&
