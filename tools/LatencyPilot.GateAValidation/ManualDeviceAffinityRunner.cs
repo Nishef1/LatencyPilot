@@ -898,7 +898,7 @@ internal static class ManualDeviceAffinityRunner
 
         if (!allocationObservable && allowRebootDeferral)
         {
-            var pending = transaction.DeferApplyVerificationToReboot(
+            var pending = transaction.DeferXhciApplyVerificationToReboot(
                 experimentId,
                 $"In-place xHCI restart completed, but usable translated interrupt allocation is unavailable. {assignmentReason}");
             return CreateReport(
