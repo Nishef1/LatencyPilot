@@ -23,6 +23,7 @@ public sealed partial class MainWindow
     private bool _manualDeviceAffinityBusy;
     private bool _manualDeviceAffinityDialogOpening;
     private Window? _manualDeviceAffinityWindow;
+    private bool _manualAffinitySupportedOnly = true;
     private readonly Dictionary<string, ulong> _manualAffinityDraftMasks =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -166,6 +167,7 @@ public sealed partial class MainWindow
             {
                 _manualDeviceAffinityWindow = null;
                 _manualAffinityDraftMasks.Clear();
+                _manualAffinitySupportedOnly = true;
             }
         };
 
@@ -441,6 +443,19 @@ public sealed partial class MainWindow
         };
         AutomationProperties.SetName(searchBox, "Search interrupt-affinity devices");
 
+        var supportedOnlyCheckBox = new CheckBox
+        {
+            Content = "Supported only",
+            IsChecked = _manualAffinitySupportedOnly,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        AutomationProperties.SetName(
+            supportedOnlyCheckBox,
+            "Show only supported interrupt-affinity devices");
+        ToolTipService.SetToolTip(
+            supportedOnlyCheckBox,
+            "Show only devices that can start a new policy change. Journal-owned recovery rows remain visible so Restore is never hidden.");
+
         var devicesTitleRow = new Grid { ColumnSpacing = 8d };
         devicesTitleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         devicesTitleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1d, GridUnitType.Star) });
@@ -458,18 +473,20 @@ public sealed partial class MainWindow
             Text = "Devices",
             Style = AppStyle("SubsectionTitleTextStyle"),
         });
-        devicesHeading.Children.Add(new TextBlock
+        var devicesSummaryText = new TextBlock
         {
             Text = $"{supportedCount.ToString(CultureInfo.InvariantCulture)} editable · {snapshot.Rows.Count.ToString(CultureInfo.InvariantCulture)} interrupt-capable devices",
             Style = AppStyle("CaptionTextStyle"),
             Foreground = ThemeBrush("MutedTextBrush"),
-        });
+        };
+        devicesHeading.Children.Add(devicesSummaryText);
         Grid.SetColumn(devicesHeading, 1);
         devicesTitleRow.Children.Add(devicesHeading);
 
         var devicesContent = new StackPanel { Spacing = 10d };
         devicesContent.Children.Add(devicesTitleRow);
         devicesContent.Children.Add(searchBox);
+        devicesContent.Children.Add(supportedOnlyCheckBox);
         devicesContent.Children.Add(new Border
         {
             Height = 1d,
@@ -559,6 +576,10 @@ public sealed partial class MainWindow
             deviceList.Items.Clear();
             var filtered = snapshot.Rows
                 .Where(row =>
+                    !_manualAffinitySupportedOnly ||
+                    row.CanStartNewPolicyMutation ||
+                    row.HasPendingRecovery)
+                .Where(row =>
                     normalized.Length == 0 ||
                     row.Device.DisplayName.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
                     row.Device.InstanceId.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
@@ -566,6 +587,15 @@ public sealed partial class MainWindow
                     (row.Kind?.ToString().Contains(normalized, StringComparison.OrdinalIgnoreCase) ?? false))
                 .ToArray();
             visibleDeviceCount = filtered.Length;
+            var visibleEditableCount = filtered.Count(static row => row.CanStartNewPolicyMutation);
+            var recoveryOnlyCount = filtered.Count(static row =>
+                row.HasPendingRecovery && !row.CanStartNewPolicyMutation);
+            devicesSummaryText.Text =
+                $"{visibleEditableCount.ToString(CultureInfo.InvariantCulture)} editable · " +
+                $"{filtered.Length.ToString(CultureInfo.InvariantCulture)} shown of {snapshot.Rows.Count.ToString(CultureInfo.InvariantCulture)}" +
+                (recoveryOnlyCount > 0
+                    ? $" · {recoveryOnlyCount.ToString(CultureInfo.InvariantCulture)} recovery"
+                    : string.Empty);
             RefreshDeviceListHeight();
 
             ListViewItem? preferredItem = null;
@@ -600,7 +630,9 @@ public sealed partial class MainWindow
                     Style = AppStyle("SubtleCardStyle"),
                     Child = new TextBlock
                     {
-                        Text = "No devices match this search.",
+                        Text = _manualAffinitySupportedOnly
+                            ? "No supported devices match this search."
+                            : "No devices match this search.",
                         TextWrapping = TextWrapping.Wrap,
                         Style = AppStyle("MutedBodyTextStyle"),
                     },
@@ -614,6 +646,16 @@ public sealed partial class MainWindow
 
         deviceList.SelectionChanged += (_, _) => RenderSelectedDevice();
         searchBox.TextChanged += (_, _) => PopulateDevices(searchBox.Text, null);
+        supportedOnlyCheckBox.Checked += (_, _) =>
+        {
+            _manualAffinitySupportedOnly = true;
+            PopulateDevices(searchBox.Text, null);
+        };
+        supportedOnlyCheckBox.Unchecked += (_, _) =>
+        {
+            _manualAffinitySupportedOnly = false;
+            PopulateDevices(searchBox.Text, null);
+        };
 
         var initialId = selectedDeviceInstanceId
             ?? snapshot.Rows.FirstOrDefault(static row => row.HasPendingRecovery)?.Device.InstanceId
