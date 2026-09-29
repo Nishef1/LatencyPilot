@@ -49,6 +49,7 @@ public static class MutationJournalStateMachine
         (MutationJournalState.ApplyRebootPending, MutationJournalState.Applied) => true,
         (MutationJournalState.ApplyRebootPending, MutationJournalState.Reverting) => true,
         (MutationJournalState.ApplyRebootPending, MutationJournalState.RecoveryRequired) => true,
+        (MutationJournalState.Applied, MutationJournalState.ApplyRebootPending) => true,
         (MutationJournalState.Applied, MutationJournalState.Measuring) => true,
         (MutationJournalState.Applied, MutationJournalState.Reverting) => true,
         (MutationJournalState.Applied, MutationJournalState.RecoveryRequired) => true,
