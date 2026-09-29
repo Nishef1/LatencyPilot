@@ -17,6 +17,8 @@ public sealed class DeviceInterruptMutationTests
         Assert.IsTrue(MutationJournalStateMachine.CanTransition(MutationJournalState.Applying, MutationJournalState.ApplyRebootPending));
         Assert.IsTrue(MutationJournalStateMachine.CanTransition(MutationJournalState.ApplyRebootPending, MutationJournalState.Applied));
         Assert.IsTrue(MutationJournalStateMachine.CanTransition(MutationJournalState.ApplyRebootPending, MutationJournalState.Reverting));
+        Assert.IsTrue(MutationJournalStateMachine.CanTransition(MutationJournalState.Applied, MutationJournalState.ApplyRebootPending),
+            "An in-place device restart that leaves translated allocation unavailable must be able to defer verification to one full reboot without discarding the journaled candidate.");
         Assert.IsTrue(MutationJournalStateMachine.CanTransition(MutationJournalState.Reverting, MutationJournalState.RollbackRebootPending));
         Assert.IsTrue(MutationJournalStateMachine.CanTransition(MutationJournalState.RollbackRebootPending, MutationJournalState.Reverted));
 
@@ -162,6 +164,8 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(txSource, "ApplyRebootPending");
         StringAssert.Contains(txSource, "RollbackRebootPending");
         StringAssert.Contains(txSource, "ResumeAfterReboot");
+        StringAssert.Contains(txSource, "DeferApplyVerificationToReboot",
+            "Applied xHCI candidates need a bounded reboot-verification deferral instead of treating unavailable translated allocation as contradictory.");
         StringAssert.Contains(txSource, "original.TargetKind == DeviceInterruptTargetKind.DisplayAdapter",
             "Manual display-adapter affinity must use reboot-pending activation instead of live-restarting the GPU that may be rendering the WinUI app.");
         StringAssert.Contains(txSource, "MutationJournalState.ApplyRebootPending",
@@ -276,6 +280,12 @@ public sealed class DeviceInterruptMutationTests
             "Allocated interrupt resources must remain inside the requested processor mask.");
         StringAssert.Contains(manualRunnerSource, "VerificationFailedRolledBack",
             "Readable contradictory allocation must fail closed and restore exact original state.");
+        StringAssert.Contains(manualRunnerSource, "active placement is unavailable rather than contradictory",
+            "Unusable translated descriptors such as an impossible processor group must not be mislabeled as evidence that escaped the requested mask.");
+        StringAssert.Contains(manualRunnerSource, "allowRebootDeferral: true",
+            "A fresh xHCI Apply should get one reboot-verification deferral when the in-place restart cannot expose usable translated allocation.");
+        StringAssert.Contains(manualRunnerSource, "allowRebootDeferral: false",
+            "A resumed post-reboot xHCI verification must not loop forever by requesting another reboot.");
         StringAssert.Contains(manualRunnerSource, "runtimeWithoutAllocation",
             "Manual GPU verification must still attempt authoritative direct-driver ETW when ConfigMgr translated allocation is unavailable.");
         StringAssert.Contains(manualRunnerSource, "AppliedPolicyKept",
