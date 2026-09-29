@@ -130,11 +130,10 @@ public sealed class DeviceInterruptMutationTests
         StringAssert.Contains(inventoryReaderSource, "InterruptManagementKeyExists = true",
             "Device inventory must preserve whether the documented Interrupt Management surface actually exists.");
 
+        var manualUiSourceFilter = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
         Assert.IsFalse(
             manualUiSourceFilter.Contains("HasAssignedInterrupts", StringComparison.Ordinal),
             "Policy Lab editability/filtering must not depend on current ConfigMgr allocated-resource visibility.");
-
-        var manualUiSourceFilter = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "ManualDeviceAffinityExperience.cs"));
         StringAssert.Contains(manualUiSourceFilter, "interrupt-capable devices",
             "Policy Lab should not present every present PnP node as an editable interrupt target.");
 
