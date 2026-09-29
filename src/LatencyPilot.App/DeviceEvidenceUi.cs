@@ -174,13 +174,13 @@ public sealed partial class MainWindow
 
         try
         {
-            NetworkEvidenceText.Text = "Resolving the active physical RSS-capable network adapter…";
+            NetworkEvidenceText.Text = "Resolving the active physical network adapter…";
             var inspection = await Task.Run(CaptureDeviceEvidenceInspection);
             var target = await SelectNetworkRssTargetAsync(inspection.NetworkRss);
             if (target is null)
             {
                 NetworkEvidenceText.Text =
-                    "Network/RSS analysis unavailable · no physical RSS-capable adapter was selected.";
+                    "Network/RSS analysis unavailable · no physical network adapter was selected.";
                 return;
             }
 
@@ -195,6 +195,7 @@ public sealed partial class MainWindow
                 target.PnpCorrelation.PnpInstanceId!);
             NetworkRuntimeSummary? attribution = null;
             NetworkEnvironmentContinuityResult? continuity = null;
+            NetworkTrafficDelta? traffic = null;
             string? runtimeReason = null;
 
             if (targetDevice is null)
@@ -224,6 +225,9 @@ public sealed partial class MainWindow
                     continuity = NetworkEnvironmentContinuity.Evaluate(
                         before.Snapshot,
                         after.Snapshot);
+                    traffic = NetworkEnvironmentContinuity.MeasureTraffic(
+                        before.Snapshot,
+                        after.Snapshot);
                 }
                 else
                 {
@@ -236,15 +240,18 @@ public sealed partial class MainWindow
 
             NetworkEvidenceText.Text = attribution is null
                 ? $"Network/RSS configuration ready · {target.Name ?? target.InterfaceDescription ?? "physical NIC"}."
-                : attribution.HasTargetEvidence
+                : attribution.HasTargetEvidence && continuity?.IsStable == true
                     ? $"Network/RSS runtime evidence captured · {target.Name ?? target.InterfaceDescription ?? "physical NIC"}."
-                    : $"Network/RSS capture complete · no strong target miniport interrupt sample in this window.";
+                    : traffic is { IsAvailable: true, HasTraffic: false }
+                        ? $"Network/RSS capture complete · interface was idle during the sample."
+                        : $"Network/RSS capture complete · target miniport runtime evidence was not trusted.";
 
             await ShowNetworkSubsystemDialogAsync(
                 target,
                 targetDevice,
                 attribution,
                 continuity,
+                traffic,
                 runtimeReason);
         }
         catch (Exception exception) when (IsRecoverableDeviceEvidenceException(exception))
@@ -335,7 +342,7 @@ public sealed partial class MainWindow
                 Children =
                 {
                     CreateMutedText(
-                        "LatencyPilot analyzes RSS as a multi-CPU receive-steering mechanism. Virtual switches and debug/software adapters are excluded from this subsystem action."),
+                        "LatencyPilot resolves the physical NIC first and treats RSS as optional multi-CPU receive-steering evidence. Virtual switches and debug/software adapters are excluded from this subsystem action."),
                     picker,
                 },
             },
@@ -365,23 +372,33 @@ public sealed partial class MainWindow
         PnPDeviceSnapshot? device,
         NetworkRuntimeSummary? attribution,
         NetworkEnvironmentContinuityResult? continuity,
+        NetworkTrafficDelta? traffic,
         string? runtimeReason)
     {
         var processorSet = adapter.RssProcessorArray
             .Where(static value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var headline = !adapter.RssSettingsAvailable
-            ? attribution?.HasTargetEvidence == true
-                ? "Physical NIC · RSS settings unavailable · runtime evidence captured"
-                : "Physical NIC · RSS settings unavailable"
-            : adapter.Enabled == false
-                ? "Physical NIC · RSS disabled"
-                : attribution?.HasTargetEvidence == true
-                    ? "Physical NIC · runtime evidence captured"
+        var runtimeVerified =
+            attribution?.HasTargetEvidence == true &&
+            continuity?.IsStable == true;
+        var runtimeIdle =
+            attribution is not null &&
+            traffic is { IsAvailable: true, HasTraffic: false };
+        var runtimeLabel = runtimeVerified
+            ? "runtime evidence captured"
+            : attribution?.HasTargetEvidence == true
+                ? "runtime evidence invalidated"
+                : runtimeIdle
+                    ? "runtime sample idle"
                     : attribution is not null
-                        ? "Physical NIC · runtime sample partial"
-                        : "Physical NIC · configuration evidence";
+                        ? "runtime attribution unproven"
+                        : "configuration evidence";
+        var headline = !adapter.RssSettingsAvailable
+            ? $"Physical NIC · RSS settings unavailable · {runtimeLabel}"
+            : adapter.Enabled == false
+                ? $"Physical NIC · RSS disabled · {runtimeLabel}"
+                : $"Physical NIC · {runtimeLabel}";
 
         var content = new StackPanel { Spacing = 10d };
         content.Children.Add(new TextBlock
@@ -391,7 +408,9 @@ public sealed partial class MainWindow
             Foreground = ThemeBrush(
                 adapter.Enabled == false
                     ? "SemanticAttentionBrush"
-                    : "SemanticGoodBrush"),
+                    : runtimeVerified
+                        ? "SemanticGoodBrush"
+                        : "TextBrush"),
         });
         content.Children.Add(CreateEvidenceLine(
             "Adapter",
@@ -426,6 +445,11 @@ public sealed partial class MainWindow
         if (attribution is not null)
         {
             content.Children.Add(CreateEvidenceLine(
+                "Network activity",
+                traffic?.IsAvailable == true
+                    ? $"{FormatNetworkBytes(traffic.BytesReceived)} received · {FormatNetworkBytes(traffic.BytesSent)} sent"
+                    : "Unavailable"));
+            content.Children.Add(CreateEvidenceLine(
                 "Miniport runtime",
                 $"{attribution.MatchingDpcEventCount} DPC · {attribution.MatchingIsrEventCount} ISR · {attribution.TotalDurationMicroseconds:F1} us total"));
             content.Children.Add(CreateEvidenceLine(
@@ -453,6 +477,16 @@ public sealed partial class MainWindow
                 ? "No network settings were changed. RSS is intentionally multi-CPU; v1 does not force the NIC onto a single CPU or rewrite its RSS profile."
                 : "No network settings were changed. This driver did not expose an RSS settings row, but LatencyPilot still analyzes the physical NIC and its miniport runtime evidence."));
 
+        if (attribution is not null && !attribution.HasTargetEvidence)
+        {
+            content.Children.Add(CreateMutedText(
+                traffic is { IsAvailable: true, HasTraffic: false }
+                    ? "No interface traffic was observed during the capture. A zero DPC/ISR sample is therefore idle evidence, not proof that this NIC has no interrupt cost; re-run while network traffic is active."
+                    : traffic is { IsAvailable: true, HasTraffic: true }
+                        ? "Interface traffic occurred, but the target miniport module was not observed in the bounded kernel contributor sample. Runtime attribution remains unproven."
+                        : "The bounded capture did not prove target-miniport runtime activity, and interface traffic counters were unavailable."));
+        }
+
         var technical = new StackPanel { Spacing = 7d };
         technical.Children.Add(CreateSelectableEvidenceText(
             $"PnP: {adapter.PnpCorrelation.PnpInstanceId ?? "—"}\n" +
@@ -461,6 +495,11 @@ public sealed partial class MainWindow
         technical.Children.Add(CreateEvidenceLine(
             "RSS profile",
             FormatNullableNumber(adapter.Profile)));
+        technical.Children.Add(CreateEvidenceLine(
+            "NIC hardware info",
+            adapter.HardwareInfoAvailable
+                ? "MSFT_NetAdapterHardwareInfoSettingData available"
+                : "Not exposed"));
         technical.Children.Add(CreateEvidenceLine(
             "Processor range",
             $"base {FormatProcessor(adapter.BaseProcessorGroup, adapter.BaseProcessorNumber)} · " +
@@ -624,6 +663,30 @@ public sealed partial class MainWindow
         value is null
             ? "—"
             : string.Create(CultureInfo.InvariantCulture, $"{value.Value:F1} us");
+
+    private static string FormatNetworkBytes(long? value)
+    {
+        if (value is null)
+        {
+            return "—";
+        }
+
+        var bytes = value.Value;
+        if (bytes < 1024)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{bytes} B");
+        }
+
+        var kibibytes = bytes / 1024d;
+        if (kibibytes < 1024d)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{kibibytes:F1} KiB");
+        }
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{kibibytes / 1024d:F1} MiB");
+    }
 
     private sealed record NetworkRuntimeSummary(
         int MatchingDpcEventCount,
