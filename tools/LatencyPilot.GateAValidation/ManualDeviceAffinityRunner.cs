@@ -342,12 +342,10 @@ internal static class ManualDeviceAffinityRunner
 
         if (prepared.NoWriteRequired)
         {
-            var allocationObservable = CanObserveAllocatedAffinity(
-                options.DeviceInstanceId,
-                out var allocationStatus);
             var assignmentVerified = VerifyAllocatedAffinity(
                 options.DeviceInstanceId,
                 candidate.AffinityMask,
+                out var allocationObservable,
                 out var masks,
                 out var assignmentReason);
 
@@ -364,11 +362,11 @@ internal static class ManualDeviceAffinityRunner
                     experimentId: null,
                     restartRequired: false,
                     verification: runtimeWithoutAllocation.Verified
-                        ? $"Stored policy matches the requested mask. ConfigMgr translated allocation is unavailable ({allocationStatus}), but direct display-driver ETW independently verified runtime ISR placement. {runtimeWithoutAllocation.Reason}"
-                        : $"Stored policy matches the requested mask. ConfigMgr translated allocation is unavailable ({allocationStatus}). Direct display-driver ETW did not independently prove runtime placement. {runtimeWithoutAllocation.Reason}",
+                        ? $"Stored policy matches the requested mask. ConfigMgr translated allocation is not usable. {assignmentReason}, but direct display-driver ETW independently verified runtime ISR placement. {runtimeWithoutAllocation.Reason}"
+                        : $"Stored policy matches the requested mask. ConfigMgr translated allocation is not usable. {assignmentReason}. Direct display-driver ETW did not independently prove runtime placement. {runtimeWithoutAllocation.Reason}",
                     message: runtimeWithoutAllocation.Verified
                         ? "The requested GPU affinity policy is already stored and a clean direct-driver ETW capture verified that GPU ISR activity stayed inside the requested processor mask, even though Windows did not expose translated allocation."
-                        : "The requested GPU affinity policy is already stored. Windows is not exposing translated interrupt allocation, and direct-driver ETW did not independently prove placement, so LatencyPilot keeps this as a manual policy state without claiming runtime verification.",
+                        : "The requested GPU affinity policy is already stored. Windows is not exposing usable translated interrupt allocation, and direct-driver ETW did not independently prove placement, so LatencyPilot keeps this as a manual policy state without claiming runtime verification.",
                     allocatedMasks: masks);
             }
 
@@ -448,12 +446,10 @@ internal static class ManualDeviceAffinityRunner
         GpuInterruptAffinityCandidate candidate,
         Guid experimentId)
     {
-        var allocationObservable = CanObserveAllocatedAffinity(
-            options.DeviceInstanceId,
-            out var allocationStatus);
         var assignmentVerified = VerifyAllocatedAffinity(
             options.DeviceInstanceId,
             candidate.AffinityMask,
+            out var allocationObservable,
             out var masks,
             out var assignmentReason);
 
@@ -473,8 +469,8 @@ internal static class ManualDeviceAffinityRunner
                 experimentId,
                 restartRequired: false,
                 verification: runtimeWithoutAllocation.Verified
-                    ? $"Stored policy and activation/restart path were verified. ConfigMgr translated allocation is unavailable ({allocationStatus}), but direct display-driver ETW independently verified runtime ISR placement. {runtimeWithoutAllocation.Reason}"
-                    : $"Stored policy and activation/restart path were verified. ConfigMgr translated allocation is unavailable ({allocationStatus}). Direct display-driver ETW did not independently prove runtime placement. {runtimeWithoutAllocation.Reason}",
+                    ? $"Stored policy and activation/restart path were verified. ConfigMgr translated allocation is not usable. {assignmentReason}, but direct display-driver ETW independently verified runtime ISR placement. {runtimeWithoutAllocation.Reason}"
+                    : $"Stored policy and activation/restart path were verified. ConfigMgr translated allocation is not usable. {assignmentReason}. Direct display-driver ETW did not independently prove runtime placement. {runtimeWithoutAllocation.Reason}",
                 message: runtimeWithoutAllocation.Verified
                     ? "GPU affinity was kept and runtime-verified by direct display-driver ETW: all attributed ISR activity stayed inside the requested processor mask. Windows translated allocation remains unavailable, so the verification source is ETW rather than ConfigMgr allocation."
                     : "GPU affinity policy was retained as an explicit manual choice because the requested mask is stored, but Windows translated allocation is unavailable and direct-driver ETW did not independently prove runtime placement.",
@@ -606,12 +602,10 @@ internal static class ManualDeviceAffinityRunner
         var prepared = transaction.PrepareDeviceAffinity(options.DeviceInstanceId, candidate);
         if (prepared.NoWriteRequired)
         {
-            var allocationObservable = CanObserveAllocatedAffinity(
-                options.DeviceInstanceId,
-                out var allocationStatus);
             var verified = VerifyAllocatedAffinity(
                 options.DeviceInstanceId,
                 candidate.AffinityMask,
+                out var allocationObservable,
                 out var masks,
                 out var assignmentReason);
             var status = verified
@@ -632,7 +626,7 @@ internal static class ManualDeviceAffinityRunner
                     ? "The requested device affinity was already stored and Windows translated allocation is inside the requested processor mask. No LatencyPilot write was required."
                     : allocationObservable
                         ? "The requested device affinity is already stored, but readable active interrupt allocation escapes the requested mask. No write was attempted and LatencyPilot does not claim ownership of this existing policy."
-                        : $"The requested Windows interrupt-affinity policy is already stored. Active placement is not currently observable ({allocationStatus}), so this is a policy-only result rather than proof of ISR placement.",
+                        : $"The requested Windows interrupt-affinity policy is already stored. Active placement is not currently observable. {assignmentReason} This is a policy-only result rather than proof of ISR placement.",
                 allocatedMasks: masks);
         }
 
@@ -677,12 +671,10 @@ internal static class ManualDeviceAffinityRunner
         DeviceInterruptAffinityCandidate candidate,
         Guid experimentId)
     {
-        var allocationObservable = CanObserveAllocatedAffinity(
-            options.DeviceInstanceId,
-            out var allocationStatus);
         var verified = VerifyAllocatedAffinity(
             options.DeviceInstanceId,
             candidate.AffinityMask,
+            out var allocationObservable,
             out var masks,
             out var assignmentReason);
 
@@ -724,7 +716,7 @@ internal static class ManualDeviceAffinityRunner
             experimentId,
             restartRequired: false,
             verification: policyOnly
-                ? $"Stored policy and device restart were verified. Active interrupt allocation is not observable ({allocationStatus}); no ISR-placement claim is made."
+                ? $"Stored policy and device restart were verified. Active interrupt allocation is not observable. {assignmentReason} No ISR-placement claim is made."
                 : assignmentReason,
             message: policyOnly
                 ? "The Windows interrupt-affinity policy was journaled, applied, restarted, re-read from the device hardware key, and retained. Active placement is currently unverified because Windows did not expose translated interrupt allocation for this device."
@@ -816,6 +808,7 @@ internal static class ManualDeviceAffinityRunner
             var assignmentVerified = VerifyAllocatedAffinity(
                 options.DeviceInstanceId,
                 candidate.AffinityMask,
+                out _,
                 out var masks,
                 out var assignmentReason);
             var runtime = assignmentVerified
@@ -896,12 +889,10 @@ internal static class ManualDeviceAffinityRunner
         Guid experimentId,
         bool allowRebootDeferral)
     {
-        var allocationObservable = CanObserveAllocatedAffinity(
-            options.DeviceInstanceId,
-            out var allocationStatus);
         var assignmentVerified = VerifyAllocatedAffinity(
             options.DeviceInstanceId,
             candidate.AffinityMask,
+            out var allocationObservable,
             out var masks,
             out var assignmentReason);
 
@@ -909,7 +900,7 @@ internal static class ManualDeviceAffinityRunner
         {
             var pending = transaction.DeferApplyVerificationToReboot(
                 experimentId,
-                $"In-place xHCI restart completed, but usable translated interrupt allocation is unavailable ({allocationStatus}). {assignmentReason}");
+                $"In-place xHCI restart completed, but usable translated interrupt allocation is unavailable. {assignmentReason}");
             return CreateReport(
                 options,
                 "RebootRequired",
@@ -964,7 +955,7 @@ internal static class ManualDeviceAffinityRunner
                 verification: verification,
                 message: restored && !rollbackNeedsReboot
                     ? !allocationObservable
-                        ? "After reboot, Windows still did not expose usable translated allocation for the target xHCI controller, so LatencyPilot could not prove the requested processor mask and restored the exact original state."
+                        ? "During resumed verification, Windows still did not expose usable translated allocation for the target xHCI controller, so LatencyPilot could not prove the requested processor mask and restored the exact original state."
                         : !assignmentVerified
                             ? "The target xHCI controller's readable translated allocation did not stay inside the requested processor mask; the exact original state was restored."
                             : "Controller-specific ETW contradicted the requested xHCI placement; the exact original state was restored."
@@ -1236,28 +1227,10 @@ internal static class ManualDeviceAffinityRunner
             $"Controller-specific xHCI ETW did not produce enough evidence for a stronger ISR claim: attributableIsr={placement.MatchingResolvedIsrEventCount}, inRequestedMaskIsr={placement.InRequestedMaskIsrEventCount}, unresolvedIsr={placement.UnresolvedIsrEventCount}, mode={attribution.AttributionMode}.");
     }
 
-    private static bool CanObserveAllocatedAffinity(
-        string deviceInstanceId,
-        out InterruptResourceReadStatus status)
-    {
-        var device = TryGetPresentDevice(deviceInstanceId)
-            ?? throw new InvalidOperationException("The manual affinity target is no longer a present PnP device.");
-        status = device.InterruptResources.ReadStatus;
-        if (status != InterruptResourceReadStatus.Available ||
-            device.InterruptResources.Resources.Count == 0)
-        {
-            return false;
-        }
-
-        var processorGroupCount = ProcessorTopologyReader.Capture().ProcessorGroupCount;
-        return device.InterruptResources.Resources.All(resource =>
-            resource.AffinityMask != 0 &&
-            resource.ProcessorGroup < processorGroupCount);
-    }
-
     private static bool VerifyAllocatedAffinity(
         string deviceInstanceId,
         ulong targetMask,
+        out bool allocationObservable,
         out IReadOnlyList<string> masks,
         out string reason)
     {
@@ -1270,6 +1243,7 @@ internal static class ManualDeviceAffinityRunner
                 $"group {resource.ProcessorGroup}:0x{resource.AffinityMask:X}"))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+        allocationObservable = false;
 
         if (targetMask == 0)
         {
@@ -1283,31 +1257,54 @@ internal static class ManualDeviceAffinityRunner
             return false;
         }
 
-        var processorGroupCount = ProcessorTopologyReader.Capture().ProcessorGroupCount;
-        var unusableResources = resources.Resources
-            .Where(resource =>
-                resource.AffinityMask == 0 ||
-                resource.ProcessorGroup >= processorGroupCount)
-            .ToArray();
-        if (unusableResources.Length != 0)
+        var activeMasksByGroup = ProcessorTopologyReader.Capture().Cores
+            .SelectMany(static core => core.LogicalProcessors)
+            .Distinct()
+            .GroupBy(static processor => processor.Group)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.Aggregate(
+                    0UL,
+                    static (mask, processor) => mask | (1UL << processor.Number)));
+
+        var normalized = new List<(AllocatedInterruptResourceSnapshot Resource, ulong EffectiveMask)>(
+            resources.Resources.Count);
+        foreach (var resource in resources.Resources)
         {
-            reason =
-                $"Allocated interrupt descriptors are present but {unusableResources.Length.ToString(CultureInfo.InvariantCulture)} of {resources.Resources.Count.ToString(CultureInfo.InvariantCulture)} do not expose a usable processor-group affinity for this machine ({processorGroupCount.ToString(CultureInfo.InvariantCulture)} group(s)); active placement is unavailable rather than contradictory. Raw descriptors: {string.Join(", ", masks)}.";
-            return false;
+            if (!activeMasksByGroup.TryGetValue(resource.ProcessorGroup, out var activeMask) ||
+                activeMask == 0 ||
+                resource.AffinityMask == 0)
+            {
+                reason =
+                    $"Allocated interrupt descriptors are present but at least one descriptor does not expose a usable processor-group affinity for this topology; active placement is unavailable rather than contradictory. Raw descriptors: {string.Join(", ", masks)}.";
+                return false;
+            }
+
+            var effectiveMask = resource.AffinityMask == ulong.MaxValue
+                ? activeMask
+                : resource.AffinityMask;
+            if ((effectiveMask & ~activeMask) != 0)
+            {
+                reason =
+                    $"Allocated interrupt descriptors are present but at least one affinity mask names processors that are not active in its reported group; active placement is unavailable rather than contradictory. Raw descriptors: {string.Join(", ", masks)}.";
+                return false;
+            }
+
+            normalized.Add((resource, effectiveMask));
         }
 
-        var verified = resources.Resources.All(resource =>
-            resource.ProcessorGroup == 0 &&
-            resource.AffinityMask != 0 &&
-            (resource.AffinityMask & ~targetMask) == 0);
-        var activeUnion = resources.Resources.Aggregate(
+        allocationObservable = true;
+        var verified = normalized.All(item =>
+            item.Resource.ProcessorGroup == 0 &&
+            (item.EffectiveMask & ~targetMask) == 0);
+        var activeUnion = normalized.Aggregate(
             0UL,
-            static (mask, resource) =>
-                resource.ProcessorGroup == 0 ? mask | resource.AffinityMask : mask);
+            static (mask, item) =>
+                item.Resource.ProcessorGroup == 0 ? mask | item.EffectiveMask : mask);
 
         reason = verified
             ? $"All {resources.Resources.Count.ToString(CultureInfo.InvariantCulture)} allocated interrupt resource(s) stay inside requested group-0 mask 0x{targetMask:X}; active union is 0x{activeUnion:X}."
-            : $"Allocated interrupt resources escape requested group-0 mask 0x{targetMask:X}; active union is 0x{activeUnion:X}.";
+            : $"Readable allocated interrupt resources escape requested group-0 mask 0x{targetMask:X}; active union is 0x{activeUnion:X}.";
         return verified;
     }
 
