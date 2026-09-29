@@ -184,7 +184,8 @@ public sealed class AuditClosureIntegrationTests
 
         StringAssert.Contains(usbXhciUi, "mutationBlockedByOtherTarget",
             "An unresolved mutation on another target must downgrade USB to diagnostics instead of blocking the whole USB workflow.");
-        StringAssert.Contains(usbXhciUi, "Blocked for Apply · another target has unresolved journal ownership");
+        StringAssert.Contains(usbXhciUi, "Blocked · another target has unresolved journal ownership",
+            "USB readiness must still surface unresolved foreign journal ownership as an Apply gate after the primary UX copy is shortened.");
         Assert.IsFalse(
             usbXhciUi.Contains("Another mutation needs recovery", StringComparison.Ordinal),
             "The USB workflow must no longer fail before read-only readiness just because another target owns recovery.");
