@@ -109,6 +109,10 @@ public sealed class NetworkRssTests
             Name = "vEthernet",
             HardwareInterface = false,
             ConnectorPresent = false,
+            PnpCorrelation = new NetworkRssPnpCorrelation(
+                NetworkRssPnpCorrelationStatus.Available,
+                "ROOT\\VMS_VSMP\\0000",
+                null),
         };
         var physicalSelection = NetworkRssPhysicalAdapterSelector.Select(new NetworkRssSnapshot(
             NetworkRssReadStatus.Available,
