@@ -96,7 +96,9 @@ public sealed class DeviceInterruptMutationTests
             ManualDeviceAffinityPolicyEligibility.CanStartNewPolicyMutation(
                 nonInterruptDevice,
                 out var nonInterruptReason));
-        StringAssert.Contains(nonInterruptReason!, "no interrupt evidence");
+        StringAssert.Contains(
+            nonInterruptReason!,
+            "does not expose the documented Interrupt Management registry surface");
 
 
         var candidate = DeviceInterruptMutationCandidate.EnableMsi();
