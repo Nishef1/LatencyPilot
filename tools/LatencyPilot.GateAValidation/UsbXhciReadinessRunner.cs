@@ -4,8 +4,10 @@ using System.Security.Principal;
 using System.Text.Json;
 using LatencyPilot.Benchmarking.Optimization;
 using LatencyPilot.Core.Devices;
+using LatencyPilot.Core.Observation;
 using LatencyPilot.Core.System;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Platform.Windows.System;
 using LatencyPilot.Platform.Windows.Etw;
 using LatencyPilot.Protocol;
 

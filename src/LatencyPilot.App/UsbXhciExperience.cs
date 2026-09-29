@@ -7,6 +7,7 @@ using LatencyPilot.Core.Devices;
 using LatencyPilot.Core.System;
 using LatencyPilot.Persistence;
 using LatencyPilot.Platform.Windows.Devices;
+using LatencyPilot.Platform.Windows.System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 

@@ -2,11 +2,13 @@
 
 Status: **Accepted; GPU measurement/search/ranking superseded by ADR 0011**  
 Originally accepted: 2026-09-18  
-Reconciled: 2026-09-25
+Reconciled: 2026-09-29
 
 ADR 0006 remains authoritative for the narrow v1 **product scope, mutation/recovery ownership, GPU→xHCI sequencing, public arming gates and completion shape**.
 
 ADR 0011 supersedes the former GPU measurement, screening, ranking and finalist-confirmation details that previously lived here. ADR 0010 remains the historical v5 contract and ADRs 0007–0009 remain earlier historical method contracts. Do not use historical GPU-method text from older revisions of ADR 0006 as current authority.
+
+ADR 0012 governs **subsystem surface and authority separation**. The GPU→xHCI sequence in this ADR is a dependency/order constraint, not permission to make GPU Gate A an umbrella button, session, report, or closure authority. GPU Gate A is GPU-only; USB/xHCI owns its own primary-input selection, headroom evidence, result and mutation/recovery flow.
 
 ## Product goal
 
@@ -73,7 +75,7 @@ The target kind and Restore parsing may remain only for exact recovery of journa
 
 ### v1 simplicity rule
 
-GPU and primary-input xHCI are solved **sequentially**, not with a joint weighted score or Pareto allocator. GPU evidence owns the GPU decision. After the GPU reaches a verified terminal state, one fresh bounded quiet ETW capture owns xHCI CPU-headroom selection. GPU ranking is useful context, but it is not reinterpreted as a USB ranking and v1 does not run a second per-CPU USB tournament.
+GPU and primary-input xHCI are solved **sequentially**, not with a joint weighted score or Pareto allocator, and they are exposed as separate subsystem actions. GPU evidence owns the GPU decision. The independent USB/xHCI action may consume a separately verified current GPU reservation as an exclusion input, then its own fresh bounded quiet ETW capture owns xHCI CPU-headroom selection. GPU ranking is useful context, but it is not reinterpreted as a USB ranking and v1 does not run a second per-CPU USB tournament.
 
 ## GPU measurement authority
 

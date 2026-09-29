@@ -160,7 +160,7 @@ public sealed partial class MainWindow
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(new TextBlock
         {
-            Text = "PRIMARY INPUT · xHCI RECOMMENDATION",
+            Text = "HISTORICAL GPU REPORT · LEGACY xHCI RECOMMENDATION",
             Style = AppStyle("HeroEyebrowTextStyle"),
         });
         var badge = BuildStatusBadge(
@@ -184,6 +184,13 @@ public sealed partial class MainWindow
         {
             Text = recommendation.Reason,
             Style = AppStyle("MutedBodyTextStyle"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Compatibility view for an older GPU report. Current GPU Gate A runs do not create USB/xHCI recommendations; use the independent USB/xHCI action.",
+            Style = AppStyle("CaptionTextStyle"),
             TextWrapping = TextWrapping.Wrap,
         });
 
