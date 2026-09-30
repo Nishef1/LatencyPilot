@@ -129,6 +129,13 @@ public sealed class DeviceInterruptMutationTests
         Assert.AreEqual(DeviceInterruptMutationOperation.DeviceAffinity, genericRoundTrip.Operation);
         Assert.AreEqual(multiMask, genericRoundTrip.ToAffinityCandidate().AffinityMask);
 
+        using (var firstMutationLock = MutationOperationLock.Acquire(TimeSpan.FromSeconds(2)))
+        using (var reopenedMutationLock = MutationOperationLock.Acquire(TimeSpan.FromSeconds(2)))
+        {
+            Assert.IsNotNull(firstMutationLock);
+            Assert.IsNotNull(reopenedMutationLock);
+        }
+
         var root = FindRepositoryRoot();
         var inventoryReaderSource = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Platform.Windows", "Devices", "DeviceInventoryReader.cs"));
         StringAssert.Contains(inventoryReaderSource, "InterruptManagementKeyExists = true",
