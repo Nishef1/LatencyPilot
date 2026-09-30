@@ -26,7 +26,7 @@ public sealed record XhciInterruptRuntimePlacementEvidence(
     string DriverServiceName,
     byte TargetProcessorNumber,
     ulong RequestedAffinityMask,
-    int MatchingResolvedIsrEventCount,
+    int AttributedIsrEventCount,
     int TargetProcessorIsrEventCount,
     int InRequestedMaskIsrEventCount,
     int OffTargetIsrEventCount,
@@ -35,11 +35,11 @@ public sealed record XhciInterruptRuntimePlacementEvidence(
 {
     public XhciInterruptIsrAttributionMode AttributionMode { get; init; }
 
-    public bool HasRuntimeEvidence => MatchingResolvedIsrEventCount > 0;
+    public bool HasRuntimeEvidence => AttributedIsrEventCount > 0;
 
     public bool ConfirmsRequestedPlacement =>
         HasRuntimeEvidence &&
-        InRequestedMaskIsrEventCount == MatchingResolvedIsrEventCount &&
+        InRequestedMaskIsrEventCount == AttributedIsrEventCount &&
         OffTargetIsrEventCount == 0 &&
         (AttributionMode == XhciInterruptIsrAttributionMode.DeviceInterruptVector ||
          UnresolvedIsrEventCount == 0);
