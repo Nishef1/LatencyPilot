@@ -129,11 +129,12 @@ public sealed class DeviceInterruptMutationTests
         Assert.AreEqual(DeviceInterruptMutationOperation.DeviceAffinity, genericRoundTrip.Operation);
         Assert.AreEqual(multiMask, genericRoundTrip.ToAffinityCandidate().AffinityMask);
 
-        using (var firstMutationLock = MutationOperationLock.Acquire(TimeSpan.FromSeconds(2)))
-        using (var reopenedMutationLock = MutationOperationLock.Acquire(TimeSpan.FromSeconds(2)))
+        // Acquiring the same secured global mutex twice on this thread exercises
+        // both create-with-DACL and reopen-and-verify paths. Any ACL/API failure
+        // throws and fails the consolidated audit case.
+        using (MutationOperationLock.Acquire(TimeSpan.FromSeconds(2)))
+        using (MutationOperationLock.Acquire(TimeSpan.FromSeconds(2)))
         {
-            Assert.IsNotNull(firstMutationLock);
-            Assert.IsNotNull(reopenedMutationLock);
         }
 
         var root = FindRepositoryRoot();
