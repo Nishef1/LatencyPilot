@@ -178,12 +178,11 @@ public sealed class DeviceInterruptMutationTests
             mutationLockSource.Contains("new Mutex(", StringComparison.Ordinal),
             "A named mutex created without MutexSecurity would reintroduce the unprivileged lock-squatting boundary.");
 
-        var packagesSource = File.ReadAllText(Path.Combine(root, "Directory.Packages.props"));
-        StringAssert.Contains(packagesSource, "System.Threading.AccessControl");
         var serviceProjectSource = File.ReadAllText(Path.Combine(
             root, "src", "LatencyPilot.Service", "LatencyPilot.Service.csproj"));
-        StringAssert.Contains(serviceProjectSource, "System.Threading.AccessControl",
-            "The protected Service must carry the package that implements MutexAcl and ACL inspection on .NET 10.");
+        Assert.IsFalse(
+            serviceProjectSource.Contains("System.Threading.AccessControl", StringComparison.Ordinal),
+            ".NET 10 Windows already supplies the threading ACL surface; an explicit package reference is redundant and is rejected by package pruning diagnostics.");
         StringAssert.Contains(txSource, "ApplyRebootPending");
         StringAssert.Contains(txSource, "RollbackRebootPending");
         StringAssert.Contains(txSource, "ResumeAfterReboot");
