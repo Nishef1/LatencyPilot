@@ -1220,11 +1220,11 @@ internal static class ManualDeviceAffinityRunner
         if (placement.ConfirmsRequestedPlacement)
         {
             return XhciRuntimePlacementVerification.Verified(
-                $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {placement.MatchingResolvedIsrEventCount} controller-attributed USBXHCI ISR event(s), all on {FormatProcessorMask(candidate.AffinityMask)} via {attribution.AttributionMode} attribution.");
+                $"Clean {ManualRuntimePlacementCaptureDuration.TotalSeconds:F0}s ETW capture observed {placement.AttributedIsrEventCount} controller-attributed USBXHCI ISR event(s), all on {FormatProcessorMask(candidate.AffinityMask)} via {attribution.AttributionMode} attribution.");
         }
 
         return XhciRuntimePlacementVerification.Unavailable(
-            $"Controller-specific xHCI ETW did not produce enough evidence for a stronger ISR claim: attributableIsr={placement.MatchingResolvedIsrEventCount}, inRequestedMaskIsr={placement.InRequestedMaskIsrEventCount}, unresolvedIsr={placement.UnresolvedIsrEventCount}, mode={attribution.AttributionMode}.");
+            $"Controller-specific xHCI ETW did not produce enough evidence for a stronger ISR claim: attributableIsr={placement.AttributedIsrEventCount}, inRequestedMaskIsr={placement.InRequestedMaskIsrEventCount}, unresolvedIsr={placement.UnresolvedIsrEventCount}, mode={attribution.AttributionMode}.");
     }
 
     private static bool VerifyAllocatedAffinity(
