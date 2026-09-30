@@ -202,7 +202,10 @@ The v6 work reuses the consolidated critical-test budget. New/updated contracts 
 - selection confidence is metadata rather than a winner threshold;
 - result presentation includes actual before/after FPS/ms plus absolute and percentage improvement;
 - final GPU Keep requires stored policy + active translated allocation + direct display-driver target-only ISR placement, while shared `dxgkrnl` fallback stays diagnostic-only;
-- direct GPU ISR attribution remains usable on multi-adapter systems only when the target driver service is unique; shared-service direct attribution and multi-adapter `dxgkrnl` fallback remain fail-closed.
+- direct GPU ISR attribution remains usable on multi-adapter systems only when the target driver service is unique; shared-service direct attribution and multi-adapter `dxgkrnl` fallback remain fail-closed;
+- USB recommendation consumes only the explicit current CPU-reservation set rather than a hidden GPU-result/inventory input; peer-controller evidence affects verification strength, not benchmark ranking;
+- xHCI target allocation remains the minimum Keep authority, while non-vector ETW attribution with unresolved ISR ownership cannot claim target-only placement;
+- machine mutation/recovery serialization uses a SYSTEM/Administrators-only global mutex whose ACL is applied on creation and re-verified when an existing named object is opened, with SQLite CAS as the second concurrency layer.
 
 Exact-head hosted **Tests** are mandatory for every revision used as physical closure evidence. An older green run is never reused for a newer SHA.
 
