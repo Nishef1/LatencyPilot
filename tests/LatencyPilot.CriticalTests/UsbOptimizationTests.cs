@@ -67,7 +67,6 @@ public sealed class UsbOptimizationTests
             capture,
             inventory,
             raw.PnPInstanceId!,
-            deviceInventory: null,
             reservedGpuProcessor: null);
         Assert.AreEqual(
             UsbAffinityRecommendationStatus.Ready,
@@ -139,20 +138,6 @@ public sealed class UsbOptimizationTests
                 new KernelLatencyEvent(KernelLatencyEventKind.Isr, 4, 2, 7, 0x1002, 45, 0, "C:\\Windows\\System32\\drivers\\USBXHCI.SYS"),
             ],
         };
-        var routedInventory = new DeviceInventorySnapshot(
-            [targetWithAllocation, peerWithDisjointAllocation],
-            DateTimeOffset.UnixEpoch);
-        var peerAwareRecommendation = UsbAffinityRecommendationPlanner.Create(
-            topology,
-            capture,
-            inventory,
-            new LogicalProcessorId(0, 0),
-            raw.PnPInstanceId!,
-            routedInventory);
-        Assert.IsTrue(peerAwareRecommendation.IsReady);
-        Assert.AreNotEqual(new LogicalProcessorId(0, 4), peerAwareRecommendation.Processor,
-            "The planner must not recommend a CPU already present in same-service peer xHCI translated allocation.");
-
         var allPeerAllocated = peerWithDisjointAllocation with
         {
             InterruptResources = InterruptResourceSnapshot.Available(
@@ -164,28 +149,10 @@ public sealed class UsbOptimizationTests
                     0),
             ]),
         };
-        var blockedRecommendation = UsbAffinityRecommendationPlanner.Create(
-            topology,
-            capture,
-            inventory,
-            new LogicalProcessorId(0, 0),
-            raw.PnPInstanceId!,
-            new DeviceInventorySnapshot(
-                [targetWithAllocation, allPeerAllocated],
-                DateTimeOffset.UnixEpoch));
-        Assert.AreEqual(
-            UsbAffinityRecommendationStatus.Ready,
-            blockedRecommendation.Status,
-            "Peer-controller overlap is an Apply/runtime-attribution gate, not a benchmark-ranking dependency.");
-        Assert.IsNotNull(blockedRecommendation.Processor);
-
         var overlappingPeerPreflight = XhciInterruptRuntimePlacementVerifier.AssessApplyPreflight(
             targetWithAllocation.InstanceId,
             [targetWithAllocation, allPeerAllocated],
-            new DeviceInterruptAffinityCandidate(
-                blockedRecommendation.Processor!.Value.Group,
-                blockedRecommendation.Processor.Value.Number,
-                1UL << blockedRecommendation.Processor.Value.Number));
+            new DeviceInterruptAffinityCandidate(0, 2, 1UL << 2));
         Assert.IsTrue(
             overlappingPeerPreflight.CanAttemptApply,
             "A journaled xHCI Apply may be attempted even when peer attribution is ambiguous; target translated allocation remains the post-Apply authority.");
@@ -197,20 +164,6 @@ public sealed class UsbOptimizationTests
         {
             InterruptResources = InterruptResourceSnapshot.ReadFailed(),
         };
-        var unknownPeerRecommendation = UsbAffinityRecommendationPlanner.Create(
-            topology,
-            capture,
-            inventory,
-            new LogicalProcessorId(0, 0),
-            raw.PnPInstanceId!,
-            new DeviceInventorySnapshot(
-                [targetWithAllocation, unknownPeer],
-                DateTimeOffset.UnixEpoch));
-        Assert.AreEqual(
-            UsbAffinityRecommendationStatus.Ready,
-            unknownPeerRecommendation.Status,
-            "Unreadable peer allocation must not invalidate the USB benchmark itself; it is an Apply/verification prerequisite, not a ranking dependency.");
-
         var unknownPeerPreflight = XhciInterruptRuntimePlacementVerifier.AssessApplyPreflight(
             targetWithAllocation.InstanceId,
             [targetWithAllocation, unknownPeer],
