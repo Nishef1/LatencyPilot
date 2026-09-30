@@ -47,41 +47,45 @@ public sealed class UsbOptimizationTests
                 new ProcessorCoreSnapshot(1, 0, [new LogicalProcessorId(0, 2), new LogicalProcessorId(0, 3)]),
                 new ProcessorCoreSnapshot(2, 0, [new LogicalProcessorId(0, 4), new LogicalProcessorId(0, 5)]),
             ], DateTimeOffset.UnixEpoch);
-        var rankedCpuHeadroom = UsbAffinityCpuSelector.Rank(topology, capture, new LogicalProcessorId(0, 0));
+        var rankedCpuHeadroom = UsbAffinityCpuSelector.Rank(
+            topology,
+            capture,
+            [new LogicalProcessorId(0, 0)]);
         Assert.IsFalse(rankedCpuHeadroom.Any(static candidate => candidate.Processor.Number is 0 or 1));
         Assert.AreEqual(new LogicalProcessorId(0, 3), rankedCpuHeadroom[0].Processor);
 
         var inventory = new UserInputRouteInventory([route], DateTimeOffset.UnixEpoch);
-        Assert.AreEqual(UsbAffinityRecommendationStatus.NotReady,
-            UsbAffinityRecommendationPlanner.Create(topology, capture, inventory, new LogicalProcessorId(0, 0)).Status,
-            "Automatic v1 must not substitute an arbitrary resolved mouse for the primary input device.");
-        var recommendation = UsbAffinityRecommendationPlanner.Create(
-            topology, capture, inventory, new LogicalProcessorId(0, 0), raw.PnPInstanceId!);
+        var recommendation = UsbAffinityRecommendationPlanner.CreateWithReservations(
+            topology,
+            capture,
+            inventory,
+            raw.PnPInstanceId!,
+            [new LogicalProcessorId(0, 0)]);
         Assert.IsTrue(recommendation.IsReady);
         Assert.AreEqual(controller.InstanceId, recommendation.ControllerInstanceId);
         Assert.AreEqual(new LogicalProcessorId(0, 5), recommendation.Processor,
             "Recommendation should rank physical-core interrupt pressure first, then select the quieter SMT sibling.");
 
-        var independentWithoutGpuReservation = UsbAffinityRecommendationPlanner.CreateIndependent(
+        var independentWithoutReservations = UsbAffinityRecommendationPlanner.CreateWithReservations(
             topology,
             capture,
             inventory,
             raw.PnPInstanceId!,
-            reservedGpuProcessor: null);
+            Array.Empty<LogicalProcessorId>());
         Assert.AreEqual(
             UsbAffinityRecommendationStatus.Ready,
-            independentWithoutGpuReservation.Status,
-            "USB benchmarking is independent of GPU benchmark provenance; no GPU result is required to rank its own candidates.");
-        Assert.IsTrue(independentWithoutGpuReservation.HasCandidate);
-        Assert.IsTrue(independentWithoutGpuReservation.IsReady);
+            independentWithoutReservations.Status,
+            "USB benchmarking has no GPU-result prerequisite; only explicit current CPU reservations are supplied.");
+        Assert.IsTrue(independentWithoutReservations.HasCandidate);
+        Assert.IsTrue(independentWithoutReservations.IsReady);
 
         var noReservationRanking = UsbAffinityCpuSelector.Rank(
             topology,
             capture,
-            reservedGpuProcessor: null);
+            Array.Empty<LogicalProcessorId>());
         Assert.IsTrue(
             noReservationRanking.Any(static candidate => candidate.Processor.Number is 0 or 1),
-            "Independent USB diagnostics must not silently invent a GPU-core exclusion when no verified GPU reservation was supplied.");
+            "Independent USB diagnostics must not invent a CPU exclusion when no current explicit reservation was supplied.");
 
         var stableSelection = UsbAffinityCpuSelector.SelectStable(
             topology,
@@ -103,16 +107,28 @@ public sealed class UsbOptimizationTests
                 port with { HostControllerInstanceId = otherControllerId, ConnectionIndex = 4 }, null),
         };
         var multiMouse = new UserInputRouteInventory([route, otherRoute], DateTimeOffset.UnixEpoch);
-        Assert.IsTrue(UsbAffinityRecommendationPlanner.Create(
-            topology, capture, multiMouse, new LogicalProcessorId(0, 0), raw.PnPInstanceId!).IsReady,
+        Assert.IsTrue(UsbAffinityRecommendationPlanner.CreateWithReservations(
+            topology,
+            capture,
+            multiMouse,
+            raw.PnPInstanceId!,
+            [new LogicalProcessorId(0, 0)]).IsReady,
             "A secondary resolved mouse must not replace or make the explicit primary identity ambiguous.");
         Assert.AreEqual(UsbAffinityRecommendationStatus.NotReady,
-            UsbAffinityRecommendationPlanner.Create(
-                topology, capture, multiMouse, new LogicalProcessorId(0, 0), "HID\\UNKNOWN").Status);
+            UsbAffinityRecommendationPlanner.CreateWithReservations(
+                topology,
+                capture,
+                multiMouse,
+                "HID\\UNKNOWN",
+                [new LogicalProcessorId(0, 0)]).Status);
         var shortCapture = capture with { RequestedDuration = TimeSpan.FromSeconds(2), ActualDuration = TimeSpan.FromSeconds(2) };
         Assert.AreEqual(UsbAffinityRecommendationStatus.NotReady,
-            UsbAffinityRecommendationPlanner.Create(
-                topology, shortCapture, inventory, new LogicalProcessorId(0, 0), raw.PnPInstanceId!).Status);
+            UsbAffinityRecommendationPlanner.CreateWithReservations(
+                topology,
+                shortCapture,
+                inventory,
+                raw.PnPInstanceId!,
+                [new LogicalProcessorId(0, 0)]).Status);
 
         var sharedController = controller with { InstanceId = otherControllerId, DisplayName = "Other xHCI" };
 
