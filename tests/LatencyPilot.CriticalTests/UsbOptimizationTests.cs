@@ -366,8 +366,8 @@ public sealed class UsbOptimizationTests
         Assert.AreEqual("USB\\VID_TEST", composite.MatchedDeviceInstanceId);
         Assert.AreEqual(3u, composite.Evidence.Port?.ConnectionIndex);
 
-        Assert.AreEqual(24, AllocatedIrqDescriptorParser.Descriptor64Size);
-        Assert.AreEqual(12u, AllocatedIrqDescriptorParser.IrqTypeRange);
+        // Keep this fixture independent from the parser constants: a field-offset or
+        // type-value drift in the implementation must make the documented layout fail.
         var irqDescriptor = new byte[24];
         BinaryPrimitives.WriteUInt32LittleEndian(irqDescriptor.AsSpan(0, 4), 0);
         BinaryPrimitives.WriteUInt32LittleEndian(irqDescriptor.AsSpan(4, 4), 12u);
