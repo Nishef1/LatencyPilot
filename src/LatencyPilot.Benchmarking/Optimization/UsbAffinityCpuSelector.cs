@@ -32,23 +32,6 @@ public static class UsbAffinityCpuSelector
     public static IReadOnlyList<UsbAffinityCpuCandidate> Rank(
         ProcessorTopologySnapshot topology,
         KernelLatencyCaptureResult capture,
-        LogicalProcessorId gpuWinner) =>
-        Rank(topology, capture, (LogicalProcessorId?)gpuWinner);
-
-    public static IReadOnlyList<UsbAffinityCpuCandidate> Rank(
-        ProcessorTopologySnapshot topology,
-        KernelLatencyCaptureResult capture,
-        LogicalProcessorId? reservedGpuProcessor) =>
-        Rank(
-            topology,
-            capture,
-            reservedGpuProcessor is { } processor
-                ? [processor]
-                : Array.Empty<LogicalProcessorId>());
-
-    public static IReadOnlyList<UsbAffinityCpuCandidate> Rank(
-        ProcessorTopologySnapshot topology,
-        KernelLatencyCaptureResult capture,
         IReadOnlyCollection<LogicalProcessorId> reservedProcessors)
     {
         ArgumentNullException.ThrowIfNull(topology);
@@ -232,18 +215,6 @@ public static class UsbAffinityCpuSelector
             vote.Votes,
             captures.Count,
             $"Physical core {vote.CoreIndex} won {vote.Votes}/{captures.Count} independent headroom windows; CPU {selected.Processor.Number} had the best median sibling evidence on that core.");
-    }
-
-    public static UsbAffinityCpuCandidate Select(
-        ProcessorTopologySnapshot topology,
-        KernelLatencyCaptureResult capture,
-        LogicalProcessorId gpuWinner)
-    {
-        var ranked = Rank(topology, capture, gpuWinner);
-        return ranked.Count > 0
-            ? ranked[0]
-            : throw new InvalidOperationException(
-                "No logical processor remains for USB/xHCI affinity after excluding reserved physical cores.");
     }
 
     private static double Median(IEnumerable<double> values)
