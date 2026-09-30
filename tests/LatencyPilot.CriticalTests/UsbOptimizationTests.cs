@@ -295,6 +295,28 @@ public sealed class UsbOptimizationTests
         Assert.AreEqual(2, multiMaskPlacement.InRequestedMaskIsrEventCount);
         Assert.AreEqual(0, multiMaskPlacement.OffTargetIsrEventCount);
 
+        var unresolvedSharedService = multiMaskAttribution with
+        {
+            UnresolvedIsrEventCount = 1,
+        };
+        Assert.IsFalse(
+            XhciInterruptRuntimePlacementVerifier.Analyze(
+                unresolvedSharedService,
+                new DeviceInterruptAffinityCandidate(0, 2, (1UL << 2) | (1UL << 3)))
+                .ConfirmsRequestedPlacement,
+            "Shared-service/module attribution must not claim target-only ISR placement while unresolved ISR events could still belong to the controller.");
+
+        var vectorOwnedUnresolvedModule = unresolvedSharedService with
+        {
+            AttributionMode = XhciInterruptIsrAttributionMode.DeviceInterruptVector,
+        };
+        Assert.IsTrue(
+            XhciInterruptRuntimePlacementVerifier.Analyze(
+                vectorOwnedUnresolvedModule,
+                new DeviceInterruptAffinityCandidate(0, 2, (1UL << 2) | (1UL << 3)))
+                .ConfirmsRequestedPlacement,
+            "A uniquely device-associated IRQ vector remains authoritative even when the ISR module path itself is unresolved.");
+
         var peerWithOverlappingAllocation = peerWithDisjointAllocation with
         {
             InterruptResources = InterruptResourceSnapshot.Available(
