@@ -14,7 +14,6 @@
     <PackageReference Include="Serilog.Formatting.Compact" />
     <PackageReference Include="Serilog.Sinks.Async" />
     <PackageReference Include="Serilog.Sinks.File" />
-    <PackageReference Include="System.Threading.AccessControl" />
   </ItemGroup>
 
   <ItemGroup>
