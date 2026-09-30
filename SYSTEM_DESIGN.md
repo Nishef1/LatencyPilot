@@ -196,6 +196,8 @@ It is not a generic repository abstraction.
 
 Privileged boundary. Public v6 is observation-only. Future product mutations must be typed/allowlisted and reuse the same journal/recovery discipline. Never a generic scripting host.
 
+Machine mutation, recovery and retained restore are serialized across LatencyPilot processes by one global Windows mutex. The mutex is created with an explicit SYSTEM/Administrators-only DACL, and an existing named object is trusted only after its ACL is reopened and verified; the SQLite journal revision/CAS checks remain the second concurrency boundary.
+
 ### `LatencyPilot.App`
 
 Normal-user orchestration and presentation. A development checkout exposes GPU Gate A as a GPU-only experiment plus separate USB/xHCI and Network/RSS subsystem actions. A future normal-user `Optimize all` flow may compose independently proven subsystem actions, but no non-GPU authority is hidden inside GPU Gate A. `Restore original settings` remains explicit after arming gates pass.
