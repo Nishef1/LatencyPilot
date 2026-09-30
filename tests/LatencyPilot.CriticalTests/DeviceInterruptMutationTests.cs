@@ -161,6 +161,29 @@ public sealed class DeviceInterruptMutationTests
             "Affinity writes should preserve an existing supported mask representation when possible instead of forcing every foreign policy to REG_BINARY.");
         var txSource = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.Service", "DeviceInterruptMutationTransaction.cs"));
         StringAssert.Contains(txSource, "MutationOperationLock.Acquire()");
+
+        var mutationLockSource = File.ReadAllText(Path.Combine(
+            root, "src", "LatencyPilot.Service", "MutationOperationLock.cs"));
+        StringAssert.Contains(mutationLockSource, "MutexAcl.Create",
+            "The machine-wide mutation lock must apply its restricted DACL when the named mutex is created.");
+        StringAssert.Contains(mutationLockSource, "MutexAcl.OpenExisting",
+            "An existing named mutation lock must be reopened with explicit rights instead of being trusted blindly.");
+        StringAssert.Contains(mutationLockSource, "MutexRights.ReadPermissions",
+            "Existing mutation-lock ACLs must be readable before LatencyPilot trusts them.");
+        StringAssert.Contains(mutationLockSource, "GetAccessControl()",
+            "The mutation lock must verify the actual DACL of an existing named object.");
+        StringAssert.Contains(mutationLockSource, "WellKnownSidType.LocalSystemSid");
+        StringAssert.Contains(mutationLockSource, "WellKnownSidType.BuiltinAdministratorsSid");
+        Assert.IsFalse(
+            mutationLockSource.Contains("new Mutex(", StringComparison.Ordinal),
+            "A named mutex created without MutexSecurity would reintroduce the unprivileged lock-squatting boundary.");
+
+        var packagesSource = File.ReadAllText(Path.Combine(root, "Directory.Packages.props"));
+        StringAssert.Contains(packagesSource, "System.Threading.AccessControl");
+        var serviceProjectSource = File.ReadAllText(Path.Combine(
+            root, "src", "LatencyPilot.Service", "LatencyPilot.Service.csproj"));
+        StringAssert.Contains(serviceProjectSource, "System.Threading.AccessControl",
+            "The protected Service must carry the package that implements MutexAcl and ACL inspection on .NET 10.");
         StringAssert.Contains(txSource, "ApplyRebootPending");
         StringAssert.Contains(txSource, "RollbackRebootPending");
         StringAssert.Contains(txSource, "ResumeAfterReboot");
