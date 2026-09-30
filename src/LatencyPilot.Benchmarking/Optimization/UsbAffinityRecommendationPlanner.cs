@@ -35,21 +35,24 @@ public static class UsbAffinityRecommendationPlanner
     public static UsbAffinityRecommendation Create(
         ProcessorTopologySnapshot topology, KernelLatencyCaptureResult quietCapture,
         UserInputRouteInventory inputRoutes, LogicalProcessorId gpuWinner, string primaryInputDeviceInstanceId) =>
-        Create(topology, quietCapture, inputRoutes, gpuWinner, primaryInputDeviceInstanceId, null);
+        CreateWithReservations(
+            topology,
+            quietCapture,
+            inputRoutes,
+            primaryInputDeviceInstanceId,
+            [gpuWinner]);
 
     public static UsbAffinityRecommendation CreateIndependent(
         ProcessorTopologySnapshot topology,
         KernelLatencyCaptureResult quietCapture,
         UserInputRouteInventory inputRoutes,
         string primaryInputDeviceInstanceId,
-        DeviceInventorySnapshot? deviceInventory,
         LogicalProcessorId? reservedGpuProcessor) =>
         CreateWithReservations(
             topology,
             quietCapture,
             inputRoutes,
             primaryInputDeviceInstanceId,
-            deviceInventory,
             reservedGpuProcessor is { } processor
                 ? [processor]
                 : Array.Empty<LogicalProcessorId>());
@@ -59,14 +62,12 @@ public static class UsbAffinityRecommendationPlanner
         KernelLatencyCaptureResult quietCapture,
         UserInputRouteInventory inputRoutes,
         string primaryInputDeviceInstanceId,
-        DeviceInventorySnapshot? deviceInventory,
         IReadOnlyCollection<LogicalProcessorId> reservedProcessors) =>
         CreateWithReservations(
             topology,
             [quietCapture],
             inputRoutes,
             primaryInputDeviceInstanceId,
-            deviceInventory,
             reservedProcessors);
 
     public static UsbAffinityRecommendation CreateWithReservations(
@@ -74,7 +75,6 @@ public static class UsbAffinityRecommendationPlanner
         IReadOnlyList<KernelLatencyCaptureResult> quietCaptures,
         UserInputRouteInventory inputRoutes,
         string primaryInputDeviceInstanceId,
-        DeviceInventorySnapshot? deviceInventory,
         IReadOnlyCollection<LogicalProcessorId> reservedProcessors)
     {
         ArgumentNullException.ThrowIfNull(topology);
@@ -176,25 +176,6 @@ public static class UsbAffinityRecommendationPlanner
             stable.PhysicalCoreIndex,
             stable.WindowCount,
             stable.WinningCoreVotes);
-    }
-
-    public static UsbAffinityRecommendation Create(
-        ProcessorTopologySnapshot topology, KernelLatencyCaptureResult quietCapture,
-        UserInputRouteInventory inputRoutes, LogicalProcessorId gpuWinner, string primaryInputDeviceInstanceId,
-        DeviceInventorySnapshot? deviceInventory)
-    {
-        ArgumentNullException.ThrowIfNull(topology);
-        ArgumentNullException.ThrowIfNull(quietCapture);
-        ArgumentNullException.ThrowIfNull(inputRoutes);
-        ArgumentException.ThrowIfNullOrWhiteSpace(primaryInputDeviceInstanceId);
-
-        return CreateWithReservations(
-            topology,
-            quietCapture,
-            inputRoutes,
-            primaryInputDeviceInstanceId,
-            deviceInventory,
-            [gpuWinner]);
     }
 
     private static bool TryValidateCapture(KernelLatencyCaptureResult capture, out string reason)
