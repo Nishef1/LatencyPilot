@@ -7,13 +7,22 @@ namespace LatencyPilot.Service;
 /// Serializes machine mutation, recovery and retained-restore operations across
 /// LatencyPilot processes. A Windows mutex is released by the kernel if its owner
 /// process/thread dies; SQLite CAS remains the second concurrency layer.
-/// The object is created with an explicit DACL so only SYSTEM and Administrators
-/// can open or own it; an unprivileged squatter cannot silently hold the lock.
+/// Newly created lock objects use an explicit DACL granting access only to SYSTEM
+/// and Administrators. Existing objects are reopened with ACL-read rights and
+/// rejected unless that same trust boundary is still present.
 /// </summary>
 internal sealed class MutationOperationLock : IDisposable
 {
     private const string MutexName = @"Global\LatencyPilot.MutationOperation.v1";
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
+    private static readonly SecurityIdentifier LocalSystemSid =
+        new(WellKnownSidType.LocalSystemSid, null);
+    private static readonly SecurityIdentifier AdministratorsSid =
+        new(WellKnownSidType.BuiltinAdministratorsSid, null);
+    private const MutexRights RequiredTrustedRights =
+        MutexRights.Synchronize |
+        MutexRights.Modify |
+        MutexRights.ReadPermissions;
 
     private readonly Mutex mutex;
     private bool ownsMutex;
@@ -84,38 +93,127 @@ internal sealed class MutationOperationLock : IDisposable
     {
         try
         {
-            var security = new MutexSecurity();
-            security.AddAccessRule(new MutexAccessRule(
-                new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
-                MutexRights.FullControl,
-                AccessControlType.Allow));
-            security.AddAccessRule(new MutexAccessRule(
-                new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
-                MutexRights.FullControl,
-                AccessControlType.Allow));
-
-            var createdNew = false;
-            var mutex = new Mutex(
+            var expectedSecurity = CreateExpectedSecurity();
+            var initialHandle = MutexAcl.Create(
                 initiallyOwned: false,
                 MutexName,
-                out createdNew);
-            if (!createdNew)
+                out var createdNew,
+                expectedSecurity);
+
+            if (createdNew)
             {
-                // Re-opened an existing object. If a hostile squatter created it
-                // with a deny-all DACL, access fails here with UnauthorizedAccessException
-                // and the caller fails closed rather than blocking forever.
-                return mutex;
+                try
+                {
+                    EnsureExpectedAccessControl(initialHandle);
+                    return initialHandle;
+                }
+                catch
+                {
+                    initialHandle.Dispose();
+                    throw;
+                }
             }
 
-            return mutex;
+            // Keep the first handle alive while requesting a handle that can
+            // inspect the existing object's DACL. This avoids a destroy/recreate
+            // race if the other process releases its last handle concurrently.
+            try
+            {
+                var verifiedHandle = MutexAcl.OpenExisting(
+                    MutexName,
+                    MutexRights.Synchronize |
+                    MutexRights.Modify |
+                    MutexRights.ReadPermissions);
+                try
+                {
+                    EnsureExpectedAccessControl(verifiedHandle);
+                    return verifiedHandle;
+                }
+                catch
+                {
+                    verifiedHandle.Dispose();
+                    throw;
+                }
+            }
+            finally
+            {
+                initialHandle.Dispose();
+            }
         }
         catch (UnauthorizedAccessException exception)
         {
             throw new InvalidOperationException(
-                "The global mutation lock exists but LatencyPilot is not permitted to open it. " +
-                "Another process may have created " + MutexName + " with a restrictive security descriptor. " +
-                "Mutation and recovery stay fail-closed until that object is removed or access is restored.",
+                "The global mutation lock exists but LatencyPilot cannot open and verify its restricted ACL. " +
+                "Mutation and recovery stay fail-closed until the conflicting object is gone or its permissions are restored.",
                 exception);
         }
+    }
+
+    private static MutexSecurity CreateExpectedSecurity()
+    {
+        var security = new MutexSecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new MutexAccessRule(
+            LocalSystemSid,
+            MutexRights.FullControl,
+            AccessControlType.Allow));
+        security.AddAccessRule(new MutexAccessRule(
+            AdministratorsSid,
+            MutexRights.FullControl,
+            AccessControlType.Allow));
+        return security;
+    }
+
+    private static void EnsureExpectedAccessControl(Mutex mutex)
+    {
+        var rules = mutex
+            .GetAccessControl()
+            .GetAccessRules(
+                includeExplicit: true,
+                includeInherited: true,
+                targetType: typeof(SecurityIdentifier))
+            .OfType<MutexAccessRule>()
+            .ToArray();
+
+        if (rules.Length == 0 ||
+            rules.Any(static rule =>
+                rule.IsInherited ||
+                rule.AccessControlType != AccessControlType.Allow))
+        {
+            throw new InvalidOperationException(
+                "The global mutation lock ACL is not the restricted LatencyPilot ACL; mutation and recovery remain fail-closed.");
+        }
+
+        foreach (var rule in rules)
+        {
+            if (rule.IdentityReference is not SecurityIdentifier sid ||
+                (!sid.Equals(LocalSystemSid) && !sid.Equals(AdministratorsSid)))
+            {
+                throw new InvalidOperationException(
+                    "The global mutation lock grants access outside SYSTEM/Administrators; mutation and recovery remain fail-closed.");
+            }
+        }
+
+        if (!HasRequiredRights(rules, LocalSystemSid) ||
+            !HasRequiredRights(rules, AdministratorsSid))
+        {
+            throw new InvalidOperationException(
+                "The global mutation lock does not grant the required synchronization and ACL-read rights to SYSTEM and Administrators; mutation and recovery remain fail-closed.");
+        }
+    }
+
+    private static bool HasRequiredRights(
+        IReadOnlyList<MutexAccessRule> rules,
+        SecurityIdentifier identity)
+    {
+        var rights = rules
+            .Where(rule =>
+                rule.AccessControlType == AccessControlType.Allow &&
+                rule.IdentityReference is SecurityIdentifier sid &&
+                sid.Equals(identity))
+            .Aggregate(
+                (MutexRights)0,
+                static (current, rule) => current | rule.MutexRights);
+        return (rights & RequiredTrustedRights) == RequiredTrustedRights;
     }
 }
