@@ -33,12 +33,16 @@ public sealed record XhciInterruptRuntimePlacementEvidence(
     int UnresolvedIsrEventCount,
     IReadOnlyList<XhciObservedInterruptCount> ObservedProcessors)
 {
+    public XhciInterruptIsrAttributionMode AttributionMode { get; init; }
+
     public bool HasRuntimeEvidence => MatchingResolvedIsrEventCount > 0;
 
     public bool ConfirmsRequestedPlacement =>
         HasRuntimeEvidence &&
         InRequestedMaskIsrEventCount == MatchingResolvedIsrEventCount &&
-        OffTargetIsrEventCount == 0;
+        OffTargetIsrEventCount == 0 &&
+        (AttributionMode == XhciInterruptIsrAttributionMode.DeviceInterruptVector ||
+         UnresolvedIsrEventCount == 0);
 }
 
 public sealed record XhciInterruptVerificationPreflight(
@@ -530,7 +534,10 @@ public static class XhciInterruptRuntimePlacementVerifier
             inRequestedMaskCount,
             attribution.Events.Count - inRequestedMaskCount,
             attribution.UnresolvedIsrEventCount,
-            observedProcessors);
+            observedProcessors)
+        {
+            AttributionMode = attribution.AttributionMode,
+        };
     }
 
     private static bool ModuleMatchesService(string? modulePath, string serviceName)
