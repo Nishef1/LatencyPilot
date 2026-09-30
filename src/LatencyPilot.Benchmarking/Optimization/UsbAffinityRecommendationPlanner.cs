@@ -27,36 +27,6 @@ public static class UsbAffinityRecommendationPlanner
 {
     private static readonly TimeSpan MinimumCaptureDuration = TimeSpan.FromSeconds(5);
 
-    public static UsbAffinityRecommendation Create(
-        ProcessorTopologySnapshot topology, KernelLatencyCaptureResult quietCapture,
-        UserInputRouteInventory inputRoutes, LogicalProcessorId gpuWinner) =>
-        NotReady("Primary Raw Input PnP identity is required before automatic USB/xHCI affinity selection; LatencyPilot will not substitute another resolved mouse.");
-
-    public static UsbAffinityRecommendation Create(
-        ProcessorTopologySnapshot topology, KernelLatencyCaptureResult quietCapture,
-        UserInputRouteInventory inputRoutes, LogicalProcessorId gpuWinner, string primaryInputDeviceInstanceId) =>
-        CreateWithReservations(
-            topology,
-            quietCapture,
-            inputRoutes,
-            primaryInputDeviceInstanceId,
-            [gpuWinner]);
-
-    public static UsbAffinityRecommendation CreateIndependent(
-        ProcessorTopologySnapshot topology,
-        KernelLatencyCaptureResult quietCapture,
-        UserInputRouteInventory inputRoutes,
-        string primaryInputDeviceInstanceId,
-        LogicalProcessorId? reservedGpuProcessor) =>
-        CreateWithReservations(
-            topology,
-            quietCapture,
-            inputRoutes,
-            primaryInputDeviceInstanceId,
-            reservedGpuProcessor is { } processor
-                ? [processor]
-                : Array.Empty<LogicalProcessorId>());
-
     public static UsbAffinityRecommendation CreateWithReservations(
         ProcessorTopologySnapshot topology,
         KernelLatencyCaptureResult quietCapture,
