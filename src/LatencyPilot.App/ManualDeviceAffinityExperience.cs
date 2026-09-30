@@ -1856,7 +1856,11 @@ public sealed partial class MainWindow
                 row.Device.InstanceId,
                 affinityMask,
                 restartDeviceOnly);
-            var status = report.Status is "RebootRequired" or "AppliedPolicyKept" or "AlreadyStoredPolicy"
+            var status = report.Status is
+                    "RebootRequired" or
+                    "AppliedPolicyKept" or
+                    "AlreadyStoredPolicy" or
+                    "AlreadyStoredUnverified"
                 ? "SemanticAttentionBrush"
                 : report.Status is
                     "AppliedAndKept" or
@@ -1866,7 +1870,9 @@ public sealed partial class MainWindow
                     "Restored" or
                     "NoLatencyPilotChange"
                     ? "SemanticGoodBrush"
-                    : "TextBrush";
+                    : report.Status is "VerificationFailedRolledBack" or "Failed"
+                        ? "SemanticFailureBrush"
+                        : "TextBrush";
             var message = report.Status == "RebootRequired"
                 ? restartDeviceOnly
                     ? $"{row.Device.DisplayName}: Windows could not complete the device-only restart safely. A full system reboot is required to finish this journaled {action.ToLowerInvariant()} operation."
