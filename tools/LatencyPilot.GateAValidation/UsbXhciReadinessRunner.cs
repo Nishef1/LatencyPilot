@@ -64,7 +64,6 @@ internal static class UsbXhciReadinessRunner
                 captures,
                 routes,
                 options.PrimaryInputDeviceInstanceId,
-                inventory,
                 reservations.Processors);
 
             XhciInterruptVerificationPreflight applyPreflight;
