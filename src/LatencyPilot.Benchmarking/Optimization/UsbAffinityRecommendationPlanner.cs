@@ -15,7 +15,10 @@ public sealed record UsbAffinityRecommendation(
     int? RunnerUpPhysicalCoreIndex = null,
     double? WinnerCoreMedianMicroseconds = null,
     double? RunnerUpCoreMedianMicroseconds = null,
-    double? WinnerCoreWindowSpreadMicroseconds = null)
+    double? WinnerCoreWindowSpreadMicroseconds = null,
+    double? WinnerCoreBusyFraction = null,
+    double? RunnerUpCoreBusyFraction = null,
+    double? WinnerCoreBusySpread = null)
 {
     public bool HasCandidate =>
         ControllerInstanceId is not null &&
@@ -49,7 +52,8 @@ public static class UsbAffinityRecommendationPlanner
         IReadOnlyList<KernelLatencyCaptureResult> quietCaptures,
         UserInputRouteInventory inputRoutes,
         string primaryInputDeviceInstanceId,
-        IReadOnlyCollection<LogicalProcessorId> reservedProcessors)
+        IReadOnlyCollection<LogicalProcessorId> reservedProcessors,
+        IReadOnlyList<IReadOnlyDictionary<int, double>>? busyFractionsByWindow = null)
     {
         ArgumentNullException.ThrowIfNull(topology);
         ArgumentNullException.ThrowIfNull(quietCaptures);
@@ -100,7 +104,8 @@ public static class UsbAffinityRecommendationPlanner
             stable = UsbAffinityCpuSelector.SelectStable(
                 topology,
                 quietCaptures,
-                reservedProcessors);
+                reservedProcessors,
+                busyFractionsByWindow);
         }
         catch (Exception exception) when (
             exception is InvalidOperationException or
@@ -153,7 +158,10 @@ public static class UsbAffinityRecommendationPlanner
             stable.RunnerUpPhysicalCoreIndex,
             stable.WinnerCoreMedianMicroseconds,
             stable.RunnerUpCoreMedianMicroseconds,
-            stable.WinnerCoreWindowSpreadMicroseconds);
+            stable.WinnerCoreWindowSpreadMicroseconds,
+            stable.WinnerCoreBusyFraction,
+            stable.RunnerUpCoreBusyFraction,
+            stable.WinnerCoreBusySpread);
     }
 
     private static bool TryValidateCapture(KernelLatencyCaptureResult capture, out string reason)

@@ -28,7 +28,10 @@ public sealed record UsbAffinityStableSelection(
     int? RunnerUpPhysicalCoreIndex = null,
     double? WinnerCoreMedianMicroseconds = null,
     double? RunnerUpCoreMedianMicroseconds = null,
-    double? WinnerCoreWindowSpreadMicroseconds = null);
+    double? WinnerCoreWindowSpreadMicroseconds = null,
+    double? WinnerCoreBusyFraction = null,
+    double? RunnerUpCoreBusyFraction = null,
+    double? WinnerCoreBusySpread = null);
 
 
 public static class UsbAffinityCpuSelector
@@ -113,11 +116,18 @@ public static class UsbAffinityCpuSelector
     public static UsbAffinityStableSelection SelectStable(
         ProcessorTopologySnapshot topology,
         IReadOnlyList<KernelLatencyCaptureResult> captures,
-        IReadOnlyCollection<LogicalProcessorId> reservedProcessors)
+        IReadOnlyCollection<LogicalProcessorId> reservedProcessors,
+        IReadOnlyList<IReadOnlyDictionary<int, double>>? busyFractionsByWindow = null)
     {
         ArgumentNullException.ThrowIfNull(topology);
         ArgumentNullException.ThrowIfNull(captures);
         ArgumentNullException.ThrowIfNull(reservedProcessors);
+        if (busyFractionsByWindow is not null && busyFractionsByWindow.Count != captures.Count)
+        {
+            // Mismatched sampling is not usable evidence; fall back to interrupt time only.
+            busyFractionsByWindow = null;
+        }
+
         if (captures.Count == 0)
         {
             throw new ArgumentException(
@@ -196,9 +206,80 @@ public static class UsbAffinityCpuSelector
                 $"USB/xHCI headroom was not stable enough: no physical core won a majority of the {captures.Count} capture windows.");
         }
 
+        // Stage 2: cores whose interrupt time is within the winner's own window-to-window
+        // spread are indistinguishable on that signal. Among them prefer the core that was
+        // least busy running threads, since an interrupt there steals from useful work.
+        var chosenCore = vote.CoreIndex;
+        string refinement = string.Empty;
+        double? chosenBusy = null;
+        double? chosenBusySpread = null;
+        double? runnerUpBusy = null;
+        if (busyFractionsByWindow is not null)
+        {
+            var coreBusyWindows = topology.Cores.ToDictionary(
+                static core => core.Index,
+                core => busyFractionsByWindow
+                    .Select(window =>
+                    {
+                        var values = core.LogicalProcessors
+                            .Where(static processor => processor.Group == 0)
+                            .Select(processor => window.TryGetValue(processor.Number, out var busy) ? busy : (double?)null)
+                            .Where(static busy => busy is not null)
+                            .Select(static busy => busy!.Value)
+                            .ToArray();
+                        return values.Length == 0 ? (double?)null : values.Average();
+                    })
+                    .Where(static busy => busy is not null)
+                    .Select(static busy => busy!.Value)
+                    .ToArray());
+            double CoreBusy(int core) =>
+                coreBusyWindows.TryGetValue(core, out var windows) && windows.Length > 0
+                    ? Median(windows)
+                    : double.NaN;
+
+            coreWindowTotals.TryGetValue(vote.CoreIndex, out var voteWindows);
+            var interruptLimit = coreMedians[vote.CoreIndex] +
+                (voteWindows is { Length: > 1 } ? voteWindows.Max() - voteWindows.Min() : 0d);
+            var tied = coreMedians
+                .Where(item => item.Value <= interruptLimit && !double.IsNaN(CoreBusy(item.Key)))
+                .Select(static item => item.Key)
+                .ToArray();
+            if (tied.Length > 1 && !double.IsNaN(CoreBusy(vote.CoreIndex)))
+            {
+                var best = tied
+                    .OrderBy(CoreBusy)
+                    .ThenBy(core => coreMedians[core])
+                    .ThenBy(static core => core)
+                    .First();
+                if (best != vote.CoreIndex && CoreBusy(best) < CoreBusy(vote.CoreIndex))
+                {
+                    refinement =
+                        $" Core {vote.CoreIndex} led on interrupt time only within noise; core {best} was selected instead because it was less busy ({CoreBusy(best):P1} vs {CoreBusy(vote.CoreIndex):P1}).";
+                    chosenCore = best;
+                }
+            }
+
+            chosenBusy = CoreBusy(chosenCore);
+            if (double.IsNaN(chosenBusy.Value))
+            {
+                chosenBusy = null;
+            }
+            else if (coreBusyWindows[chosenCore].Length > 1)
+            {
+                chosenBusySpread = coreBusyWindows[chosenCore].Max() - coreBusyWindows[chosenCore].Min();
+            }
+
+            var otherByBusy = coreBusyWindows.Keys
+                .Where(core => core != chosenCore && coreMedians.ContainsKey(core) && !double.IsNaN(CoreBusy(core)))
+                .OrderBy(CoreBusy)
+                .Cast<int?>()
+                .FirstOrDefault();
+            runnerUpBusy = otherByBusy is { } other ? CoreBusy(other) : null;
+        }
+
         var processorsOnWinningCore = rankings
             .SelectMany(static ranking => ranking)
-            .Where(candidate => candidate.PhysicalCoreIndex == vote.CoreIndex)
+            .Where(candidate => candidate.PhysicalCoreIndex == chosenCore)
             .Select(static candidate => candidate.Processor)
             .Distinct()
             .ToArray();
@@ -209,11 +290,11 @@ public static class UsbAffinityCpuSelector
                 var observations = rankings
                     .SelectMany(static ranking => ranking)
                     .Where(candidate =>
-                        candidate.PhysicalCoreIndex == vote.CoreIndex &&
+                        candidate.PhysicalCoreIndex == chosenCore &&
                         candidate.Processor == processor)
                     .ToArray();
                 return new UsbAffinityCpuCandidate(
-                    vote.CoreIndex,
+                    chosenCore,
                     processor,
                     Median(observations.Select(static item => item.DpcTotalDurationMicroseconds)),
                     Median(observations.Select(static item => item.IsrTotalDurationMicroseconds)),
@@ -229,7 +310,7 @@ public static class UsbAffinityCpuSelector
 
         var selected = aggregated[0];
         var runnerUp = coreMedians
-            .Where(item => item.Key != vote.CoreIndex)
+            .Where(item => item.Key != chosenCore)
             .OrderBy(static item => item.Value)
             .ThenBy(static item => item.Key)
             .Select(static item => ((int CoreIndex, double Total)?)(item.Key, item.Value))
@@ -237,16 +318,19 @@ public static class UsbAffinityCpuSelector
         return new(
             true,
             selected,
-            vote.CoreIndex,
+            chosenCore,
             vote.Votes,
             captures.Count,
-            $"Physical core {vote.CoreIndex} won {vote.Votes}/{captures.Count} independent headroom windows; CPU {selected.Processor.Number} had the best median sibling evidence on that core.",
+            $"Physical core {vote.CoreIndex} won {vote.Votes}/{captures.Count} independent headroom windows; CPU {selected.Processor.Number} had the best median sibling evidence on core {chosenCore}.{refinement}",
             runnerUp?.CoreIndex,
-            coreMedians.GetValueOrDefault(vote.CoreIndex),
+            coreMedians.GetValueOrDefault(chosenCore),
             runnerUp?.Total,
-            coreWindowTotals.TryGetValue(vote.CoreIndex, out var winnerWindows) && winnerWindows.Length > 1
+            coreWindowTotals.TryGetValue(chosenCore, out var winnerWindows) && winnerWindows.Length > 1
                 ? winnerWindows.Max() - winnerWindows.Min()
-                : null);
+                : null,
+            chosenBusy,
+            runnerUpBusy,
+            chosenBusySpread);
     }
 
     private static double Median(IEnumerable<double> values)

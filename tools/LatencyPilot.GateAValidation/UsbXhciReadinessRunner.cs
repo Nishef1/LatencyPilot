@@ -16,8 +16,10 @@ namespace LatencyPilot.GateAValidation;
 internal static class UsbXhciReadinessRunner
 {
     internal const string ModeFlag = "--usb-xhci-readiness";
-    private const int CaptureWindowCount = 3;
-    private static readonly TimeSpan CaptureWindowDuration = TimeSpan.FromSeconds(5);
+    // Five 8 s windows (was three 5 s): per-CPU DPC/ISR counts in a 5 s idle window
+    // are in the tens, so one long event can reorder the ranking.
+    private const int CaptureWindowCount = 5;
+    private static readonly TimeSpan CaptureWindowDuration = TimeSpan.FromSeconds(8);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -51,20 +53,31 @@ internal static class UsbXhciReadinessRunner
                 routedControllerId);
 
             var captures = new KernelLatencyCaptureResult[CaptureWindowCount];
+            var busyByWindow = new List<IReadOnlyDictionary<int, double>>(CaptureWindowCount);
             for (var window = 0; window < captures.Length; window++)
             {
+                var before = ProcessorUtilizationSampler.Capture();
                 captures[window] = KernelLatencyCapture.Capture(
                     new KernelLatencyCaptureOptions(
                         CaptureWindowDuration,
                         ObservationProtocol.MaximumCaptureEvents));
+                busyByWindow.Add(ProcessorUtilizationSampler.BusyFractions(
+                    before,
+                    ProcessorUtilizationSampler.Capture()));
             }
+
+            var systemBusyFraction = busyByWindow
+                .SelectMany(static window => window.Values)
+                .DefaultIfEmpty(double.NaN)
+                .Average();
 
             var recommendation = UsbAffinityRecommendationPlanner.CreateWithReservations(
                 topology,
                 captures,
                 routes,
                 options.PrimaryInputDeviceInstanceId,
-                reservations.Processors);
+                reservations.Processors,
+                busyByWindow);
 
             XhciInterruptVerificationPreflight applyPreflight;
             if (recommendation.ControllerInstanceId is { } controllerId &&
@@ -113,6 +126,10 @@ internal static class UsbXhciReadinessRunner
                 WinnerCoreMedianMicroseconds: recommendation.WinnerCoreMedianMicroseconds,
                 RunnerUpCoreMedianMicroseconds: recommendation.RunnerUpCoreMedianMicroseconds,
                 WinnerCoreWindowSpreadMicroseconds: recommendation.WinnerCoreWindowSpreadMicroseconds,
+                WinnerCoreBusyFraction: recommendation.WinnerCoreBusyFraction,
+                RunnerUpCoreBusyFraction: recommendation.RunnerUpCoreBusyFraction,
+                WinnerCoreBusySpread: recommendation.WinnerCoreBusySpread,
+                SystemBusyFraction: double.IsNaN(systemBusyFraction) ? null : systemBusyFraction,
                 TotalInterruptDurationMicroseconds: evidence?.TotalInterruptDurationMicroseconds,
                 InterruptTailP99Microseconds: evidence?.InterruptTailP99Microseconds,
                 DpcCount: evidence?.DpcCount,
@@ -146,6 +163,10 @@ internal static class UsbXhciReadinessRunner
                 WinnerCoreMedianMicroseconds: null,
                 RunnerUpCoreMedianMicroseconds: null,
                 WinnerCoreWindowSpreadMicroseconds: null,
+                WinnerCoreBusyFraction: null,
+                RunnerUpCoreBusyFraction: null,
+                WinnerCoreBusySpread: null,
+                SystemBusyFraction: null,
                 TotalInterruptDurationMicroseconds: null,
                 InterruptTailP99Microseconds: null,
                 DpcCount: null,
@@ -299,6 +320,10 @@ internal sealed record UsbXhciReadinessReport(
     double? WinnerCoreMedianMicroseconds,
     double? RunnerUpCoreMedianMicroseconds,
     double? WinnerCoreWindowSpreadMicroseconds,
+    double? WinnerCoreBusyFraction,
+    double? RunnerUpCoreBusyFraction,
+    double? WinnerCoreBusySpread,
+    double? SystemBusyFraction,
     double? TotalInterruptDurationMicroseconds,
     double? InterruptTailP99Microseconds,
     int? DpcCount,

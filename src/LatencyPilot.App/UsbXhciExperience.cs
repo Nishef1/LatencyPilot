@@ -334,7 +334,11 @@ public sealed partial class MainWindow
             report.WinnerCoreMedianMicroseconds is { } leadWinner &&
             report.RunnerUpCoreMedianMicroseconds is { } leadRunnerUp &&
             report.WinnerCoreWindowSpreadMicroseconds is { } leadSpread &&
-            leadRunnerUp - leadWinner <= leadSpread;
+            leadRunnerUp - leadWinner <= leadSpread &&
+            // A clearly less busy core is a real advantage even when interrupt time ties.
+            !(report.WinnerCoreBusyFraction is { } busyWinner &&
+              report.RunnerUpCoreBusyFraction is { } busyRunnerUp &&
+              busyRunnerUp - busyWinner > Math.Max(report.WinnerCoreBusySpread ?? 0d, 0.02d));
         var headline = !benchmarkReady
             ? "Benchmark not ready"
             : noMeasurableAdvantage
@@ -403,6 +407,29 @@ public sealed partial class MainWindow
                     string.Create(
                         CultureInfo.InvariantCulture,
                         $"core {runnerUpCore} · {runnerUp:F1} us vs {winnerCore:F1} us per window (median core total)")));
+            }
+
+            if (report.WinnerCoreBusyFraction is { } coreBusy)
+            {
+                content.Children.Add(CreateEvidenceLine(
+                    "Core load (threads)",
+                    report.RunnerUpCoreBusyFraction is { } otherBusy
+                        ? string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{coreBusy:P1} on the recommended core; least busy other core {otherBusy:P1}")
+                        : string.Create(CultureInfo.InvariantCulture, $"{coreBusy:P1} on the recommended core")));
+            }
+
+            if (report.SystemBusyFraction is { } systemBusy)
+            {
+                var loadVerdict = systemBusy > 0.20d
+                    ? "busy: results are less reliable, re-run on a quiet system"
+                    : "quiet enough for a headroom comparison";
+                content.Children.Add(CreateEvidenceLine(
+                    "System load",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{systemBusy:P1} average during the benchmark · {loadVerdict}")));
             }
 
             content.Children.Add(CreateEvidenceLine(
@@ -666,6 +693,10 @@ public sealed partial class MainWindow
         double? WinnerCoreMedianMicroseconds,
         double? RunnerUpCoreMedianMicroseconds,
         double? WinnerCoreWindowSpreadMicroseconds,
+        double? WinnerCoreBusyFraction,
+        double? RunnerUpCoreBusyFraction,
+        double? WinnerCoreBusySpread,
+        double? SystemBusyFraction,
         double? TotalInterruptDurationMicroseconds,
         double? InterruptTailP99Microseconds,
         int? DpcCount,
