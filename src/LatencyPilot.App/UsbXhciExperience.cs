@@ -370,6 +370,16 @@ public sealed partial class MainWindow
                     string.Create(
                         CultureInfo.InvariantCulture,
                         $"core {runnerUpCore} · {runnerUp:F1} us vs {winnerCore:F1} us per window (median core total)")));
+                // The gap is compared with the winner's own window-to-window spread:
+                // a lead smaller than that spread is not distinguishable from noise.
+                if (report.WinnerCoreWindowSpreadMicroseconds is { } spread &&
+                    runnerUp - winnerCore <= spread)
+                {
+                    content.Children.Add(CreateMutedText(
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Close call: the lead ({runnerUp - winnerCore:F1} us) is within this core's own window-to-window spread ({spread:F1} us). Cores {report.WinningPhysicalCoreIndex} and {runnerUpCore} are effectively tied; re-run on a quiet system for a firmer choice.")));
+                }
             }
 
             content.Children.Add(CreateEvidenceLine(
@@ -432,13 +442,14 @@ public sealed partial class MainWindow
                 mutationBlockerSummary));
         }
 
-        content.Children.Add(new Expander
+        var technicalExpander = new Expander
         {
             Header = "Technical details",
             Content = technical,
             IsExpanded = !benchmarkReady,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-        });
+        };
+        content.Children.Add(technicalExpander);
 
         var dialog = new ContentDialog
         {
@@ -452,6 +463,9 @@ public sealed partial class MainWindow
                 : ContentDialogButton.Close,
         };
 
+        // The Expander inside a ContentDialog opens expanded regardless of its initial
+        // IsExpanded value; apply the intended state once the dialog is on screen.
+        dialog.Opened += (_, _) => technicalExpander.IsExpanded = !benchmarkReady;
         var result = await dialog.ShowAsync();
         if (result != ContentDialogResult.Primary ||
             !readyToApply ||
@@ -630,6 +644,7 @@ public sealed partial class MainWindow
         int? RunnerUpPhysicalCoreIndex,
         double? WinnerCoreMedianMicroseconds,
         double? RunnerUpCoreMedianMicroseconds,
+        double? WinnerCoreWindowSpreadMicroseconds,
         double? TotalInterruptDurationMicroseconds,
         double? InterruptTailP99Microseconds,
         int? DpcCount,

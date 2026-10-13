@@ -771,6 +771,20 @@ public sealed partial class MainWindow
             CloseButtonText = "Close",
             DefaultButton = ContentDialogButton.Close,
         };
+
+        // Expanders inside a ContentDialog open expanded regardless of their initial
+        // IsExpanded value; re-apply the intended state once the dialog is visible.
+        var intendedExpansion = content.Children
+            .OfType<Expander>()
+            .Select(static expander => (Expander: expander, expander.IsExpanded))
+            .ToArray();
+        dialog.Opened += (_, _) =>
+        {
+            foreach (var (expander, isExpanded) in intendedExpansion)
+            {
+                expander.IsExpanded = isExpanded;
+            }
+        };
         await dialog.ShowAsync();
     }
 

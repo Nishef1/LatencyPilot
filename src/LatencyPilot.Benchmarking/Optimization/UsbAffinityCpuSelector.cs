@@ -27,7 +27,8 @@ public sealed record UsbAffinityStableSelection(
     string Reason,
     int? RunnerUpPhysicalCoreIndex = null,
     double? WinnerCoreMedianMicroseconds = null,
-    double? RunnerUpCoreMedianMicroseconds = null);
+    double? RunnerUpCoreMedianMicroseconds = null,
+    double? WinnerCoreWindowSpreadMicroseconds = null);
 
 
 public static class UsbAffinityCpuSelector
@@ -157,7 +158,7 @@ public static class UsbAffinityCpuSelector
 
         // Median per-window total interrupt time of every physical core. This is the
         // margin evidence: a winner that barely beats the runner-up is a tie in practice.
-        var coreMedians = rankings
+        var coreWindowTotals = rankings
             .SelectMany(static ranking => ranking
                 .GroupBy(static candidate => candidate.PhysicalCoreIndex)
                 .Select(static group => (
@@ -166,7 +167,10 @@ public static class UsbAffinityCpuSelector
             .GroupBy(static item => item.CoreIndex)
             .ToDictionary(
                 static group => group.Key,
-                static group => Median(group.Select(static item => item.Total)));
+                static group => group.Select(static item => item.Total).ToArray());
+        var coreMedians = coreWindowTotals.ToDictionary(
+            static item => item.Key,
+            static item => Median(item.Value));
 
         var vote = windowCoreWinners
             .GroupBy(static coreIndex => coreIndex)
@@ -239,7 +243,10 @@ public static class UsbAffinityCpuSelector
             $"Physical core {vote.CoreIndex} won {vote.Votes}/{captures.Count} independent headroom windows; CPU {selected.Processor.Number} had the best median sibling evidence on that core.",
             runnerUp?.CoreIndex,
             coreMedians.GetValueOrDefault(vote.CoreIndex),
-            runnerUp?.Total);
+            runnerUp?.Total,
+            coreWindowTotals.TryGetValue(vote.CoreIndex, out var winnerWindows) && winnerWindows.Length > 1
+                ? winnerWindows.Max() - winnerWindows.Min()
+                : null);
     }
 
     private static double Median(IEnumerable<double> values)
