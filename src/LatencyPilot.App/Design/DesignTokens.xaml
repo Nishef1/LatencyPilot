@@ -23,14 +23,14 @@
             <!-- Translucent glass surfaces let the Mica backdrop breathe through. -->
             <SolidColorBrush x:Key="GlassCardBrush" Color="#E8FFFFFF" />
             <SolidColorBrush x:Key="GlassRaisedBrush" Color="#F3FFFFFF" />
+            <!-- Accent-derived so the shell follows the Windows accent instead of a fixed blue/violet. -->
             <LinearGradientBrush x:Key="AmbientWashBrush" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#1A2F7CF6" />
-                <GradientStop Offset="0.5" Color="#148B5CF6" />
-                <GradientStop Offset="1" Color="#002F7CF6" />
+                <GradientStop Offset="0" Color="#26FFFFFF" />
+                <GradientStop Offset="1" Color="#00FFFFFF" />
             </LinearGradientBrush>
             <LinearGradientBrush x:Key="AccentGradientBrush" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#FF2F7CF6" />
-                <GradientStop Offset="1" Color="#FF7C5CFF" />
+                <GradientStop Offset="0" Color="{ThemeResource SystemAccentColorLight1}" />
+                <GradientStop Offset="1" Color="{ThemeResource SystemAccentColorDark1}" />
             </LinearGradientBrush>
             <SolidColorBrush x:Key="NavigationBrush" Color="#00FFFFFF" />
             <SolidColorBrush x:Key="NavigationSelectedBrush"
@@ -87,13 +87,12 @@
             <SolidColorBrush x:Key="GlassCardBrush" Color="#B82D2D30" />
             <SolidColorBrush x:Key="GlassRaisedBrush" Color="#CC333337" />
             <LinearGradientBrush x:Key="AmbientWashBrush" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#335B9CFF" />
-                <GradientStop Offset="0.5" Color="#249D7BFF" />
-                <GradientStop Offset="1" Color="#005B9CFF" />
+                <GradientStop Offset="0" Color="#14FFFFFF" />
+                <GradientStop Offset="1" Color="#00FFFFFF" />
             </LinearGradientBrush>
             <LinearGradientBrush x:Key="AccentGradientBrush" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#FF5B9CFF" />
-                <GradientStop Offset="1" Color="#FF9D7BFF" />
+                <GradientStop Offset="0" Color="{ThemeResource SystemAccentColorLight1}" />
+                <GradientStop Offset="1" Color="{ThemeResource SystemAccentColorDark1}" />
             </LinearGradientBrush>
             <SolidColorBrush x:Key="NavigationBrush" Color="#00000000" />
             <SolidColorBrush x:Key="NavigationSelectedBrush"

@@ -173,8 +173,8 @@ public sealed class AuditClosureIntegrationTests
             "The v1 network action must remain explicitly read-only.");
 
         var mainWindowXaml = File.ReadAllText(Path.Combine(root, "src", "LatencyPilot.App", "MainWindow.xaml"));
-        StringAssert.Contains(mainWindowXaml, "x:Name=\"MeasureGpuGateAButton\"",
-            "Measure must expose GPU Gate A directly inside its subsystem card.");
+        StringAssert.Contains(mainWindowXaml, "x:Name=\"DeveloperValidationHost\"",
+            "Measure must expose the single GPU Gate A control surface inside its subsystem card.");
         StringAssert.Contains(mainWindowXaml, "x:Name=\"MeasureUsbSubsystemButton\"",
             "Measure must expose the independent USB/xHCI action directly inside its subsystem card.");
         StringAssert.Contains(mainWindowXaml, "x:Name=\"MeasureNetworkSubsystemButton\"",
@@ -205,7 +205,7 @@ public sealed class AuditClosureIntegrationTests
         Assert.IsFalse(
             usbXhciUi.Contains("then require controller-attributed ISR verification", StringComparison.Ordinal),
             "Apply confirmation must not claim controller-specific ETW is mandatory when TargetAllocation is the supported fallback authority.");
-        StringAssert.Contains(mainWindowXaml, "HARDWARE PATHS &#x2022; MEASURE BEFORE CHANGE",
+        StringAssert.Contains(mainWindowXaml, "Hardware paths, each with its own evidence and rollback checks.",
             "Devices must not label the entire page read-only while verified subsystem mutation actions are present.");
 
         StringAssert.Contains(usbXhciUi, "FormatMutationKind",

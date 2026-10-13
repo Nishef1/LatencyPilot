@@ -200,9 +200,7 @@
                                         <ColumnDefinition x:Name="HeaderActionsColumn" Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="6" VerticalAlignment="Center">
-                                        <TextBlock Text="REAL MEASUREMENTS" Style="{StaticResource HeroEyebrowTextStyle}" />
                                         <TextBlock Text="Overview" Style="{StaticResource HeroTitleTextStyle}" />
-                                        <Border Style="{StaticResource HeroAccentBarStyle}" />
                                         <TextBlock Text="Current interrupt latency and baseline quality."
                                                    Style="{StaticResource MutedBodyTextStyle}" />
                                     </StackPanel>
@@ -507,10 +505,8 @@
                                         <ColumnDefinition x:Name="MeasureHeaderActionsColumn" Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="6">
-                                        <TextBlock Text="MEASURE FIRST &#x2022; OPTIMIZE ONLY WHEN VERIFIED" Style="{StaticResource HeroEyebrowTextStyle}" />
                                         <TextBlock Text="Measure" Style="{StaticResource HeroTitleTextStyle}" />
-                                        <Border Style="{StaticResource HeroAccentBarStyle}" />
-                                        <TextBlock Text="Build evidence first. GPU Gate A, USB/xHCI, and network each have separate subsystem actions."
+                                        <TextBlock Text="Capture evidence, then run each subsystem independently."
                                                    Style="{StaticResource MutedBodyTextStyle}" />
                                     </StackPanel>
                                     <StackPanel x:Name="MeasureHeaderActions" Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -541,45 +537,43 @@
                                 </Grid>
 
                                 <Border x:Name="OptimizationScopeCard" Style="{StaticResource DashboardCardStyle}">
-                                    <StackPanel Spacing="12">
+                                    <StackPanel Spacing="14">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="Subsystem experiments" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                            <TextBlock Text="Each action owns its own evidence, controls, and verification. Nothing is applied until its checks pass." Style="{StaticResource CaptionTextStyle}" />
+                                        </StackPanel>
+
+                                        <Border Style="{StaticResource MetricTileStyle}">
+                                            <Grid ColumnSpacing="16">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Spacing="4" VerticalAlignment="Center">
+                                                    <TextBlock Text="GPU Gate A" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                    <TextBlock Text="Benchmark GPU interrupt-affinity candidates; keep or restore only GPU state." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
+                                                    <TextBlock x:Name="DeveloperValidationStatusText"
+                                                               Text="Ready. Requires a clean main checkout at one exact revision."
+                                                               MaxLines="2"
+                                                               TextWrapping="Wrap"
+                                                               Style="{StaticResource CaptionTextStyle}" />
+                                                </StackPanel>
+                                                <StackPanel x:Name="DeveloperValidationHost"
+                                                            Grid.Column="1"
+                                                            Orientation="Horizontal"
+                                                            VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+
                                         <Grid ColumnSpacing="12">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Spacing="2">
-                                                <TextBlock Text="Subsystem experiments" Style="{StaticResource SubsectionTitleTextStyle}" />
-                                                <TextBlock Text="GPU Gate A is GPU-only. USB/xHCI and network keep their own evidence, controls, and verification rules." Style="{StaticResource CaptionTextStyle}" />
-                                            </StackPanel>
-                                            <Border Grid.Column="1" Style="{StaticResource PillBorderStyle}" VerticalAlignment="Center">
-                                                <TextBlock Text="SEPARATE" FontSize="10" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                            </Border>
-                                        </Grid>
-                                        <Grid ColumnSpacing="10">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <Border Grid.Column="0" Style="{StaticResource MetricTileStyle}">
                                                 <StackPanel Spacing="8">
-                                                    <TextBlock Text="GPU Gate A" Style="{StaticResource MetricLabelTextStyle}" />
-                                                    <TextBlock Text="Benchmark only GPU interrupt-affinity candidates and keep or restore only GPU state." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
-                                                    <Button x:Name="MeasureGpuGateAButton"
-                                                            Visibility="{Binding Visibility, ElementName=GpuGateAEntryButton}"
-                                                            IsEnabled="{Binding IsEnabled, ElementName=GpuGateAEntryButton}"
-                                                            Click="GpuGateAEntryButton_Click"
-                                                            Style="{StaticResource SecondaryButtonStyle}"
-                                                            HorizontalAlignment="Left"
-                                                            AutomationProperties.Name="Run GPU Gate A from Measure">
-                                                        <TextBlock Text="Run GPU Gate A" />
-                                                    </Button>
-                                                </StackPanel>
-                                            </Border>
-                                            <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
-                                                <StackPanel Spacing="8">
-                                                    <TextBlock Text="USB / xHCI" Style="{StaticResource MetricLabelTextStyle}" />
-                                                    <TextBlock Text="Resolve the exact input controller, capture fresh headroom, recommend a CPU, then verify/rollback independently." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
+                                                    <TextBlock Text="USB / xHCI" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                    <TextBlock Text="Resolve the input controller, measure headroom, recommend a CPU, then verify or roll back." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
                                                     <Button x:Name="MeasureUsbSubsystemButton"
                                                             IsEnabled="{Binding IsEnabled, ElementName=UsbSubsystemButton}"
                                                             Click="UsbSubsystemButton_Click"
@@ -590,10 +584,10 @@
                                                     </Button>
                                                 </StackPanel>
                                             </Border>
-                                            <Border Grid.Column="2" Style="{StaticResource MetricTileStyle}">
+                                            <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
                                                 <StackPanel Spacing="8">
-                                                    <TextBlock Text="Network / RSS" Style="{StaticResource MetricLabelTextStyle}" />
-                                                    <TextBlock Text="Inspect physical-NIC and RSS evidence independently. Mutation remains outside v1 until its own method is proven." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
+                                                    <TextBlock Text="Network / RSS" Style="{StaticResource SubsectionTitleTextStyle}" />
+                                                    <TextBlock Text="Read-only physical-NIC, RSS and miniport interrupt evidence." TextWrapping="Wrap" Style="{StaticResource CaptionTextStyle}" />
                                                     <Button x:Name="MeasureNetworkSubsystemButton"
                                                             IsEnabled="{Binding IsEnabled, ElementName=NetworkSubsystemButton}"
                                                             Click="NetworkSubsystemButton_Click"
@@ -605,9 +599,6 @@
                                                 </StackPanel>
                                             </Border>
                                         </Grid>
-                                        <TextBlock Text="Interrupt Policy Lab remains a separate manual developer tool; it is not a substitute for any subsystem benchmark."
-                                                   TextWrapping="Wrap"
-                                                   Style="{StaticResource CaptionTextStyle}" />
                                     </StackPanel>
                                 </Border>
 
@@ -688,30 +679,6 @@
                                     </Border>
                                 </Grid>
 
-                                <Border x:Name="DeveloperValidationCard"
-                                        Visibility="Collapsed"
-                                        Style="{StaticResource SubtleCardStyle}">
-                                    <Grid ColumnSpacing="14">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="2">
-                                            <TextBlock Text="GPU Gate A" Style="{StaticResource MetricLabelTextStyle}" />
-                                            <TextBlock Text="Development-only GPU v6 validation. It does not select, rank, or recommend USB/network targets."
-                                                       Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock x:Name="DeveloperValidationStatusText"
-                                                       Text="Ready. Requires a clean main checkout at one exact revision."
-                                                       MaxLines="2"
-                                                       TextWrapping="Wrap"
-                                                       Style="{StaticResource CaptionTextStyle}" />
-                                        </StackPanel>
-                                        <StackPanel x:Name="DeveloperValidationHost"
-                                                    Grid.Column="1"
-                                                    Orientation="Horizontal"
-                                                    VerticalAlignment="Center" />
-                                    </Grid>
-                                </Border>
                             </StackPanel>
                         </Grid>
                     </ScrollViewer>
@@ -731,10 +698,8 @@
                                     </TransitionCollection>
                                 </StackPanel.ChildrenTransitions>
                                 <StackPanel Spacing="6">
-                                    <TextBlock Text="HARDWARE PATHS &#x2022; MEASURE BEFORE CHANGE" Style="{StaticResource HeroEyebrowTextStyle}" />
                                     <TextBlock Text="Devices" Style="{StaticResource HeroTitleTextStyle}" />
-                                    <Border Style="{StaticResource HeroAccentBarStyle}" />
-                                    <TextBlock Text="Inspect each subsystem independently; apply changes only when its own evidence and rollback checks are ready."
+                                    <TextBlock Text="Hardware paths, each with its own evidence and rollback checks."
                                                Style="{StaticResource MutedBodyTextStyle}" />
                                 </StackPanel>
 
@@ -880,17 +845,17 @@
                                                 <StackPanel Grid.Column="1" Spacing="2">
                                                     <TextBlock Text="Packages / groups" Style="{StaticResource CaptionTextStyle}" />
                                                     <StackPanel Orientation="Horizontal" Spacing="4">
-                                                        <TextBlock x:Name="PackageCountText" Text="—" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                                        <TextBlock Text="/" Foreground="{ThemeResource SubtleTextBrush}" />
-                                                        <TextBlock x:Name="ProcessorGroupCountText" Text="—" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                        <TextBlock x:Name="PackageCountText" Text="—" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                        <TextBlock Text="/" FontSize="18" Foreground="{ThemeResource SubtleTextBrush}" />
+                                                        <TextBlock x:Name="ProcessorGroupCountText" Text="—" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
                                                     </StackPanel>
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2" Spacing="2">
                                                     <TextBlock Text="OS / process" Style="{StaticResource CaptionTextStyle}" />
                                                     <StackPanel Orientation="Horizontal" Spacing="4">
-                                                        <TextBlock x:Name="OsArchitectureText" Text="—" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                                        <TextBlock Text="/" Foreground="{ThemeResource SubtleTextBrush}" />
-                                                        <TextBlock x:Name="ProcessArchitectureText" Text="—" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                        <TextBlock x:Name="OsArchitectureText" Text="—" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                        <TextBlock Text="/" FontSize="18" Foreground="{ThemeResource SubtleTextBrush}" />
+                                                        <TextBlock x:Name="ProcessArchitectureText" Text="—" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
                                                     </StackPanel>
                                                 </StackPanel>
                                             </Grid>
@@ -940,9 +905,7 @@
                                         <ColumnDefinition x:Name="EvidenceHeaderActionsColumn" Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="6">
-                                        <TextBlock Text="RAW DATA &#x2022; PROVENANCE" Style="{StaticResource HeroEyebrowTextStyle}" />
                                         <TextBlock Text="Evidence" Style="{StaticResource HeroTitleTextStyle}" />
-                                        <Border Style="{StaticResource HeroAccentBarStyle}" />
                                         <TextBlock Text="Raw measurements, attribution, and provenance."
                                                    Style="{StaticResource MutedBodyTextStyle}" />
                                     </StackPanel>
@@ -1020,21 +983,23 @@
                                                 </Border>
                                             </Grid>
 
-                                            <Grid ColumnSpacing="12">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel Spacing="6">
-                                                    <TextBlock Text="Driver attribution" Style="{StaticResource MetricLabelTextStyle}" />
-                                                    <ProgressBar x:Name="ModuleCoverageBar" Minimum="0" Maximum="100" Value="0" Height="4" />
-                                                    <TextBlock x:Name="ModuleAttributionCoverageText" Text="—" Style="{StaticResource CaptionTextStyle}" />
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="1" MinWidth="100" Spacing="2">
-                                                    <TextBlock Text="CPUs observed" Style="{StaticResource MetricLabelTextStyle}" />
-                                                    <TextBlock x:Name="ObservedProcessorCountText" Text="—" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
-                                                </StackPanel>
-                                            </Grid>
+                                            <Border Style="{StaticResource MetricTileStyle}">
+                                                <Grid ColumnSpacing="24">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Spacing="8" VerticalAlignment="Center">
+                                                        <TextBlock Text="Driver attribution coverage" Style="{StaticResource MetricLabelTextStyle}" />
+                                                        <ProgressBar x:Name="ModuleCoverageBar" Minimum="0" Maximum="100" Value="0" Height="4" />
+                                                        <TextBlock x:Name="ModuleAttributionCoverageText" Text="—" Style="{StaticResource CaptionTextStyle}" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" MinWidth="110" Spacing="2" VerticalAlignment="Center">
+                                                        <TextBlock Text="CPUs observed" Style="{StaticResource MetricLabelTextStyle}" />
+                                                        <TextBlock x:Name="ObservedProcessorCountText" Text="—" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
 
                                             <Grid x:Name="EvidenceAttributionGrid" ColumnSpacing="12" RowSpacing="12">
                                                 <Grid.ColumnDefinitions>
@@ -1084,10 +1049,14 @@
                                                 </StackPanel>
                                             </Grid>
 
-                                            <TextBlock x:Name="ObservationQualityText" Text="Quality evidence will appear after capture." Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock x:Name="EvidenceExportStatusText" Text="Complete an observation or baseline to enable JSON export." Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock x:Name="BaselineMetricsText" Text="No baseline metrics yet." Style="{StaticResource CaptionTextStyle}" />
-                                            <TextBlock x:Name="BaselineReasonsText" Text="Baseline quality and readiness reasons appear here." Style="{StaticResource CaptionTextStyle}" />
+                                            <Border Height="1" Background="{ThemeResource DividerBrush}" />
+                                            <StackPanel Spacing="8">
+                                                <TextBlock Text="Quality and provenance" Style="{StaticResource MetricLabelTextStyle}" />
+                                                <TextBlock x:Name="ObservationQualityText" Text="Quality evidence will appear after capture." Style="{StaticResource CaptionTextStyle}" />
+                                                <TextBlock x:Name="BaselineMetricsText" Text="No baseline metrics yet." Style="{StaticResource CaptionTextStyle}" />
+                                                <TextBlock x:Name="BaselineReasonsText" Text="Baseline quality and readiness reasons appear here." Style="{StaticResource CaptionTextStyle}" />
+                                                <TextBlock x:Name="EvidenceExportStatusText" Text="Complete an observation or baseline to enable JSON export." Style="{StaticResource CaptionTextStyle}" />
+                                            </StackPanel>
                                             <ListView x:Name="BaselineWindowsList" Style="{StaticResource EvidenceListStyle}" SelectionMode="None">
                                                 <ListView.ItemTemplate>
                                                     <DataTemplate>

@@ -112,7 +112,6 @@ public sealed class SourceRevisionIdentityTests
         StringAssert.Contains(gateASource, "SetGateAValidationBusy(false);");
         StringAssert.Contains(gateASource, "_measurementBusy || _gateAValidationRunning");
         StringAssert.Contains(gateASource, "Content = \"Run GPU Gate A\"");
-        StringAssert.Contains(gateASource, "DeveloperValidationCard.Visibility = Visibility.Visible;");
         StringAssert.Contains(gateASource, "DeveloperValidationHost.Children.Add(_gateAValidationButton);");
         Assert.IsFalse(gateASource.Contains("Validate GPU · one click", StringComparison.Ordinal));
         Assert.IsFalse(gateASource.Contains("Auto-optimize GPU", StringComparison.Ordinal));

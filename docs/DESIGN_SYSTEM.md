@@ -33,6 +33,13 @@ LatencyPilot should look like a calm, premium, native Windows 11 performance too
 14. Visible copy is literal and short. Avoid marketing language, motivational filler, duplicated instructions, vague phrases such as “what deserves attention”, and text that merely narrates an obvious control.
 15. A user-facing action appears once per page unless repetition materially prevents an error or supports a separate workflow stage.
 
+## Page headers and shared surfaces
+
+- A page header is the title plus one literal subtitle sentence. No slogan eyebrows and no decorative accent bars; the primary action sits on the same row.
+- Brand gradients (`AccentGradientBrush`) derive from `SystemAccentColor*` so the shell, the logo tile and the primary action share one hue. Do not reintroduce a fixed blue/violet brand gradient.
+- GPU Gate A has one control surface: the `DeveloperValidationHost` inside the Measure subsystem card. Do not add a second "Run GPU Gate A" button to the same page.
+- Page-level explanatory prose belongs under a labelled group ("Quality and provenance"), never as loose captions between metric tiles.
+
 ## Shell and material
 
 The active shell is native WinUI 3:

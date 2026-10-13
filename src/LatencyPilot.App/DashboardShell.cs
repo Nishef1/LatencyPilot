@@ -48,7 +48,6 @@ public sealed partial class MainWindow
     {
         CardElevation.Apply(ServiceStatusCard);
         CardElevation.Apply(ObservationCard);
-        CardElevation.Apply(DeveloperValidationCard);
         CardElevation.Apply(ManualDeviceAffinityCard);
         CardElevation.Apply(SystemInventoryCard);
         CardElevation.ApplyToChildren(BaselineAnchor);

@@ -75,7 +75,6 @@ public sealed partial class MainWindow
         _gateAValidationButton.Click += GateAValidationButton_Click;
         DeveloperValidationHost.Spacing = 8;
         DeveloperValidationHost.Children.Add(_gateAValidationStateBadge);
-        DeveloperValidationCard.Visibility = Visibility.Visible;
         DeveloperValidationHost.Children.Add(_gateAValidationButton);
         InitializeGateACpuScope();
         DeveloperValidationStatusText.Text = "Checking Git source state…";

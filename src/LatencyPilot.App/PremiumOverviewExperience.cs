@@ -198,6 +198,7 @@ public sealed partial class MainWindow
             FontWeight = FontWeights.SemiBold,
             Foreground = ThemeBrush("TextBrush"),
             TextWrapping = TextWrapping.Wrap,
+            HorizontalAlignment = HorizontalAlignment.Left,
             MaxWidth = 680,
         });
         copy.Children.Add(new TextBlock
@@ -206,6 +207,7 @@ public sealed partial class MainWindow
             FontSize = 14,
             Foreground = ThemeBrush("MutedTextBrush"),
             TextWrapping = TextWrapping.Wrap,
+            HorizontalAlignment = HorizontalAlignment.Left,
             MaxWidth = 720,
         });
 
