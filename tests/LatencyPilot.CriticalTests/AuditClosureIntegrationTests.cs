@@ -244,8 +244,10 @@ public sealed class AuditClosureIntegrationTests
         StringAssert.Contains(usbXhciRunner, "KernelLatencyCapture.Capture");
         StringAssert.Contains(usbXhciRunner, "AssessApplyPreflight",
             "USB/xHCI should expose attribution strength before Apply without making peer visibility a permanent benchmark dependency.");
-        StringAssert.Contains(usbXhciRunner, "CaptureWindowCount = 3",
-            "USB/xHCI should use a small repeated-window stability check rather than a single noisy snapshot.");
+        StringAssert.Contains(usbXhciRunner, "CaptureWindowCount = 5",
+            "USB/xHCI should use a repeated-window stability check rather than a single noisy snapshot.");
+        StringAssert.Contains(usbXhciRunner, "ProcessorUtilizationSampler.Capture",
+            "USB/xHCI headroom must include per-CPU thread load, which DPC/ISR totals cannot see.");
 
         var xhciVerifier = File.ReadAllText(Path.Combine(
             root, "src", "LatencyPilot.Platform.Windows", "Devices", "XhciInterruptRuntimePlacementVerifier.cs"));
