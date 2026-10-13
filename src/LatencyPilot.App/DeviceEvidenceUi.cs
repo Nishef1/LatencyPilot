@@ -242,6 +242,8 @@ public sealed partial class MainWindow
                 ? $"Network/RSS configuration ready · {target.Name ?? target.InterfaceDescription ?? "physical NIC"}."
                 : attribution.HasTargetEvidence && continuity?.IsStable == true
                     ? $"Network/RSS runtime evidence captured · {target.Name ?? target.InterfaceDescription ?? "physical NIC"}."
+                    : attribution.HasNdisPathEvidence && continuity?.IsStable == true && traffic is { HasTraffic: true }
+                        ? $"Network/RSS NDIS-path latency measured · {target.Name ?? target.InterfaceDescription ?? "physical NIC"}."
                     : traffic is { IsAvailable: true, HasTraffic: false }
                         ? $"Network/RSS capture complete · interface was idle during the sample."
                         : $"Network/RSS capture complete · target miniport runtime evidence was not trusted.";
@@ -385,8 +387,14 @@ public sealed partial class MainWindow
         var runtimeIdle =
             attribution is not null &&
             traffic is { IsAvailable: true, HasTraffic: false };
+        var ndisPathMeasured =
+            attribution?.HasNdisPathEvidence == true &&
+            continuity?.IsStable == true &&
+            traffic is { IsAvailable: true, HasTraffic: true };
         var runtimeLabel = runtimeVerified
             ? "runtime evidence captured"
+            : ndisPathMeasured
+                ? "NDIS-path latency measured"
             : attribution?.HasTargetEvidence == true
                 ? continuity is { IsStable: false }
                     ? "runtime evidence invalidated"
@@ -463,6 +471,13 @@ public sealed partial class MainWindow
             content.Children.Add(CreateEvidenceLine(
                 "Miniport tail",
                 $"DPC p99 {FormatNetworkMicroseconds(attribution.DpcP99Microseconds)} · ISR p99 {FormatNetworkMicroseconds(attribution.IsrP99Microseconds)}"));
+            if (attribution.HasNdisPathEvidence)
+            {
+                content.Children.Add(CreateEvidenceLine(
+                    "NDIS path (shared)",
+                    $"{attribution.NdisDpcEventCount} DPC · {attribution.NdisIsrEventCount} ISR · {attribution.NdisTotalDurationMicroseconds:F1} us total · " +
+                    $"DPC p99 {FormatNetworkMicroseconds(attribution.NdisDpcP99Microseconds)} · ISR p99 {FormatNetworkMicroseconds(attribution.NdisIsrP99Microseconds)}"));
+            }
             content.Children.Add(CreateEvidenceLine(
                 "Capture integrity",
                 attribution.CaptureIntegrityValid
@@ -485,7 +500,13 @@ public sealed partial class MainWindow
                 ? "No network settings were changed. RSS is intentionally multi-CPU; v1 does not force the NIC onto a single CPU or rewrite its RSS profile."
                 : "No network settings were changed. This driver did not expose an RSS settings row, but LatencyPilot still analyzes the physical NIC and its miniport runtime evidence."));
 
-        if (attribution is not null && !attribution.HasTargetEvidence)
+        if (attribution is { HasNdisPathEvidence: true })
+        {
+            content.Children.Add(CreateMutedText(
+                "Windows runs this adapter's interrupt and DPC routines through ndis.sys, so the trace attributes them to NDIS rather than the vendor driver. " +
+                "The NDIS-path figures above are real kernel latency while this NIC was carrying traffic, but ndis.sys is shared by every NDIS adapter (including virtual ones), so they are not an exact per-NIC measurement."));
+        }
+        else if (attribution is not null && !attribution.HasTargetEvidence)
         {
             content.Children.Add(CreateMutedText(
                 traffic is { IsAvailable: true, HasTraffic: false }
@@ -643,7 +664,12 @@ public sealed partial class MainWindow
             MaxNullable(matching.Select(static module => module.Isr.P99Microseconds)),
             IsCaptureIntegrityValid(capture),
             capture.ModuleContributorListTruncated,
-            matching.Length > 0);
+            matching.Length > 0,
+            ndis.Sum(static module => module.Dpc.Count),
+            ndis.Sum(static module => module.Isr.Count),
+            ndis.Sum(static module => module.TotalDurationMicroseconds),
+            MaxNullable(ndis.Select(static module => module.Dpc.P99Microseconds)),
+            MaxNullable(ndis.Select(static module => module.Isr.P99Microseconds)));
     }
 
     private static bool IsCaptureIntegrityValid(KernelLatencyCaptureResponse capture) =>
@@ -706,12 +732,28 @@ public sealed partial class MainWindow
         double? IsrP99Microseconds,
         bool CaptureIntegrityValid,
         bool ModuleListTruncated,
-        bool ServiceModuleObserved)
+        bool ServiceModuleObserved,
+        int NdisDpcEventCount = 0,
+        int NdisIsrEventCount = 0,
+        double NdisTotalDurationMicroseconds = 0d,
+        double? NdisDpcP99Microseconds = null,
+        double? NdisIsrP99Microseconds = null)
     {
         public bool HasTargetEvidence =>
             CaptureIntegrityValid &&
             ServiceModuleObserved &&
             MatchingDpcEventCount + MatchingIsrEventCount > 0;
+
+        /// <summary>
+        /// NDIS registers the interrupt and DPC routines of a miniport itself, so the
+        /// kernel trace names ndis.sys rather than the vendor driver. This is real
+        /// interrupt latency for the NDIS path, but ndis.sys is shared by every NDIS
+        /// adapter, so it is reported as shared evidence and never as miniport-exact.
+        /// </summary>
+        public bool HasNdisPathEvidence =>
+            CaptureIntegrityValid &&
+            !HasTargetEvidence &&
+            NdisDpcEventCount + NdisIsrEventCount > 0;
     }
 
     private async Task ShowFocusedDeviceEvidenceDialogAsync(string title, StackPanel content)
