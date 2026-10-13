@@ -325,17 +325,32 @@ public sealed partial class MainWindow
             !mutationBlockedByOtherTarget &&
             report.ApplyEligible &&
             benchmarkReady;
+        // The winner's lead is compared with its own window-to-window spread: a lead
+        // that small is not distinguishable from noise, so moving the interrupt is
+        // not expected to change anything.
+        var noMeasurableAdvantage =
+            benchmarkReady &&
+            report.RunnerUpPhysicalCoreIndex is not null &&
+            report.WinnerCoreMedianMicroseconds is { } leadWinner &&
+            report.RunnerUpCoreMedianMicroseconds is { } leadRunnerUp &&
+            report.WinnerCoreWindowSpreadMicroseconds is { } leadSpread &&
+            leadRunnerUp - leadWinner <= leadSpread;
         var headline = !benchmarkReady
             ? "Benchmark not ready"
-            : readyToApply
-                ? "Benchmark ready · apply ready"
-                : "Benchmark ready · apply gated";
+            : noMeasurableAdvantage
+                ? "Benchmark ready · no measurable advantage"
+                : readyToApply
+                    ? "Benchmark ready · apply ready"
+                    : "Benchmark ready · apply gated";
 
-        UsbEvidenceText.Text = benchmarkReady
-            ? readyToApply
-                ? $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply ready."
-                : $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply gated."
+        string ReadySummary() => benchmarkReady
+            ? noMeasurableAdvantage
+                ? $"USB/xHCI · CPU {report.Processor!.Value.Number} is no measurably better than the next core · applying is optional."
+                : readyToApply
+                    ? $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply ready."
+                    : $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply gated."
             : "USB/xHCI benchmark not ready.";
+        UsbEvidenceText.Text = ReadySummary();
 
         var content = new StackPanel { Spacing = 10d };
         content.Children.Add(new TextBlock
@@ -343,12 +358,30 @@ public sealed partial class MainWindow
             Text = headline,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = ThemeBrush(
-                readyToApply
-                    ? "SemanticGoodBrush"
-                    : benchmarkReady
-                        ? "SemanticAttentionBrush"
-                        : "SemanticFailureBrush"),
+                noMeasurableAdvantage
+                    ? "SemanticAttentionBrush"
+                    : readyToApply
+                        ? "SemanticGoodBrush"
+                        : benchmarkReady
+                            ? "SemanticAttentionBrush"
+                            : "SemanticFailureBrush"),
         });
+
+        if (noMeasurableAdvantage &&
+            report.RunnerUpCoreMedianMicroseconds is { } gapRunnerUp &&
+            report.WinnerCoreMedianMicroseconds is { } gapWinner &&
+            report.WinnerCoreWindowSpreadMicroseconds is { } gapSpread)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The best core and the next-best core differ by {gapRunnerUp - gapWinner:F1} us per window, which is within this core's own run-to-run spread ({gapSpread:F1} us). Moving the xHCI interrupt is not expected to change latency on this system. You can skip Apply; re-run on a quiet system if you want a firmer answer."),
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 13,
+                Foreground = ThemeBrush("TextBrush"),
+            });
+        }
 
         if (hasCandidate)
         {
@@ -370,16 +403,6 @@ public sealed partial class MainWindow
                     string.Create(
                         CultureInfo.InvariantCulture,
                         $"core {runnerUpCore} · {runnerUp:F1} us vs {winnerCore:F1} us per window (median core total)")));
-                // The gap is compared with the winner's own window-to-window spread:
-                // a lead smaller than that spread is not distinguishable from noise.
-                if (report.WinnerCoreWindowSpreadMicroseconds is { } spread &&
-                    runnerUp - winnerCore <= spread)
-                {
-                    content.Children.Add(CreateMutedText(
-                        string.Create(
-                            CultureInfo.InvariantCulture,
-                            $"Close call: the lead ({runnerUp - winnerCore:F1} us) is within this core's own window-to-window spread ({spread:F1} us). Cores {report.WinningPhysicalCoreIndex} and {runnerUpCore} are effectively tied; re-run on a quiet system for a firmer choice.")));
-                }
             }
 
             content.Children.Add(CreateEvidenceLine(
@@ -456,9 +479,11 @@ public sealed partial class MainWindow
             XamlRoot = RootGrid.XamlRoot,
             Title = "USB / xHCI result",
             Content = content,
-            PrimaryButtonText = readyToApply ? "Apply & verify xHCI" : null,
+            PrimaryButtonText = readyToApply
+                ? noMeasurableAdvantage ? "Apply anyway" : "Apply & verify xHCI"
+                : null,
             CloseButtonText = "Close",
-            DefaultButton = readyToApply
+            DefaultButton = readyToApply && !noMeasurableAdvantage
                 ? ContentDialogButton.Primary
                 : ContentDialogButton.Close,
         };
@@ -472,11 +497,7 @@ public sealed partial class MainWindow
             report.ControllerInstanceId is null ||
             report.Processor is not { } processor)
         {
-            UsbEvidenceText.Text = benchmarkReady
-                ? readyToApply
-                    ? $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply ready."
-                    : $"USB/xHCI benchmark ready · CPU {report.Processor!.Value.Number} · apply gated."
-                : "USB/xHCI benchmark not ready.";
+            UsbEvidenceText.Text = ReadySummary();
             return;
         }
 
