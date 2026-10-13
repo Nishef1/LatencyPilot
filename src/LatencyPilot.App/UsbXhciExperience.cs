@@ -361,6 +361,17 @@ public sealed partial class MainWindow
                 report.StabilityWindowCount > 0
                     ? $"{report.WinningCoreVotes}/{report.StabilityWindowCount} windows"
                     : "—"));
+            if (report.RunnerUpPhysicalCoreIndex is { } runnerUpCore &&
+                report.WinnerCoreMedianMicroseconds is { } winnerCore &&
+                report.RunnerUpCoreMedianMicroseconds is { } runnerUp)
+            {
+                content.Children.Add(CreateEvidenceLine(
+                    "Next best core",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"core {runnerUpCore} · {runnerUp:F1} us vs {winnerCore:F1} us per window (median core total)")));
+            }
+
             content.Children.Add(CreateEvidenceLine(
                 "Median DPC + ISR",
                 report.TotalInterruptDurationMicroseconds is { } total
@@ -616,6 +627,9 @@ public sealed partial class MainWindow
         int? WinningPhysicalCoreIndex,
         int StabilityWindowCount,
         int WinningCoreVotes,
+        int? RunnerUpPhysicalCoreIndex,
+        double? WinnerCoreMedianMicroseconds,
+        double? RunnerUpCoreMedianMicroseconds,
         double? TotalInterruptDurationMicroseconds,
         double? InterruptTailP99Microseconds,
         int? DpcCount,

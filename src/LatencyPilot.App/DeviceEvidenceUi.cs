@@ -1089,14 +1089,32 @@ public sealed partial class MainWindow
             Margin = new Thickness(0, 8, 0, 0),
         });
 
-    private TextBlock CreateEvidenceLine(string label, string value) =>
-        new()
+    // Label/value rows: a fixed muted label column and a primary-weight value, so a
+    // result dialog scans as a table instead of a wall of "label: value" prose.
+    private Grid CreateEvidenceLine(string label, string value)
+    {
+        var row = new Grid { ColumnSpacing = 12 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.Children.Add(new TextBlock
         {
-            Text = $"{label}: {value}",
-            FontSize = 11,
+            Text = label,
+            FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Foreground = ThemeBrush("MutedTextBrush"),
+        });
+        var valueText = new TextBlock
+        {
+            Text = value,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+            Foreground = ThemeBrush("TextBrush"),
         };
+        Grid.SetColumn(valueText, 1);
+        row.Children.Add(valueText);
+        return row;
+    }
 
     private TextBlock CreateMutedText(string value) =>
         new()

@@ -133,7 +133,7 @@ public static class XhciInterruptRuntimePlacementVerifier
             {
                 return new(
                     true,
-                    $"Apply is eligible with allocation-authoritative verification. Controller-specific ETW attribution is unavailable before Apply because peer '{peer.InstanceId}' has no readable translated allocation and the optional IRQ-vector path is unavailable ({vectorReason}). After Apply, LatencyPilot will keep the change only if the target controller's own translated allocation is confined to the requested mask; otherwise it rolls back.")
+                    $"Apply is eligible with allocation-authoritative verification. Controller-specific ETW attribution is unavailable before Apply because peer '{peer.InstanceId}' {DescribePeerAllocation(peer.InterruptResources.ReadStatus)} and the optional IRQ-vector path is unavailable ({vectorReason}). After Apply, LatencyPilot will keep the change only if the target controller's own translated allocation is confined to the requested mask; otherwise it rolls back.")
                 {
                     ControllerSpecificAttributionAvailable = false,
                     VerificationMode = "TargetAllocation",
@@ -489,6 +489,16 @@ public static class XhciInterruptRuntimePlacementVerifier
             }
         }
     }
+
+    private static string DescribePeerAllocation(InterruptResourceReadStatus status) =>
+        status switch
+        {
+            InterruptResourceReadStatus.AffinityUnspecified =>
+                "is not pinned to a CPU (Windows reports no processor target for its interrupts), so its interrupts could land on the requested CPU",
+            InterruptResourceReadStatus.NoAllocatedConfiguration =>
+                "has no allocated interrupt resources",
+            _ => "has no readable translated allocation",
+        };
 
     private static bool HasKnownAllocationInsideMask(
         PnPDeviceSnapshot target,

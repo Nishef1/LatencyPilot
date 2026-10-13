@@ -11,7 +11,10 @@ public sealed record UsbAffinityRecommendation(
     IReadOnlyList<string> InputDeviceInstanceIds, UsbAffinityCpuCandidate? CpuEvidence, string Reason,
     int? WinningPhysicalCoreIndex = null,
     int StabilityWindowCount = 1,
-    int WinningCoreVotes = 1)
+    int WinningCoreVotes = 1,
+    int? RunnerUpPhysicalCoreIndex = null,
+    double? WinnerCoreMedianMicroseconds = null,
+    double? RunnerUpCoreMedianMicroseconds = null)
 {
     public bool HasCandidate =>
         ControllerInstanceId is not null &&
@@ -145,7 +148,10 @@ public static class UsbAffinityRecommendationPlanner
             reason,
             stable.PhysicalCoreIndex,
             stable.WindowCount,
-            stable.WinningCoreVotes);
+            stable.WinningCoreVotes,
+            stable.RunnerUpPhysicalCoreIndex,
+            stable.WinnerCoreMedianMicroseconds,
+            stable.RunnerUpCoreMedianMicroseconds);
     }
 
     private static bool TryValidateCapture(KernelLatencyCaptureResult capture, out string reason)
