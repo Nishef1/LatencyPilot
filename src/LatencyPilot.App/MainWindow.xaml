@@ -582,6 +582,16 @@
                                                             AutomationProperties.Name="Run USB xHCI from Measure">
                                                         <TextBlock Text="Run USB / xHCI" />
                                                     </Button>
+                                                    <TextBlock Text="Standard · about 15 s · ranks CPUs by interrupt time only." Style="{StaticResource CaptionTextStyle}" />
+                                                    <Button x:Name="MeasureUsbAdvancedSubsystemButton"
+                                                            IsEnabled="{Binding IsEnabled, ElementName=UsbSubsystemButton}"
+                                                            Click="UsbAdvancedSubsystemButton_Click"
+                                                            Style="{StaticResource SecondaryButtonStyle}"
+                                                            HorizontalAlignment="Left"
+                                                            AutomationProperties.Name="Run advanced USB xHCI benchmark from Measure">
+                                                        <TextBlock Text="Run advanced benchmark" />
+                                                    </Button>
+                                                    <TextBlock Text="Advanced · about 45 s · five longer windows plus CPU thread load, which separates cores that tie on interrupt time. Run on a quiet system. Apply and verification are identical." Style="{StaticResource CaptionTextStyle}" />
                                                 </StackPanel>
                                             </Border>
                                             <Border Grid.Column="1" Style="{StaticResource MetricTileStyle}">
@@ -762,6 +772,16 @@
                                                     AutomationProperties.Name="Run USB xHCI">
                                                 <TextBlock Text="Run USB / xHCI" />
                                             </Button>
+                                            <TextBlock Text="Standard · about 15 s · interrupt time only." Style="{StaticResource CaptionTextStyle}" />
+                                            <Button x:Name="UsbAdvancedSubsystemButton"
+                                                    IsEnabled="{Binding IsEnabled, ElementName=UsbSubsystemButton}"
+                                                    Click="UsbAdvancedSubsystemButton_Click"
+                                                    Style="{StaticResource SecondaryButtonStyle}"
+                                                    HorizontalAlignment="Left"
+                                                    AutomationProperties.Name="Run advanced USB xHCI benchmark">
+                                                <TextBlock Text="Run advanced benchmark" />
+                                            </Button>
+                                            <TextBlock Text="Advanced · about 45 s · adds CPU thread load over five longer windows to separate cores that tie. Run on a quiet system." Style="{StaticResource CaptionTextStyle}" />
                                         </StackPanel>
                                     </Border>
                                 </Grid>

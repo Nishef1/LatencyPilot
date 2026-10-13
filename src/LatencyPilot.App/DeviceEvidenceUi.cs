@@ -151,6 +151,9 @@ public sealed partial class MainWindow
     private async void UsbSubsystemButton_Click(object sender, RoutedEventArgs e) =>
         await RunUsbXhciWorkflowAsync();
 
+    private async void UsbAdvancedSubsystemButton_Click(object sender, RoutedEventArgs e) =>
+        await RunUsbXhciWorkflowAsync(advancedHeadroom: true);
+
     private async void NetworkSubsystemButton_Click(object sender, RoutedEventArgs e)
     {
         if (_networkSubsystemRunning ||

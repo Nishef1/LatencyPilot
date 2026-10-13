@@ -16,10 +16,15 @@ namespace LatencyPilot.GateAValidation;
 internal static class UsbXhciReadinessRunner
 {
     internal const string ModeFlag = "--usb-xhci-readiness";
-    // Five 8 s windows (was three 5 s): per-CPU DPC/ISR counts in a 5 s idle window
-    // are in the tens, so one long event can reorder the ranking.
-    private const int CaptureWindowCount = 5;
-    private static readonly TimeSpan CaptureWindowDuration = TimeSpan.FromSeconds(8);
+    // Standard method: three 5 s windows ranked by DPC/ISR time only (unchanged).
+    private const int CaptureWindowCount = 3;
+    private static readonly TimeSpan CaptureWindowDuration = TimeSpan.FromSeconds(5);
+
+    // Advanced method: per-CPU DPC/ISR counts in a 5 s idle window are in the tens, so
+    // one long event can reorder the ranking. Use five longer windows and also sample
+    // per-CPU thread load around each window.
+    private const int AdvancedCaptureWindowCount = 5;
+    private static readonly TimeSpan AdvancedCaptureWindowDuration = TimeSpan.FromSeconds(8);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -52,18 +57,24 @@ internal static class UsbXhciReadinessRunner
                 inventory,
                 routedControllerId);
 
-            var captures = new KernelLatencyCaptureResult[CaptureWindowCount];
-            var busyByWindow = new List<IReadOnlyDictionary<int, double>>(CaptureWindowCount);
+            var advanced = options.Advanced;
+            var windowCount = advanced ? AdvancedCaptureWindowCount : CaptureWindowCount;
+            var windowDuration = advanced ? AdvancedCaptureWindowDuration : CaptureWindowDuration;
+            var captures = new KernelLatencyCaptureResult[windowCount];
+            var busyByWindow = new List<IReadOnlyDictionary<int, double>>(windowCount);
             for (var window = 0; window < captures.Length; window++)
             {
-                var before = ProcessorUtilizationSampler.Capture();
+                var before = advanced ? ProcessorUtilizationSampler.Capture() : null;
                 captures[window] = KernelLatencyCapture.Capture(
                     new KernelLatencyCaptureOptions(
-                        CaptureWindowDuration,
+                        windowDuration,
                         ObservationProtocol.MaximumCaptureEvents));
-                busyByWindow.Add(ProcessorUtilizationSampler.BusyFractions(
-                    before,
-                    ProcessorUtilizationSampler.Capture()));
+                if (before is not null)
+                {
+                    busyByWindow.Add(ProcessorUtilizationSampler.BusyFractions(
+                        before,
+                        ProcessorUtilizationSampler.Capture()));
+                }
             }
 
             var systemBusyFraction = busyByWindow
@@ -77,7 +88,7 @@ internal static class UsbXhciReadinessRunner
                 routes,
                 options.PrimaryInputDeviceInstanceId,
                 reservations.Processors,
-                busyByWindow);
+                advanced ? busyByWindow : null);
 
             XhciInterruptVerificationPreflight applyPreflight;
             if (recommendation.ControllerInstanceId is { } controllerId &&
@@ -104,6 +115,7 @@ internal static class UsbXhciReadinessRunner
                 StartedAtUtc: startedAtUtc,
                 CompletedAtUtc: DateTimeOffset.UtcNow,
                 Status: recommendation.Status.ToString(),
+                HeadroomMethod: advanced ? "advanced" : "standard",
                 PrimaryInputDeviceInstanceId: options.PrimaryInputDeviceInstanceId,
                 ControllerInstanceId: recommendation.ControllerInstanceId,
                 Processor: recommendation.Processor,
@@ -147,6 +159,7 @@ internal static class UsbXhciReadinessRunner
                 StartedAtUtc: DateTimeOffset.UtcNow,
                 CompletedAtUtc: DateTimeOffset.UtcNow,
                 Status: UsbAffinityRecommendationStatus.NotReady.ToString(),
+                HeadroomMethod: options?.Advanced == true ? "advanced" : "standard",
                 PrimaryInputDeviceInstanceId: options?.PrimaryInputDeviceInstanceId ?? string.Empty,
                 ControllerInstanceId: null,
                 Processor: null,
@@ -247,7 +260,8 @@ internal static class UsbXhciReadinessRunner
 
     private sealed record UsbXhciReadinessOptions(
         string PrimaryInputDeviceInstanceId,
-        string OutputPath)
+        string OutputPath,
+        bool Advanced)
     {
         internal static UsbXhciReadinessOptions Parse(string[] args)
         {
@@ -261,7 +275,7 @@ internal static class UsbXhciReadinessRunner
                     continue;
                 }
 
-                if (token is not ("--primary-input" or "--output"))
+                if (token is not ("--primary-input" or "--output" or "--headroom"))
                 {
                     throw new ArgumentException(
                         $"Unknown USB/xHCI readiness option '{token}'.");
@@ -286,9 +300,19 @@ internal static class UsbXhciReadinessRunner
                     : throw new ArgumentException(
                         $"Required USB/xHCI readiness option '{key}' is missing.");
 
+            var method = values.TryGetValue("--headroom", out var requested)
+                ? requested.Trim()
+                : "standard";
+            if (method is not ("standard" or "advanced"))
+            {
+                throw new ArgumentException(
+                    $"Unknown USB/xHCI headroom method '{method}'; expected 'standard' or 'advanced'.");
+            }
+
             return new UsbXhciReadinessOptions(
                 Required("--primary-input"),
-                Path.GetFullPath(Required("--output")));
+                Path.GetFullPath(Required("--output")),
+                string.Equals(method, "advanced", StringComparison.Ordinal));
         }
     }
 }
@@ -304,6 +328,7 @@ internal sealed record UsbXhciReadinessReport(
     DateTimeOffset StartedAtUtc,
     DateTimeOffset CompletedAtUtc,
     string Status,
+    string HeadroomMethod,
     string PrimaryInputDeviceInstanceId,
     string? ControllerInstanceId,
     LogicalProcessorId? Processor,

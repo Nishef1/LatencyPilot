@@ -16,7 +16,7 @@ public sealed partial class MainWindow
 {
     private bool _usbSubsystemRunning;
 
-    private async Task RunUsbXhciWorkflowAsync()
+    private async Task RunUsbXhciWorkflowAsync(bool advancedHeadroom = false)
     {
         if (_usbSubsystemRunning || _networkSubsystemRunning || _gateAValidationRunning || _measurementBusy || _manualDeviceAffinityBusy)
         {
@@ -114,7 +114,8 @@ public sealed partial class MainWindow
                 : "Capturing USB/xHCI interrupt headroom. CPUs already fixed by explicit device affinity policies are excluded automatically.";
 
             var report = await RunUsbXhciReadinessHelperAsync(
-                primaryRoute.RawInputDevice.PnPInstanceId!);
+                primaryRoute.RawInputDevice.PnPInstanceId!,
+                advancedHeadroom);
             await ShowUsbXhciReadinessResultAsync(
                 report,
                 mutationBlockedByOtherTarget,
@@ -232,7 +233,8 @@ public sealed partial class MainWindow
     }
 
     private async Task<UsbXhciReadinessUiReport> RunUsbXhciReadinessHelperAsync(
-        string primaryInputDeviceInstanceId)
+        string primaryInputDeviceInstanceId,
+        bool advancedHeadroom)
     {
         if (string.IsNullOrWhiteSpace(_gateARepositoryRoot))
         {
@@ -276,6 +278,7 @@ public sealed partial class MainWindow
                      "--",
                      "--usb-xhci-readiness",
                      "--primary-input", primaryInputDeviceInstanceId,
+                     "--headroom", advancedHeadroom ? "advanced" : "standard",
                      "--output", reportPath,
                  })
         {
@@ -386,6 +389,13 @@ public sealed partial class MainWindow
                 Foreground = ThemeBrush("TextBrush"),
             });
         }
+
+        var advancedMethod = string.Equals(report.HeadroomMethod, "advanced", StringComparison.Ordinal);
+        content.Children.Add(CreateEvidenceLine(
+            "Method",
+            advancedMethod
+                ? "Advanced · 5 windows × 8 s · interrupt time + CPU thread load"
+                : "Standard · 3 windows × 5 s · interrupt time only"));
 
         if (hasCandidate)
         {
@@ -677,6 +687,7 @@ public sealed partial class MainWindow
         DateTimeOffset StartedAtUtc,
         DateTimeOffset CompletedAtUtc,
         string Status,
+        string? HeadroomMethod,
         string PrimaryInputDeviceInstanceId,
         string? ControllerInstanceId,
         LogicalProcessorId? Processor,
