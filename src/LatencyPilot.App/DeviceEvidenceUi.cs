@@ -609,17 +609,17 @@ public sealed partial class MainWindow
                 false);
         }
 
-        var serviceName = NormalizeModuleStem(adapter.ServiceName);
+        var moduleStems = DriverServiceImageResolver.ResolveModuleStems(adapter.ServiceName);
         var matching = capture.Modules
-            .Where(module =>
+            .Where(module => moduleStems.Any(stem =>
                 string.Equals(
                     NormalizeModuleStem(module.ModuleName),
-                    serviceName,
+                    stem,
                     StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(
                     NormalizeModuleStem(module.ImagePath),
-                    serviceName,
-                    StringComparison.OrdinalIgnoreCase))
+                    stem,
+                    StringComparison.OrdinalIgnoreCase)))
             .ToArray();
         var ndis = capture.Modules
             .Where(module =>
@@ -1171,7 +1171,7 @@ public sealed partial class MainWindow
             resources.Resources.Select(static resource =>
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"IRQ {resource.Irq} · group {resource.ProcessorGroup} · affinity 0x{resource.AffinityMask:X} · raw ConfigMgr flags 0x{resource.RawFlags:X4}")));
+                    $"IRQ {resource.Irq} · group {resource.ProcessorGroup}{(resource.ReportedProcessorGroup is { } reported ? $" (ConfigMgr reported nonexistent group {reported})" : string.Empty)} · affinity 0x{resource.AffinityMask:X} · raw ConfigMgr flags 0x{resource.RawFlags:X4}")));
     }
 
     private sealed record DeviceEvidenceInspection(

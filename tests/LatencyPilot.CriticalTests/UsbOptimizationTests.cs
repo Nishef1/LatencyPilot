@@ -377,5 +377,24 @@ public sealed class UsbOptimizationTests
         Assert.IsFalse(
             AllocatedIrqDescriptorParser.TryParseResourceList(irqDescriptor, out _),
             "A zero affinity names no processor and must not be promoted to runtime-placement evidence.");
+        Assert.IsTrue(
+            AllocatedIrqDescriptorParser.IsUnspecifiedAffinity(irqDescriptor),
+            "A well-formed descriptor with zero affinity is 'unspecified', not a failed ConfigMgr read.");
+
+        // Windows 11 26300 reports IRQD_Group=1 for every MSI descriptor on a
+        // single-group machine; that must not read as an escape from group 0.
+        var reportedGroupOne = new AllocatedInterruptResourceSnapshot(44, 1, 1UL << 7, 2);
+        var normalizedSingleGroup = InterruptResourceReader.NormalizeImpossibleGroup(reportedGroupOne, 1);
+        Assert.AreEqual((ushort)0, normalizedSingleGroup.ProcessorGroup);
+        Assert.AreEqual((ushort)1, normalizedSingleGroup.ReportedProcessorGroup);
+        Assert.AreEqual(
+            (ushort)1,
+            InterruptResourceReader.NormalizeImpossibleGroup(reportedGroupOne, 2).ProcessorGroup,
+            "A real multi-group machine must stay fail-closed on non-zero groups.");
+        Assert.AreEqual(
+            "rt68cx21x64",
+            DriverServiceImageResolver.ParseImageStem(
+                @"\SystemRoot\System32\DriverStore\FileRepository\rt68cx21x64.inf_amd64_1f7a908f9141802a\rt68cx21x64.sys"),
+            "A driver service name is not its module name; ImagePath is the authoritative link.");
     }
 }

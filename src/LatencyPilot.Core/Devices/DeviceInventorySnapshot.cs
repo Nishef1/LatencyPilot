@@ -71,13 +71,24 @@ public enum InterruptResourceReadStatus
     NoAllocatedConfiguration,
     ApiUnavailable,
     ReadFailed,
+    /// <summary>
+    /// ConfigMgr returned structurally valid IRQ descriptors whose IRQD_Affinity is 0,
+    /// i.e. no explicit processor target. This is readable but is not placement evidence.
+    /// </summary>
+    AffinityUnspecified,
 }
 
+/// <summary>
+/// <paramref name="ReportedProcessorGroup"/> is non-null only when ConfigMgr reported a
+/// group that cannot exist on this machine and <paramref name="ProcessorGroup"/> was
+/// normalized to the only group Windows exposes.
+/// </summary>
 public sealed record AllocatedInterruptResourceSnapshot(
     uint Irq,
     ushort ProcessorGroup,
     ulong AffinityMask,
-    ushort RawFlags);
+    ushort RawFlags,
+    ushort? ReportedProcessorGroup = null);
 
 public sealed record InterruptResourceSnapshot(
     InterruptResourceReadStatus ReadStatus,
@@ -97,6 +108,9 @@ public sealed record InterruptResourceSnapshot(
 
     public static InterruptResourceSnapshot ReadFailed(uint? nativeStatusCode = null) =>
         new(InterruptResourceReadStatus.ReadFailed, nativeStatusCode, []);
+
+    public static InterruptResourceSnapshot AffinityUnspecified() =>
+        new(InterruptResourceReadStatus.AffinityUnspecified, null, []);
 }
 
 public enum DeviceParentReadStatus

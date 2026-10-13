@@ -19,6 +19,16 @@ Last updated: 2026-09-29
 - ADR 0010 remains the historical v5 contract; ADR 0009 remains historical v4 (ADR 0008 historical v3). None governs new v6 evidence.
 - Hosted GitHub Actions is **software-contract evidence only**.
 
+## 2026-10-13 physical-evidence defect fixes (implemented, not yet physically re-verified)
+
+Review of the owner machine's own journal, manual-affinity reports and live ConfigMgr descriptors found three defects. Each is fixed in source; none is closed until re-run on hardware.
+
+- **xHCI Apply was always rolled back.** On Windows 11 build 26300 with one processor group, ConfigMgr reports `IRQD_Group = 1` for every message-signaled descriptor (legacy descriptors report 0) while `IRQD_Affinity` is correct (`0x80` for the requested CPU 7). Verification compared the group literally and treated it as an escape. `InterruptResourceReader` now normalizes a group that cannot exist on a single-group machine to 0 and preserves the ConfigMgr value in `ReportedProcessorGroup`; multi-group machines remain fail-closed.
+- **Network miniport attribution never matched.** A PnP driver service name is not its module name (`rt68cx21` loads `rt68cx21x64.sys`). `DriverServiceImageResolver` resolves the documented `Services\<name>\ImagePath` and matches module stems against it, keeping the service name as a fallback.
+- **Zero-affinity descriptors were reported as `ReadFailed`.** A well-formed descriptor with `IRQD_Affinity = 0` (as the GPU reports after restart) is now `InterruptResourceReadStatus.AffinityUnspecified`. It is still not placement evidence, so GPU runtime claims are unchanged.
+
+Open: re-run USB/xHCI Apply on physical hardware and confirm the retained mask in the target controller's allocation; re-run the Network/RSS action and confirm `rt68cx21x64.sys` DPC/ISR events are attributed. The critical-test contract `DeviceMutationContractIsJournaledRebootResumableAndDoesNotTuneMessageCount` needs an elevated run (the restricted mutex ACL cannot be re-opened by a filtered token).
+
 ## 2026-09-29 subsystem-surface separation
 
 The product surface is now intentionally split by subsystem:

@@ -41,8 +41,9 @@ public static class NetworkInterruptAttribution
         }
 
         var serviceName = NormalizeModuleStem(adapter.ServiceName);
+        var moduleStems = DriverServiceImageResolver.ResolveModuleStems(adapter.ServiceName);
         var matching = capture.Events
-            .Where(item => ModuleMatchesService(item.ModulePath, serviceName))
+            .Where(item => ModuleMatchesAny(item.ModulePath, moduleStems))
             .ToArray();
         var matchingDpc = matching
             .Where(static item => item.Kind == KernelLatencyEventKind.Dpc)
@@ -71,12 +72,17 @@ public static class NetworkInterruptAttribution
             capture.IsValid);
     }
 
-    private static bool ModuleMatchesService(string? modulePath, string serviceName) =>
-        !string.IsNullOrWhiteSpace(modulePath) &&
-        string.Equals(
-            NormalizeModuleStem(modulePath),
-            serviceName,
-            StringComparison.OrdinalIgnoreCase);
+    private static bool ModuleMatchesAny(string? modulePath, IReadOnlyList<string> moduleStems)
+    {
+        if (string.IsNullOrWhiteSpace(modulePath))
+        {
+            return false;
+        }
+
+        var stem = NormalizeModuleStem(modulePath);
+        return moduleStems.Any(candidate =>
+            string.Equals(stem, candidate, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static string NormalizeModuleStem(string value)
     {

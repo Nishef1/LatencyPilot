@@ -477,7 +477,10 @@ public sealed class CriticalPathTests
 
     private static void AssertTransactionalRegistryCommitAndRollback()
     {
-        var subKeyPath = $"Software\\LatencyPilot.CriticalTests\\TxR-{Guid.NewGuid():N}";
+        // HKCU\Software can report ERROR_RM_NOT_ACTIVE (6801) on builds whose user-hive
+        // resource manager did not start; that says nothing about the commit/rollback
+        // contract under test, so use a per-user key that is transaction-capable there.
+        var subKeyPath = $"Environment\\LatencyPilot.CriticalTests.TxR-{Guid.NewGuid():N}";
         try
         {
             using (var transaction = TransactionalRegistry.Begin("LatencyPilot critical-test rollback"))

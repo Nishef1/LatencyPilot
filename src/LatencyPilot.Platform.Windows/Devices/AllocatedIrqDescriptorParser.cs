@@ -15,6 +15,17 @@ internal static class AllocatedIrqDescriptorParser
     // IRQ_RANGE is ULONG + ULONG + USHORT + USHORT = 12 bytes.
     internal const uint IrqTypeRange = 12;
 
+    /// <summary>
+    /// True for a well-formed allocated IRQ descriptor that names no processor
+    /// (IRQD_Affinity == 0). Such a descriptor is readable, but it is not placement
+    /// evidence, so it must not be reported as a failed ConfigMgr read.
+    /// </summary>
+    internal static bool IsUnspecifiedAffinity(ReadOnlySpan<byte> data) =>
+        data.Length >= Descriptor64Size &&
+        BinaryPrimitives.ReadUInt32LittleEndian(data[0..4]) == 0 &&
+        BinaryPrimitives.ReadUInt32LittleEndian(data[4..8]) == IrqTypeRange &&
+        BinaryPrimitives.ReadUInt64LittleEndian(data[16..24]) == 0;
+
     internal static bool TryParseResourceList(
         ReadOnlySpan<byte> data,
         out AllocatedInterruptResourceSnapshot resource)

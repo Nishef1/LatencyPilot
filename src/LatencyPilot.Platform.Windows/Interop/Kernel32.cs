@@ -46,6 +46,9 @@ internal static partial class Kernel32
         uint flags);
 
     [LibraryImport("kernel32.dll")]
+    internal static partial ushort GetActiveProcessorGroupCount();
+
+    [LibraryImport("kernel32.dll")]
     internal static partial nint GetCurrentProcess();
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
