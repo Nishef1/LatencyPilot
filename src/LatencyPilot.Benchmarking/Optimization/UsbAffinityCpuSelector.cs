@@ -31,7 +31,8 @@ public sealed record UsbAffinityStableSelection(
     double? WinnerCoreWindowSpreadMicroseconds = null,
     double? WinnerCoreBusyFraction = null,
     double? RunnerUpCoreBusyFraction = null,
-    double? WinnerCoreBusySpread = null);
+    double? WinnerCoreBusySpread = null,
+    int? WinnerCoreHeadToHeadWins = null);
 
 
 public static class UsbAffinityCpuSelector
@@ -330,7 +331,16 @@ public static class UsbAffinityCpuSelector
                 : null,
             chosenBusy,
             runnerUpBusy,
-            chosenBusySpread);
+            chosenBusySpread,
+            // Paired comparison: both cores were measured in the same window, so the
+            // number of windows the chosen core beat the runner-up is the honest
+            // consistency signal (window-to-window spread is common-mode noise).
+            runnerUp is { } pairedRunnerUp &&
+            coreWindowTotals.TryGetValue(chosenCore, out var chosenWindows) &&
+            coreWindowTotals.TryGetValue(pairedRunnerUp.CoreIndex, out var runnerUpWindows) &&
+            chosenWindows.Length == runnerUpWindows.Length
+                ? chosenWindows.Where((total, index) => total < runnerUpWindows[index]).Count()
+                : null);
     }
 
     private static double Median(IEnumerable<double> values)

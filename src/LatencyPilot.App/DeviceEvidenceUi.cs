@@ -583,13 +583,10 @@ public sealed partial class MainWindow
             technical.Children.Add(CreateMutedText(runtimeReason));
         }
 
-        content.Children.Add(new Expander
-        {
-            Header = "Technical details",
-            Content = technical,
-            IsExpanded = attribution is null || continuity is { IsStable: false },
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-        });
+        content.Children.Add(CreateCollapsibleSection(
+            "Technical details",
+            technical,
+            expanded: attribution is null || continuity is { IsStable: false }));
 
         await ShowFocusedDeviceEvidenceDialogAsync("Network / RSS analysis", content);
     }
@@ -773,20 +770,6 @@ public sealed partial class MainWindow
             },
             CloseButtonText = "Close",
             DefaultButton = ContentDialogButton.Close,
-        };
-
-        // Expanders inside a ContentDialog open expanded regardless of their initial
-        // IsExpanded value; re-apply the intended state once the dialog is visible.
-        var intendedExpansion = content.Children
-            .OfType<Expander>()
-            .Select(static expander => (Expander: expander, expander.IsExpanded))
-            .ToArray();
-        dialog.Opened += (_, _) =>
-        {
-            foreach (var (expander, isExpanded) in intendedExpansion)
-            {
-                expander.IsExpanded = isExpanded;
-            }
         };
         await dialog.ShowAsync();
     }
@@ -1105,6 +1088,48 @@ public sealed partial class MainWindow
             Foreground = ThemeBrush("TextBrush"),
             Margin = new Thickness(0, 8, 0, 0),
         });
+
+    // Deterministic disclosure section. The WinUI Expander ignored its initial
+    // IsExpanded value inside ContentDialog, so state is owned here explicitly.
+    private static StackPanel CreateCollapsibleSection(string header, UIElement body, bool expanded)
+    {
+        var chevron = new FontIcon
+        {
+            FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+            Glyph = expanded ? "\uE70E" : "\uE70D",
+            FontSize = 12,
+        };
+        var toggle = new Button
+        {
+            Style = (Style)Application.Current.Resources["QuietButtonStyle"],
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    chevron,
+                    new TextBlock { Text = header, FontSize = 12, VerticalAlignment = VerticalAlignment.Center },
+                },
+            },
+        };
+        AutomationProperties.SetName(toggle, header);
+        var host = new StackPanel
+        {
+            Padding = new Thickness(8, 4, 8, 0),
+            Visibility = expanded ? Visibility.Visible : Visibility.Collapsed,
+            Children = { body },
+        };
+        toggle.Click += (_, _) =>
+        {
+            var show = host.Visibility != Visibility.Visible;
+            host.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            chevron.Glyph = show ? "\uE70E" : "\uE70D";
+        };
+        return new StackPanel { Spacing = 4, Children = { toggle, host } };
+    }
 
     // Label/value rows: a fixed muted label column and a primary-weight value, so a
     // result dialog scans as a table instead of a wall of "label: value" prose.

@@ -18,7 +18,8 @@ public sealed record UsbAffinityRecommendation(
     double? WinnerCoreWindowSpreadMicroseconds = null,
     double? WinnerCoreBusyFraction = null,
     double? RunnerUpCoreBusyFraction = null,
-    double? WinnerCoreBusySpread = null)
+    double? WinnerCoreBusySpread = null,
+    int? WinnerCoreHeadToHeadWins = null)
 {
     public bool HasCandidate =>
         ControllerInstanceId is not null &&
@@ -161,7 +162,8 @@ public static class UsbAffinityRecommendationPlanner
             stable.WinnerCoreWindowSpreadMicroseconds,
             stable.WinnerCoreBusyFraction,
             stable.RunnerUpCoreBusyFraction,
-            stable.WinnerCoreBusySpread);
+            stable.WinnerCoreBusySpread,
+            stable.WinnerCoreHeadToHeadWins);
     }
 
     private static bool TryValidateCapture(KernelLatencyCaptureResult capture, out string reason)

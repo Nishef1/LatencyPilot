@@ -331,17 +331,35 @@ public sealed partial class MainWindow
         // The winner's lead is compared with its own window-to-window spread: a lead
         // that small is not distinguishable from noise, so moving the interrupt is
         // not expected to change anything.
+        // Two separate questions. Consistency: did the chosen core beat the runner-up in
+        // (nearly) every paired window? Magnitude: is the lead a meaningful share of CPU
+        // time? Only both together are an advantage worth a system change.
+        var advancedMethod = string.Equals(report.HeadroomMethod, "advanced", StringComparison.Ordinal);
+        var windowSeconds = advancedMethod ? 8d : 5d;
+        var windowCount = report.StabilityWindowCount;
+        var headToHeadWins = report.WinnerCoreHeadToHeadWins;
+        var leadMicroseconds =
+            report.RunnerUpCoreMedianMicroseconds is { } leadRunnerUp &&
+            report.WinnerCoreMedianMicroseconds is { } leadWinner
+                ? leadRunnerUp - leadWinner
+                : (double?)null;
+        var leadCpuFraction = leadMicroseconds is { } leadValue
+            ? leadValue / (windowSeconds * 1_000_000d)
+            : (double?)null;
+        const double PracticalLeadCpuFraction = 0.001d; // 0.1 % of one CPU
+        var consistentLead =
+            headToHeadWins is { } wins && windowCount >= 4 && wins >= windowCount;
+        var practicalLead = leadCpuFraction is { } fraction && fraction >= PracticalLeadCpuFraction;
+        var lessBusyCore =
+            report.WinnerCoreBusyFraction is { } busyWinner &&
+            report.RunnerUpCoreBusyFraction is { } busyRunnerUp &&
+            busyRunnerUp - busyWinner > Math.Max(report.WinnerCoreBusySpread ?? 0d, 0.02d);
         var noMeasurableAdvantage =
             benchmarkReady &&
             report.RunnerUpPhysicalCoreIndex is not null &&
-            report.WinnerCoreMedianMicroseconds is { } leadWinner &&
-            report.RunnerUpCoreMedianMicroseconds is { } leadRunnerUp &&
-            report.WinnerCoreWindowSpreadMicroseconds is { } leadSpread &&
-            leadRunnerUp - leadWinner <= leadSpread &&
-            // A clearly less busy core is a real advantage even when interrupt time ties.
-            !(report.WinnerCoreBusyFraction is { } busyWinner &&
-              report.RunnerUpCoreBusyFraction is { } busyRunnerUp &&
-              busyRunnerUp - busyWinner > Math.Max(report.WinnerCoreBusySpread ?? 0d, 0.02d));
+            leadMicroseconds is not null &&
+            !(consistentLead && practicalLead) &&
+            !lessBusyCore;
         var headline = !benchmarkReady
             ? "Benchmark not ready"
             : noMeasurableAdvantage
@@ -375,22 +393,29 @@ public sealed partial class MainWindow
         });
 
         if (noMeasurableAdvantage &&
-            report.RunnerUpCoreMedianMicroseconds is { } gapRunnerUp &&
-            report.WinnerCoreMedianMicroseconds is { } gapWinner &&
-            report.WinnerCoreWindowSpreadMicroseconds is { } gapSpread)
+            leadMicroseconds is { } gapMicroseconds &&
+            leadCpuFraction is { } gapFraction)
         {
+            var consistency = headToHeadWins is { } shownWins && windowCount > 0
+                ? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The recommended core had less interrupt time than the next-best core in {shownWins} of {windowCount} windows")
+                : "The recommended core had less interrupt time than the next-best core";
+            var magnitude = string.Create(
+                CultureInfo.InvariantCulture,
+                $"by a median of {gapMicroseconds:F0} us per {windowSeconds:F0} s window ({gapFraction:P3} of one CPU)");
+            var reason = consistentLead && !practicalLead
+                ? "The difference is consistent but far too small to affect input latency."
+                : "That is not a consistent difference between the two cores.";
             content.Children.Add(new TextBlock
             {
-                Text = string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"The best core and the next-best core differ by {gapRunnerUp - gapWinner:F1} us per window, which is within this core's own run-to-run spread ({gapSpread:F1} us). Moving the xHCI interrupt is not expected to change latency on this system. You can skip Apply; re-run on a quiet system if you want a firmer answer."),
+                Text = $"{consistency}, {magnitude}. {reason} Moving the xHCI interrupt is not expected to change latency on this system, so you can skip Apply.",
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 13,
                 Foreground = ThemeBrush("TextBrush"),
             });
         }
 
-        var advancedMethod = string.Equals(report.HeadroomMethod, "advanced", StringComparison.Ordinal);
         content.Children.Add(CreateEvidenceLine(
             "Method",
             advancedMethod
@@ -502,14 +527,10 @@ public sealed partial class MainWindow
                 mutationBlockerSummary));
         }
 
-        var technicalExpander = new Expander
-        {
-            Header = "Technical details",
-            Content = technical,
-            IsExpanded = !benchmarkReady,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-        };
-        content.Children.Add(technicalExpander);
+        content.Children.Add(CreateCollapsibleSection(
+            "Technical details",
+            technical,
+            expanded: !benchmarkReady));
 
         var dialog = new ContentDialog
         {
@@ -525,9 +546,6 @@ public sealed partial class MainWindow
                 : ContentDialogButton.Close,
         };
 
-        // The Expander inside a ContentDialog opens expanded regardless of its initial
-        // IsExpanded value; apply the intended state once the dialog is on screen.
-        dialog.Opened += (_, _) => technicalExpander.IsExpanded = !benchmarkReady;
         var result = await dialog.ShowAsync();
         if (result != ContentDialogResult.Primary ||
             !readyToApply ||
@@ -623,13 +641,10 @@ public sealed partial class MainWindow
             var details = new StackPanel { Spacing = 7d };
             details.Children.Add(CreateMutedText(report.Message));
             details.Children.Add(CreateMutedText(report.Verification));
-            content.Children.Add(new Expander
-            {
-                Header = "Verification details",
-                Content = details,
-                IsExpanded = !report.Succeeded,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-            });
+            content.Children.Add(CreateCollapsibleSection(
+                "Verification details",
+                details,
+                expanded: !report.Succeeded));
         }
         else if (!string.IsNullOrWhiteSpace(report.Message))
         {
@@ -707,6 +722,7 @@ public sealed partial class MainWindow
         double? WinnerCoreBusyFraction,
         double? RunnerUpCoreBusyFraction,
         double? WinnerCoreBusySpread,
+        int? WinnerCoreHeadToHeadWins,
         double? SystemBusyFraction,
         double? TotalInterruptDurationMicroseconds,
         double? InterruptTailP99Microseconds,
